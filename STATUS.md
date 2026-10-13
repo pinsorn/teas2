@@ -14,6 +14,7 @@
   the committed range.
 
 ## Resume checklist (next session)
+0. Invoke `superpowers:subagent-driven-development` with both plans (it resumes from the ledgers; never re-dispatch a task marked complete).
 1. Read the SDD ledgers — they are the source of truth for progress and rulings:
    - `T2-sp1ab\.superpowers\sdd\2026-10-14-sp1ab-design-system-kit\progress.md` (pre-flight rulings R1–R10)
    - `T2-spr\.superpowers\sdd\2026-10-14-sp-r-tax-research\progress.md` (rulings R1–R4)
@@ -23,7 +24,7 @@
 4. Start SP-R Task 2 (B1) in parallel — different worktree, disjoint files.
 
 ## Waiting on Ham
-- Fix the same mangled `\r\n` troubles-wiki entry upstream in `pinsorn/minions-assemble`? (push to another repo needs a yes)
+- (none — minions-assemble template fixed upstream in 9ae1bd9)
 
 ## Decisions 2026-10-14
 - Plans approved; execution = subagent-driven. Repo public (AGPL). Staging = `teas2-preview.kazaki-rio.com` + basic auth.
