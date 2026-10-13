@@ -5,13 +5,16 @@
 
 ## Now — 2026-10-14
 - **SP0 approved by Ham** (`docs/specs/SP0-charter.md`, D-01…D-24).
-- Writing the implementation plans for SP1 (design system + mockup) and SP-R (tri-model tax research + golden
-  fixtures) with `writing-plans`.
+- Plans written, **waiting for Ham's review and choice of execution method**:
+  - `docs/plans/2026-10-14-p0-repo-setup.md` — orchestrator setup, hygiene, templates, GitHub remote (5 tasks)
+  - `docs/plans/2026-10-14-sp1ab-design-system-kit.md` — scaffold, mock API, shell, style tiles (gate),
+    kit, TI loop, render spike, staging (17 tasks)
+  - `docs/plans/2026-10-14-sp-r-tax-research.md` — R-01…R-20 tri-model research, golden fixtures (11 tasks)
 - Diagrams: `docs/specs/SP0-diagrams.md` · rendered page https://claude.ai/artifact/9BMzT5Jupxa3emA6kQf4q6
 
 ## Next
-1. Ham reviews the SP1 + SP-R plans and picks the execution method.
-2. First task of the plan: install the trimmed orchestrator setup with `/minions`.
+1. Ham approves the plans and picks the execution method.
+2. Run P0 first; then SP1ab and SP-R in parallel (disjoint files: `frontend/` vs `docs/research/`, `fixtures/`, `tools/golden-capture/`).
 
 ## Done
 - TEAS 1 v2.5.0 discovery: `docs/discovery/01`–`04`.
