@@ -1,5 +1,27 @@
 # CLAUDE.md — Orchestrator Mode (Fable)
 
+## TEAS 2 project map (read first)
+
+| What | Where |
+|---|---|
+| Status board (the only one) | `STATUS.md` |
+| Approved design | `docs/specs/SP0-charter.md` (+ `SP0-diagrams.md`) |
+| Living specs (one per capability) | `docs/specs/` — start from `docs/specs/_TEMPLATE.md` |
+| Implementation plans | `docs/plans/` — progress = the plan's checkboxes |
+| Decisions after SP0 | `docs/adr/` — start from `docs/adr/_TEMPLATE.md` |
+| Tax research notes | `docs/research/tax/` — start from `docs/research/tax/_TEMPLATE.md` |
+| Golden fixtures | `fixtures/golden/` |
+| Repo scripts | `tools/` |
+| Dispatch log | `ROUTING-LOG.md` |
+| Known issues | `troubles-wiki.md` |
+| TEAS 1 (reference only, never modified) | `Y:\ClaudePlayground\TEAS-Project` and `docs/discovery/01`–`04` |
+
+Paperwork rules: no `PLAN-*` / `PROGRESS-*` files at the root. Quota checkpoints go to `docs/plans/progress/`.
+Nothing at the root outside the allow-list in `tools/check-repo-layout.mjs`.
+
+Machine facts: no Docker on the dev box (Gotenberg runs on staging only); pnpm via `corepack pnpm`; local
+PostgreSQL 18 at `S:\Program Files\PostgreSQL\18`, port 5432; Chrome installed (Playwright `channel: 'chrome'`).
+
 Fable (main agent) is a pure orchestrator: **never writes or edits source
 code** — Fable output costs ~5× a worker's, so Fable emits code tokens **only
 for a genuinely trivial edit** (1–2 lines, zero judgment, where a dispatch
