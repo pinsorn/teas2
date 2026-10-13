@@ -473,15 +473,18 @@ git commit -m "test(golden): TEAS 1 capture tool with normaliser"
 - [ ] **Step 1: Create an empty database**
 
 ```powershell
-& "S:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -U postgres -c "CREATE DATABASE teas_golden OWNER accounting;"
+$env:PGPASSWORD = $env:TEAS1_PG_ADMIN_PASSWORD   # non-interactive: without it psql waits for a password prompt
+& "S:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -U postgres -w -c "CREATE DATABASE teas_golden OWNER accounting;"
 ```
 Use `postgres` or any local role with CREATEDB; if neither password is known, ask Ham — do not reset passwords.
 Expected: `CREATE DATABASE`. Use a new name if it exists (`teas_golden2`) — never reuse a populated database.
 
 - [ ] **Step 2: Boot TEAS 1 against it**
 
-Read `Y:\ClaudePlayground\TEAS-Project\README.md` §การติดตั้ง and `troubles-wiki.md` (grep `boot`, `seed`, `onboard`)
-first. Then:
+Read `Y:\ClaudePlayground\TEAS-Project\README.md` §การติดตั้ง and `troubles-wiki.md` (grep `boot`, `seed`, `onboard`,
+`SeedDemoData`, `role`) first. A known trap: TEAS 1 must create its role templates and permissions on the **first**
+boot of an **empty** database — get the flags wrong and nobody can log in. Confirm from the wiki which settings
+create the role templates without demo companies, and set them below (the values shown are the starting guess):
 
 ```powershell
 cd "Y:\ClaudePlayground\TEAS-Project\backend"

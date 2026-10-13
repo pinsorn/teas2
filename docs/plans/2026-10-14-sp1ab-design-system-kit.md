@@ -70,9 +70,12 @@ rendering), §11.2–11.3 (SP1 gates and mockup rules), §1.2 S2–S5.
 
 ```bash
 cd "Y:/ClaudePlayground/TEAS2"
-corepack pnpm@10 dlx create-next-app@16.4.0 frontend --ts --tailwind --eslint --app --src-dir --import-alias "@/*" --use-pnpm --yes
+corepack pnpm@10 dlx create-next-app@16.4.0 frontend --ts --tailwind --eslint --app --src-dir --import-alias "@/*" --use-pnpm --skip-install --yes
+cd frontend && corepack pnpm install
 ```
-Expected: `frontend/` with `src/app`, `AGENTS.md`; no nested `.git` (the tool skips git inside a repo).
+`--skip-install` because create-next-app would spawn a bare `pnpm`, which is not on PATH here; every install runs
+through `corepack pnpm`. Expected: `frontend/` with `src/app`, `AGENTS.md`, `pnpm-lock.yaml`; no nested `.git`
+(the tool skips git inside a repo).
 
 - [ ] **Step 2: Add dependencies (exact versions)**
 
@@ -93,9 +96,10 @@ import type { NextConfig } from 'next';
 import createNextIntlPlugin from 'next-intl/plugin';
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
-const nextConfig: NextConfig = { output: 'standalone', typedRoutes: true };
+const nextConfig: NextConfig = { output: 'standalone' };
 export default withNextIntl(nextConfig);
 ```
+(No `typedRoutes`: the kit builds hrefs from descriptors at runtime, which typed routes would reject.)
 
 `frontend/vitest.config.ts`
 ```ts
@@ -299,6 +303,8 @@ export interface Page<T> { items: T[]; nextCursor?: string; total?: number }
 
 export type LinkKind = 'converted_from' | 'settles' | 'adjusts' | 'groups' | 'replaces' | 'issues';
 export interface ChainNode { id: string; type: DocType; number?: string; status: DocStatus; total: Money; progress?: string }
+/** `from` = the document whose command created the link (DO→SO converted_from, RC→TI settles, CN→TI adjusts,
+ *  BL→TI groups, new TI→old TI replaces, PV→WT issues); `to` = the document it refers to. */
 export interface ChainEdge { from: string; to: string; kind: LinkKind; amount?: Money; qty?: Qty; active: boolean }
 export interface ChainGraph { rootId: string; nodes: ChainNode[]; edges: ChainEdge[] }
 
@@ -891,8 +897,9 @@ dates count back from the fixed anchor `2026-10-14`):
 - one user `u-1` "สมศรี บัญชีดี" with memberships: `co-vat` (role from settings), `co-nonvat` (operator);
 - VAT company: 12 customers (8 VAT-registered companies, 2 individuals, 1 foreign, 1 government agency), 10 vendors,
   20 items (services and goods, codes `SV-xx` / `GD-xx`, `usualItemIds` set on customers). These customers are
-  required by later tests: "บริษัท นาวาพาณิชย์ จำกัด" (TIN `0105568024684`, branch `00000`, `usualItemIds` = one
-  service item); "บริษัท ปิ่นทองการพิมพ์ จำกัด" (TIN `0105565077124`, branch `00000`); "ห้างหุ้นส่วนจำกัด สมบูรณ์ค้าไม้"
+  required by later tests: "บริษัท นาวาพาณิชย์ จำกัด" (TIN `0105568024684`, branch `00000`, `usualItemIds` =
+  [`SV-01` "ออกแบบอัตลักษณ์องค์กร", 60,000.00, S7]); "บริษัท ปิ่นทองการพิมพ์ จำกัด" (TIN `0105565077124`, branch
+  `00000`); "ห้างหุ้นส่วนจำกัด สมบูรณ์ค้าไม้"
   (VAT-registered, **no TIN entered** — the data-entry gap the missing-check catches);
 - non-VAT company: 8 customers, 6 vendors, 12 items;
 - VAT company TIs over the last 12 months: 6 draft, 12 issued (some overdue), 6 partly settled, 30 settled,
@@ -907,6 +914,9 @@ dates count back from the fixed anchor `2026-10-14`):
 `saveState` writes it; `resetState` clears and re-seeds.
 
 - [ ] **Step 4: Implement the read handlers**
+
+Every handler path uses the any-origin form `*/bff/v1/...` so it matches the browser worker and the Node test server
+alike.
 
 Shared helpers in `handlers/index.ts`:
 ```ts
@@ -1090,7 +1100,8 @@ describe('revisions (classes N and L)', () => {
 
 describe('convert', () => {
   it('refuses more than the remaining quantity and returns quantity when the target is cancelled', () => {
-    const so = st.docs.find((d) => d.companyId === vatCo && d.type === 'SO' && d.status === 'issued')!;
+    const so = st.docs.find((d) => d.companyId === vatCo && d.type === 'SO' && d.status === 'issued'
+      && !st.links.some((l) => l.kind === 'converted_from' && l.to === d.id && l.active))!; // an undelivered SO
     const l = so.lines[0];
     const half = String(Number(l.qty) / 2);
     const do1 = convert(st, so.id, 'DO', [{ sourceLineId: l.id, qty: half }], me);
@@ -1341,7 +1352,8 @@ export function normalizeProblem(status: number, body: unknown): ApiProblem {
 
 export async function api<T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown,
   opts: { idempotencyKey?: string; signal?: AbortSignal } = {}): Promise<T> {
-  const res = await fetch(`/bff/v1${path}`, {
+  // absolute URL: same origin in the browser; jsdom's http://localhost:3000 in Vitest (undici rejects relative URLs)
+  const res = await fetch(new URL(`/bff/v1${path}`, window.location.origin), {
     method,
     headers: { 'content-type': 'application/json', ...(opts.idempotencyKey ? { 'idempotency-key': opts.idempotencyKey } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -1742,6 +1754,9 @@ compiles.)
 - [ ] **Step 3: Implement**
 
 Behaviour list:
+- `useDocListParams` reads `useSearchParams`, so every page that renders `DocList` wraps it in
+  `<Suspense fallback={<LoadingState />}>` — without it `next build` fails (and the Playwright web server with it).
+  The same applies to any other client component that reads search params (`/mock/screens`, the editor's `?from=`).
 - Server-side paging with "โหลดเพิ่ม" (cursor); 25 rows per page.
 - Filters in the URL: `status`, `q`, `from`, `to`, `view`; changing a filter resets the cursor.
 - Saved views: descriptor presets + user views kept in `localStorage['teas2.views.<type>']` (try/catch).
@@ -1823,7 +1838,7 @@ describe('DocEditor', () => {
     await userEvent.type(screen.getByRole('combobox', { name: 'ลูกค้า' }), 'นาวา');
     await userEvent.keyboard('{Enter}');
     expect(await screen.findByText(/0105568024684/)).toBeVisible();
-    expect(screen.getAllByRole('row').length).toBeGreaterThan(1);
+    expect(screen.getByRole('textbox', { name: 'รายการ 1' })).toHaveValue('ออกแบบอัตลักษณ์องค์กร');
   });
   it('Enter while composing text does nothing', async () => {
     ui();
@@ -1954,7 +1969,9 @@ Behaviour list:
 - Shortcuts `Ctrl+Enter` (issue) and `Ctrl+S` (save) are handled by a capture-phase `keydown` listener on the editor
   root, so they work from any focused field (and are ignored while composing).
 - Issue: `Ctrl+Enter` or the primary button opens `ConfirmIssueDialog` (shadcn `AlertDialog`, totals, Enter
-  confirms, Escape cancels); confirm → flush autosave → `POST /issue` with the version → `onIssued(doc)`.
+  confirms, Escape cancels); confirm → flush autosave → `POST /issue` with the version → `onIssued(doc)`. Radix
+  `AlertDialog` focuses Cancel on open — override with
+  `onOpenAutoFocus={(e) => { e.preventDefault(); confirmRef.current?.focus(); }}` so Enter confirms.
 - `Ctrl+S` flushes the draft; the paper preview is a right-side `Sheet`, closed by default under 1700 px wide;
   `JournalDrawer` shows `compute.journal`.
 - Revise mode: the primary action is "บันทึกการแก้ไข", which calls `onRevisionRequested` instead of issuing.
