@@ -565,7 +565,7 @@ Every `[SP-R]` in SP0 becomes `[R-NN](../research/tax/R-NN-<slug>.md)` once its 
 
 ```bash
 grep -c "\[SP-R" docs/specs/SP0-charter.md     # expected: 0
-grep -E "\| (open|Researching|Disagree)" docs/research/tax/README.md   # expected: no output
+grep -E "\| (open|Researching|Disagree|Partial)" docs/research/tax/README.md   # expected: no output
 ```
 
 - [ ] **Step 3: Commit**

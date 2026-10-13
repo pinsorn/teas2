@@ -18,7 +18,7 @@
 - Mockup staging = **`teas2-preview.kazaki-rio.com` + basic auth**.
 
 ## Next
-1. Run P0 (in progress).
+1. P0 Tasks 1–4 done and reviewed; Task 5 (public GitHub repo + branch protection) next.
 2. Then SP1ab and SP-R in parallel (disjoint files: `frontend/` vs `docs/research/`, `fixtures/`, `tools/golden-capture/`);
    SP-R Task 7+ waits for SP1ab Task 2 (`frontend/src/mocks/fixtures/companies.json`).
 
