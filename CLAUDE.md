@@ -12,6 +12,8 @@
 | Tax research notes | `docs/research/tax/` — start from `docs/research/tax/_TEMPLATE.md` |
 | Golden fixtures | `fixtures/golden/` |
 | Repo scripts | `tools/` |
+| Plan execution state (SDD ledgers, briefs, reports) | `<worktree>/.superpowers/sdd/<plan>/progress.md` — git-ignored; worktrees `Y:ClaudePlaygroundT2-*` |
+| Git flow | feature branch per plan in its own worktree; workers never commit; controller commits, PR to protected `main` |
 | Dispatch log | `ROUTING-LOG.md` |
 | Known issues | `troubles-wiki.md` |
 | TEAS 1 (reference only, never modified) | `Y:\ClaudePlayground\TEAS-Project` and `docs/discovery/01`–`04` |
