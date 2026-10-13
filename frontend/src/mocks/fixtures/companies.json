@@ -1,0 +1,26 @@
+{
+  "companies": [
+    {
+      "key": "vat",
+      "legalNameTh": "บริษัท มะลิวัลย์ ดีไซน์ เวิร์คส์ จำกัด",
+      "legalNameEn": "Maliwan Design Works Co., Ltd.",
+      "taxId": "0105569012345",
+      "branchCode": "00000",
+      "vatRegistered": true,
+      "address": "88/12 ถนนประดิพัทธ์ แขวงพญาไท เขตพญาไท กรุงเทพมหานคร 10400",
+      "phone": "02-000-1234",
+      "fiscalYearStartMonth": 1
+    },
+    {
+      "key": "nonvat",
+      "legalNameTh": "บริษัท บ้านต้นข้าว ฟู้ดส์ จำกัด",
+      "legalNameEn": "Baan Ton Khao Foods Co., Ltd.",
+      "taxId": "0105569056784",
+      "branchCode": "00000",
+      "vatRegistered": false,
+      "address": "215 หมู่ 4 ตำบลบางกระสอ อำเภอเมืองนนทบุรี จังหวัดนนทบุรี 11000",
+      "phone": "02-000-5678",
+      "fiscalYearStartMonth": 1
+    }
+  ]
+}
