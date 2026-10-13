@@ -54,7 +54,7 @@ const VERDICT = {
 
 phase('Review')
 const reviews = await parallel(LENSES.map((lens) => () => agent(
-  `You are a fresh Tier-2 reviewer on repo ${'Y:\\ClaudePlayground\\TEAS-Project'.replace(/\\\\/g, '\\')} (use the repo at the current working directory if that path is wrong). READ-ONLY: no edits, no git writes, no builds, no tests (shared test DB).
+  `You are a fresh Tier-2 reviewer on repo ${'Y:\\ClaudePlayground\\TEAS2'.replace(/\\\\/g, '\\')} (use the repo at the current working directory if that path is wrong). READ-ONLY: no edits, no git writes, no builds, no tests (shared test DB).
 Read the spec ${spec} in full, then review ${diffScope} through ONE lens only:
 ${lens}
 ${context ? `Orchestrator context (trusted): ${context}` : ''}

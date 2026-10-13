@@ -29,10 +29,5 @@ Entry format — terse, greppable by symptom:
 
 ## StringBuilder.AppendLine breaks cross-platform text snapshots (.NET)
 - **Symptom:** CSV/text endpoint passes tests on Windows dev, fails on Linux CI ("expected N lines, found 1") or vice versa.
-- **Root cause:** `AppendLine` emits `Environment.NewLine` — `
-
-` on Windows, `
-` on Linux. Fixed-delimiter consumers (RFC 4180 CSV, snapshot tests) break on the other OS.
-- **Fix:** emit the delimiter explicitly: `sb.Append(x).Append("
-
-")`.
+- **Root cause:** `AppendLine` emits `Environment.NewLine` — `\r\n` on Windows, `\n` on Linux. Fixed-delimiter consumers (RFC 4180 CSV, snapshot tests) break on the other OS.
+- **Fix:** emit the delimiter explicitly: `sb.Append(x).Append("\r\n")`.

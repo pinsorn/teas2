@@ -17,3 +17,14 @@ test('later plans’ roots are allowed', () => {
   const entries = ['fixtures/golden/teas1/S-01.json', 'tools/golden-capture/run.mjs', 'deploy/x', '.mcp.json'];
   assert.deepEqual(findViolations(entries, ALLOW), []);
 });
+
+test('a stray root directory is flagged once, however many files it holds', () => {
+  assert.deepEqual(findViolations(['specs/a.md', 'specs/b.md', 'docs/x.md'], ALLOW), ['specs']);
+});
+test('the allow-list is exactly the plan list', () => {
+  assert.deepEqual(ALLOW.files, ['README.md', 'CLAUDE.md', 'STATUS.md', 'ROUTING-LOG.md', 'CHANGELOG.md', 'LICENSE', 'troubles-wiki.md', '.gitattributes', '.gitignore', '.mcp.json']);
+  assert.deepEqual(ALLOW.dirs, ['.claude', '.github', 'docs', 'backend', 'frontend', 'deploy', 'tools', 'fixtures']);
+});
+test('non-ASCII paths are classified by their top-level entry', () => {
+  assert.deepEqual(findViolations(['docs/ทดสอบ.md', 'คู่มือ.md'], ALLOW), ['คู่มือ.md']);
+});

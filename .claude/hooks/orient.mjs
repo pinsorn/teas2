@@ -49,19 +49,19 @@ function session() {
     }
   }
 
-  // PROGRESS-*.md at repo root (filenames only).
-  const progressFiles = safeReaddir(ROOT)
-    .filter(f => /^PROGRESS-.*\.md$/.test(f))
+  // PROGRESS-*.md in docs/plans/progress/ (filenames only).
+  const progressFiles = safeReaddir(path.join(ROOT, 'docs', 'plans', 'progress'))
+    .filter(f => /^PROGRESS-.*\.md$/.test(f) && !f.startsWith('_'))
     .sort();
   if (progressFiles.length) {
     lines.push('Progress files:');
     for (const f of progressFiles) lines.push(`  ${f}`);
   }
 
-  // specs/*.md (excluding TEMPLATE.md) with open/partial checklist items.
-  const specsDir = path.join(ROOT, 'specs');
+  // docs/specs/*.md (excluding TEMPLATE.md and _-prefixed) with open/partial checklist items.
+  const specsDir = path.join(ROOT, 'docs', 'specs');
   const specFiles = safeReaddir(specsDir)
-    .filter(f => f.endsWith('.md') && f !== 'TEMPLATE.md')
+    .filter(f => f.endsWith('.md') && f !== 'TEMPLATE.md' && !f.startsWith('_'))
     .sort();
   const specLines = [];
   for (const f of specFiles) {
@@ -69,7 +69,7 @@ function session() {
     if (text == null) continue;
     const open = (text.match(/^- \[ \]/gm) || []).length;
     const partial = (text.match(/^- \[~\]/gm) || []).length;
-    if (open || partial) specLines.push(`specs/${f} — ${open} open / ${partial} partial`);
+    if (open || partial) specLines.push(`docs/specs/${f} — ${open} open / ${partial} partial`);
   }
   if (specLines.length) {
     lines.push('Open specs:');

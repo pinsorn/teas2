@@ -1,6 +1,6 @@
 // tools/check-repo-layout.mjs
 import { execSync } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 export const ALLOW = {
   files: ['README.md', 'CLAUDE.md', 'STATUS.md', 'ROUTING-LOG.md', 'CHANGELOG.md', 'LICENSE',
@@ -18,8 +18,9 @@ export function findViolations(entries, allow) {
   return [...bad].sort();
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const entries = execSync('git ls-files', { encoding: 'utf8' }).split('\n').filter(Boolean);
+if (import.meta.main) {
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  const entries = execSync('git -c core.quotePath=false ls-files -z', { encoding: 'utf8', cwd: root }).split('\0').filter(Boolean);
   const bad = findViolations(entries, ALLOW);
   if (bad.length) { console.error('Root entries outside the allow-list:\n  ' + bad.join('\n  ')); process.exit(1); }
   console.log('repo layout ok');

@@ -22,6 +22,10 @@ Nothing at the root outside the allow-list in `tools/check-repo-layout.mjs`.
 Machine facts: no Docker on the dev box (Gotenberg runs on staging only); pnpm via `corepack pnpm`; local
 PostgreSQL 18 at `S:\Program Files\PostgreSQL\18`, port 5432; Chrome installed (Playwright `channel: 'chrome'`).
 
+**These paths override the generic sections below.** Wherever this file or an agent definition says `specs/`, `specs/TEMPLATE.md`, `PROGRESS-<task>.md`, `STATUS-TEMPLATE.md` or `videos/`, use `docs/specs/`, `docs/specs/_TEMPLATE.md`, `docs/plans/progress/PROGRESS-<task>.md`, the existing `STATUS.md`, and `docs/videos/` instead.
+
+## Orchestrator mode
+
 Fable (main agent) is a pure orchestrator: **never writes or edits source
 code** — Fable output costs ~5× a worker's, so Fable emits code tokens **only
 for a genuinely trivial edit** (1–2 lines, zero judgment, where a dispatch

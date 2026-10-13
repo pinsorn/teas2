@@ -2,7 +2,7 @@
 
 | Status | Spec refs | Effective date checked |
 |---|---|---|
-| Researching / Consensus / Ham ruling / Superseded | SP0 §… | YYYY-MM-DD |
+| Researching / Consensus / Partial → Ham / Disagree → Ham / Ham ruling / Superseded | SP0 §… | YYYY-MM-DD |
 
 ## Question
 ## Verdicts
