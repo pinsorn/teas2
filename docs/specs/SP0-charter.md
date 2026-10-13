@@ -363,7 +363,7 @@ lives outside the core (§5.5). TEAS 1 evidence: 02 §7.
 | I6 | Input VAT: claim window of 6 months; vendor not VAT-registered ⇒ no input VAT; non-recoverable VAT is added to cost | ม.82/4, ม.82/5, ม.82/3 [SP-R] |
 | I7 | WHT: three payer modes (deduct, gross-up once, gross-up always); one WT per income type per payment; routing to ภ.ง.ด.2 / 3 / 53 / 54; payer TIN must be real; WT PDF frozen at first render | ม.50, ม.69 ทวิ, ม.70 [SP-R] |
 | I8 | Reverse charge: ภ.พ.36 at the payment month; self-assessed VAT is claimable input VAT in ภ.พ.30 (G2) | ม.83/6 [SP-R] |
-| I9 | Cancel + reissue for TI / RC (and IV): the replacement keeps the original date and total and references the original; a different total requires CN / DN | Ham 2026-08-06, 2026-08-12; ม.86/9–10 [SP-R] |
+| I9 | Cancel + reissue for TI and RC: the replacement keeps the original date and total and references the original. A different total requires CN / DN for a TI, or cancelling the receipt and issuing a new one for an RC. (IV is class L and is corrected by revision, §7.3) | Ham 2026-08-06, 2026-08-12; ม.86/9–10 [SP-R] |
 | I10 | One finalized filing per company × form × period; every form and export refuses a placeholder TIN | TEAS 1 behaviour |
 | I11 | Payroll: PIT by the ม.50(1) projected method with day proration; SSO with ceiling; filing month = pay-date month. CIT: ภ.ง.ด.50/51 ladder, SME relief, 5-year loss carry-forward | ม.50(1), ม.65, ม.65 ทวิ [SP-R] |
 | I12 | Source of truth: VAT, WHT and payroll returns read **documents**; CIT and financial statements read the **GL**. A tie-out screen compares each register with its GL control account | 02 §7.3 |
@@ -470,6 +470,7 @@ template — not copying a service. TEAS 1 evidence: the lifecycle was re-implem
 | JV | edit / delete | revision (L) or reverse | reverse | duplicate |
 | FA, DP | edit / delete | revision (L) | reverse run (DP) / cancel (FA) | dispose, write-off |
 | PR | edit / delete | revision (L); payslips regenerated | yes | — |
+| OB | edit / delete | revision (L) | reverse the batch | — |
 | WT | n/a (system) | follows its PV / PR | follows its PV / PR | reprint |
 
 ### 7.5 Locks — always shown, always with an exit
