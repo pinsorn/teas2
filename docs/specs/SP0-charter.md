@@ -122,6 +122,8 @@ Not targeted: accounting-firm multi-client workflows, self-serve SaaS signup.
 | D-19 | Platform and technology (§10), amended by D-14 | Ham approved section 5, 2026-10-13 |
 | D-20 | Delivery system (§11), including `/minions` orchestrator setup in TEAS2 and a mockup preview on a Coolify staging subdomain | Ham approved section 6, 2026-10-13 |
 | D-21 | License AGPL-3.0 (same as TEAS 1) | Default, not objected |
+| D-22 | Agent posting policy and amount cap are company settings; 50,000 THB is the starting value (§8.4) | Ham, 2026-10-13 |
+| D-23 | Document chain with typed links, line-level quantities and chain-aware corrections (§7.11); three-layer logs written in the command's transaction (§7.12) | Ham, 2026-10-13 |
 
 ---
 
@@ -496,7 +498,7 @@ Editing an approved, not-yet-issued document sends it back to Draft.
 
 QT → SO → DO → TI / IV; QT → TI / IV; SO → TI / IV; TI / IV → BL; TI / IV → RC; TI → CN / DN;
 PO → PB → PV; PO → PV; PB → PCN / PDN; EX → PV. Conversions carry party, lines, prices, tax codes, dimensions,
-notes, WHT defaults and the link; partial conversions track remaining quantities.
+notes, WHT defaults and the link; partial conversions track remaining quantities (§7.11).
 
 ### 7.8 Command pipeline (backend)
 
@@ -524,6 +526,71 @@ times; save and audit in separate transactions on three paths (04 §3 #7, §7.5)
   posting role) → the party's last document.
 - Reuse: duplicate, recurring documents (§5.9), complete conversions (§7.7).
 - Approval inbox and inline approve-and-issue (§7.6).
+
+### 7.11 Document chain
+
+**Links.** Every relationship between documents is a typed link row written by the command pipeline in the same
+transaction as the documents. Links are append-only; when either end is cancelled the link becomes inactive and
+stays for history. Both ends always belong to the same company.
+
+| Link | Between | Carries |
+|---|---|---|
+| Converted from | SO ← QT; DO ← SO; TI / IV ← DO, SO or QT; PB ← PO; PV ← PO or EX | Per-line quantity and amount (target line → source line) |
+| Settles | RC → TI / IV / deposit; PV → PB / PDN / prepayment; netting document → both sides | Amount applied, WHT, differences |
+| Adjusts | CN / DN → TI; PCN / PDN → PB | Per-line amount, reason code |
+| Groups | BL → TI / IV | — |
+| Replaces | Replacement TI / RC → cancelled original | Cancel reason |
+| Issues | PV / PR → WT | WHT per income type |
+
+**Line-level quantities.** Each converted line points to its source line. Remaining quantity = source quantity −
+Σ quantities on active converted lines. Converting more than the remaining quantity is refused (exit: revise the
+source, or close the remainder). "ปิดยอดคงเหลือ" ends a partly converted line or document with a reason.
+Cancelling a target document returns its quantities to the source. TEAS 1 evidence: PO → VI could over-bill to
+~200 % (04 §7.2).
+
+**Derived states — never set by hand.** Delivery and billing progress (SO, PO), outstanding amount and settlement
+status (IV, TI, PB) come from active links only: outstanding = total − Σ credit adjustments + Σ debit adjustments −
+Σ settlements.
+
+**Chain view.** Every document view shows the connected chain upstream and downstream: number, type, status,
+amount, progress. Cancelled documents stay in the chain, struck through, pointing to their replacement. The
+"ผลต่อบัญชี" tab lists the journal entries; each journal line links back to its document line.
+
+**Chain-aware corrections.** When a correction (§7.3) needs changes to dependent documents, the engine builds an
+ordered **correction plan**, shows every affected document and amount, and executes the whole plan as one command
+in one transaction — all or nothing. The plan follows the same rules as the single commands (locks, permissions, a
+reissue keeps date and total). A user missing a permission the plan needs sees which one and can send the plan to
+the approval inbox. Example: correcting the customer name on a paid tax invoice = cancel the receipt → reissue the
+tax invoice → reissue the receipt against the new tax invoice, with the original dates and amounts; TEAS 1 needed
+four manual steps and three permissions for this (01 §5.1.3).
+
+**Upstream edits never rewrite downstream documents.** Revising a source that has dependents shows a warning and the
+list of dependents; a source line cannot drop below its converted quantity (exit: close the remainder or cancel the
+dependent first).
+
+**Integrity checks (property tests).** Outstanding amounts match the formula above for every document; converted
+quantities never exceed source quantities; every link joins two documents of the same company.
+
+### 7.12 Revision history, activity and audit log
+
+| Layer | Answers | Contents | Where users see it |
+|---|---|---|---|
+| **Revision history** | What did this document look like, and what changed? | An immutable snapshot of every issued revision, a field-level diff between revisions, who, when and why (a reason is mandatory after issue) | Document tab; any revision can be viewed and printed ("ฉบับแก้ไขครั้งที่ n") |
+| **Activity** | What happened to this document? | Created, edited, submitted, approved, issued, printed (original / copy), converted, settled, adjusted, cancelled (with reason), replaced, notes, attachments, agent review report and post | Timeline on the document view |
+| **Audit log** | Who did what in the system? | Every command: actor (user, or agent + owner), company, time, client and IP, command, target, values before and after, result, idempotency key, trace id. Also non-document actions: login, company switch, permission changes, posting profiles, tax tables, numbering, agent policy, period close / reopen, filing finalize, exports | รายงาน → ตรวจสอบ, with filters and export |
+
+Rules:
+1. All three layers are written by the command pipeline **in the same transaction** as the change, so a log can
+   never be missing for a change, and no log entry exists for a change that did not happen. TEAS 1 evidence: save
+   and audit ran in separate transactions on three create paths (04 §7.5).
+2. Append-only: database triggers block UPDATE, DELETE and TRUNCATE; the app role can only INSERT and SELECT.
+3. Coverage: every registered command writes an audit record — enforced by a test over the command registry.
+   TEAS 1 evidence: 8+ services wrote no audit record (02 M1).
+4. Retention of at least 5 years; the application never purges logs [SP-R: retention periods].
+5. The ledger trail complements the logs: journal entries are immutable, corrections appear as reversal + new entry
+   pairs labelled with the revision number, and the series report lists every issued and cancelled number with its
+   reason.
+6. Agent review reports (§8.2) are stored and linked from the activity entry of the post they justified.
 
 ---
 
@@ -867,7 +934,8 @@ date. TEAS 1 remains available read-only for history (statutory retention).
 | Flexible receipts and payments | §5.11 |
 | Fast document creation | §7.9, §7.10, S3 |
 | Consistent pages | §7.1, §7.9, S4 |
-| Edit after approval | §7.3–7.5, S5 |
+| Edit after approval | §7.3–7.5, §7.11 (chain-aware corrections), S5 |
+| Document chain and logs | §7.11, §7.12 |
 | Multi-company for every user | §10.4 |
 | Agents may post with review | §8 |
 | Mockup 100% real | D-09, §11.3, S2 |
