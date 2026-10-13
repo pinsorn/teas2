@@ -558,7 +558,8 @@ a subset of the owner's permissions on that company. Every action records the ag
 
 Per company, per document type: **Off | Human | Auto-if-clean (with amount cap)**.
 Defaults: T-class documents (TI, RC, CN, DN) → **Human**; N- and L-class → **Auto-if-clean, cap 50,000 THB per
-document**; any warning or a cap breach → Human. Admins change the policy in Settings → TEAS Connect.
+document**; any warning or a cap breach → Human. The policy and the cap are company settings (ตั้งค่า → บริษัท →
+Agent policy), changed by an admin per company; 50,000 THB is only the starting value (Ham, 2026-10-13).
 
 ### 8.5 Hard limits — agents never
 
