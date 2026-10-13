@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Draft — awaiting owner review** |
+| Status | **Approved by Ham, 2026-10-14** |
 | Date | 2026-10-13 |
 | Owner | Ham (product owner) |
 | Author | Claude (orchestrator), from the SP0 brainstorm with Ham, 2026-10-13 |
@@ -124,6 +124,7 @@ Not targeted: accounting-firm multi-client workflows, self-serve SaaS signup.
 | D-21 | License AGPL-3.0 (same as TEAS 1) | Default, not objected |
 | D-22 | Agent posting policy and amount cap are company settings; 50,000 THB is the starting value (§8.4) | Ham, 2026-10-13 |
 | D-23 | Document chain with typed links, line-level quantities and chain-aware corrections (§7.11); three-layer logs written in the command's transaction (§7.12) | Ham, 2026-10-13 |
+| D-24 | Spec approved with its defaults: document codes (§3.1, incl. PB and the IV / BL split), number format `{PREFIX}-{YYYYMM}-{####}` (§5.14), self-approval allowed by default (§7.6), an asset sale issues a TI (§6.5 G4) | Ham, 2026-10-14 |
 
 ---
 
