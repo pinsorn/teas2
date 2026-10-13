@@ -1,0 +1,30 @@
+# dependencies and build output
+node_modules/
+.next/
+out/
+dist/
+bin/
+obj/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+# env and secrets
+.env
+.env.*
+!.env.example
+# logs, screenshots, scratch
+*.log
+screenshots/
+shots/
+scratch/
+codex-out/
+agy-out/
+# editors and OS
+.DS_Store
+Thumbs.db
+.vs/
+.idea/
+*.swp
+# local Claude settings
+.claude/settings.local.json
