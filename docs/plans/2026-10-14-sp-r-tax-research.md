@@ -7,12 +7,12 @@
 families on primary sources, and capture TEAS 1's tax outputs as golden fixtures for TEAS 2's tests.
 
 **Architecture:** A register of 20 rules (R-01…R-20) is researched in 4 batches. For each batch, Claude, Codex and
-AGY run the same prompt independently; a fresh consolidator compares the three, spot-checks a primary source per
+Gemini (run by Ham in the Gemini app) run the same prompt independently; a fresh consolidator compares the three, spot-checks a primary source per
 rule, and writes one note per rule. Consensus is accepted; disagreements go to Ham. Golden fixtures are captured by a
 Node script that drives a local TEAS 1 through its REST API (never SQL) and normalises ids, dates and numbers.
 
 **Tech Stack:** Claude subagent (WebSearch / WebFetch), Codex via the `codex:codex-rescue` agent (web search on),
-AGY via the `agy-runner` agent, Node 24 ESM + `node:test`, local TEAS 1 (.NET 10 API on PostgreSQL 18).
+Gemini 4 Argon run by Ham in the Gemini app, Node 24 ESM + `node:test`, local TEAS 1 (.NET 10 API on PostgreSQL 18).
 
 **Spec:** `docs/specs/SP0-charter.md` — §6.4 (oracle), §6.2 (invariants), §6.3 (dates), §6.5 (gap fixes G1–G4),
 §6.6–6.7, §5.4, §5.11, §7.12, and every **[SP-R]** marker.
@@ -23,7 +23,7 @@ AGY via the `agy-runner` agent, Node 24 ESM + `node:test`, local TEAS 1 (.NET 10
   พ.ร.บ.การบัญชี พ.ศ. 2543, ประกาศกรมพัฒนาธุรกิจการค้า, กฎหมายประกันสังคม. Secondary sources only point to primary ones.
 - Every finding cites document, section, issuing body, effective date and URL; quotes ≤ 15 words.
 - The three runs of a batch are independent: no model sees another model's output before finishing.
-- Nothing secret or real-tenant goes to any model. AGY never sees secrets.
+- Nothing secret or real-tenant goes to any model. The Gemini prompt contains no secrets or tenant data.
 - TEAS 1 (`Y:\ClaudePlayground\TEAS-Project`) is read-only: no commits there. Local runs use a fresh database and
   create data through the API only — never SQL INSERT.
 - Thai text is checked for Bengali look-alike glyphs (U+0980–U+09FF) before every commit.
@@ -88,7 +88,7 @@ Batches: **B1** VAT documents (R-02, R-03, R-08, R-09, R-17) · **B2** VAT retur
 - [ ] **Step 2: Write the shared prompt**
 
 ```markdown
-# Research prompt (identical for Claude, Codex and AGY)
+# Research prompt (identical for Claude, Codex and Gemini)
 
 You are researching Thai tax and accounting law for the specification of an accounting system used by Thai SMEs
 (VAT-registered and non-registered companies). Answer as of 2026-10-14.
@@ -128,7 +128,7 @@ Run each batch as its own task, in order B1 → B2 → B3 → B4. The procedure 
 rules change.
 
 **Files (per batch):**
-- Create: `docs/research/tax/raw/{BATCH}/claude.md`, `.../codex.md`, `.../agy.md` (raw outputs, kept for audit)
+- Create: `docs/research/tax/raw/{BATCH}/claude.md`, `.../codex.md`, `.../gemini.md` (raw outputs, kept for audit)
 - Create: `docs/research/tax/R-NN-<slug>.md` for every rule of the batch
 - Modify: `docs/research/tax/README.md` (status column)
 
@@ -146,13 +146,14 @@ Copy `PROMPT.md`, replace `{RULES}` with the batch's rows. Save it as `docs/rese
 |---|---|---|---|
 | Claude | `general-purpose`, model `sonnet` | "Use WebSearch and WebFetch. Write only `docs/research/tax/raw/{BATCH}/claude.md`. No other writes, no test runs." | `claude.md` |
 | Codex | `codex:codex-rescue` | "Research task, web search enabled (`--search`). Write the answer to `codex-out/{BATCH}.md` only (pass `--write`)." Then copy to `raw/{BATCH}/codex.md`. | `codex.md` |
-| AGY | `agy-runner` | "Web research task. Return the full answer as text." The orchestrator saves the text to `raw/{BATCH}/agy.md`. | `agy.md` |
+| Gemini | **Ham, in the Gemini app (Gemini 4 Argon)** — not `agy-runner`: Argon is not enabled in AGY (Ham, 2026-10-14) | The orchestrator tells Ham the path of `prompt.md`; Ham runs it in the Gemini app and pastes the answer back; the orchestrator saves it verbatim to `raw/{BATCH}/gemini.md`. | `gemini.md` |
 
-Each run receives only `prompt.md`. Expected: three files, each with a section per rule.
+Each run receives only `prompt.md`. Expected: three files, each with a section per rule. While waiting for Ham's
+Gemini answer, the Claude and Codex runs proceed; consolidation (Step 3) starts only when all three files exist.
 
 - [ ] **Step 3: Consolidate (fresh agent)**
 
-Dispatch `general-purpose`, model `opus`, with: "Read `raw/{BATCH}/claude.md`, `codex.md`, `agy.md`. For each rule
+Dispatch `general-purpose`, model `opus`, with: "Read `raw/{BATCH}/claude.md`, `codex.md`, `gemini.md`. For each rule
 write `docs/research/tax/R-NN-<slug>.md` from `_TEMPLATE.md`. Fill the verdicts table from the three files. Mark
 Agreement **Agree** only if rate, conditions, timing and legal basis all match; any difference is **Partial** or
 **Disagree**. For every rule open at least one cited primary source with WebFetch and record what it says (section,
