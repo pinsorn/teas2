@@ -2573,9 +2573,9 @@ Docker is not available on the dev box: the image is built by Coolify (and optio
 - [ ] **Step 3: Write `deploy/README.md` and ask Ham to create the Coolify app**
 
 `deploy/README.md` lists the exact Coolify settings: source = GitHub `pinsorn/teas2` branch `main`; build pack =
-Dockerfile; Dockerfile = `deploy/frontend/Dockerfile`; base directory = repo root; port 3000; domain = the subdomain
-Ham chooses; optional HTTP basic auth (Traefik middleware) — Ham decides. Ask Ham with AskUserQuestion for the
-subdomain and basic-auth choice; Ham creates the app (Coolify UI) or authorises the orchestrator to do it.
+Dockerfile; Dockerfile = `deploy/frontend/Dockerfile`; base directory = repo root; port 3000; domain =
+**`teas2-preview.kazaki-rio.com`** with **HTTP basic auth** (Traefik middleware; credentials only in Coolify) — both
+chosen by Ham on 2026-10-14. Ham creates the app in the Coolify UI (or authorises the orchestrator to do it).
 
 - [ ] **Step 4: Verify through the public URL**
 

@@ -428,8 +428,7 @@ git commit -m "chore: add root-layout check and spec, ADR and research templates
 
 **Files:** none in the repo.
 
-- [ ] **Step 1: Ask Ham** — "สร้าง repo `pinsorn/teas2` เป็น public (AGPL เหมือน TEAS 1) หรือ private?" Wait for the
-  answer. Do not create or push anything before it.
+- [x] **Step 1: Ask Ham** — answered 2026-10-14: **public** (AGPL, like TEAS 1).
 
 - [ ] **Step 2: Create and push**
 

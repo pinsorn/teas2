@@ -12,9 +12,15 @@
   - `docs/plans/2026-10-14-sp-r-tax-research.md` — R-01…R-20 tri-model research, golden fixtures (11 tasks)
 - Diagrams: `docs/specs/SP0-diagrams.md` · rendered page https://claude.ai/artifact/9BMzT5Jupxa3emA6kQf4q6
 
+## Decisions 2026-10-14
+- Plans approved; execution = **subagent-driven**.
+- GitHub repo `pinsorn/teas2` = **public** (AGPL).
+- Mockup staging = **`teas2-preview.kazaki-rio.com` + basic auth**.
+
 ## Next
-1. Ham approves the plans and picks the execution method.
-2. Run P0 first; then SP1ab and SP-R in parallel (disjoint files: `frontend/` vs `docs/research/`, `fixtures/`, `tools/golden-capture/`).
+1. Run P0 (in progress).
+2. Then SP1ab and SP-R in parallel (disjoint files: `frontend/` vs `docs/research/`, `fixtures/`, `tools/golden-capture/`);
+   SP-R Task 7+ waits for SP1ab Task 2 (`frontend/src/mocks/fixtures/companies.json`).
 
 ## Done
 - TEAS 1 v2.5.0 discovery: `docs/discovery/01`–`04`.
