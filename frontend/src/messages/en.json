@@ -1,5 +1,49 @@
 {
   "app": { "name": "TEAS 2" },
+  "docView": {
+    "tabs": { "paper": "Paper", "chain": "Related documents", "ledger": "Ledger effect", "activity": "Activity", "revisions": "Revision history" },
+    "header": { "party": "Counterparty", "date": "Document date", "total": "Total", "outstanding": "Outstanding", "revised": "Revised {n} times" },
+    "lock": { "label": "Locked", "exits": "Ways forward" },
+    "actions": {
+      "label": "Actions", "issueDraft": "Save and issue…", "edit": "Edit", "print": "Print", "copy": "Copy as new",
+      "cancel": "Cancel document", "convert": "Convert to…", "locked": "This document is locked; see the ways forward in the banner above", "converted": "Created {number}"
+    },
+    "paper": { "stub": "The document paper preview appears here", "snapshot": "Revision {n}" },
+    "chain": {
+      "empty": "No related documents", "self": "This document", "inactive": "No longer in effect",
+      "rel": {
+        "converted_from": { "out": "Converted from", "in": "Converted into" },
+        "settles": { "out": "Settles", "in": "Settled by" },
+        "adjusts": { "out": "Adjusts", "in": "Adjusted by" },
+        "groups": { "out": "Bills", "in": "Billed by" },
+        "replaces": { "out": "Replaces", "in": "Replaced by" },
+        "issues": { "out": "Issues", "in": "Issued by" }
+      }
+    },
+    "ledger": {
+      "empty": "This document has no journal entries yet", "account": "Account", "debit": "Debit", "credit": "Credit",
+      "kind": { "original": "Original entry", "reversal": "Reversal entry", "correction": "Correction entry" }
+    },
+    "activity": {
+      "empty": "No activity yet",
+      "action": { "create": "Created draft", "issue": "Issued", "settle": "Payment received", "cancel": "Cancelled", "revise": "Revised" }
+    },
+    "revisions": {
+      "empty": "No history yet", "first": "First issued version", "n": "Revision {n}", "view": "View this version", "hide": "Hide this version",
+      "noChange": "No data changes", "blank": "(empty)", "reason": "Reason: {reason}",
+      "field": { "header.notes": "Notes", "header.reference": "Reference", "header.dueDate": "Due date", "header.documentDate": "Document date", "header.partyId": "Counterparty" }
+    },
+    "cancel": {
+      "title": "Cancel document {doc}", "body": "The ledger entries of this document are reversed and the document is cancelled. This cannot be undone.",
+      "reason": "Reason", "pick": "Choose a reason", "text": "Details", "confirm": "Confirm cancellation", "back": "Back",
+      "code": { "WRONG_PARTY": "Wrong customer/vendor", "WRONG_AMOUNT": "Wrong amount", "WRONG_ITEMS": "Wrong items", "DUPLICATE": "Duplicate", "OTHER": "Other" }
+    },
+    "plan": {
+      "title": "Correction plan", "steps": "Steps, in order", "noSteps": "There is nothing to do", "missing": "Missing permissions: {list}",
+      "confirm": "Confirm all", "send": "Send to someone who can approve", "back": "Back", "sent": "Plan sent to an approver",
+      "action": { "revise": "Revise", "cancel": "Cancel", "reissue": "Reissue", "issue_cn": "Issue credit note", "issue_dn": "Issue debit note" }
+    }
+  },
   "common": {
     "close": "Close",
     "retry": "Try again",

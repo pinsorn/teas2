@@ -1,0 +1,127 @@
+'use client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
+import { useLocale, useTranslations } from 'next-intl';
+import { useState } from 'react';
+import { isForbidden, useMe } from '@/app-shell/useMe';
+import { Alert, AlertTitle } from '@/components/ui/alert';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import type { DocDescriptor } from '@/domain/descriptors';
+import type { Doc, DocType } from '@/domain/types';
+import { ApiError } from '@/lib/api/client';
+import { endpoints } from '@/lib/api/endpoints';
+import { formatDateBE, formatTHB } from '@/lib/format';
+import { qk } from '@/lib/query/keys';
+import { CancelDialog } from '../dialogs/CancelDialog';
+import { StatusChip } from '../doc-list/StatusChip';
+import { ErrorState } from '../states/ErrorState';
+import { ForbiddenState } from '../states/ForbiddenState';
+import { LoadingState } from '../states/LoadingState';
+import { ActionBar, type ConvertibleDescriptor } from './ActionBar';
+import { ActivityTimeline } from './ActivityTimeline';
+import { ChainPanel, docHref } from './ChainPanel';
+import { LedgerTab } from './LedgerTab';
+import { LockBanner } from './LockBanner';
+import { RevisionHistory } from './RevisionHistory';
+
+export interface DocViewProps { descriptor: DocDescriptor; id: string }
+
+/** Placeholder until the Paper component (Task 13) lands: the paper tab and "ดูฉบับนี้" render through here. */
+function PaperStub({ doc, revision }: { doc: Doc; revision?: number }) {
+  const t = useTranslations('docView.paper');
+  return (
+    <div className="rounded-lg border border-dashed border-border p-6 text-body text-muted-foreground">
+      {revision !== undefined ? <p className="font-medium text-foreground">{t('snapshot', { n: revision })}</p> : null}
+      <p>{t('stub')}</p>
+      <p className="tabular-nums">{doc.number ?? ''}</p>
+    </div>
+  );
+}
+
+export function DocView({ descriptor: d, id }: DocViewProps) {
+  const { me, isPending: mePending, error: meError, refetch: refetchMe } = useMe();
+  const q = useQuery({
+    queryKey: qk.doc(me?.activeCompanyId ?? '', d.type, id),
+    queryFn: () => endpoints.getDoc(d.type, id),
+    enabled: !!me,
+  });
+  if (meError) return <ErrorState error={meError} onRetry={() => void refetchMe()} />;
+  if (mePending || q.isPending) return <LoadingState />;
+  if (q.error) {
+    return isForbidden(q.error)
+      ? <ForbiddenState permission={d.permissions.read} detail={q.error instanceof ApiError ? q.error.problem.detail : undefined} />
+      : <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
+  }
+  return <Loaded d={d} doc={q.data} permissions={me!.permissions} />;
+}
+
+function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissions: string[] }) {
+  const t = useTranslations('docView');
+  const tc = useTranslations('common');
+  const locale = useLocale();
+  const router = useRouter();
+  const qc = useQueryClient();
+  const { me } = useMe();
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [notice, setNotice] = useState<string>();
+  // A dead document opens on its chain: the pointer to the replacement is what the reader needs first.
+  const [tab, setTab] = useState(doc.status === 'replaced' || doc.status === 'cancelled' ? 'chain' : 'paper');
+  const refresh = () => qc.invalidateQueries({ queryKey: [me!.activeCompanyId] });
+
+  const cancel = useMutation({
+    mutationFn: (v: { code: string; text: string }) => endpoints.cancelDoc(d.type, doc.id, doc.version, v.code, v.text),
+    onSuccess: async () => { await refresh(); setCancelOpen(false); },
+  });
+  const convert = useMutation({
+    mutationFn: (target: DocType) => endpoints.convertDoc(d.type, doc.id, target, doc.lines.map((l) => ({ sourceLineId: l.id, qty: l.qty }))),
+    onSuccess: async (nd) => {
+      await refresh();
+      const href = docHref(nd.type, nd.id);
+      if (href) router.push(href); else setNotice(t('actions.converted', { number: nd.number ?? nd.type }));
+    },
+  });
+
+  const title = locale === 'en' ? d.titleEn : d.titleTh;
+  const label = `${doc.type} ${doc.number ?? ''}`.trim();
+  const tabs = ['paper', 'chain', 'ledger', 'activity', 'revisions'] as const;
+
+  return (
+    <div className="grid gap-4">
+      <header className="grid gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-small text-muted-foreground">{title}</p>
+          <StatusChip status={doc.status} />
+          {doc.revision > 0 ? <span className="text-small text-muted-foreground">{t('header.revised', { n: doc.revision })}</span> : null}
+        </div>
+        <h1 className="text-h1 font-semibold tabular-nums" data-testid="doc-number">{doc.number ?? tc('draftNoNumber')}</h1>
+        <dl className="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-x-6 gap-y-2 text-body">
+          <div><dt className="text-small text-muted-foreground">{t('header.party')}</dt><dd>{doc.party?.name ?? '-'}</dd></div>
+          <div><dt className="text-small text-muted-foreground">{t('header.date')}</dt><dd className="tabular-nums">{formatDateBE(doc.header.documentDate)}</dd></div>
+          <div><dt className="text-small text-muted-foreground">{t('header.total')}</dt><dd className="tabular-nums">{formatTHB(doc.totals.total)}</dd></div>
+          {doc.outstanding !== undefined ? <div><dt className="text-small text-muted-foreground">{t('header.outstanding')}</dt><dd className="tabular-nums">{formatTHB(doc.outstanding)}</dd></div> : null}
+        </dl>
+        <LockBanner locks={doc.locks} />
+      </header>
+
+      <ActionBar descriptor={d as ConvertibleDescriptor} doc={doc} permissions={permissions} onCancel={() => { cancel.reset(); setCancelOpen(true); }} onConvert={(x) => convert.mutate(x)} />
+      {notice ? <Alert role="status"><AlertTitle>{notice}</AlertTitle></Alert> : null}
+      {convert.error ? <Alert variant="destructive"><AlertTitle>{convert.error instanceof ApiError ? convert.error.problem.title : tc('retry')}</AlertTitle></Alert> : null}
+
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList className="h-auto flex-wrap">{tabs.map((k) => <TabsTrigger key={k} value={k}>{t(`tabs.${k}`)}</TabsTrigger>)}</TabsList>
+        <TabsContent value="paper"><PaperStub doc={doc} /></TabsContent>
+        <TabsContent value="chain"><ChainPanel type={d.type} id={doc.id} /></TabsContent>
+        <TabsContent value="ledger"><LedgerTab type={d.type} id={doc.id} /></TabsContent>
+        <TabsContent value="activity"><ActivityTimeline type={d.type} id={doc.id} /></TabsContent>
+        <TabsContent value="revisions">
+          <RevisionHistory type={d.type} id={doc.id} renderPaper={(snap, n) => <PaperStub doc={snap} revision={n} />} />
+        </TabsContent>
+      </Tabs>
+
+      {cancelOpen ? (
+        <CancelDialog docLabel={label} busy={cancel.isPending} error={cancel.error} onCancel={() => setCancelOpen(false)}
+          onConfirm={(code, text) => cancel.mutate({ code, text })} />
+      ) : null}
+    </div>
+  );
+}
