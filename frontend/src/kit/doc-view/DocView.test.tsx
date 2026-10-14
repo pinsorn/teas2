@@ -49,6 +49,15 @@ describe('DocView', () => {
     ui(issued.id);
     expect(await screen.findByTestId('doc-number')).toHaveTextContent(issued.number!);
   });
+  it('the paper tab shows the server-built tax invoice and signals readiness', async () => {
+    const issued = find((d) => d.type === 'TI' && d.status === 'issued' && !d.locks.length);
+    const { container } = ui(issued.id);
+    await waitFor(() => expect(container.querySelector('[data-paper-ready="true"]')).not.toBeNull());
+    const page = container.querySelector('[data-paper-page]')!;
+    expect(page.textContent).toContain(issued.number!);
+    expect(page.textContent).toContain(issued.totals.amountInWords);
+    expect(page.textContent).toContain('ผู้มีอำนาจลงนาม');
+  });
   it('cancel needs a reason code', async () => {
     const issued = find((d) => d.type === 'TI' && d.status === 'issued' && !d.locks.length);
     ui(issued.id);

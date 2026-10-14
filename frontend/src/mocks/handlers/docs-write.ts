@@ -1,7 +1,8 @@
 import { HttpResponse, http } from 'msw';
-import type { Actor, DocType, Qty } from '@/domain/types';
+import type { Actor, Company, Doc, DocType, PaperModel, Qty } from '@/domain/types';
+import { formatDateBE } from '@/lib/format';
 import { buildChain } from '../engine/chain';
-import { type Body, cancel, compute, convert, createDraft, deleteDraft, issue, updateDraft } from '../engine/commands';
+import { type Body, cancel, compute, convert, createDraft, deleteDraft, issue, publicDoc, updateDraft } from '../engine/commands';
 import { buildPlan, correctionPlan, executePlan } from '../engine/corrections';
 import { MockError } from '../engine/log';
 import { CLASS } from '../fixtures/documents';
@@ -43,6 +44,28 @@ const versionOf = (req: Request, body?: { version?: number }) => {
   if (!Number.isFinite(v)) throw new MockError(422, 'doc.version_required', 'ต้องระบุเวอร์ชันของเอกสาร');
   return v;
 };
+const branchLabel = (code?: string) => (!code ? undefined : code === '00000' ? 'สำนักงานใหญ่ (00000)' : `สาขา ${code}`);
+
+/** Paper from the stored snapshots; amounts and words are the engine's, never recomputed in the UI. */
+function paperOf(c: Ctx, d: Doc, copy: boolean): PaperModel {
+  const co: Company = c.company;
+  const net = new Map(compute(c.st, co.id, d.type, { header: d.header, lines: d.lines }).lines.map((l) => [l.id, l.net]));
+  const other = (id?: string) => c.st.docs.find((x) => x.id === id);
+  const old = other(d.replacesId), nw = other(d.replacedById);
+  return {
+    titleTh: 'ใบกำกับภาษี', titleEn: 'TAX INVOICE', copyLabel: copy ? 'สำเนา' : 'ต้นฉบับ',
+    number: d.number ?? '-', documentDate: d.header.documentDate, dueDate: d.header.dueDate, reference: d.header.reference,
+    seller: { name: co.legalNameTh, nameEn: co.legalNameEn, address: co.address, phone: co.phone, taxId: co.taxId, branchLabel: branchLabel(co.branchCode) },
+    buyer: { name: d.party?.name ?? '-', address: d.party?.address ?? '', taxId: d.party?.taxId, branchLabel: d.party?.taxId ? branchLabel(d.party.branchCode) : undefined },
+    lines: d.lines.map((l, i) => ({ no: i + 1, description: l.description, qty: l.qty, unit: l.unit, unitPrice: l.unitPrice, amount: net.get(l.id) ?? '0.00', taxCode: l.taxCode, ...(l.discountPct ? { discountPct: l.discountPct } : {}) })),
+    totals: d.totals, notes: d.header.notes,
+    ...(old ? { replacementNote: `ยกเลิกและออกแทนฉบับเดิม เลขที่ ${old.number ?? '-'} ลงวันที่ ${formatDateBE(old.header.documentDate)}` } : {}),
+    ...(d.status === 'replaced' ? { voidMark: { label: 'ถูกแทนที่', note: nw?.number ? `ออกแทนด้วยเลขที่ ${nw.number}` : undefined } }
+      : d.status === 'cancelled' ? { voidMark: { label: 'ยกเลิก', note: d.cancel?.reasonText } } : {}),
+    signatures: ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'],
+  };
+}
+
 const done = (c: Ctx) => saveState(c.st);
 
 const P = (perm: string) => (t: DocType) => `doc.${t}.${perm}`;
@@ -143,10 +166,10 @@ export const docsWriteHandlers = [
     own(c, t, params.id);
     return HttpResponse.json(c.st.journals.find((j) => j.docId === params.id)?.preview ?? { entries: [] });
   })),
-  // PaperModel is defined in Task 13, which replaces this body.
-  http.get('*/bff/v1/docs/:type/:id/paper', ({ params }) => guarded(String(params.type), P('read'), (c, t) => {
-    own(c, t, params.id);
-    return HttpResponse.json({});
+  http.get('*/bff/v1/docs/:type/:id/paper', ({ request, params }) => guarded(String(params.type), P('read'), (c, t) => {
+    const d = own(c, t, params.id);
+    if (t !== 'TI') return problem(404, 'doc.paper_not_available', 'ยังไม่มีแบบพิมพ์สำหรับเอกสารประเภทนี้');
+    return HttpResponse.json(paperOf(c, publicDoc(d), new URL(request.url).searchParams.get('copy') === '1'));
   })),
 ];
 

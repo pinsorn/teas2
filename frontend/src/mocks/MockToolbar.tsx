@@ -30,10 +30,10 @@ export function MockToolbar({ defaultOpen = false }: { defaultOpen?: boolean }) 
   const change = (p: Partial<MockSettings>) => { setS(setSettings(p)); refresh(); };
 
   if (!open) {
-    return <button type="button" onClick={() => setOpen(true)} className="fixed bottom-3 left-3 z-50 rounded-md border bg-background px-3 py-2 text-sm shadow">โหมดตัวอย่าง</button>;
+    return <button type="button" onClick={() => setOpen(true)} className="fixed bottom-3 left-3 z-50 print:hidden rounded-md border bg-background px-3 py-2 text-sm shadow">โหมดตัวอย่าง</button>;
   }
   return (
-    <div className="fixed bottom-3 left-3 z-50 flex w-64 flex-col gap-2 rounded-md border bg-background p-3 shadow">
+    <div className="fixed bottom-3 left-3 z-50 print:hidden flex w-64 flex-col gap-2 rounded-md border bg-background p-3 shadow">
       <button type="button" onClick={() => setOpen(false)} className="self-end text-sm">ปิด</button>
       <Select label="บริษัท" value={s.companyKey} opts={COMPANIES} onChange={(v) => change({ companyKey: v as MockSettings['companyKey'] })} />
       <Select label="บทบาท" value={s.role} opts={ROLES} onChange={(v) => change({ role: v as Role })} />

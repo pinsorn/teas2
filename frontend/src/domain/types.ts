@@ -72,3 +72,18 @@ export interface SearchHit { kind: 'doc' | 'party' | 'page'; id: string; label: 
 
 export interface ApiProblem { type?: string; title: string; status: number; code: string; detail?: string;
   traceId?: string; fieldErrors?: Record<string, string[]> }
+
+/** Printed party block. phone / nameEn are optional extras for the seller header. */
+export interface PaperParty { name: string; nameEn?: string; address: string; phone?: string; taxId?: string; branchLabel?: string }
+/** Everything the printed document shows, ready-made by the server: the paper never computes tax or totals. */
+export interface PaperModel {
+  titleTh: string; titleEn: string;            // 'ใบกำกับภาษี' / 'TAX INVOICE'
+  copyLabel: 'ต้นฉบับ' | 'สำเนา';
+  number: string; documentDate: IsoDate; dueDate?: IsoDate; reference?: string;
+  seller: PaperParty; buyer: PaperParty;
+  lines: { no: number; description: string; qty: Qty; unit: string; unitPrice: Money; amount: Money; taxCode: TaxCode; discountPct?: string }[];
+  totals: DocTotals; notes?: string;
+  replacementNote?: string;                    // 'ยกเลิกและออกแทนฉบับเดิม เลขที่ … ลงวันที่ …' (on the NEW document)
+  voidMark?: { label: string; note?: string }; // cancelled / replaced originals: diagonal stamp on every page
+  signatures: string[];                        // ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม']
+}

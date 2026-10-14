@@ -22,11 +22,12 @@ import { ActivityTimeline } from './ActivityTimeline';
 import { ChainPanel, docHref } from './ChainPanel';
 import { LedgerTab } from './LedgerTab';
 import { LockBanner, type ExitAction } from './LockBanner';
+import { PaperView } from '../paper/PaperView';
 import { RevisionHistory } from './RevisionHistory';
 
 export interface DocViewProps { descriptor: DocDescriptor; id: string }
 
-/** Placeholder until the Paper component (Task 13) lands: the paper tab and "ดูฉบับนี้" render through here. */
+/** Placeholder for a revision snapshot ("ดูฉบับนี้"): paper models are served for the live document only. */
 function PaperStub({ doc, revision }: { doc: Doc; revision?: number }) {
   const t = useTranslations('docView.paper');
   return (
@@ -120,7 +121,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="h-auto flex-wrap">{tabs.map((k) => <TabsTrigger key={k} value={k}>{t(`tabs.${k}`)}</TabsTrigger>)}</TabsList>
-        <TabsContent value="paper"><PaperStub doc={doc} /></TabsContent>
+        <TabsContent value="paper">{doc.type === 'TI' ? <PaperView type="TI" id={doc.id} /> : <PaperStub doc={doc} />}</TabsContent>
         <TabsContent value="chain"><ChainPanel type={d.type} id={doc.id} /></TabsContent>
         <TabsContent value="ledger"><LedgerTab type={d.type} id={doc.id} /></TabsContent>
         <TabsContent value="activity"><ActivityTimeline type={d.type} id={doc.id} /></TabsContent>

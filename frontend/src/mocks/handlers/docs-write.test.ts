@@ -56,3 +56,46 @@ describe('write handlers', () => {
     expect((await call('POST', '/corrections', { planId: plan.planId, planHash: plan.planHash })).status).toBe(404); // single use
   });
 });
+
+describe('paper endpoint', () => {
+  const paper = async (id: string, q = '') => (await call('GET', `/docs/TI/${id}/paper${q}`)).json();
+  const issuedTi = () => loadState().docs.find((x) => x.type === 'TI' && x.companyId === 'co-vat' && x.status === 'issued' && x.party?.taxId)!;
+  it('serves the document, company and party snapshots with the stored totals', async () => {
+    const d = issuedTi();
+    const p = await paper(d.id);
+    expect(p).toMatchObject({ titleTh: 'ใบกำกับภาษี', titleEn: 'TAX INVOICE', copyLabel: 'ต้นฉบับ', number: d.number, documentDate: d.header.documentDate });
+    expect(p.seller).toMatchObject({ taxId: '0105569012345', branchLabel: 'สำนักงานใหญ่ (00000)' });
+    expect(p.buyer).toMatchObject({ name: d.party!.name, taxId: d.party!.taxId });
+    expect(p.totals).toEqual(d.totals);
+    expect(p.lines).toHaveLength(d.lines.length);
+    expect(p.lines[0]).toMatchObject({ no: 1, description: d.lines[0].description, unitPrice: d.lines[0].unitPrice });
+    expect(p.signatures).toEqual(['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม']);
+    expect(p.voidMark).toBeUndefined();
+    expect(p.replacementNote).toBeUndefined();
+  });
+  it('?copy=1 prints สำเนา', async () => {
+    expect((await paper(issuedTi().id, '?copy=1')).copyLabel).toBe('สำเนา');
+  });
+  it('a replaced original is stamped and names its replacement; the replacement carries the I9 wording', async () => {
+    const old = loadState().docs.find((x) => x.type === 'TI' && x.status === 'replaced' && x.replacedById)!;
+    const nw = loadState().docs.find((x) => x.id === old.replacedById)!;
+    const po = await paper(old.id);
+    expect(po.voidMark.label).toBe('ถูกแทนที่');
+    expect(po.voidMark.note).toContain(nw.number);
+    const pn = await paper(nw.id);
+    expect(pn.replacementNote).toContain('ยกเลิกและออกแทนฉบับเดิม เลขที่ ' + old.number);
+    expect(pn.replacementNote).toMatch(/ลงวันที่ \d+ \S+ \d{4}$/);
+    expect(pn.voidMark).toBeUndefined();
+  });
+  it('a cancelled document is stamped ยกเลิก', async () => {
+    const d = await (await call('POST', '/docs/TI', body())).json();
+    const issued = await (await call('POST', `/docs/TI/${d.id}/issue`, { version: d.version })).json();
+    await call('POST', `/docs/TI/${d.id}/cancel`, { version: issued.version, reasonCode: 'OTHER', reasonText: 'ทดสอบ' });
+    expect((await paper(d.id)).voidMark.label).toBe('ยกเลิก');
+  });
+  it('a document of another company is 404', async () => {
+    const id = issuedTi().id;
+    setSettings({ companyKey: 'nonvat' });
+    expect((await call('GET', `/docs/TI/${id}/paper`)).status).toBe(404);
+  });
+});

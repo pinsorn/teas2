@@ -1,6 +1,6 @@
 import type {
   ActivityEntry, ChainGraph, ComputeResult, CorrectionPlan, CorrectionResult, Doc, DocHeader, DocLine, DocSummary,
-  DocType, HomeInbox, ItemSummary, JournalPreview, Me, Page, PartySummary, Qty, Revision, SearchHit,
+  DocType, HomeInbox, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, Revision, SearchHit,
 } from '@/domain/types';
 import { api } from './client';
 
@@ -46,6 +46,5 @@ export const endpoints = {
   getActivity: (type: DocType, id: string) => api<ActivityEntry[]>('GET', `${d(type, id)}/activity`),
   getRevisions: (type: DocType, id: string) => api<Revision[]>('GET', `${d(type, id)}/revisions`),
   getLedger: (type: DocType, id: string) => api<JournalPreview>('GET', `${d(type, id)}/ledger`),
-  // PaperModel is defined in Task 13; the mock returns {} until then.
-  getPaper: (type: DocType, id: string) => api<unknown>('GET', `${d(type, id)}/paper`),
+  getPaper: (type: DocType, id: string, copy = false) => api<PaperModel>('GET', `${d(type, id)}/paper${qs({ copy: copy ? 1 : undefined })}`),
 };

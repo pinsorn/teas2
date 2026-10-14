@@ -9,5 +9,6 @@ export const qk = {
   chain: (c: string, id: string) => [c, 'chain', id] as const,
   activity: (c: string, id: string) => [c, 'activity', id] as const,
   revisions: (c: string, id: string) => [c, 'revisions', id] as const,
+  paper: (c: string, type: DocType, id: string, copy: boolean) => [c, 'paper', type, id, copy] as const,
   ledger: (c: string, id: string) => [c, 'ledger', id] as const,
 };
