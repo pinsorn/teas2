@@ -73,7 +73,7 @@ export interface CorrectionResult { affected: { docId: string; type: DocType; nu
 export interface HomeInbox { approvals: DocSummary[]; myDrafts: DocSummary[]; overdue: DocSummary[];
   deadlines: { form: string; due: IsoDate }[]; unreconciledLines: number; agentDigest: { posted: number; waiting: number };
   kpis: { cash: Money; ar: Money; ap: Money; vatThisMonth: Money | null } }
-export interface SearchHit { kind: 'doc' | 'party' | 'page'; id: string; label: string; href: string }
+export interface SearchHit { kind: 'doc' | 'party' | 'page'; id: string; label: string; href?: string } // no href: the type's screens are not built yet (shown as text)
 
 export interface ApiProblem { type?: string; title: string; status: number; code: string; detail?: string;
   traceId?: string; fieldErrors?: Record<string, string[]> }

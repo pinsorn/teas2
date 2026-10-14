@@ -4,12 +4,11 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Command, CommandDialog, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
-import { routesOf, type DocDescriptor } from '@/domain/descriptors';
+import { DESCRIPTORS } from '@/descriptors';
+import { routesOf } from '@/domain/descriptors';
+import { isTypeAvailable } from '@/domain/doc-types';
 import { endpoints } from '@/lib/api/endpoints';
 import { useMe } from './useMe';
-
-/** Document types whose create screen is built. SP1c registers descriptors here as it wires each one. */
-const WIRED: DocDescriptor[] = [];
 
 export function CommandMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const t = useTranslations();
@@ -41,8 +40,8 @@ export function CommandMenu({ open, onOpenChange }: { open: boolean; onOpenChang
   const go = (href: string) => { onOpenChange(false); setQ(''); router.push(href); };
   const needle = q.trim().toLowerCase();
   const pages = groups.flatMap((g) => g.items).filter((i) => t(i.labelKey).toLowerCase().includes(needle));
-  const creates = WIRED.filter((d) => me?.permissions.includes(d.permissions.create)
-    && (d.vat === 'both' || (d.vat === 'vat-only') === me.vatRegistered)
+  const creates = Object.values(DESCRIPTORS).filter((d) => me?.permissions.includes(d.permissions.create)
+    && isTypeAvailable(d.type, me.vatRegistered)
     && (locale === 'en' ? d.titleEn : d.titleTh).toLowerCase().includes(needle));
   const hits = (search.data?.items ?? []).filter((h) => h.kind !== 'page');
   // "No results" only once the search for the current term succeeded: never during the debounce, while fetching, or after an error.
@@ -73,7 +72,7 @@ export function CommandMenu({ open, onOpenChange }: { open: boolean; onOpenChang
           {hits.length > 0 && (
             <CommandGroup heading={t('command.documents')}>
               {hits.map((h) => (
-                <CommandItem key={`${h.kind}-${h.id}`} value={h.label} onSelect={() => go(h.href)}>{h.label}</CommandItem>
+                <CommandItem key={`${h.kind}-${h.id}`} value={h.label} disabled={!h.href} onSelect={() => h.href && go(h.href)}>{h.label}</CommandItem>
               ))}
             </CommandGroup>
           )}

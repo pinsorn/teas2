@@ -99,6 +99,18 @@ describe('tenant isolation', () => {
   });
 });
 
+describe('search hrefs come from the registry', () => {
+  it('a built type links to its view route; an unbuilt type has no href (never a wrong path)', async () => {
+    const ti = loadState().docs.find((d) => d.type === 'TI' && d.companyId === 'co-vat' && d.number)!;
+    const qt = loadState().docs.find((d) => d.type === 'QT' && d.companyId === 'co-vat' && d.number)!;
+    const t = (await json(`/search?q=${ti.number}`)).items.find((h: { id: string }) => h.id === ti.id);
+    expect(t.href).toBe(`/sales/tax-invoices/${ti.id}`);
+    const q = (await json(`/search?q=${qt.number}`)).items.find((h: { id: string }) => h.id === qt.id);
+    expect(q).toBeDefined();
+    expect(q.href).toBeUndefined();
+  });
+});
+
 describe('doc detail, locked, forbidden', () => {
   it('a pre-wave stored session (v1 key, paid TI, locks: []) reseeds and the paid TI shows its settlement lock', async () => {
     const state = loadState();

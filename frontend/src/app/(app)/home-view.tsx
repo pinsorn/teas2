@@ -4,14 +4,14 @@ import { LockIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
-import { docListHref } from '@/descriptors';
+import { DESCRIPTORS, docViewHref } from '@/descriptors';
 import { isForbidden, useMe } from '@/app-shell/useMe';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { taxInvoice } from '@/descriptors/tax-invoice';
 import { routesOf } from '@/domain/descriptors';
+import { isTypeAvailable } from '@/domain/doc-types';
 import type { DocSummary, HomeInbox, IsoDate } from '@/domain/types';
 import { endpoints } from '@/lib/api/endpoints';
 import { formatDateBE, formatTHB } from '@/lib/format';
@@ -71,15 +71,14 @@ function Section({ id, title, home, empty, children }: {
 const SHOWN = 5;
 
 /** A link to the document when its type has a route in this company; plain text otherwise (never a made-up URL). */
-function DocNumber({ href, id, label }: { href?: string; id: string; label: string }) {
+function DocNumber({ href, label }: { href?: string; label: string }) {
   return href
-    ? <Link href={`${href}/${id}`} className="font-medium underline-offset-4 hover:underline">{label}</Link>
+    ? <Link href={href} className="font-medium underline-offset-4 hover:underline">{label}</Link>
     : <span className="font-medium">{label}</span>;
 }
 
 function DocRows({ docs, mode }: { docs: DocSummary[]; mode: 'document' | 'overdue' }) {
   const t = useTranslations();
-  const { me } = useMe();
   return (
     <>
     <ul className="divide-y">
@@ -87,7 +86,7 @@ function DocRows({ docs, mode }: { docs: DocSummary[]; mode: 'document' | 'overd
         <li key={d.id} className="flex items-baseline justify-between gap-3 py-2">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <DocNumber href={docListHref(d.type, me?.vatRegistered ?? false)} id={d.id} label={d.number ?? t('common.draftNoNumber')} />
+              <DocNumber href={docViewHref(d.type, d.id)} label={d.number ?? t('common.draftNoNumber')} />
               {d.createdByAgent && <Badge variant="secondary">{t('common.agent')}</Badge>}
             </div>
             <p className="truncate text-sm text-muted-foreground">{d.partyName}</p>
@@ -134,13 +133,15 @@ export function HomeView() {
   const tl = useTranslations('docList');
   const locale = useLocale();
   const { me } = useMe();
-  const canCreateTi = !!me?.vatRegistered && me.permissions.includes(taxInvoice.permissions.create);
+  const quickCreate = Object.values(DESCRIPTORS).filter((x) => !!me && me.permissions.includes(x.permissions.create) && isTypeAvailable(x.type, me.vatRegistered));
   const d: HomeInbox | undefined = home.data;
   return (
     <div className="flex max-w-5xl flex-col gap-6">
       <h1 className="text-xl font-semibold">{t('title')}</h1>
-      {canCreateTi && (
-        <div><Button asChild><Link href={routesOf(taxInvoice).create}>{tl('create', { title: locale === 'en' ? taxInvoice.titleEn : taxInvoice.titleTh })}</Link></Button></div>
+      {quickCreate.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {quickCreate.map((x) => <Button key={x.type} asChild><Link href={routesOf(x).create}>{tl('create', { title: locale === 'en' ? x.titleEn : x.titleTh })}</Link></Button>)}
+        </div>
       )}
       <Kpis home={home} />
       <div className="grid gap-x-8 gap-y-6 lg:grid-cols-2">

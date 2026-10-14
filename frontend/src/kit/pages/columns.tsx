@@ -4,6 +4,8 @@ import { StatusChip } from '@/kit/doc-list/StatusChip';
 import { formatDateBE, formatTHB } from '@/lib/format';
 
 type Translate = (key: string) => string;
+/** The party column names the counterparty: customer for sales, vendor for purchases. */
+const partyHeader: Record<string, string> = { customer: 'customer', vendor: 'vendor' };
 export function columnsFor(d: DocDescriptor, t: Translate, common: Translate): DocListColumn[] {
   const cells: Record<ListColumnKey, DocListColumn['cell']> = {
     number: (r) => r.number ?? common('draftNoNumber'),
@@ -17,7 +19,7 @@ export function columnsFor(d: DocDescriptor, t: Translate, common: Translate): D
     progress: () => common('placeholder'),
     marks: () => common('placeholder'),
   };
-  return d.listColumns.map((key) => ({ key, header: t(`columns.${key}`), cell: cells[key],
+  return d.listColumns.map((key) => ({ key, header: t(`columns.${key === 'party' ? partyHeader[d.partyKind ?? ''] ?? 'party' : key}`), cell: cells[key],
     ...(['total', 'outstanding'].includes(key) ? { align: 'end' as const } : {}) }));
 }
 const PARAMS: Record<SavedViewKey, Record<string, string>> = {

@@ -14,7 +14,7 @@ export type Body = { header: DocHeader; lines: DocLine[] };
 type Stored = MockState['docs'][number];
 
 export const LIVE: DocStatus[] = ['issued', 'partly_settled', 'settled'];
-const HAS_OUT: DocType[] = ['TI', 'IV']; // documents that carry an outstanding balance
+const hasOut = (t: DocType) => DOC_TYPES[t].outstanding; // documents that carry an outstanding balance
 const TAX_BUYER: DocType[] = ['TI', 'CN', 'DN']; // the buyer's TIN + branch must be on the document
 
 export const unavailableTh = (t: DocType) => (DOC_TYPES[t].vat === 'vat-only' ? 'บริษัทนี้ไม่ได้จดทะเบียนภาษีมูลค่าเพิ่ม' : 'บริษัทที่จดทะเบียน VAT ใช้ใบกำกับภาษีแทนใบแจ้งหนี้');
@@ -87,7 +87,7 @@ export function isFiscalChange(d: Doc, b: Body): boolean {
 /** SP0 §7.11: outstanding = total - active credit notes + active debit notes - active settlements (active links only). */
 export function recomputeSettlement(st: MockState, id: string): void {
   const d = st.docs.find((x) => x.id === id);
-  if (!d || !HAS_OUT.includes(d.type) || !LIVE.includes(d.status)) return;
+  if (!d || !hasOut(d.type) || !LIVE.includes(d.status)) return;
   const total = toSatang(d.totals.total);
   let out = total, paid = 0, settled = false;
   for (const l of st.links) {
@@ -188,7 +188,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor):
   const totals = calc(body).totals;
   const next: Stored = {
     ...d, number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', totals, party: partyOf(st, d.companyId, d.header.partyId),
-    version: d.version + 1, issuedAt: stamp(), ...(HAS_OUT.includes(d.type) ? { outstanding: totals.total } : {}),
+    version: d.version + 1, issuedAt: stamp(), ...(hasOut(d.type) ? { outstanding: totals.total } : {}),
   };
   put(st, next);
   setJournal(st, id, ledgerFor(st, next));
@@ -235,7 +235,7 @@ export function revise(st: MockState, id: string, body: Body, version: number, r
     revision: d.revision + 1, version: d.version + 1,
   };
   put(st, next);
-  if (HAS_OUT.includes(d.type)) recomputeSettlement(st, id);
+  if (hasOut(d.type)) recomputeSettlement(st, id);
   if (d.correctionClass === 'L') {
     const prev = st.journals.find((j) => j.docId === id)?.preview.entries ?? [];
     const live = prev[prev.length - 1];
@@ -267,7 +267,7 @@ export function reissue(st: MockState, id: string, body: Body, actor: Actor, rea
     companyId: old.companyId, id: newId(st, old.type), type: old.type, number: allocate(st, old.companyId, old.type, body.header.documentDate),
     status: 'issued', correctionClass: old.correctionClass, revision: 0, version: 1, header: body.header,
     party: partyOf(st, old.companyId, body.header.partyId), lines: body.lines, totals, locks: [], createdBy: actor, issuedAt: at, replacesId: old.id,
-    ...(HAS_OUT.includes(old.type) ? { outstanding: totals.total } : {}),
+    ...(hasOut(old.type) ? { outstanding: totals.total } : {}),
   };
   const { outstanding: _o, ...oldRest } = old; void _o;
   put(st, { ...oldRest, status: 'replaced', replacedById: created.id, version: old.version + 1, cancel: { reasonCode: 'CORRECTION', reasonText: reason, at } });
