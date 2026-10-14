@@ -75,6 +75,22 @@ describe('DocEditor', () => {
     await userEvent.keyboard('{Enter}');
     await waitFor(() => expect(onIssued).toHaveBeenCalledWith(expect.objectContaining({ status: 'issued' })));
   });
+  it('the default document date is the server business date, not the browser clock (browser pinned to 2026-10-20), and issuing succeeds', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-20T03:00:00+07:00'));
+    try {
+      const onIssued = ui();
+      const date = await screen.findByDisplayValue('2026-10-14');
+      expect(date).toHaveAttribute('type', 'date');
+      expect(screen.queryByDisplayValue('2026-10-20')).toBeNull();
+      await userEvent.type(screen.getByRole('combobox', { name: 'ลูกค้า' }), 'นาวา{Enter}');
+      await waitFor(() => expect(screen.getByRole('region', { name: 'ยังขาดอะไร' })).toHaveTextContent('ครบแล้ว'));
+      await userEvent.keyboard('{Control>}{Enter}{/Control}');
+      await screen.findByRole('alertdialog');
+      await userEvent.keyboard('{Enter}');
+      await waitFor(() => expect(onIssued).toHaveBeenCalledWith(expect.objectContaining({ status: 'issued' })));
+    } finally { vi.useRealTimers(); }
+  });
   it('a 409 on save tells the user and keeps their input', async () => {
     testServer.use(http.put('*/bff/v1/docs/TI/:id', () => new Response(JSON.stringify({ title: 'มีคนแก้เอกสารนี้ก่อนคุณ', code: 'doc.version_conflict', status: 409 }), { status: 409, headers: { 'content-type': 'application/problem+json' } })));
     ui();

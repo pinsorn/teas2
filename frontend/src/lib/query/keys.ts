@@ -1,3 +1,4 @@
+import type { ReportKind } from '@/domain/reports';
 import type { DocType } from '@/domain/types';
 
 /** Every key starts with the active companyId (except `me`) so a company switch can never hit another company's cache. */
@@ -13,5 +14,6 @@ export const qk = {
   ledger: (c: string, type: DocType, id: string) => [c, 'ledger', type, id] as const,
   openItems: (c: string, partyId: string, types: string) => [c, 'open-items', partyId, types] as const,
   bankAccounts: (c: string) => [c, 'bank-accounts'] as const,
+  report: (c: string, kind: ReportKind, params: Record<string, string>) => [c, 'report', kind, params] as const,
   whtTypes: (c: string) => [c, 'wht-types'] as const,
 };

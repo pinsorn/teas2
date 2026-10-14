@@ -2,7 +2,8 @@ import type {
   ActivityEntry, Allocation, ChainGraph, ComputeResult, CorrectionPlan, CorrectionResult, Doc, DocHeader, DocLine, DocSummary,
   DocType, HomeInbox, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, Revision, SearchHit,
 } from '@/domain/types';
-import { api } from './client';
+import type { ReportKind, ReportModel } from '@/domain/reports';
+import { api, ApiError, normalizeProblem } from './client';
 
 export type DocInput = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] };
 export interface BankAccountRef { id: string; nameTh: string; accountNo?: string; default?: boolean }
@@ -51,5 +52,12 @@ export const endpoints = {
   openItems: (p: { partyId: string; types: DocType[] }) => api<OpenItem[]>('GET', `/docs/open-items${qs({ partyId: p.partyId, types: p.types.join(',') })}`),
   bankAccounts: () => api<BankAccountRef[]>('GET', '/bank-accounts'),
   whtTypes: () => api<WhtTypeRef[]>('GET', '/wht-types'),
+  getReport: (kind: ReportKind, params: Record<string, string>) => api<ReportModel>('GET', `/reports/${kind}${qs(params)}`),
+  /** The CSV the server builds for the same parameters (text/csv, BOM, CRLF). */
+  exportReport: async (kind: ReportKind, params: Record<string, string>): Promise<Blob> => {
+    const res = await fetch(new URL(`/bff/v1/reports/${kind}/export${qs(params)}`, window.location.origin));
+    if (!res.ok) throw new ApiError(normalizeProblem(res.status, await res.json().catch(() => undefined)));
+    return res.blob();
+  },
   getPaper: (type: DocType, id: string, copy = false) => api<PaperModel>('GET', `${d(type, id)}/paper${qs({ copy: copy ? 1 : undefined })}`),
 };

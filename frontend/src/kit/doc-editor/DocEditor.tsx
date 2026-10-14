@@ -11,7 +11,6 @@ import { routesOf, type DocDescriptor } from '@/domain/descriptors';
 import type { Allocation, Doc, DocHeader, DocLine, ItemSummary, Me, PartySummary } from '@/domain/types';
 import { ApiError } from '@/lib/api/client';
 import { endpoints, type DocInput } from '@/lib/api/endpoints';
-import { todayIso } from '@/lib/format';
 import { qk } from '@/lib/query/keys';
 import { cn } from '@/lib/utils';
 import { ConfirmIssueDialog } from '../dialogs/ConfirmIssueDialog';
@@ -91,7 +90,9 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   const [partyBusy, setPartyBusy] = useState(false); // a party lookup / pick (with its usual-item prefill) is still landing
   const [picking, setPicking] = useState(false);
 
-  const [header, setHeader] = useState<DocHeader>(initial?.header ?? { documentDate: todayIso() });
+  const [header, setHeader] = useState<DocHeader>(initial?.header ?? { documentDate: me?.businessDate ?? '' });
+  // /me can land after the first render (tests, direct mounts): a blank new document takes the server's business date as soon as it is known
+  if (!initial && !header.documentDate && me?.businessDate) setHeader((h) => ({ ...h, documentDate: me.businessDate }));
   const exemptOnly = d.lineEditor === 'amount' && d.headerFields.includes('whtMode'); // a voucher: input VAT only through a bill (PB)
   const [lines, setLines] = useState<DocLine[]>(initial?.lines.length ? initial.lines : [newLine(exemptOnly || (me && !me.vatRegistered) ? 'EX' : 'S7')]); // a non-VAT company sells without VAT
   const [party, setParty] = useState<PartySummary | undefined>(initial?.party);

@@ -131,7 +131,7 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
 
   const all = q.data.pages.flatMap((p) => p.items);
   const rows = all; // overdue / agent / outstanding are filtered by the server before paging
-  const today = todayIso();
+  const today = me?.businessDate ?? todayIso();
   const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
   const someSelected = rows.some((r) => selected.has(r.id));
   const toggle = (id: string, on: boolean) => setSelected((s) => { const n = new Set(s); if (on) n.add(id); else n.delete(id); return n; });

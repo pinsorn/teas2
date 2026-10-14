@@ -12,15 +12,15 @@ import { DocEditor } from '@/kit/doc-editor/DocEditor';
 import { ErrorState } from '@/kit/states/ErrorState';
 import { LoadingState } from '@/kit/states/LoadingState';
 import { endpoints } from '@/lib/api/endpoints';
-import { todayIso } from '@/lib/format';
+import type { IsoDate } from '@/domain/types';
 import { qk } from '@/lib/query/keys';
 import { TypeGate } from './TypeGate';
 
 /** "Copy as new": the source's party and lines, a fresh date, no number, no due date, never the source's links. */
-const asNewDraft = (src: Doc): Doc => ({
+const asNewDraft = (src: Doc, businessDate: IsoDate): Doc => ({
   ...src, id: '', number: undefined, status: 'draft', revision: 0, version: 0, locks: [], issuedAt: undefined,
   cancel: undefined, replacedById: undefined, replacesId: undefined,
-  header: { ...src.header, documentDate: todayIso(), dueDate: undefined },
+  header: { ...src.header, documentDate: businessDate, dueDate: undefined },
   lines: src.lines.map((l) => ({ ...l, id: crypto.randomUUID(), sourceLineId: undefined })),
 });
 
@@ -40,7 +40,7 @@ function NewDocument({ d }: { d: DocDescriptor }) {
   if (copyFrom && src.isError) return <ErrorState error={src.error} onRetry={() => void src.refetch()} />;
   if (copyFrom && !src.data) return <LoadingState />;
   return (
-    <DocEditor key={copyFrom ?? 'blank'} descriptor={d} mode="create" initial={src.data ? asNewDraft(src.data) : undefined}
+    <DocEditor key={copyFrom ?? 'blank'} descriptor={d} mode="create" initial={src.data && me ? asNewDraft(src.data, me.businessDate) : undefined}
       onIssued={(doc) => router.replace(routesOf(d).view(doc.id))} />
   );
 }

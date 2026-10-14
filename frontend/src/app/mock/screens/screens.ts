@@ -22,5 +22,6 @@ export const SCREENS: Screen[] = [
   { name: 'tiEdit', route: { fixture: 'tiDraft', suffix: '/edit' }, company: 'vat', states: true },
   { name: 'print', route: { fixture: 'tiIssuedUnpaid', base: '/print/TI' }, company: 'vat', states: false },
   { name: 'printLong', route: { fixture: 'tiLong', base: '/print/TI' }, company: 'vat', states: false },
+  { name: 'trialBalance', route: '/reports/financial-statements', company: 'both', states: true },
   { name: 'styleGuide', route: '/style-guide', company: 'both', states: false },
 ];

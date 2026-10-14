@@ -275,6 +275,7 @@
       "tiLong": "Tax invoice: 60 lines",
       "print": "Print tax invoice",
       "printLong": "Print tax invoice: 60 lines",
+      "trialBalance": "Trial balance",
       "styleGuide": "Style guide"
     },
     "state": { "normal": "Normal", "empty": "Empty", "loading": "Loading", "error": "Error", "forbidden": "Forbidden", "locked": "Locked" },
@@ -502,6 +503,21 @@
     "RC": {"title": "Receipt", "issue": "Save and issue receipt", "create": "Create receipt", "empty": "No receipts yet"},
     "PV": {"title": "Payment voucher", "issue": "Save and issue payment voucher", "create": "Create payment voucher", "empty": "No payment vouchers yet"}
   },
+  "reports": {
+    "total": "Total",
+    "asOf": "As of",
+    "dimension": "Dimension (type:value)",
+    "includeZero": "Show accounts with a zero balance",
+    "paramsLabel": "Report options",
+    "needParams": "Fill in the required options to see the report",
+    "empty": "No entries in the selected range",
+    "exportCsv": "Export CSV",
+    "exportFailed": "Export failed, try again",
+    "print": "Print",
+    "tieOut": { "title": "Tie-out does not match", "diff": "Difference {diff} baht", "ok": "Tie-out matches" },
+    "tabs": { "label": "Financial statements", "tb": "Trial balance", "pl": "Profit and loss", "bs": "Balance sheet", "gl": "General ledger" },
+    "tb": { "title": "Trial balance", "code": "Account code", "name": "Account name", "debit": "Debit", "credit": "Credit", "balanced": "Total debit {left} baht against total credit {right} baht" }
+  },
   "permissions": {
     "doc_QT_read": "Read quotation",
     "doc_QT_create": "Create quotation",
@@ -626,6 +642,7 @@
     "payroll_read": "Read payroll data",
     "audit_read": "Read audit trail",
     "settings_manage": "Manage settings",
-    "users_manage": "Manage users"
+    "users_manage": "Manage users",
+    "report_read": "Read reports"
   }
 }

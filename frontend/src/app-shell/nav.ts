@@ -52,7 +52,7 @@ export const NAV: NavGroup[] = [
     item('payrollFilings', '/payroll/filings', 'payroll.read'),
   ]),
   group('reports', [
-    item('financialStatements', '/reports/financial-statements', LEDGER),
+    item('financialStatements', '/reports/financial-statements', 'report.read'),
     item('receivablesPayables', '/reports/receivables-payables', LEDGER),
     item('salesPurchases', '/reports/sales-purchases', LEDGER),
     item('auditReport', '/reports/audit', 'audit.read'),

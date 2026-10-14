@@ -124,3 +124,8 @@
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+
+/* Print of a report page: the report region only (no sidebar / top bar). */
+@media print {
+  body:has([data-report-region]) :is(aside, header, nav) { display: none !important; }
+}

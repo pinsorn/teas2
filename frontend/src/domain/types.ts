@@ -12,7 +12,8 @@ export interface Company { id: string; legalNameTh: string; legalNameEn?: string
   vatRegistered: boolean; address: string; phone?: string }
 export interface Membership { companyId: string; companyName: string; role: Role }
 export interface Me { userId: string; displayName: string; memberships: Membership[]; activeCompanyId: string;
-  vatRegistered: boolean; permissions: string[] }
+  vatRegistered: boolean; permissions: string[];
+  /** The server's business date ("today" for document dates, ageing, as-of defaults); the browser clock is never a business date. */ businessDate: IsoDate }
 export interface Actor { kind: 'user' | 'agent'; id: string; name: string; ownerName?: string }
 
 export interface PartySummary { id: string; kind: 'customer' | 'vendor'; code: string; name: string; taxId?: string;
