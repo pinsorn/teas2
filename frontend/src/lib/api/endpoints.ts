@@ -29,7 +29,7 @@ export const endpoints = {
 
   listDocs: (type: DocType, params: ListDocsParams = {}) => api<Page<DocSummary>>('GET', `/docs/${type}${qs({ ...params })}`),
   getDoc: (type: DocType, id: string) => api<Doc>('GET', d(type, id)),
-  computeDocument: (type: DocType, body: DocInput) => api<ComputeResult>('POST', `/docs/${type}/compute`, body),
+  computeDocument: (type: DocType, body: DocInput, docId?: string) => api<ComputeResult>('POST', `/docs/${type}/compute${qs({ docId })}`, body),
   createDoc: (type: DocType, body: DocInput, idempotencyKey: string) =>
     api<Doc>('POST', `/docs/${type}`, body, { idempotencyKey }),
   updateDoc: (type: DocType, id: string, body: DocInput, version: number) =>

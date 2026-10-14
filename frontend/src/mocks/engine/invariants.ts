@@ -1,9 +1,11 @@
 import { DOC_TYPES, LIVE, SETTLES } from '@/domain/doc-types';
+import type { WhtLine, WhtMode } from '@/domain/types';
 import type { Doc } from '@/domain/types';
 import type { MockState } from '../store';
 import { consumed, q4 } from './chain';
 import { divRoundHalfAway, fromSatang, toSatang } from './money';
 import { firstOpenDate, isClosed } from './periods';
+import { whtOf } from './settlement';
 import { computeDoc } from './vat';
 
 type Stored = MockState['docs'][number];
@@ -27,26 +29,46 @@ function expectedBalance(st: MockState, d: Stored) {
 const roleSum = (e: { lines: { debit: string; credit: string; rule: string }[] }, role: string, side: 'debit' | 'credit') =>
   e.lines.filter((l) => new RegExp(`: ${role} → `).test(l.rule)).reduce((n, l) => n + toSatang(l[side]), 0);
 
-/** WHT of a PV recomputed from its lines and the fixture rate table, deliberately not through `computeWht` (D-14, [SP-R] rates). */
+/** One WHT line against an independent recomputation from its base, the rate and the mode (D-14; RD ป.96/2543 ex. 6 for "once"), plus the identity
+ *  income = payee cash + tax on the line's own figures. [SP-R] rates. */
+export function whtLineProblems(l: WhtLine, base: number, bp: bigint, mode: WhtMode): string[] {
+  const B = BigInt(base);
+  const income = mode === 'deduct' ? B : mode === 'grossup_always' ? divRoundHalfAway(B * 10000n, 10000n - bp) : divRoundHalfAway(B * (10000n + bp), 10000n);
+  const tax = divRoundHalfAway(income * bp, 10000n);
+  const net = mode === 'deduct' ? B - tax : mode === 'grossup_always' ? B : income - tax;
+  const out: string[] = [];
+  const chk = (what: string, got: string, want: bigint) => { if (toSatang(got) !== Number(want)) out.push(`WHT ${l.code} (${mode}): ${what} ${got} but base ${fromSatang(base)} x rate gives ${fromSatang(Number(want))}`); };
+  chk('base', l.base, B); chk('income', l.income, income); chk('tax', l.tax, tax); chk('payee cash', l.net, net);
+  if (toSatang(l.income) !== toSatang(l.net) + toSatang(l.tax)) out.push(`WHT ${l.code}: income ${l.income} is not payee cash ${l.net} + tax ${l.tax}`);
+  return out;
+}
+
+/** WHT of a PV recomputed from its lines and the fixture rate table with its own bigint formulas (not `computeWht`), and the engine's lines checked against it. */
 function expectedWht(st: MockState, d: Stored): { tax: number; expense: number; cashDelta: number; bad?: string } {
   const nets = computeDoc(d.lines, !!d.header.priceIncludesVat).lines;
   const base = new Map<string, bigint>();
   d.lines.forEach((l, i) => { if (l.whtTypeCode) base.set(l.whtTypeCode, (base.get(l.whtTypeCode) ?? 0n) + BigInt(toSatang(nets[i].net))); });
   const mode = d.header.whtMode ?? 'deduct';
   let tax = 0n, expense = 0n, cashDelta = 0n;
+  const want: [string, bigint, bigint][] = [];
   for (const [code, b] of base) {
+    if (b <= 0n) continue; // the engine skips a non-positive base before it looks the type up, so does this check
     const t = st.whtTypes.filter((x) => x.companyId === d.companyId && x.code === code && x.effectiveFrom <= d.header.documentDate).sort((x, y) => y.effectiveFrom.localeCompare(x.effectiveFrom))[0];
     if (!t) return { tax: 0, expense: 0, cashDelta: 0, bad: `unknown WHT type ${code}` };
-    if (b <= 0n) continue;
     const r = BigInt(t.rateBp);
     const income = mode === 'deduct' ? b : mode === 'grossup_always' ? divRoundHalfAway(b * 10000n, 10000n - r) : divRoundHalfAway(b * (10000n + r), 10000n);
     const lt = divRoundHalfAway(income * r, 10000n);
-    // what the payee receives: deduct B - tax; always B (we pay the tax on top); once income - tax (we bear income - B, RD ป.96/2543 ex. 6)
-    const paid = mode === "deduct" ? b - lt : mode === "grossup_always" ? b : income - lt;
-    // income = payee cash + tax in EVERY mode
-    if (income !== paid + lt) return { tax: 0, expense: 0, cashDelta: 0, bad: `WHT type ${code} (${mode}): income ${fromSatang(Number(income))} is not payee cash ${fromSatang(Number(paid))} + tax ${fromSatang(Number(lt))}` };
-    tax += lt; cashDelta += paid - b; expense += mode === "deduct" ? 0n : mode === "grossup_always" ? lt : income - b;
+    const paid = mode === 'deduct' ? b - lt : mode === 'grossup_always' ? b : income - lt; // what the payee receives
+    tax += lt; cashDelta += paid - b; expense += mode === 'deduct' ? 0n : mode === 'grossup_always' ? lt : income - b;
+    want.push([code, b, r]);
   }
+  let engine: WhtLine[];
+  try { engine = whtOf(st, d.companyId, d.header, d.lines).lines; } catch (e) { return { tax: 0, expense: 0, cashDelta: 0, bad: e instanceof Error ? e.message : String(e) }; }
+  const problems = want.flatMap(([code, b, r]) => {
+    const l = engine.find((x) => x.code === code);
+    return l ? whtLineProblems(l, Number(b), r, mode) : [`WHT ${code}: the engine produced no line`];
+  });
+  if (problems.length) return { tax: 0, expense: 0, cashDelta: 0, bad: problems.join('; ') };
   return { tax: Number(tax), expense: Number(expense), cashDelta: Number(cashDelta) };
 }
 
@@ -58,6 +80,7 @@ export function checkInvariants(st: MockState): string[] {
     try { return toSatang(m); } catch { out.push(`${where}: bad money "${m}"`); return 0; }
   };
   const gl = new Map<string, number>(); // `${companyId}|${code}` -> debit - credit
+  const arByParty = new Map<string, number>(); // `${companyId}|${party}` -> debit - credit on 1130
 
   // 1. every journal entry balances, is non-negative and posts to postable accounts of its own company
   for (const j of st.journals) {
@@ -75,6 +98,7 @@ export function checkInvariants(st: MockState): string[] {
         else if (!acc.postable) out.push(`${where}: account ${l.accountCode} is not postable`);
         const k = `${d.companyId}|${l.accountCode}`;
         gl.set(k, (gl.get(k) ?? 0) + a - b);
+        if (l.accountCode === '1130') { const pk = `${d.companyId}|${l.partyName ?? ''}`; arByParty.set(pk, (arByParty.get(pk) ?? 0) + a - b); }
       }
       if (dr !== cr) out.push(`${where}: unbalanced (Dr ${fromSatang(dr)} / Cr ${fromSatang(cr)})`);
     }
@@ -97,6 +121,20 @@ export function checkInvariants(st: MockState): string[] {
       const glBal = sign * (gl.get(`${c.id}|${code}`) ?? 0);
       const subBal = types.reduce((n, t) => n + (sub.get(`${c.id}|${t}`) ?? 0), 0);
       if (glBal !== subBal) out.push(`${c.id}: GL ${code} ${fromSatang(glBal)} but outstanding of live ${types.join('/')} is ${fromSatang(subBal)}`);
+    }
+  }
+
+  // 4b. each customer's AR (1130 lines labelled with their name) = Σ that customer's live TI / IV outstanding
+  const subByParty = new Map<string, number>();
+  for (const d of st.docs) {
+    if (!LIVE.includes(d.status) || (d.type !== 'TI' && d.type !== 'IV')) continue;
+    const k = `${d.companyId}|${d.party?.name ?? ''}`;
+    subByParty.set(k, (subByParty.get(k) ?? 0) + sat(d.outstanding ?? '0.00', d.id));
+  }
+  for (const k of new Set([...arByParty.keys(), ...subByParty.keys()])) {
+    if ((arByParty.get(k) ?? 0) !== (subByParty.get(k) ?? 0)) {
+      const [company, name] = k.split('|');
+      out.push(`${company}: AR 1130 of ${name}: GL ${fromSatang(arByParty.get(k) ?? 0)} but outstanding of their live TI/IV is ${fromSatang(subByParty.get(k) ?? 0)}`);
     }
   }
 
@@ -187,13 +225,7 @@ export function checkInvariants(st: MockState): string[] {
       }
     }
   }
-  // a target is never settled for more than it was ever billed: Σ active settles <= total + Σ active DN / PDN (a later CN may leave a negative outstanding; that is shown, not an error)
-  for (const d of st.docs) {
-    if (!LIVE.includes(d.status) || !DOC_TYPES[d.type].outstanding) continue;
-    const settled = st.links.filter((l) => l.active && l.to === d.id && l.kind === 'settles').reduce((n, l) => n + sat(l.amount ?? '0.00', d.id), 0);
-    const debits = st.links.filter((l) => l.active && l.to === d.id && l.kind === 'adjusts' && ['DN', 'PDN'].includes(doc(l.from)?.type ?? '')).reduce((n, l) => n + sat(l.amount ?? '0.00', d.id), 0);
-    if (settled > sat(d.totals.total, d.id) + debits) out.push(`${d.id}: settled ${fromSatang(settled)} exceeds the total ${d.totals.total} plus debit notes`);
-  }
+  // (No "settled <= total" check: a credit note or a cancelled debit note after payment legitimately leaves a negative outstanding = customer credit, Ham ruling; over-allocation is refused at issue.)
 
   // numbering: gap-free per company x type x month, and the series counter agrees
   const groups = new Map<string, number[]>();

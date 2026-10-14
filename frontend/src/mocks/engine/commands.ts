@@ -9,13 +9,16 @@ import { MockError, diffBody, isPinned, logActivity, logAudit, stamp, today } fr
 import { fromSatang, toSatang } from './money';
 import { SeriesAllocator } from './numbering';
 import { firstOpenDate, isClosed, monthLabelTh } from './periods';
-import { allocationError, balanceOf, cleanAllocations, fiscalAllocations, payDefaults, settleExtras, settleTotals } from './settlement';
+import { balanceOf, cleanAllocations, fiscalAllocations, payDefaults, settleExtras, settleProblem, settleTotals } from './settlement';
 import { computeDoc } from './vat';
 
 export type Body = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] };
 type Stored = MockState['docs'][number];
 
 export { LIVE };
+/** Outstanding of a target with the settlements of document `docId` given back (revising that document). */
+const ownBack = (st: MockState, base: (id: string) => number, docId?: string) => (tid: string): number =>
+  base(tid) + (docId ? sumSat(st.links.filter((l) => l.active && l.kind === 'settles' && l.from === docId && l.to === tid).map((l) => l.amount)) : 0);
 const sumSat = (xs: (string | undefined)[]) => xs.reduce((n, m) => n + toSatang(m ?? '0.00'), 0);
 const hasOut = (t: DocType) => DOC_TYPES[t].outstanding; // documents that carry an outstanding balance
 const TAX_BUYER: DocType[] = ['TI', 'CN', 'DN']; // the buyer's TIN + branch must be on the document
@@ -167,7 +170,8 @@ function insertDraft(st: MockState, companyId: string, type: DocType, raw: Body,
 /** Balance of a target NOW, read from the active links (the stored field is only refreshed on read). */
 const outstandingNow = (st: MockState) => (id: string): number => balanceOf(st, getDoc(st, id)).out;
 
-export function compute(st: MockState, companyId: string, type: DocType, raw: Body): ComputeResult {
+/** `opts.docId`: the issued document being revised - its own active settlements are given back before the allocations are checked (same as `revise`). */
+export function compute(st: MockState, companyId: string, type: DocType, raw: Body, opts?: { docId?: string }): ComputeResult {
   const body = stored(st, companyId, type, raw);
   const c = calc(body);
   const totals = totalsOf(st, companyId, type, body);
@@ -177,7 +181,7 @@ export function compute(st: MockState, companyId: string, type: DocType, raw: Bo
     ...(body.allocations ? { allocations: body.allocations } : {}),
   };
   const missing = missingOf(st, companyId, type, body);
-  const bad = allocationError(st, companyId, type, body.header, body.allocations, outstandingNow(st));
+  const bad = settleProblem(st, companyId, type, body, ownBack(st, outstandingNow(st), opts?.docId));
   if (bad) missing.push({ field: 'allocations', message: bad.title });
   return { lines: c.lines, totals, missing, journal: ledgerFor(st, { ...doc, companyId }), ...settleExtras(st, companyId, type, body) };
 }
@@ -227,8 +231,8 @@ function settleTargets(st: MockState, d: Stored, allocations: Allocation[] | und
 }
 
 /** `keepDate`: a correction re-issues a document at its original date (I9), so the period / future checks do not apply.
- *  `anyParty`: a correction may re-issue a receipt whose corrected invoice now belongs to another customer. */
-export function issue(st: MockState, id: string, version: number, actor: Actor, opts?: { keepDate?: boolean; anyParty?: boolean }): Doc {
+ *  `partyExempt`: target ids a correction plan retargeted to a reissued invoice, whose customer may differ from the receipt's. */
+export function issue(st: MockState, id: string, version: number, actor: Actor, opts?: { keepDate?: boolean; partyExempt?: string[] }): Doc {
   const d = getDoc(st, id);
   if (d.status !== 'draft') throw new MockError(409, 'doc.not_draft', 'ออกได้เฉพาะเอกสารฉบับร่าง');
   checkVersion(d, version);
@@ -241,7 +245,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
       throw new MockError(422, 'period.closed', `งวดบัญชี ${monthLabelTh(d.header.documentDate.slice(0, 7))} ปิดแล้ว ออกเอกสารลงวันที่ในงวดนี้ไม่ได้ ให้เปลี่ยนวันที่เป็น ${firstOpenDate(st, d.companyId)} เป็นต้นไป หรือขอเปิดงวดอีกครั้ง`);
     }
   }
-  const bad = allocationError(st, d.companyId, d.type, d.header, d.allocations, outstandingNow(st), { anyParty: opts?.anyParty });
+  const bad = settleProblem(st, d.companyId, d.type, body, outstandingNow(st), { partyExempt: opts?.partyExempt });
   if (bad) throw bad; // nothing has been written yet: a refused issue leaves no number, link or journal behind
   const totals = totalsOf(st, d.companyId, d.type, body);
   const next: Stored = {
@@ -292,8 +296,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   if (d.correctionClass !== 'T') { const m = missingOf(st, d.companyId, d.type, body); if (m.length) throw incomplete(m); }
   const resettle = SETTLES[d.type] !== undefined && d.correctionClass !== 'T'; // a payment voucher re-points its own links; a receipt (T) can only change a certificate number here
   if (resettle) { // the voucher's own current links give their amounts back before the new list is checked
-    const own = (tid: string) => sumSat(st.links.filter((l) => l.active && l.kind === 'settles' && l.from === id && l.to === tid).map((l) => l.amount));
-    const bad = allocationError(st, d.companyId, d.type, body.header, body.allocations, (tid) => outstandingNow(st)(tid) + own(tid));
+    const bad = settleProblem(st, d.companyId, d.type, body, ownBack(st, outstandingNow(st), id));
     if (bad) throw bad;
   }
   const { allocations: _a, ...rest } = d; void _a;

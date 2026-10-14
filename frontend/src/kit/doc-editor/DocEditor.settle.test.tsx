@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { HttpResponse, http } from 'msw';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { taxInvoice } from '@/descriptors/tax-invoice';
 import type { DocDescriptor } from '@/domain/descriptors';
@@ -105,5 +106,26 @@ describe('DocEditor: payment voucher with withholding', () => {
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'ผู้รับภาระภาษีหัก ณ ที่จ่าย' }), 'grossup_always');
     await waitFor(() => expect(screen.getByText('ยอดชำระสุทธิ').nextElementSibling).toHaveTextContent('5,000.00'), { timeout: 4000 });
     expect(totals()).toHaveTextContent('154.64');
+  }, 15000);
+
+  it('a voucher line defaults to the no-VAT code, and a WHT-types load error shows a retry in the column and blocks issuing (never silently "none")', async () => {
+    let fail = true;
+    testServer.use(http.get('*/bff/v1/wht-types', () => (fail
+      ? HttpResponse.json({ status: 500, code: 'mock.server_error', title: 'โหลดไม่สำเร็จ' }, { status: 500, headers: { 'content-type': 'application/problem+json' } })
+      : HttpResponse.json([{ code: 'SVC', nameTh: 'ค่าบริการ', rate: '3%', incomeType: '40(8)' }]))));
+    ui(voucher);
+    await userEvent.type(screen.getByRole('combobox', { name: 'ผู้ขาย' }), 'ภูพาน{Enter}');
+    expect(screen.getByRole('combobox', { name: 'ภาษีรายการ 1' })).toHaveValue('EX');
+    await userEvent.type(screen.getByRole('combobox', { name: 'รายการ 1' }), 'ค่าถ่ายภาพ');
+    const amount = screen.getByRole('textbox', { name: 'จำนวนเงินรายการ 1' });
+    await userEvent.clear(amount);
+    await userEvent.type(amount, '5000');
+    expect(await screen.findByRole('button', { name: 'ลองใหม่' })).toBeVisible();
+    expect(screen.queryByRole('option', { name: 'ไม่หัก' })).toBeNull();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'บันทึกและออกใบสำคัญจ่าย' })).toBeDisabled());
+    expect(screen.getByText(/โหลดประเภทภาษีหัก ณ ที่จ่ายไม่สำเร็จ/)).toBeVisible();
+    fail = false;
+    await userEvent.click(screen.getByRole('button', { name: 'ลองใหม่' }));
+    expect(await screen.findByRole('combobox', { name: 'หัก ณ ที่จ่ายรายการ 1' })).toBeVisible();
   }, 15000);
 });

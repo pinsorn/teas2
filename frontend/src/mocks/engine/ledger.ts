@@ -3,12 +3,12 @@ import type { MockState } from '../store';
 import { fromSatang, toSatang } from './money';
 import { MockError } from './log';
 import { type AccountingRole, type PostingContext, resolveRole } from './posting';
-import { whtOf } from './settlement';
+import { cashBankId, whtOf } from './settlement';
 import { computeDoc } from './vat';
 
 export interface Totals { net: number; vat: number; total: number; wht: number; cash: number }
 /** [role, debit, credit, context additions] in satang; the account behind each role comes from the posting profile (SP0 §5.5). */
-export type RolePosting = [AccountingRole, number, number, Partial<PostingContext>?][];
+export type RolePosting = [AccountingRole, number, number, (Partial<PostingContext> & { partyName?: string })?][];
 type Rows = (t: Totals, d: Doc, st: MockState, companyId: string) => RolePosting;
 
 /** One row per document line for the net side so an item / category rule can pick that line's account (rows with the same account merge again). */
@@ -22,20 +22,26 @@ const sales = (role: AccountingRole): Rows => (t, d) => [['AR', t.total, 0], ...
 const purchase: Rows = (t, d) => [...netRows(d, 'Expense', 'Dr'), ['InputVat', t.vat, 0], ['AP', 0, t.total]];
 /** Σ allocation amounts whose target is one of `types` (satang). */
 const allocTo = (d: Doc, types: DocType[]) => (d.allocations ?? []).filter((a) => types.includes(a.targetType)).reduce((n, a) => n + toSatang(a.amount), 0);
+/** One row per allocation, under the TARGET's party: the AR / AP subledger of each customer / vendor stays right when one document settles several parties. */
+const perTarget = (d: Doc, st: MockState, role: 'AR' | 'AP', types: DocType[], side: 'Dr' | 'Cr'): RolePosting =>
+  (d.allocations ?? []).filter((a) => types.includes(a.targetType)).map((a): RolePosting[number] => {
+    const n = toSatang(a.amount), name = st.docs.find((x) => x.id === a.targetId)?.party?.name;
+    return [role, side === 'Dr' ? n : 0, side === 'Cr' ? n : 0, name ? { partyName: name } : undefined];
+  });
 const mirror = (r: Rows): Rows => (t, d, st, co) => r(t, d, st, co).map(([role, dr, cr, c]) => [role, cr, dr, c] as RolePosting[number]);
 
 export const POST: Partial<Record<DocType, Rows>> = {
   TI: sales('Revenue'), IV: sales('Revenue'), DN: sales('Revenue'), CN: mirror(sales('SalesReturn')),
   PB: purchase, PDN: purchase, PCN: mirror(purchase),
   // RC: cash received + WHT withheld by the customer = what it clears from AR + the deposit remainder + a non-VAT cash bill (net + output VAT)
-  RC: (t, d) => [['Cash', t.cash, 0, { bankAccountId: d.header.bankAccountId }], ['WhtReceivable', t.wht, 0], ['AR', 0, allocTo(d, ['TI', 'IV'])],
+  RC: (t, d, st, co) => [['Cash', t.cash, 0, { bankAccountId: cashBankId(st, co, d.header) }], ['WhtReceivable', t.wht, 0], ...perTarget(d, st, 'AR', ['TI', 'IV'], 'Cr'),
     ['CustomerDeposit', 0, toSatang(d.header.depositAmount ?? '0.00')], ...netRows(d, 'Revenue', 'Cr'), ['OutputVat', 0, t.vat]],
   // PV: payables cleared + expense lines (+ their input VAT) + the WHT we bear (gross-up) = cash paid + WHT payable per return
   PV: (t, d, st, companyId) => {
     const w = whtOf(st, companyId, d.header, d.lines); // expense = the part of the tax / gross-up we bear
-    return [['AP', allocTo(d, ['PB']), 0], ['EmployeePayable', allocTo(d, ['EX']), 0], ...netRows(d, 'Expense', 'Dr'), ['InputVat', t.vat, 0],
+    return [...perTarget(d, st, 'AP', ['PB'], 'Dr'), ['EmployeePayable', allocTo(d, ['EX']), 0], ...netRows(d, 'Expense', 'Dr'), ['InputVat', t.vat, 0],
       ['WhtExpense', w.expense, 0], ...w.lines.map((l): RolePosting[number] => ['WhtPayable', 0, toSatang(l.tax), { whtForm: l.form }]),
-      ['Cash', 0, t.cash, { bankAccountId: d.header.bankAccountId }]];
+      ['Cash', 0, t.cash, { bankAccountId: cashBankId(st, companyId, d.header) }]];
   },
 };
 
@@ -59,7 +65,7 @@ export function ledgerFor(st: MockState, doc: Doc & { companyId?: string }): Jou
   for (const [role, dr, cr, extra] of post(t, doc, st, companyId)) {
     const r = resolveRole(st, role, { companyId, docType: doc.type, ...extra });
     const dims = { ...doc.header.dimensions, ...extra?.dimensions };
-    const party = (role === 'AR' || role === 'AP') && partyName ? partyName : undefined;
+    const party = (role === 'AR' || role === 'AP') ? (extra?.partyName ?? partyName) : undefined;
     const key = `${r.code}|${r.rule}|${party ?? ''}|${JSON.stringify(dims)}`;
     const prev = acc.get(key);
     // a negative side (e.g. a CN line with a negative VAT) is posted on the opposite side, never as a negative amount

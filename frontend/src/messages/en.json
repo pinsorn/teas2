@@ -398,6 +398,7 @@
       "amountInput": "Amount of line {n}",
       "tax": "Tax of line {n}",
       "wht": "Withholding of line {n}",
+      "whtUnknown": "Unknown type {code}",
       "whtNone": "None",
       "hintAmount": "Enter moves to the next cell  ·  Enter in the last cell adds a line",
       "taxCode": { "S7": "VAT 7%", "Z0": "VAT 0%", "EX": "No VAT / exempt" }
@@ -474,6 +475,7 @@
     "issueFailed": "Could not issue the document",
     "issuing": "Issuing…",
     "whyDisabled": {
+      "whtTypes": "The withholding types did not load. Retry in the withholding column.",
       "computing": "Waiting for the totals",
       "missing": "Not complete yet, see \"What is still missing\"",
       "conflict": "Someone changed this document first. Reload before issuing.",

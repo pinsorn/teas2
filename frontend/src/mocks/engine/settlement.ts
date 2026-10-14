@@ -41,7 +41,7 @@ export function cleanAllocations(st: MockState, companyId: string, type: DocType
     const target = st.docs.find((d) => d.id === a.targetId && d.companyId === companyId);
     const wht = a.wht === undefined || a.wht === '' ? undefined : fromSatang(money(a.wht, 'settle.invalid_wht'));
     return {
-      targetId: a.targetId, targetType: a.targetType, ...(target?.number ? { targetNumber: target.number } : {}),
+      targetId: a.targetId, targetType: a.targetType, ...(target?.number ? { targetNumber: target.number } : {}), ...(target?.header.partyId ? { partyId: target.header.partyId } : {}),
       amount: fromSatang(money(a.amount, 'settle.invalid_amount')), ...(wht ? { wht } : {}),
       ...(a.whtTypeCode ? { whtTypeCode: a.whtTypeCode } : {}), ...(a.certNumber ? { certNumber: a.certNumber } : {}),
     };
@@ -97,10 +97,10 @@ export function settleTotals(st: MockState, companyId: string, type: DocType, bo
 
 /**
  * The command-time rules for an RC / PV allocation list (undefined = fine). `outstanding(id)` reads the target's balance NOW.
- * `anyParty`: a correction re-issues a receipt for a corrected invoice (its customer may have changed) - every other rule still applies.
+ * `partyExempt`: target ids a correction plan retargeted to a reissued invoice (its customer may have changed) - every other rule still applies, to them and to every other target.
  */
 export function allocationError(st: MockState, companyId: string, type: DocType, header: DocHeader, allocs: Allocation[] | undefined,
-  outstanding: (id: string) => number, opts: { anyParty?: boolean } = {}): MockError | undefined {
+  outstanding: (id: string) => number, opts: { partyExempt?: string[] } = {}): MockError | undefined {
   if (!allocs?.length) return undefined;
   const settles = SETTLES[type];
   if (!settles) return new MockError(422, 'settle.not_allowed', 'เอกสารประเภทนี้จัดสรรการชำระไม่ได้');
@@ -113,13 +113,15 @@ export function allocationError(st: MockState, companyId: string, type: DocType,
     seen.add(a.targetId);
     if (!settles.includes(target.type) || a.targetType !== target.type) return new MockError(422, 'settle.wrong_type', `${label} ชำระด้วยเอกสารนี้ไม่ได้`);
     if (!LIVE.includes(target.status)) return new MockError(422, 'settle.target_not_open', `${label} ไม่อยู่ในสถานะที่ชำระได้`);
-    if (!opts.anyParty && target.header.partyId !== header.partyId) return new MockError(422, 'settle.party_mismatch', `${label} เป็นของคู่ค้าคนละราย`);
+    if (!opts.partyExempt?.includes(a.targetId) && target.header.partyId !== header.partyId) return new MockError(422, 'settle.party_mismatch', `${label} เป็นของคู่ค้าคนละราย`);
     const amount = money(a.amount, 'settle.invalid_amount');
     if (amount <= 0) return new MockError(422, 'settle.invalid_amount', `จำนวนที่ชำระ ${label} ต้องมากกว่า 0`);
     const out = outstanding(a.targetId);
     if (amount > out) return new MockError(422, 'settle.over_allocation', `ชำระ ${label} เกินยอดค้างชำระ (ค้างชำระ ${fromSatang(out)} บาท)`);
     const wht = money(a.wht, 'settle.invalid_wht');
     if (wht < 0) return new MockError(422, 'settle.invalid_wht', `ภาษีหัก ณ ที่จ่ายของ ${label} ต้องไม่ติดลบ`);
+    if (wht > amount) return new MockError(422, 'rc.wht_exceeds_amount', `ภาษีหัก ณ ที่จ่ายของ ${label} เกินยอดที่ชำระ`);
+    if (wht > 0 && a.whtTypeCode) { try { whtTypeOf(st, a.whtTypeCode, payeeOf(st, companyId, header.partyId), header.documentDate); } catch (e) { return e as MockError; } }
     if (wht > 0 && type !== 'RC') return new MockError(422, 'settle.wht_not_allowed', 'ภาษีหัก ณ ที่จ่ายของใบสำคัญจ่ายคำนวณจากรายการ ไม่ระบุที่การจัดสรร');
   }
   if (sum(allocs.map((a) => money(a.wht, 'settle.invalid_wht'))) > sum(allocs.map((a) => money(a.amount, 'settle.invalid_amount')))) {
@@ -127,6 +129,29 @@ export function allocationError(st: MockState, companyId: string, type: DocType,
   }
   return undefined;
 }
+
+/** The account the Cash role posts to: the chosen bank account, or the company cash account (1110) when paid in cash. */
+export function cashBankId(st: MockState, companyId: string, header: DocHeader): string | undefined {
+  if (header.paymentMethod === 'cash') return st.bankAccounts.find((b) => b.companyId === companyId && b.accountCode === '1110')?.id ?? header.bankAccountId;
+  return header.bankAccountId;
+}
+
+/** Rules about the money that moves, not the open items: bank account of this company, no negative deposit, no input VAT on a voucher line, no negative cash. */
+export function payError(st: MockState, companyId: string, type: DocType, body: Part): MockError | undefined {
+  if (!SETTLES[type]) return undefined;
+  const h = body.header;
+  if (h.bankAccountId && !st.bankAccounts.some((b) => b.id === h.bankAccountId && b.companyId === companyId)) return new MockError(422, 'pay.invalid_bank_account', 'บัญชีธนาคารที่เลือกไม่ใช่ของบริษัทนี้');
+  if (type === 'RC' && money(h.depositAmount, 'rc.invalid_deposit') < 0) return new MockError(422, 'rc.invalid_deposit', 'เงินรับล่วงหน้าต้องไม่ติดลบ');
+  if (type === 'PV' && body.lines.some((l) => l.taxCode !== 'EX')) {
+    return new MockError(422, 'pv.input_vat_needs_bill', 'ใบสำคัญจ่ายไม่มีภาษีซื้อ ภาษีซื้อต้องบันทึกผ่านใบรับวางบิล (PB) แล้วจึงจ่ายชำระ');
+  }
+  if (toSatang(settleTotals(st, companyId, type, body, computeDoc(body.lines, !!h.priceIncludesVat).totals).cash!) < 0) return new MockError(422, 'pay.negative_cash', 'ยอดเงินที่รับ/จ่ายสุทธิติดลบ ตรวจจำนวนเงินและภาษีหัก ณ ที่จ่าย');
+  return undefined;
+}
+
+/** Every command-time rule of an RC / PV, first violation wins. */
+export const settleProblem = (st: MockState, companyId: string, type: DocType, body: Part, outstanding: (id: string) => number, opts: { partyExempt?: string[] } = {}) =>
+  allocationError(st, companyId, type, body.header, body.allocations, outstanding, opts) ?? payError(st, companyId, type, body);
 
 /** RC suggestion per allocation: round(service net of the target x rate x amount / target total), the target's service lines' WHT type. */
 export function suggestWht(st: MockState, companyId: string, header: DocHeader, allocs: Allocation[]): NonNullable<ComputeResult['allocation']>['suggestedWht'] {

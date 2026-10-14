@@ -30,7 +30,8 @@ export interface DocLine { id: string; itemId?: string; description: string; qty
 export type WhtMode = 'deduct' | 'grossup_once' | 'grossup_always';
 /** One settled open item of an RC / PV: `amount` clears the target, `wht` is what the customer withheld (RC) on that part. */
 export interface Allocation { targetId: string; targetType: DocType; targetNumber?: string; amount: Money; wht?: Money;
-  whtTypeCode?: string; certNumber?: string }
+  whtTypeCode?: string; certNumber?: string;
+  /** Engine-set: the party of the target document, i.e. the party who withheld (the 50 tawi belongs to them) and whose AR this clears. */ partyId?: string }
 export interface DocHeader { partyId?: string; documentDate: IsoDate; dueDate?: IsoDate; reference?: string;
   notes?: string; dimensions?: Record<string, string>; priceIncludesVat?: boolean;
   whtMode?: WhtMode; bankAccountId?: string; paymentMethod?: 'transfer' | 'cash' | 'cheque';

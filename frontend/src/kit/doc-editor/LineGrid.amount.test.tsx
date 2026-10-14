@@ -71,4 +71,28 @@ describe('LineGrid amount editor (RC / PV)', () => {
     await waitFor(() => expect(spy.mock.lastCall![0][0].itemId).toBe('SV-01'));
     expect(spy.mock.lastCall![0][0].whtTypeCode).toBeUndefined();
   });
+  it('WHT type list failed to load: the column shows the error with a retry, never "no withholding"', async () => {
+    const retry = vi.fn();
+    render(<Host whtTypes={[]} whtError={new Error('x')} onWhtRetry={retry} />);
+    expect(screen.queryByRole('combobox', { name: 'หัก ณ ที่จ่ายรายการ 1' })).toBeNull();
+    expect(screen.queryByRole('option', { name: 'ไม่หัก' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'ลองใหม่' }));
+    expect(retry).toHaveBeenCalled();
+  });
+  it('a saved WHT code that the list does not know shows as an error option, not as "none"', () => {
+    render(<Host lines={[{ ...blank, whtTypeCode: 'GONE' }]} whtTypes={WHT} />);
+    const wht = screen.getByRole('combobox', { name: 'หัก ณ ที่จ่ายรายการ 1' });
+    expect(wht).toHaveValue('GONE');
+    expect(wht).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('option', { name: 'ไม่พบประเภท GONE' })).toBeInTheDocument();
+  });
+  it('a voucher grid (exemptOnly) offers only the no-VAT tax code and forces it on a picked item', async () => {
+    const spy = vi.fn();
+    render(<Host exemptOnly whtTypes={WHT} lines={[{ ...blank, taxCode: 'EX' }]} spy={spy} />);
+    expect(within(screen.getByRole('combobox', { name: 'ภาษีรายการ 1' })).getAllByRole('option').map((o) => o.textContent)).toEqual(['ไม่มี VAT / ยกเว้น']);
+    await userEvent.type(screen.getByRole('combobox', { name: 'รายการ 1' }), 'ถ');
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() => expect(spy.mock.lastCall![0][0].itemId).toBe('SV-01'));
+    expect(spy.mock.lastCall![0][0].taxCode).toBe('EX');
+  });
 });

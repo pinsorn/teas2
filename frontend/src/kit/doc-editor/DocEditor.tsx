@@ -92,7 +92,8 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   const [picking, setPicking] = useState(false);
 
   const [header, setHeader] = useState<DocHeader>(initial?.header ?? { documentDate: todayIso() });
-  const [lines, setLines] = useState<DocLine[]>(initial?.lines.length ? initial.lines : [newLine(me && !me.vatRegistered ? 'EX' : 'S7')]); // a non-VAT company sells without VAT
+  const exemptOnly = d.lineEditor === 'amount' && d.headerFields.includes('whtMode'); // a voucher: input VAT only through a bill (PB)
+  const [lines, setLines] = useState<DocLine[]>(initial?.lines.length ? initial.lines : [newLine(exemptOnly || (me && !me.vatRegistered) ? 'EX' : 'S7')]); // a non-VAT company sells without VAT
   const [party, setParty] = useState<PartySummary | undefined>(initial?.party);
   const [allocations, setAllocations] = useState<Allocation[]>(initial?.allocations ?? []); // RC / PV: the open items this document settles
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -117,7 +118,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
     void qc.invalidateQueries({ queryKey: [me.activeCompanyId, 'docs', d.type] });
     if (d.settles) void qc.invalidateQueries({ queryKey: [me.activeCompanyId, 'open-items'] }); // the targets' balances just changed
   };
-  const compute = useCompute(d.type, payload);
+  const compute = useCompute(d.type, payload, mode === 'revise' ? initial?.id : undefined); // revising: the document's own settlements are not 'used up'
   const autosave = useAutosave({
     type: d.type, payload, enabled: mode !== 'revise',
     initial: mode === 'edit-draft' && initial ? { id: initial.id, version: initial.version } : undefined,
@@ -137,7 +138,8 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   const canAct = !!me?.permissions.includes(mode === 'revise' ? d.permissions.create : d.permissions.issue);
   const why = me && !canAct ? 'permission'
     : autosave.status === 'conflict' ? 'conflict'
-    : compute.pending || compute.error || partyBusy || picking ? 'computing'
+    : amountEditor && withholds && whtTypes.isError ? 'whtTypes'
+    : compute.pending || compute.error || partyBusy || picking || (amountEditor && withholds && whtTypes.isPending) ? 'computing'
     : missing?.length ? 'missing' : undefined;
   const ready = canAct && !why;
   const dialogOpen = confirmOpen || (want === payloadJson && ready);
@@ -187,7 +189,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
     setHeader((h) => ({ ...h, partyId: p.id, dueDate: addDays(h.documentDate, p.paymentTermDays) }));
     if (item && showLines) {
       setLines((ls) => ls.length > 0 && isBlankLine(ls[0])
-        ? [{ ...ls[0], itemId: item.id, description: item.name, unit: item.unit, unitPrice: moneyText(item.unitPrice), taxCode: item.taxCode,
+        ? [{ ...ls[0], itemId: item.id, description: item.name, unit: item.unit, unitPrice: moneyText(item.unitPrice), taxCode: exemptOnly ? 'EX' : item.taxCode,
           ...(amountEditor && withholds && item.whtTypeCode ? { whtTypeCode: item.whtTypeCode } : {}) }, ...ls.slice(1)]
         : ls);
     }
@@ -240,7 +242,8 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
             <section aria-labelledby={`${ids}-lines`} className="grid gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
               <h2 id={`${ids}-lines`} className="text-section font-semibold">{t('lines.title')}</h2>
               <LineGrid lines={lines} onChange={setLines} searchItems={searchItems} amounts={amounts} computing={compute.pending}
-                variant={amountEditor ? 'amount' : 'item'} showCategory={partyKind === 'vendor' || partyKind === 'employee'} whtTypes={withholds ? (whtTypes.data ?? []) : undefined} />
+                variant={amountEditor ? 'amount' : 'item'} showCategory={partyKind === 'vendor' || partyKind === 'employee'} whtTypes={withholds ? (whtTypes.data ?? []) : undefined}
+                whtError={withholds && whtTypes.isError ? whtTypes.error : undefined} onWhtRetry={() => void whtTypes.refetch()} exemptOnly={exemptOnly} />
             </section>
           )}
 

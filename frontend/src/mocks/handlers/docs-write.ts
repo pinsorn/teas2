@@ -18,7 +18,7 @@ export const stripOverrides = <T extends Body>(b: T): T => {
   const lines = b.lines.map((l) => { if (!l || typeof l !== 'object') return l; const { vatOverride, ...r } = l; void vatOverride; return r; });
   // `targetNumber` is engine-set (the engine re-reads it from the target); only the user's own figures and the certificate number come from the caller
   const allocations = Array.isArray(b.allocations)
-    ? b.allocations.map((a) => { if (!a || typeof a !== 'object') return a; const { targetNumber, ...r } = a; void targetNumber; return r; }) : b.allocations;
+    ? b.allocations.map((a) => { if (!a || typeof a !== 'object') return a; const { targetNumber, partyId, ...r } = a; void targetNumber; void partyId; return r; }) : b.allocations;
   return { ...b, lines, ...(allocations ? { allocations } : {}) };
 };
 
@@ -61,7 +61,9 @@ const P = (perm: string) => (t: DocType) => `doc.${t}.${perm}`;
 export const docsWriteHandlers = [
   http.post('*/bff/v1/docs/:type/compute', ({ request, params }) => guarded(String(params.type), P('read'), async (c, t) =>
     {
-    const { journal, ...r } = compute(c.st, c.company.id, t, stripOverrides((await request.json()) as Body));
+    const docId = new URL(request.url).searchParams.get('docId') ?? undefined; // revise mode: the issued document's own settlements are given back
+    if (docId) own(c, t, docId);
+    const { journal, ...r } = compute(c.st, c.company.id, t, stripOverrides((await request.json()) as Body), { docId });
     return HttpResponse.json(c.perms.includes('ledger.read') ? { ...r, journal } : r); // D-09: no journal without ledger.read
   })),
 

@@ -45,6 +45,18 @@ describe('allocations through create / update / compute / issue (HTTP)', () => {
     expect(r.status).toBe(422);
     expect((await r.json()).code).toBe('settle.over_allocation');
   });
+  it('compute with ?docId (revise mode) gives the receipt its own settlements back: a full-paying receipt gaining a certificate number is ready', async () => {
+    const ids = fixtureIds(loadState());
+    const t = loadState().docs.find((x) => x.id === ids.rcTargetsA)!;
+    const d = await (await call('POST', '/docs/RC', { header: { partyId: 'pc-01', documentDate: '2026-10-14' }, lines: [], allocations: [{ targetId: t.id, targetType: 'TI', amount: t.outstanding }] })).json();
+    const issued = await (await call('POST', `/docs/RC/${d.id}/issue`, { version: d.version })).json();
+    const body = { header: issued.header, lines: [], allocations: issued.allocations.map((a: object) => ({ ...a, certNumber: 'ท.2569/0451' })) };
+    const plain = await (await call('POST', '/docs/RC/compute', body)).json();
+    expect(plain.missing.map((m: { field: string }) => m.field)).toEqual(['allocations']); // as a NEW receipt it would over-allocate
+    const revising = await (await call('POST', `/docs/RC/compute?docId=${issued.id}`, body)).json();
+    expect(revising.missing).toEqual([]);
+    expect((await call('POST', '/docs/RC/compute?docId=nope', body)).status).toBe(404);
+  });
   it('stripOverrides removes allocation.targetNumber and keeps the certificate number', () => {
     const out = stripOverrides({ header: { documentDate: '2026-10-14' }, lines: [], allocations: [{ targetId: 'a', targetType: 'TI', amount: '1.00', targetNumber: 'X', certNumber: 'C1' }] });
     expect(out.allocations).toEqual([{ targetId: 'a', targetType: 'TI', amount: '1.00', certNumber: 'C1' }]);

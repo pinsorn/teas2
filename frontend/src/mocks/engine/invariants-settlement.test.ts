@@ -111,11 +111,11 @@ describe('receipts and vouchers: allocations, WHT and the PV balance identity (F
     pay.credit = bump(pay.credit, 0.01); bank.credit = bump(bank.credit, -0.01);
     expect(msgs(b.st)).toMatch(/journal WHT payable/);
   });
-  it('report a target settled for more than it was ever billed, but NOT a negative outstanding after a later credit note (Ham ruling)', () => {
+  it('a doctored over-settlement is caught through the outstanding rule; a negative outstanding after a later credit note is NOT a violation (Ham ruling, no static settled <= total check)', () => {
     const a = world();
     a.st.links.find((x) => x.from === a.rc.id && x.active)!.amount = '99999999.00';
     D(a.st, a.rc.id).allocations![0].amount = '99999999.00';
-    expect(msgs(a.st)).toMatch(/settled 99999999\.00 exceeds the total/);
+    expect(msgs(a.st)).toMatch(/outstanding .* but the links say/);
     const b = world(); // pay a target in full, then a credit note pushes it below zero: shown, never an invariant violation
     const ti = D(b.st, b.ids.rcTargetsB);
     const pay = createDraft(b.st, 'co-vat', 'RC', { header: { partyId: ti.header.partyId, documentDate: '2026-10-14' }, lines: [], allocations: [{ targetId: ti.id, targetType: 'TI', amount: D(b.st, ti.id).outstanding! }] }, U, 'neg-rc');

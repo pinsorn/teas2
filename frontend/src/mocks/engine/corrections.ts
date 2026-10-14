@@ -161,12 +161,13 @@ function runStep(w: MockState, s: CorrectionStep, proposed: Body, actor: Actor, 
       return { targetId: to, targetType: getDoc(w, to).type, amount: l.amount!, ...(l.wht ? { wht: l.wht } : {}),
         ...(was?.whtTypeCode ? { whtTypeCode: was.whtTypeCode } : {}), ...(was?.certNumber ? { certNumber: was.certNumber } : {}) };
     });
-    const moved = links.find((l) => c.moved.has(l.to));
+    const movedIds = [...c.moved.values()]; // invoices this plan reissued: only their targets may belong to another customer than the receipt
+    const allMoved = links.length > 0 && links.every((l) => c.moved.has(l.to)); // then the receipt follows the invoice's new customer
     const body: Body = own
       ? { header: { ...proposed.header, documentDate: doc.header.documentDate }, lines: proposed.lines, allocations: proposed.allocations ?? carried }
-      : { header: { ...doc.header, ...(moved ? { partyId: getDoc(w, c.moved.get(moved.to)!).header.partyId } : {}) }, lines: doc.lines, allocations: carried };
+      : { header: { ...doc.header, ...(allMoved ? { partyId: getDoc(w, c.moved.get(links[0].to)!).header.partyId } : {}) }, lines: doc.lines, allocations: carried };
     const draft = createDraft(w, doc.companyId, 'RC', body, actor, `${c.planId}-${s.order}`);
-    const rc = issue(w, draft.id, draft.version, actor, { keepDate: true, anyParty: true }); // original date (I9); issue re-creates every settlement and checks each target's outstanding
+    const rc = issue(w, draft.id, draft.version, actor, { keepDate: true, partyExempt: own ? [] : carried.filter((a) => movedIds.includes(a.targetId)).map((a) => a.targetId) }); // original date (I9); issue re-creates every settlement and checks each target's outstanding
     markReplaced(w, doc.id, rc.id, actor);
     touch(doc.id, rc.id, ...(rc.allocations ?? []).map((x) => x.targetId));
   } else if (s.action === 'reissue') {

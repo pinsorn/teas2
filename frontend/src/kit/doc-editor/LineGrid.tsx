@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useRef, type ClipboardEvent, type KeyboardEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ErrorState } from '../states/ErrorState';
 import type { DocLine, ItemSummary, Money, TaxCode } from '@/domain/types';
 import type { WhtTypeRef } from '@/lib/api/endpoints';
 import { formatMoney } from '@/lib/format';
@@ -38,14 +39,20 @@ export interface LineGridProps {
   showCategory?: boolean;
   /** amount editor: when given, the withholding column lists these types (the document withholds tax). */
   whtTypes?: WhtTypeRef[];
+  /** amount editor: the WHT type list failed to load (retry shown in the column; never rendered as "no withholding"). */
+  whtError?: unknown;
+  onWhtRetry?: () => void;
+  /** amount editor of a voucher: input VAT only comes through a bill, so lines are exempt-only. */
+  exemptOnly?: boolean;
 }
 
-export function LineGrid({ lines, onChange, searchItems, amounts, computing, variant = 'item', showCategory = false, whtTypes }: LineGridProps) {
+export function LineGrid({ lines, onChange, searchItems, amounts, computing, variant = 'item', showCategory = false, whtTypes, whtError, onWhtRetry, exemptOnly = false }: LineGridProps) {
   const t = useTranslations('docEditor.lines');
   const root = useRef<HTMLDivElement>(null);
   const focusReq = useRef<{ row: number; cell: Cell } | null>(null);
 
   const amountMode = variant === 'amount';
+  const whtLoading = whtTypes?.length === 0 && !whtError; // the list is still on its way: nothing is offered yet, and a saved code is not judged unknown
   const focus = (row: number, cell: Cell) => root.current?.querySelector<HTMLElement>(`[data-cell="${row}:${cell}"]`)?.focus();
   useEffect(() => {
     if (!focusReq.current) return;
@@ -76,7 +83,7 @@ export function LineGrid({ lines, onChange, searchItems, amounts, computing, var
   };
   const pick = (i: number, it: ItemSummary) => {
     focusReq.current = { row: i, cell: amountMode ? 'unitPrice' : 'qty' };
-    patch(i, { itemId: it.id, description: it.name, unit: it.unit, unitPrice: moneyText(it.unitPrice), taxCode: it.taxCode, ...(amountMode && whtTypes && it.whtTypeCode ? { whtTypeCode: it.whtTypeCode } : {}) });
+    patch(i, { itemId: it.id, description: it.name, unit: it.unit, unitPrice: moneyText(it.unitPrice), taxCode: exemptOnly ? 'EX' : it.taxCode, ...(amountMode && whtTypes && it.whtTypeCode ? { whtTypeCode: it.whtTypeCode } : {}) });
   };
   const remove = (i: number) => onChange(lines.filter((_, k) => k !== i));
 
@@ -117,17 +124,22 @@ export function LineGrid({ lines, onChange, searchItems, amounts, computing, var
               <label className="grid gap-1">
                 <span aria-hidden className="text-small text-muted-foreground md:hidden">{t('colTax')}</span>
                 <select aria-label={t('tax', { n })} className={select} value={l.taxCode} onChange={(e) => patch(i, { taxCode: e.target.value as TaxCode })}>
-                  {TAX_CODES.map((c) => <option key={c} value={c}>{t(`taxCode.${c}`)}</option>)}
+                  {(exemptOnly ? (['EX'] as TaxCode[]) : TAX_CODES).map((c) => <option key={c} value={c}>{t(`taxCode.${c}`)}</option>)}
                 </select>
               </label>
               {whtTypes && (
-                <label className="grid gap-1">
+                <div className="grid gap-1">
                   <span aria-hidden className="text-small text-muted-foreground md:hidden">{t('colWht')}</span>
-                  <select aria-label={t('wht', { n })} className={select} value={l.whtTypeCode ?? ''} onChange={(e) => patch(i, { whtTypeCode: e.target.value || undefined })}>
-                    <option value="">{t('whtNone')}</option>
-                    {whtTypes.map((w) => <option key={w.code} value={w.code}>{`${w.nameTh} ${w.rate}`}</option>)}
-                  </select>
-                </label>
+                  {whtError ? <ErrorState error={whtError} onRetry={() => onWhtRetry?.()} /> : (
+                    <select aria-label={t('wht', { n })} className={select} value={l.whtTypeCode ?? ''} disabled={whtTypes.length === 0 && !l.whtTypeCode && whtLoading}
+                      aria-invalid={!!l.whtTypeCode && !whtLoading && !whtTypes.some((w) => w.code === l.whtTypeCode)}
+                      onChange={(e) => patch(i, { whtTypeCode: e.target.value || undefined })}>
+                      <option value="">{t('whtNone')}</option>
+                      {l.whtTypeCode && !whtLoading && !whtTypes.some((w) => w.code === l.whtTypeCode) && <option value={l.whtTypeCode}>{t('whtUnknown', { code: l.whtTypeCode })}</option>}
+                      {whtTypes.map((w) => <option key={w.code} value={w.code}>{`${w.nameTh} ${w.rate}`}</option>)}
+                    </select>
+                  )}
+                </div>
               )}
               <Button type="button" variant="ghost" size="icon" aria-label={t('remove', { n })} disabled={lines.length === 1}
                 className="justify-self-end md:justify-self-auto" onClick={() => remove(i)}>
