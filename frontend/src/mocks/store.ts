@@ -1,6 +1,7 @@
 import type {
   ActivityEntry, AuditEntry, ChainEdge, Company, Doc, DocHeader, DocLine, ItemSummary, JournalPreview, Membership, PartySummary, Revision, Role,
 } from '@/domain/types';
+import { recomputeSettlement } from './engine/commands';
 import { ledgerFor } from './engine/ledger';
 import { buildSeed } from './fixtures';
 import { getSettings } from './settings';
@@ -28,6 +29,7 @@ const KEY = 'teas2.mock.state.v1';
 
 export function seed(): MockState {
   const s = buildSeed(getSettings().role);
+  for (const d of s.docs) if (d.type === 'TI' || d.type === 'IV') recomputeSettlement(s, d.id); // balances follow the links (§7.11)
   for (const d of s.docs) {
     if (d.status === 'draft') continue;
     const preview = ledgerFor(s, d);

@@ -104,9 +104,10 @@ export const docsWriteHandlers = [
       const c = ctx();
       const { planId, planHash } = (await request.json()) as { planId: string; planHash: string };
       const stored = c.st.plans?.[planId];
-      if (!stored) throw new MockError(404, 'correction.plan_not_found', 'ไม่พบแผนการแก้ไข');
+      const target = stored && c.st.docs.find((d) => d.id === stored.docId && d.companyId === c.company.id);
+      if (!stored || !target) throw new MockError(404, 'correction.plan_not_found', 'ไม่พบแผนการแก้ไข');
       for (const s of buildPlan(c.st, stored.docId, stored.proposed, c.s.role).steps) if (!c.perms.includes(s.permission)) return forbidden(s.permission);
-      const result = executePlan(c.st, planId, planHash, ACTOR);
+      const result = executePlan(c.st, planId, planHash, ACTOR, c.s.role);
       done(c);
       return HttpResponse.json(result);
     } catch (e) {

@@ -32,7 +32,8 @@ function progressOf(st: MockState, d: Doc): string | undefined {
     return `${fmtQ(delivered)}/${fmtQ(ordered)}`;
   }
   if (d.type === 'TI' && d.outstanding !== undefined) {
-    return `ชำระแล้ว ${fromSatang(toSatang(d.totals.total) - toSatang(d.outstanding))} / ${d.totals.total}`;
+    const paid = st.links.filter((l) => l.kind === 'settles' && l.to === d.id && l.active).reduce((a, l) => a + toSatang(l.amount ?? '0.00'), 0);
+    return `ชำระแล้ว ${fromSatang(paid)} / ${d.totals.total}`;
   }
   return undefined;
 }

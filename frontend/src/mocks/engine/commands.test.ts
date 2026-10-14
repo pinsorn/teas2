@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { assertBalanced, type Actor, type DocLine, type MockStateLike } from './test-helpers';
 import { seed } from '../store';
-import { cancel, compute, convert, createDraft, issue, revise, updateDraft } from './commands';
+import { cancel, compute, convert, createDraft, issue, missingOf, revise, updateDraft } from './commands';
+import { fromSatang, toSatang } from './money';
 
 const me: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
 const line = (p: Partial<DocLine> = {}): DocLine => ({ id: 'l1', description: 'ออกแบบ', qty: '1', unit: 'งาน', unitPrice: '1000.00', taxCode: 'S7', ...p });
@@ -90,6 +91,41 @@ describe('convert', () => {
     const issued = issue(st, do1.id, do1.version, me);
     cancel(st, issued.id, issued.version, 'OTHER', 'ทดสอบ', me);
     expect(() => convert(st, so.id, 'DO', [{ sourceLineId: l.id, qty: l.qty }], me)).not.toThrow();
+  });
+});
+
+describe('fix round 1: outstanding, seed validity, cancel blocks (SP0 7.4 / 7.11)', () => {
+  it('seed: every live TI/IV outstanding = total - CN + DN - settlements (active links only)', () => {
+    const s = seed();
+    const live = s.docs.filter((d) => (d.type === 'TI' || d.type === 'IV') && ['issued', 'partly_settled', 'settled'].includes(d.status));
+    expect(live.length).toBeGreaterThan(10);
+    for (const d of live) {
+      let out = toSatang(d.totals.total);
+      for (const l of s.links) {
+        if (!l.active || l.to !== d.id) continue;
+        const t = s.docs.find((x) => x.id === l.from)!.type;
+        if (l.kind === 'settles' || t === 'CN') out -= toSatang(l.amount!); else if (t === 'DN') out += toSatang(l.amount!);
+      }
+      expect({ id: d.id, out: d.outstanding }).toEqual({ id: d.id, out: fromSatang(out) });
+    }
+    const cn = s.links.find((l) => l.kind === 'adjusts')!;
+    const ti = s.docs.find((d) => d.id === cn.to)!;
+    expect(toSatang(ti.outstanding!)).toBe(toSatang(ti.totals.total) - toSatang(cn.amount!));
+  });
+  it('seed: every non-draft document passes the same validation as issue', () => {
+    const s = seed();
+    for (const d of s.docs.filter((x) => x.status !== 'draft')) {
+      expect({ id: d.id, missing: missingOf(s, d.companyId, d.type, { header: d.header, lines: d.lines }) }).toEqual({ id: d.id, missing: [] });
+    }
+    const tinless = (id?: string) => s.parties.some((p) => p.id === id && p.vatRegistered && !p.taxId);
+    expect(s.parties.some((p) => p.vatRegistered && !p.taxId)).toBe(true); // the TIN-less party still exists
+    expect(s.docs.some((d) => d.status === 'draft' && tinless(d.header.partyId))).toBe(true); // ...as a draft buyer
+  });
+  it('a TI with an applied receipt cannot be cancelled; a QT with a converted child can', () => {
+    const paid = st.docs.find((d) => d.type === 'TI' && d.status === 'settled' && !d.locks.length)!;
+    expect(() => cancel(st, paid.id, paid.version, 'OTHER', 'x', me)).toThrow(/doc.has_dependents/);
+    const qt = st.docs.find((d) => d.type === 'QT' && st.links.some((l) => l.to === d.id && l.active))!;
+    expect(cancel(st, qt.id, qt.version, 'OTHER', 'x', me).status).toBe('cancelled');
   });
 });
 

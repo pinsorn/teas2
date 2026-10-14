@@ -37,6 +37,15 @@ describe('write handlers', () => {
     setSettings({ role: 'operator' });
     expect((await call('POST', `/docs/TI/${d.id}/cancel`, { version: 1, reasonCode: 'OTHER', reasonText: 'x' })).status).toBe(403);
   });
+  it('/corrections refuses a plan from another company (404) and a downgraded role (403)', async () => {
+    const ti = loadState().docs.find((x) => x.type === 'TI' && x.status === 'settled' && !x.locks.length)!;
+    const p1 = await (await call('POST', `/docs/TI/${ti.id}/correction-plan`, { header: { ...ti.header, notes: 'อ้างอิง PO' }, lines: ti.lines })).json();
+    setSettings({ companyKey: 'nonvat' });
+    expect((await call('POST', '/corrections', { planId: p1.planId, planHash: p1.planHash })).status).toBe(404);
+    setSettings({ companyKey: 'vat', role: 'operator' });
+    expect((await call('POST', '/corrections', { planId: p1.planId, planHash: p1.planHash })).status).toBe(403);
+    expect(loadState().docs.find((x) => x.id === ti.id)!.header.notes).toBe(ti.header.notes); // nothing executed
+  });
   it('correction plan then execute through /corrections', async () => {
     const ti = loadState().docs.find((x) => x.type === 'TI' && x.status === 'settled' && !x.locks.length)!;
     const plan = await (await call('POST', `/docs/TI/${ti.id}/correction-plan`, { header: { ...ti.header, notes: 'อ้างอิง PO' }, lines: ti.lines })).json();

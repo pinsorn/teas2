@@ -78,13 +78,22 @@ export function isFiscalChange(d: Doc, b: Body): boolean {
     || !!b.header.priceIncludesVat !== !!d.header.priceIncludesVat || JSON.stringify(b.lines) !== JSON.stringify(d.lines);
 }
 
-/** Receipts settle a document: the balance and status follow the active `settles` links. */
+/** SP0 §7.11: outstanding = total - active credit notes + active debit notes - active settlements (active links only). */
 export function recomputeSettlement(st: MockState, id: string): void {
   const d = st.docs.find((x) => x.id === id);
   if (!d || !HAS_OUT.includes(d.type) || !LIVE.includes(d.status)) return;
-  const paid = st.links.filter((l) => l.kind === 'settles' && l.to === id && l.active).reduce((a, l) => a + toSatang(l.amount ?? '0.00'), 0);
   const total = toSatang(d.totals.total);
-  put(st, { ...d, outstanding: fromSatang(Math.max(total - paid, 0)), status: paid >= total && total > 0 ? 'settled' : paid > 0 ? 'partly_settled' : 'issued' });
+  let out = total, paid = 0;
+  for (const l of st.links) {
+    if (!l.active || l.to !== id) continue;
+    const amt = toSatang(l.amount ?? '0.00');
+    if (l.kind === 'settles') { out -= amt; paid += amt; }
+    else if (l.kind === 'adjusts') {
+      const t = st.docs.find((x) => x.id === l.from)?.type;
+      if (t === 'CN') out -= amt; else if (t === 'DN') out += amt;
+    }
+  }
+  put(st, { ...d, outstanding: fromSatang(out), status: out <= 0 && total > 0 ? 'settled' : paid > 0 ? 'partly_settled' : 'issued' });
 }
 
 /** Links a receipt to the document it settles (used by corrections, which re-create receipts). */
@@ -92,6 +101,22 @@ export function addSettlement(st: MockState, rcId: string, targetId: string, amo
   const rc = getDoc(st, rcId);
   st.links.push({ companyId: rc.companyId, from: rcId, to: targetId, kind: 'settles', amount, active: true });
   recomputeSettlement(st, targetId);
+}
+
+/** Links a CN / DN to the TI it adjusts and refreshes that TI's balance. */
+export function addAdjustment(st: MockState, noteId: string, targetId: string, amount: Money): void {
+  const n = getDoc(st, noteId);
+  st.links.push({ companyId: n.companyId, from: noteId, to: targetId, kind: 'adjusts', amount, active: true });
+  recomputeSettlement(st, targetId);
+}
+
+/** A receipt cancelled earlier in a plan ends as `replaced` by its re-issue (same as a TI). */
+export function markReplaced(st: MockState, oldId: string, newId: string, actor: Actor): void {
+  const old = getDoc(st, oldId), nw = getDoc(st, newId);
+  put(st, { ...old, status: 'replaced', replacedById: newId, version: old.version + 1 });
+  put(st, { ...nw, replacesId: oldId });
+  st.links.push({ companyId: old.companyId, from: newId, to: oldId, kind: 'replaces', active: true });
+  logActivity(st, oldId, actor, 'reissue', `แทนที่ด้วย ${nw.number}`);
 }
 
 function insertDraft(st: MockState, companyId: string, type: DocType, body: Body, actor: Actor): Stored {
@@ -170,13 +195,14 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_cancellable', 'ยกเลิกได้เฉพาะเอกสารที่ออกแล้ว');
   checkVersion(d, version);
   if (d.locks.length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ยกเลิกไม่ได้');
-  if (st.links.some((l) => l.to === id && l.active)) throw new MockError(409, 'doc.has_dependents', 'มีเอกสารอ้างอิงอยู่ ต้องยกเลิกเอกสารนั้นก่อน');
+  // SP0 §7.4: only an applied receipt (TI) or settlements (IV) block a cancel; N-class and CN/DN do not.
+  if (st.links.some((l) => l.to === id && l.active && l.kind === 'settles')) throw new MockError(409, 'doc.has_dependents', 'มีใบเสร็จ/การชำระที่ผูกอยู่ ต้องยกเลิกหรือถอนการชำระก่อน');
   const { outstanding: _o, ...rest } = d; void _o;
   const next: Stored = { ...rest, status: 'cancelled', version: d.version + 1, cancel: { reasonCode, reasonText, at: stamp() } };
   put(st, next);
   const released = st.links.filter((l) => l.from === id && l.active);
   st.links = st.links.map((l) => (l.from === id && l.active ? { ...l, active: false } : l)); // returns converted quantity, un-settles receipts
-  for (const l of released) if (l.kind === 'settles') recomputeSettlement(st, l.to);
+  for (const l of released) if (l.kind === 'settles' || l.kind === 'adjusts') recomputeSettlement(st, l.to);
   const j = st.journals.find((x) => x.docId === id);
   const last = j?.preview.entries[j.preview.entries.length - 1];
   if (j && last && last.kind !== 'reversal') j.preview = { entries: [...j.preview.entries, reversalOf(last, today())] };
@@ -220,9 +246,13 @@ export function reissue(st: MockState, id: string, body: Body, actor: Actor, rea
   if (!LIVE.includes(old.status)) throw new MockError(409, 'doc.not_correctable', 'ออกใหม่ได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   if (old.locks.length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ออกใหม่ไม่ได้');
   if (st.links.some((l) => l.to === id && l.active)) throw new MockError(409, 'doc.has_dependents', 'มีเอกสารอ้างอิงอยู่ ต้องยกเลิกเอกสารนั้นก่อน');
+  if (old.type === 'TI' || old.type === 'RC') body = { ...body, header: { ...body.header, documentDate: old.header.documentDate } }; // I9: original date
   const missing = missingOf(st, old.companyId, old.type, body);
   if (missing.length) throw incomplete(missing);
   const totals = calc(body).totals;
+  if ((old.type === 'TI' || old.type === 'RC') && totals.total !== old.totals.total) {
+    throw new MockError(422, 'doc.reissue_total_changed', 'ออกใหม่ต้องใช้ยอดเดิม ยอดต่างต้องใช้ใบลดหนี้/ใบเพิ่มหนี้');
+  }
   const at = stamp();
   const created: Stored = {
     companyId: old.companyId, id: newId(st, old.type), type: old.type, number: allocate(st, old.companyId, old.type, body.header.documentDate),
@@ -244,7 +274,7 @@ export function reissue(st: MockState, id: string, body: Body, actor: Actor, rea
   if (oj && last && last.kind !== 'reversal') oj.preview = { entries: [...oj.preview.entries, reversalOf(last, today())] };
   setJournal(st, created.id, ledgerFor(st, created));
   st.revisions.push({ docId: created.id, revision: 0, at, actor, reason, snapshot: publicDoc(created), diff: [] });
-  for (const l of carried) if (l.kind === 'settles') recomputeSettlement(st, l.to);
+  for (const l of carried) if (l.kind === 'settles' || l.kind === 'adjusts') recomputeSettlement(st, l.to);
   logActivity(st, old.id, actor, 'reissue', `แทนที่ด้วย ${created.number}`);
   logActivity(st, created.id, actor, 'issue', `แทนที่ ${old.number}`);
   logAudit(st, actor, old.companyId, 'doc.reissue', old.id, { status: old.status }, { replacedBy: created.id, number: created.number, reason });

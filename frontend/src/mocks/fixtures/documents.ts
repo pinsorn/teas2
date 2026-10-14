@@ -52,9 +52,11 @@ export function buildDocs(parties: SeedParty[], items: SeedItem[]) {
   // ---- tax invoices: 6 drafts, then 48 dated slots in a fixed permutation, then 3 replacements ----
   let k = 0;
   const tiKey = () => `ti-${pad(k + 1)}`;
-  const party = () => customers[(k * 5) % customers.length];
+  // issued documents only use buyers that pass `issue` validation; the TIN-less VAT party stays available for drafts
+  const issuable = customers.filter((p) => !p.vatRegistered || (p.taxId && p.branchCode));
+  const party = (draft = false) => { const pool = draft ? customers : issuable; return pool[(k * 5) % pool.length]; };
   for (let i = 0; i < 6; i++, k++) {
-    const key = tiKey(); const p = party();
+    const key = tiKey(); const p = i === 2 ? customers.find((c) => c.vatRegistered && !c.taxId) ?? party(true) : party(true); // one draft keeps the TIN-less VAT buyer (validation fixture)
     add({ key, type: 'TI', party: p, date: addDays(ANCHOR, -(1 + i * 2)), lines: linesFor(key, p, k), status: 'draft',
       by: i === 1 || i === 3 ? AGENT : USER, term: true });
   }
