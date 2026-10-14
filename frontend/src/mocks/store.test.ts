@@ -45,7 +45,7 @@ describe('mock store', () => {
     const sv1 = s.items.find((i) => i.id === 'SV-01')!;
     expect([sv1.name, sv1.unitPrice, sv1.taxCode]).toEqual(['ออกแบบอัตลักษณ์องค์กร', '60000.00', 'S7']);
     const kinds = (t: string) => s.docs.filter((d) => d.type === t);
-    const tis = kinds('TI');
+    const tis = kinds('TI').filter((d) => !d.id.startsWith('spike-')); // rendering-spike TIs (ADR-0001) are extra issued docs
     const n = (st: string) => tis.filter((d) => d.status === st).length;
     expect([n('draft'), n('settled'), n('partly_settled'), n('replaced')]).toEqual([6, 30, 6, 3]);
     expect(n('issued')).toBe(12);

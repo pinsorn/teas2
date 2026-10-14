@@ -110,6 +110,20 @@ export function buildDocs(parties: SeedParty[], items: SeedItem[]) {
       lines: [{ id: `${key}-l1`, description: 'ลดหนี้ส่วนลดการค้า', qty: '1', unit: 'งาน', unitPrice: n ? '2500.00' : '1000.00', taxCode: 'S7' }] });
   });
 
+  // ---- 3 rendering-spike TIs (ADR-0001): 1 / 25 / 60 lines, dated in a month with no other document so numbering and lists stay unchanged ----
+  const PHR = ['ค่าบริการออกแบบและพัฒนาระบบบริหารจัดการข้อมูลลูกค้าสัมพันธ์', 'ค่าที่ปรึกษาด้านการวางแผนภาษีมูลค่าเพิ่มและภาษีเงินได้นิติบุคคล',
+    'ค่าติดตั้งอุปกรณ์เครือข่ายคอมพิวเตอร์พร้อมค่าบำรุงรักษาประจำปี', 'ค่าจัดอบรมพนักงานเกี่ยวกับการใช้งานโปรแกรมบัญชีสำหรับผู้ประกอบการ',
+    'ค่าขนส่งสินค้าระหว่างประเทศ รวมค่าธรรมเนียมพิธีการศุลกากรและค่าประกันภัย', 'ค่าเช่าพื้นที่จัดเก็บเอกสารและบริการสำรองข้อมูลอิเล็กทรอนิกส์',
+    'ค่าตรวจสอบความถูกต้องของรายงานภาษีซื้อ-ภาษีขาย ประจำเดือน', 'น้ำยาทำความสะอาดพื้นผิวอเนกประสงค์ ชนิดเข้มข้น ขนาดบรรจุ 5 ลิตร'];
+  const spikeLines = (key: string, n: number, long: number): DocLine[] => Array.from({ length: n }, (_, i) => {
+    let d = PHR[i % PHR.length];
+    if (i < long) while (d.length < 270 - (i % 3) * 10) d += ` และ${PHR[(i + d.length) % PHR.length]}`;
+    return { id: `${key}-l${i + 1}`, description: `${i + 1}. ${d}`.slice(0, 300), unit: 'งาน', qty: String(1 + (i % 4)), unitPrice: String(1000 + i * 125) + '.00', taxCode: 'S7' as const };
+  });
+  [['spike-1', 1, 1], ['spike-25', 25, 6], ['spike-60', 60, 20]].forEach(([key, n, long]) => {
+    add({ key: key as string, type: 'TI', party: issuable[0], date: '2025-03-14', lines: spikeLines(key as string, n as number, long as number), status: 'issued', by: USER, term: true });
+  });
+
   // ---- numbering in document-date order, then materialise ----
   const alloc = new SeriesAllocator();
   const number: Record<string, string> = {};
