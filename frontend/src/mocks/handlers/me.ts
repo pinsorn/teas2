@@ -6,7 +6,7 @@ import { ctx, problem, screenGate } from './common';
 export const buildMe = (): Me => {
   const { st, s, company, perms } = ctx();
   return {
-    userId: 'u-1', displayName: 'สมศรี บัญชีดี', activeCompanyId: company.id, permissions: perms,
+    userId: 'u-1', displayName: 'สมศรี บัญชีดี', activeCompanyId: company.id, vatRegistered: company.vatRegistered, permissions: perms,
     memberships: st.memberships.map((m) => ({ companyId: m.companyId, companyName: m.companyName, role: m.companyId === company.id ? s.role : m.role })),
   };
 };

@@ -1,14 +1,14 @@
 import type { ApiProblem } from '@/domain/types';
+import en from '@/messages/en.json';
+import th from '@/messages/th.json';
 
 export class ApiError extends Error {
   constructor(public problem: ApiProblem) { super(problem.title); }
   get code() { return this.problem.code; }
 }
 
-const FALLBACK: Record<number, string> = {
-  400: 'ข้อมูลไม่ถูกต้อง', 401: 'กรุณาเข้าสู่ระบบอีกครั้ง', 403: 'คุณไม่มีสิทธิ์ทำรายการนี้',
-  404: 'ไม่พบข้อมูลที่ต้องการ', 409: 'ข้อมูลถูกแก้ไขโดยผู้อื่น โหลดใหม่แล้วลองอีกครั้ง',
-};
+// Fallback titles live in the messages (problem.*); the cookie picks the language, Thai by default.
+const messages = () => (typeof document !== 'undefined' && /(?:^|;\s*)locale=en/.test(document.cookie) ? en : th).problem as Record<string, string>;
 
 export function normalizeProblem(status: number, body: unknown): ApiProblem {
   const b = body && typeof body === 'object' ? (body as Partial<ApiProblem>) : {};
@@ -16,7 +16,7 @@ export function normalizeProblem(status: number, body: unknown): ApiProblem {
     ...b,
     status,
     code: b.code ?? `http.${status}`,
-    title: b.title || FALLBACK[status] || 'เชื่อมต่อระบบไม่สำเร็จ ลองใหม่อีกครั้ง',
+    title: b.title || messages()[status] || messages().default,
   };
 }
 

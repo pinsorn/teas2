@@ -1,29 +1,47 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { IBM_Plex_Sans_Thai, Sarabun } from "next/font/google";
+import { NextIntlClientProvider } from "next-intl";
+import { getLocale, getTranslations } from "next-intl/server";
+import { Toaster } from "@/components/ui/sonner";
+import { QueryProvider } from "@/lib/query/QueryProvider";
+import { MockProvider } from "@/mocks/MockProvider";
+import { MockToolbarGate } from "@/mocks/MockToolbar";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+// UI font. The chosen visual direction replaces it in the design-system spec (Task 9).
+const uiFont = IBM_Plex_Sans_Thai({
+  variable: "--font-ui",
+  subsets: ["thai", "latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+// Paper font for printed documents (screen = paper).
+const paperFont = Sarabun({
+  variable: "--font-paper",
+  subsets: ["thai", "latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
-export const metadata: Metadata = {
-  title: "TEAS 2",
-  description: "TEAS 2",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const name = (await getTranslations("app"))("name");
+  return { title: { default: name, template: `%s · ${name}` }, description: name };
+}
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const locale = await getLocale();
   return (
-    <html
-      lang="th"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang={locale} className={`${uiFont.variable} ${paperFont.variable} h-full antialiased`}>
+      <body className="min-h-full">
+        <NextIntlClientProvider>
+          <QueryProvider>
+            <MockProvider>
+              {children}
+              <MockToolbarGate />
+            </MockProvider>
+            <Toaster />
+          </QueryProvider>
+        </NextIntlClientProvider>
+      </body>
     </html>
   );
 }

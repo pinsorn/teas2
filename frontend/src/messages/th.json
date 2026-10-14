@@ -1,1 +1,143 @@
-{}
+{
+  "app": { "name": "TEAS 2" },
+  "common": {
+    "close": "ปิด",
+    "retry": "ลองอีกครั้ง",
+    "loading": "กำลังโหลด",
+    "agent": "ตัวแทน AI",
+    "draftNoNumber": "ฉบับร่าง",
+    "dueOn": "ครบกำหนด {date}"
+  },
+  "problem": {
+    "400": "ข้อมูลไม่ถูกต้อง",
+    "401": "กรุณาเข้าสู่ระบบอีกครั้ง",
+    "403": "คุณไม่มีสิทธิ์ทำรายการนี้",
+    "404": "ไม่พบข้อมูลที่ต้องการ",
+    "409": "ข้อมูลถูกแก้ไขโดยผู้อื่น โหลดใหม่แล้วลองอีกครั้ง",
+    "default": "เชื่อมต่อระบบไม่สำเร็จ ลองใหม่อีกครั้ง"
+  },
+  "notFound": { "title": "ไม่พบหน้าที่ต้องการ", "body": "ลิงก์อาจพิมพ์ผิดหรือหน้านี้ถูกย้ายแล้ว", "back": "กลับหน้าหลัก" },
+  "state": {
+    "errorTitle": "โหลดข้อมูลไม่สำเร็จ",
+    "forbiddenTitle": "คุณไม่มีสิทธิ์ดูส่วนนี้",
+    "forbiddenHint": "ขอสิทธิ์จากผู้ดูแลระบบของบริษัท"
+  },
+  "shell": {
+    "skipToContent": "ข้ามไปยังเนื้อหา",
+    "navLabel": "เมนูหลัก",
+    "breadcrumbLabel": "เส้นทางหน้าจอ",
+    "openMenu": "เปิดเมนู",
+    "menuTitle": "เมนู",
+    "search": "ค้นหาหรือไปที่",
+    "searchShort": "ค้นหา",
+    "searchHint": "⌘K",
+    "meError": "โหลดข้อมูลผู้ใช้ไม่สำเร็จ เมนูจึงยังไม่แสดง",
+    "company": {
+      "label": "กิจการที่ใช้งาน",
+      "heading": "สลับกิจการ",
+      "none": "ไม่มีกิจการ",
+      "vat": "จดทะเบียน VAT",
+      "nonVat": "ไม่จดทะเบียน VAT",
+      "switchFailed": "สลับกิจการไม่สำเร็จ ลองอีกครั้ง"
+    },
+    "comingTitle": "ส่วนนี้ยังไม่เปิดใช้งาน",
+    "comingBody": "{title} จะเปิดใช้ในรอบถัดไป ตอนนี้ยังไม่มีข้อมูลหรือการทำงานในหน้านี้",
+    "comingBack": "กลับหน้าหลัก"
+  },
+  "command": {
+    "title": "ค้นหาและไปที่",
+    "description": "พิมพ์เลขที่เอกสารหรือชื่อ แล้วกด Enter เพื่อไป",
+    "placeholder": "ค้นหาเอกสาร ลูกค้า หรือหน้า",
+    "createDoc": "สร้าง{title}",
+    "create": "สร้าง",
+    "goTo": "ไปที่",
+    "documents": "เอกสาร",
+    "empty": "ไม่พบรายการที่ตรงกับคำค้น",
+    "searching": "กำลังค้นหา",
+    "searchError": "ค้นหาไม่สำเร็จ ลองอีกครั้ง"
+  },
+  "nav": {
+    "groups": {
+      "home": "หน้าหลัก",
+      "sales": "ขาย",
+      "purchases": "ซื้อ",
+      "finance": "การเงิน",
+      "accounting": "บัญชี",
+      "tax": "ภาษี",
+      "payroll": "เงินเดือน",
+      "reports": "รายงาน",
+      "master": "ข้อมูลหลัก",
+      "settings": "ตั้งค่า"
+    },
+    "items": {
+      "home": "หน้าหลัก",
+      "quotations": "ใบเสนอราคา",
+      "salesOrders": "ใบสั่งขาย",
+      "deliveryOrders": "ใบส่งของ",
+      "invoices": "ใบแจ้งหนี้",
+      "billingStatements": "ใบวางบิล",
+      "taxInvoices": "ใบกำกับภาษี",
+      "receipts": "ใบเสร็จรับเงิน",
+      "creditNotes": "ใบลดหนี้",
+      "debitNotes": "ใบเพิ่มหนี้",
+      "purchaseOrders": "ใบสั่งซื้อ",
+      "bills": "บันทึกซื้อและค่าใช้จ่าย",
+      "paymentVouchers": "ใบสำคัญจ่าย",
+      "vendorNotes": "ใบลดหนี้และใบเพิ่มหนี้ผู้ขาย",
+      "expenseClaims": "ใบเบิกค่าใช้จ่าย",
+      "bankAccounts": "บัญชีธนาคาร",
+      "deposits": "มัดจำและเงินล่วงหน้า",
+      "journals": "สมุดรายวัน",
+      "chartOfAccounts": "ผังบัญชี",
+      "openingBalances": "ยอดยกมา",
+      "schedules": "รายการซ้ำและตัดจ่าย",
+      "fixedAssets": "สินทรัพย์และค่าเสื่อม",
+      "periodClose": "ปิดงวดและปิดปี",
+      "taxSummary": "สรุปภาษีรายเดือน",
+      "vat": "ภ.พ.30 และทะเบียนภาษี",
+      "wht": "หัก ณ ที่จ่าย",
+      "cit": "ภ.ง.ด.50 และ 51",
+      "employees": "พนักงาน",
+      "payrollRuns": "รอบเงินเดือน",
+      "payrollFilings": "ภ.ง.ด.1 และ สปส.1-10",
+      "financialStatements": "งบการเงิน",
+      "receivablesPayables": "ลูกหนี้และเจ้าหนี้",
+      "salesPurchases": "สรุปขายและซื้อ",
+      "auditReport": "ตรวจสอบ",
+      "customers": "ลูกค้า",
+      "vendors": "ผู้ขาย",
+      "items": "สินค้าและบริการ",
+      "settingsCompany": "บริษัท",
+      "settingsUsers": "ผู้ใช้และสิทธิ์",
+      "settingsPosting": "การลงบัญชี",
+      "settingsDimensions": "มิติ",
+      "settingsTax": "ภาษี",
+      "settingsNumbering": "เลขที่เอกสาร",
+      "settingsApprovals": "การอนุมัติ",
+      "settingsTemplates": "แม่แบบเอกสาร",
+      "settingsConnect": "TEAS Connect"
+    }
+  },
+  "home": {
+    "title": "งานของฉัน",
+    "more": "และอีก {count} รายการ",
+    "kpi": {
+      "label": "ภาพรวมการเงิน",
+      "cash": "เงินสดและเงินฝาก",
+      "ar": "ลูกหนี้ค้างรับ",
+      "ap": "เจ้าหนี้ค้างจ่าย",
+      "vat": "ภาษีขายเดือนนี้"
+    },
+    "approvals": { "title": "รออนุมัติ", "empty": "ไม่มีเอกสารรออนุมัติ" },
+    "drafts": { "title": "ฉบับร่างของฉัน", "empty": "ไม่มีฉบับร่างค้างอยู่" },
+    "overdue": { "title": "เกินกำหนดชำระ", "empty": "ไม่มีรายการเกินกำหนด", "outstanding": "ค้างชำระ {amount}" },
+    "deadlines": { "title": "กำหนดยื่นภาษี", "empty": "ไม่มีกำหนดยื่นภาษีที่ใกล้ถึง" },
+    "bank": { "title": "รายการธนาคารที่ยังไม่กระทบยอด", "empty": "กระทบยอดครบทุกรายการแล้ว", "count": "{count} รายการ" },
+    "agent": {
+      "title": "สรุปงานจากตัวแทน AI",
+      "empty": "ตัวแทน AI ยังไม่มีงานในช่วงนี้",
+      "posted": "ลงบัญชีแล้ว {count} รายการ",
+      "waiting": "รอตรวจ {count} รายการ"
+    }
+  }
+}

@@ -1,1 +1,143 @@
-{}
+{
+  "app": { "name": "TEAS 2" },
+  "common": {
+    "close": "Close",
+    "retry": "Try again",
+    "loading": "Loading",
+    "agent": "AI agent",
+    "draftNoNumber": "Draft",
+    "dueOn": "Due {date}"
+  },
+  "problem": {
+    "400": "The data is not valid",
+    "401": "Please sign in again",
+    "403": "You do not have permission to do this",
+    "404": "The requested item was not found",
+    "409": "Someone else changed this. Reload and try again",
+    "default": "Could not reach the system. Try again"
+  },
+  "notFound": { "title": "Page not found", "body": "The link may be mistyped or the page may have moved", "back": "Back to home" },
+  "state": {
+    "errorTitle": "Could not load the data",
+    "forbiddenTitle": "You do not have access to this section",
+    "forbiddenHint": "Ask your company administrator for access"
+  },
+  "shell": {
+    "skipToContent": "Skip to content",
+    "navLabel": "Main menu",
+    "breadcrumbLabel": "Page path",
+    "openMenu": "Open menu",
+    "menuTitle": "Menu",
+    "search": "Search or go to",
+    "searchShort": "Search",
+    "searchHint": "⌘K",
+    "meError": "Could not load your profile, so the menu is not shown",
+    "company": {
+      "label": "Active entity",
+      "heading": "Switch entity",
+      "none": "No entity",
+      "vat": "VAT registered",
+      "nonVat": "Not VAT registered",
+      "switchFailed": "Could not switch entity. Try again"
+    },
+    "comingTitle": "This section is not available yet",
+    "comingBody": "{title} opens in a later release. There is no data or action on this page yet.",
+    "comingBack": "Back to home"
+  },
+  "command": {
+    "title": "Search and go to",
+    "description": "Type a document number or a name, then press Enter to go",
+    "placeholder": "Search documents, contacts or pages",
+    "createDoc": "Create {title}",
+    "create": "Create",
+    "goTo": "Go to",
+    "documents": "Documents",
+    "empty": "Nothing matches your search",
+    "searching": "Searching",
+    "searchError": "Search failed. Try again"
+  },
+  "nav": {
+    "groups": {
+      "home": "Home",
+      "sales": "Sales",
+      "purchases": "Purchases",
+      "finance": "Finance",
+      "accounting": "Accounting",
+      "tax": "Tax",
+      "payroll": "Payroll",
+      "reports": "Reports",
+      "master": "Master data",
+      "settings": "Settings"
+    },
+    "items": {
+      "home": "Home",
+      "quotations": "Quotations",
+      "salesOrders": "Sales orders",
+      "deliveryOrders": "Delivery orders",
+      "invoices": "Invoices",
+      "billingStatements": "Billing statements",
+      "taxInvoices": "Tax invoices",
+      "receipts": "Receipts",
+      "creditNotes": "Credit notes",
+      "debitNotes": "Debit notes",
+      "purchaseOrders": "Purchase orders",
+      "bills": "Bills and expenses",
+      "paymentVouchers": "Payment vouchers",
+      "vendorNotes": "Vendor credit and debit notes",
+      "expenseClaims": "Expense claims",
+      "bankAccounts": "Bank accounts",
+      "deposits": "Deposits and advances",
+      "journals": "Journals",
+      "chartOfAccounts": "Chart of accounts",
+      "openingBalances": "Opening balances",
+      "schedules": "Recurring and amortisation",
+      "fixedAssets": "Fixed assets and depreciation",
+      "periodClose": "Period and year close",
+      "taxSummary": "Monthly tax summary",
+      "vat": "VAT return and registers",
+      "wht": "Withholding tax",
+      "cit": "Corporate income tax",
+      "employees": "Employees",
+      "payrollRuns": "Payroll runs",
+      "payrollFilings": "Payroll filings",
+      "financialStatements": "Financial statements",
+      "receivablesPayables": "Receivables and payables",
+      "salesPurchases": "Sales and purchases summary",
+      "auditReport": "Audit",
+      "customers": "Customers",
+      "vendors": "Vendors",
+      "items": "Products and services",
+      "settingsCompany": "Company",
+      "settingsUsers": "Users and permissions",
+      "settingsPosting": "Posting",
+      "settingsDimensions": "Dimensions",
+      "settingsTax": "Tax",
+      "settingsNumbering": "Document numbering",
+      "settingsApprovals": "Approvals",
+      "settingsTemplates": "Document templates",
+      "settingsConnect": "TEAS Connect"
+    }
+  },
+  "home": {
+    "title": "My work",
+    "more": "and {count} more",
+    "kpi": {
+      "label": "Financial overview",
+      "cash": "Cash and bank",
+      "ar": "Receivables",
+      "ap": "Payables",
+      "vat": "Output VAT this month"
+    },
+    "approvals": { "title": "Awaiting approval", "empty": "No documents awaiting approval" },
+    "drafts": { "title": "My drafts", "empty": "No drafts in progress" },
+    "overdue": { "title": "Overdue", "empty": "Nothing is overdue", "outstanding": "Outstanding {amount}" },
+    "deadlines": { "title": "Tax deadlines", "empty": "No tax deadlines coming up" },
+    "bank": { "title": "Unreconciled bank lines", "empty": "Every bank line is reconciled", "count": "{count} lines" },
+    "agent": {
+      "title": "AI agent digest",
+      "empty": "The AI agent has no activity in this period",
+      "posted": "{count} posted",
+      "waiting": "{count} waiting for review"
+    }
+  }
+}
