@@ -1,6 +1,5 @@
 'use client';
 import { useTranslations } from 'next-intl';
-import { useRef } from 'react';
 import {
   AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
@@ -10,16 +9,15 @@ import type { CorrectionPlan } from '@/domain/types';
 import { ApiError } from '@/lib/api/client';
 
 /** SP0 section 7.3: one "แก้ไข" button, the system picks the behaviour. This shows what it will do, in order, before anything is written. */
-export function CorrectionPlanDialog({ plan, busy, error, onConfirm, onSendToApprover, onCancel }: {
-  plan: CorrectionPlan; busy?: boolean; error?: unknown; onConfirm: () => void; onSendToApprover: () => void; onCancel: () => void;
+export function CorrectionPlanDialog({ plan, busy, error, onRegenerate, onConfirm, onSendToApprover, onCancel }: {
+  plan: CorrectionPlan; busy?: boolean; error?: unknown; onRegenerate?: () => void; onConfirm: () => void; onSendToApprover: () => void; onCancel: () => void;
 }) {
   const t = useTranslations('docView.plan');
   const tp = useTranslations('problem');
-  const confirmRef = useRef<HTMLButtonElement>(null);
   const blocked = plan.missingPermissions.length > 0;
   return (
     <AlertDialog open onOpenChange={(o) => { if (!o) onCancel(); }}>
-      <AlertDialogContent className="sm:max-w-xl" onOpenAutoFocus={(e) => { e.preventDefault(); confirmRef.current?.focus(); }}>
+      <AlertDialogContent className="sm:max-w-xl">
         <AlertDialogHeader>
           <AlertDialogTitle>{t('title')}</AlertDialogTitle>
           <AlertDialogDescription>{plan.explanation}</AlertDialogDescription>
@@ -43,7 +41,8 @@ export function CorrectionPlanDialog({ plan, busy, error, onConfirm, onSendToApp
         <AlertDialogFooter>
           <AlertDialogCancel>{t('back')}</AlertDialogCancel>
           {blocked ? <Button type="button" variant="outline" onClick={onSendToApprover}>{t('send')}</Button> : null}
-          <Button ref={confirmRef} type="button" disabled={blocked || busy || !plan.steps.length} onClick={onConfirm}>{t('confirm')}</Button>
+          {onRegenerate ? <Button type="button" variant="outline" onClick={onRegenerate}>{t('regenerate')}</Button> : null}
+          <Button type="button" disabled={blocked || !!onRegenerate || busy || !plan.steps.length} onClick={onConfirm}>{t('confirm')}</Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

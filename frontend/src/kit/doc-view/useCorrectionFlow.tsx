@@ -5,11 +5,12 @@ import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 import { useMe } from '@/app-shell/useMe';
 import { Alert, AlertTitle } from '@/components/ui/alert';
-import { routesOf, type DocDescriptor } from '@/domain/descriptors';
+import type { DocDescriptor } from '@/domain/descriptors';
 import type { CorrectionPlan, Doc } from '@/domain/types';
 import { ApiError } from '@/lib/api/client';
 import { endpoints, type DocInput } from '@/lib/api/endpoints';
 import { CorrectionPlanDialog } from '../dialogs/CorrectionPlanDialog';
+import { docHref } from './ChainPanel';
 
 /**
  * Glue for revise mode: the editor's `onRevisionRequested(proposed)` calls `request`, which fetches the plan and opens the dialog.
@@ -26,10 +27,11 @@ export function useCorrectionFlow(d: DocDescriptor, doc: Doc) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>();
   const [sent, setSent] = useState(false);
+  const [proposed, setProposed] = useState<DocInput>();
 
-  const request = async (proposed: DocInput) => {
-    setError(undefined); setSent(false);
-    try { setPlan(await endpoints.getCorrectionPlan(d.type, doc.id, proposed)); } catch (e) { setError(e); }
+  const request = async (next: DocInput) => {
+    setError(undefined); setSent(false); setProposed(next);
+    try { setPlan(await endpoints.getCorrectionPlan(d.type, doc.id, next)); } catch (e) { setError(e); }
   };
   const confirm = async () => {
     if (!plan) return;
@@ -39,7 +41,8 @@ export function useCorrectionFlow(d: DocDescriptor, doc: Doc) {
       if (me) await qc.invalidateQueries({ queryKey: [me.activeCompanyId] });
       const next = [...affected].reverse().find((a) => a.type === d.type) ?? affected[affected.length - 1];
       setPlan(undefined);
-      router.push(routesOf(d).view(next?.docId ?? doc.id));
+      // each affected document opens on its own type's route (a CN-only plan lands on the CN, never a TI route)
+      router.push((next && docHref(next.type, next.docId)) ?? docHref(d.type, doc.id) ?? d.basePath);
     } catch (e) {
       setError(e);
     } finally {
@@ -49,9 +52,11 @@ export function useCorrectionFlow(d: DocDescriptor, doc: Doc) {
   // Sending to an approver is a mock inbox entry in SP1: it only acknowledges, nothing is written.
   const send = () => { setPlan(undefined); setSent(true); };
 
+  // A stale / vanished plan cannot be confirmed: offer a fresh one from the kept proposal.
+  const stale = error instanceof ApiError && ['correction.plan_stale', 'correction.plan_not_found'].includes(error.code) && !!proposed;
   const ui = (
     <>
-      {plan ? <CorrectionPlanDialog plan={plan} busy={busy} error={error} onConfirm={() => void confirm()} onSendToApprover={send} onCancel={() => { setPlan(undefined); setError(undefined); }} /> : null}
+      {plan ? <CorrectionPlanDialog plan={plan} busy={busy} error={error} onRegenerate={stale ? () => void request(proposed!) : undefined} onConfirm={() => void confirm()} onSendToApprover={send} onCancel={() => { setPlan(undefined); setError(undefined); }} /> : null}
       {!plan && error ? <Alert variant="destructive"><AlertTitle>{error instanceof ApiError ? error.problem.title : tp('default')}</AlertTitle></Alert> : null}
       {sent ? <Alert role="status"><AlertTitle>{t('sent')}</AlertTitle></Alert> : null}
     </>

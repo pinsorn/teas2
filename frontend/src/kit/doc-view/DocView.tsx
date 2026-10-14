@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { isForbidden, useMe } from '@/app-shell/useMe';
 import { Alert, AlertTitle } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import type { DocDescriptor } from '@/domain/descriptors';
+import { routesOf, type DocDescriptor } from '@/domain/descriptors';
 import type { Doc, DocType } from '@/domain/types';
 import { ApiError } from '@/lib/api/client';
 import { endpoints } from '@/lib/api/endpoints';
@@ -21,7 +21,7 @@ import { ActionBar, type ConvertibleDescriptor } from './ActionBar';
 import { ActivityTimeline } from './ActivityTimeline';
 import { ChainPanel, docHref } from './ChainPanel';
 import { LedgerTab } from './LedgerTab';
-import { LockBanner } from './LockBanner';
+import { LockBanner, type ExitAction } from './LockBanner';
 import { RevisionHistory } from './RevisionHistory';
 
 export interface DocViewProps { descriptor: DocDescriptor; id: string }
@@ -58,6 +58,7 @@ export function DocView({ descriptor: d, id }: DocViewProps) {
 function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissions: string[] }) {
   const t = useTranslations('docView');
   const tc = useTranslations('common');
+  const ts = useTranslations('state');
   const locale = useLocale();
   const router = useRouter();
   const qc = useQueryClient();
@@ -71,6 +72,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
   const cancel = useMutation({
     mutationFn: (v: { code: string; text: string }) => endpoints.cancelDoc(d.type, doc.id, doc.version, v.code, v.text),
     onSuccess: async () => { await refresh(); setCancelOpen(false); },
+    onError: (e) => { if (e instanceof ApiError && e.problem.status === 409) void refresh(); }, // stale version: reload so a retry sends the current one
   });
   const convert = useMutation({
     mutationFn: (target: DocType) => endpoints.convertDoc(d.type, doc.id, target, doc.lines.map((l) => ({ sourceLineId: l.id, qty: l.qty }))),
@@ -80,6 +82,15 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
       if (href) router.push(href); else setNotice(t('actions.converted', { number: nd.number ?? nd.type }));
     },
   });
+
+  // Exits are real actions. Filing / period: the same correction flow as the edit button (needs the correct permission); settlement: the chain, where the receipt is un-applied.
+  const exitAction: ExitAction = (lock) => {
+    if (lock.kind === 'filing' || lock.kind === 'period') {
+      return { onClick: () => router.push(routesOf(d).edit(doc.id)), why: permissions.includes(d.permissions.correct) ? undefined : ts('needPermission', { permission: d.permissions.correct }) };
+    }
+    if (lock.kind === 'settlement') return { onClick: () => setTab('chain') };
+    return undefined;
+  };
 
   const title = locale === 'en' ? d.titleEn : d.titleTh;
   const label = `${doc.type} ${doc.number ?? ''}`.trim();
@@ -100,7 +111,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
           <div><dt className="text-small text-muted-foreground">{t('header.total')}</dt><dd className="tabular-nums">{formatTHB(doc.totals.total)}</dd></div>
           {doc.outstanding !== undefined ? <div><dt className="text-small text-muted-foreground">{t('header.outstanding')}</dt><dd className="tabular-nums">{formatTHB(doc.outstanding)}</dd></div> : null}
         </dl>
-        <LockBanner locks={doc.locks} />
+        <LockBanner locks={doc.locks} exitAction={exitAction} />
       </header>
 
       <ActionBar descriptor={d as ConvertibleDescriptor} doc={doc} permissions={permissions} onCancel={() => { cancel.reset(); setCancelOpen(true); }} onConvert={(x) => convert.mutate(x)} />
@@ -119,7 +130,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
       </Tabs>
 
       {cancelOpen ? (
-        <CancelDialog docLabel={label} busy={cancel.isPending} error={cancel.error} onCancel={() => setCancelOpen(false)}
+        <CancelDialog docLabel={label} busy={cancel.isPending} error={cancel.error} hint={cancel.error instanceof ApiError && cancel.error.problem.status === 409 ? t('cancel.stale') : undefined} onCancel={() => setCancelOpen(false)}
           onConfirm={(code, text) => cancel.mutate({ code, text })} />
       ) : null}
     </div>

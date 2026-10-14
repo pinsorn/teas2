@@ -6,7 +6,7 @@
     "lock": { "label": "Locked", "exits": "Ways forward" },
     "actions": {
       "label": "Actions", "issueDraft": "Save and issue…", "edit": "Edit", "print": "Print", "copy": "Copy as new",
-      "cancel": "Cancel document", "convert": "Convert to…", "locked": "This document is locked; see the ways forward in the banner above", "converted": "Created {number}"
+      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}"
     },
     "paper": { "stub": "The document paper preview appears here", "snapshot": "Revision {n}" },
     "chain": {
@@ -34,13 +34,13 @@
       "field": { "header.notes": "Notes", "header.reference": "Reference", "header.dueDate": "Due date", "header.documentDate": "Document date", "header.partyId": "Counterparty" }
     },
     "cancel": {
-      "title": "Cancel document {doc}", "body": "The ledger entries of this document are reversed and the document is cancelled. This cannot be undone.",
+      "stale": "The document changed. The latest data was loaded; check it and confirm again.", "title": "Cancel document {doc}", "body": "The ledger entries of this document are reversed and the document is cancelled. This cannot be undone.",
       "reason": "Reason", "pick": "Choose a reason", "text": "Details", "confirm": "Confirm cancellation", "back": "Back",
       "code": { "WRONG_PARTY": "Wrong customer/vendor", "WRONG_AMOUNT": "Wrong amount", "WRONG_ITEMS": "Wrong items", "DUPLICATE": "Duplicate", "OTHER": "Other" }
     },
     "plan": {
       "title": "Correction plan", "steps": "Steps, in order", "noSteps": "There is nothing to do", "missing": "Missing permissions: {list}",
-      "confirm": "Confirm all", "send": "Send to someone who can approve", "back": "Back", "sent": "Plan sent to an approver",
+      "confirm": "Confirm all", "regenerate": "Create a new plan", "send": "Send to someone who can approve", "back": "Back", "sent": "Plan sent to an approver",
       "action": { "revise": "Revise", "cancel": "Cancel", "reissue": "Reissue", "issue_cn": "Issue credit note", "issue_dn": "Issue debit note" }
     }
   },
