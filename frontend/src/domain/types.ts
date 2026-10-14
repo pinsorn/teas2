@@ -35,7 +35,7 @@ export interface Doc { id: string; type: DocType; number?: string; status: DocSt
   outstanding?: Money; locks: Lock[]; createdBy: Actor; issuedAt?: string;
   cancel?: { reasonCode: string; reasonText: string; at: string }; replacedById?: string; replacesId?: string }
 export interface DocSummary { id: string; type: DocType; number?: string; status: DocStatus; documentDate: IsoDate;
-  partyName: string; total: Money; outstanding?: Money; dueDate?: IsoDate; createdByAgent: boolean }
+  partyName: string; total: Money; outstanding?: Money; dueDate?: IsoDate; reference?: string; createdByAgent: boolean }
 export interface Page<T> { items: T[]; nextCursor?: string; total?: number }
 
 export type LinkKind = 'converted_from' | 'settles' | 'adjusts' | 'groups' | 'replaces' | 'issues';

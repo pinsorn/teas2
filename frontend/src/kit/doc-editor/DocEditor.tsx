@@ -7,18 +7,16 @@ import { useCompanyEpoch } from '@/app-shell/useCompanyEpoch';
 import { useMe } from '@/app-shell/useMe';
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { routesOf, type DocDescriptor } from '@/domain/descriptors';
 import type { Doc, DocHeader, DocLine, ItemSummary, Me, PartySummary } from '@/domain/types';
 import { ApiError } from '@/lib/api/client';
 import { endpoints, type DocInput } from '@/lib/api/endpoints';
-import { formatDateBE, todayIso } from '@/lib/format';
+import { todayIso } from '@/lib/format';
 import { qk } from '@/lib/query/keys';
 import { cn } from '@/lib/utils';
 import { ConfirmIssueDialog } from '../dialogs/ConfirmIssueDialog';
 import { StatusChip } from '../doc-list/StatusChip';
+import { HeaderFields } from './HeaderFields';
 import { JournalDrawer } from './JournalDrawer';
 import { isBlankLine, LineGrid, newLine } from './LineGrid';
 import { MissingSummary } from './MissingSummary';
@@ -77,6 +75,7 @@ export function DocEditor(props: DocEditorProps) {
 
 function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequested }: DocEditorProps) {
   const t = useTranslations('docEditor');
+  const td = useTranslations(`docTypes.${d.type}`);
   const locale = useLocale();
   const qc = useQueryClient();
   const { me } = useMe();
@@ -188,8 +187,8 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   };
 
   const amounts = useMemo(() => Object.fromEntries((compute.data?.lines ?? []).map((l) => [l.id, l.net])), [compute.data]);
-  const heading = mode === 'create' ? t('create', { title }) : mode === 'edit-draft' ? t('editDraft', { title }) : t('revise', { title });
-  const primaryLabel = mode === 'revise' ? t('saveRevision') : t('issueAction', { title });
+  const heading = mode === 'create' ? td('create') : mode === 'edit-draft' ? t('editDraft', { title }) : t('revise', { title });
+  const primaryLabel = mode === 'revise' ? t('saveRevision') : td('issue');
   const conflict = autosave.status === 'conflict' || (issueError instanceof ApiError && issueError.problem.status === 409);
   const reload = <Button size="sm" variant="outline" onClick={() => window.location.reload()}>{t('reload')}</Button>;
 
@@ -217,24 +216,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
                   search={(q) => endpoints.searchParties({ kind: partyKind === 'employee' ? undefined : partyKind, q, limit: 8 }).then((p) => p.items)} />
               </div>
             )}
-            <div className="grid gap-1.5">
-              <Label htmlFor={`${ids}-date`}>{t('documentDate')}</Label>
-              <Input id={`${ids}-date`} type="date" value={header.documentDate} onChange={(e) => setHeader((h) => ({ ...h, documentDate: e.target.value }))} />
-              {header.documentDate && <p className="text-small text-muted-foreground">{formatDateBE(header.documentDate)}</p>}
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor={`${ids}-due`}>{t('dueDate')}</Label>
-              <Input id={`${ids}-due`} type="date" value={header.dueDate ?? ''} onChange={(e) => setHeader((h) => ({ ...h, dueDate: e.target.value || undefined }))} />
-              {header.dueDate && <p className="text-small text-muted-foreground">{formatDateBE(header.dueDate)}</p>}
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor={`${ids}-ref`}>{t('reference')}</Label>
-              <Input id={`${ids}-ref`} type="text" autoComplete="off" value={header.reference ?? ''} onChange={(e) => setHeader((h) => ({ ...h, reference: e.target.value }))} />
-            </div>
-            <div className="grid gap-1.5 md:col-span-2">
-              <Label htmlFor={`${ids}-notes`}>{t('notes')}</Label>
-              <Textarea id={`${ids}-notes`} value={header.notes ?? ''} onChange={(e) => setHeader((h) => ({ ...h, notes: e.target.value }))} />
-            </div>
+            <HeaderFields keys={d.headerFields} ids={ids} header={header} setHeader={setHeader} />
           </section>
 
           <section aria-labelledby={`${ids}-lines`} className="grid gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10">

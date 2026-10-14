@@ -21,9 +21,11 @@ import { LoadingState } from '../states/LoadingState';
 import { isNotFound, NotFoundState } from '../states/NotFoundState';
 import { ActionBar, type ConvertibleDescriptor } from './ActionBar';
 import { ActivityTimeline } from './ActivityTimeline';
-import { ChainPanel, docHref } from './ChainPanel';
+import { ChainPanel } from './ChainPanel';
+import { docViewHref } from '@/descriptors';
 import { LedgerTab } from './LedgerTab';
 import { LockBanner, type ExitAction } from './LockBanner';
+import { PAPERS } from '../paper/registry';
 import { PaperView } from '../paper/PaperView';
 import { RevisionHistory } from './RevisionHistory';
 
@@ -35,7 +37,7 @@ function PaperStub({ doc, revision }: { doc: Doc; revision?: number }) {
   return (
     <div className="rounded-lg border border-dashed border-border p-6 text-body text-muted-foreground">
       {revision !== undefined ? <p className="font-medium text-foreground">{t('snapshot', { n: revision })}</p> : null}
-      <p>{t('stub')}</p>
+      <p>{t(revision !== undefined ? 'stub' : 'notPrintable')}</p>
       <p className="tabular-nums">{doc.number ?? ''}</p>
     </div>
   );
@@ -87,7 +89,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
     mutationFn: (target: DocType) => endpoints.convertDoc(d.type, doc.id, target, doc.lines.map((l) => ({ sourceLineId: l.id, qty: l.qty }))),
     onSuccess: async (nd) => {
       await refresh();
-      const href = docHref(nd.type, nd.id);
+      const href = docViewHref(nd.type, nd.id);
       if (href) router.push(href); else setNotice(t('actions.converted', { number: nd.number ?? nd.type }));
     },
   });
@@ -129,7 +131,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="h-auto flex-wrap group-data-horizontal/tabs:h-auto">{tabs.map((k) => <TabsTrigger key={k} value={k} className="h-8 flex-auto">{t(`tabs.${k}`)}</TabsTrigger>)}</TabsList>
-        <TabsContent value="paper" className="overflow-x-auto">{doc.type === 'TI' ? <PaperView type="TI" id={doc.id} /> : <PaperStub doc={doc} />}</TabsContent>
+        <TabsContent value="paper" className="overflow-x-auto">{PAPERS[doc.type] ? <PaperView type={doc.type} id={doc.id} /> : <PaperStub doc={doc} />}</TabsContent>
         <TabsContent value="chain"><ChainPanel type={d.type} id={doc.id} /></TabsContent>
         <TabsContent value="ledger"><LedgerTab type={d.type} id={doc.id} /></TabsContent>
         <TabsContent value="activity"><ActivityTimeline type={d.type} id={doc.id} /></TabsContent>

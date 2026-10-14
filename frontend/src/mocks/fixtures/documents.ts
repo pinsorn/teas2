@@ -1,4 +1,5 @@
-import type { ActivityEntry, Actor, ChainEdge, CorrectionClass, Doc, DocLine, DocStatus, DocType, Lock, PartySummary, Revision } from '@/domain/types';
+import type { ActivityEntry, Actor, ChainEdge, Doc, DocLine, DocStatus, DocType, Lock, PartySummary, Revision } from '@/domain/types';
+import { CLASS } from '@/domain/doc-types';
 import { fromSatang, toSatang } from '../engine/money';
 import { SeriesAllocator } from '../engine/numbering';
 import { computeDoc } from '../engine/vat';
@@ -16,11 +17,7 @@ export const addDays = (d: string, n: number) => {
 export const USER: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
 export const AGENT: Actor = { kind: 'agent', id: 'ag-1', name: 'ผู้ช่วยบัญชี (AI)', ownerName: USER.name };
 /** SP0-charter §7.3 */
-export const CLASS: Record<DocType, CorrectionClass> = {
-  QT: 'N', SO: 'N', DO: 'N', BL: 'N', PO: 'N',
-  IV: 'L', PB: 'L', PCN: 'L', PDN: 'L', PV: 'L', EX: 'L', JV: 'L', FA: 'L', DP: 'L', PR: 'L', OB: 'L',
-  TI: 'T', RC: 'T', CN: 'T', DN: 'T', WT: 'T',
-};
+export { CLASS } from '@/domain/doc-types';
 const pad = (n: number, w = 3) => String(n).padStart(w, '0');
 const strip = (p: SeedParty): PartySummary => { const r: Partial<SeedParty> = { ...p }; delete r.companyId; return r as PartySummary; };
 const FILING_LOCK: Lock = { kind: 'filing', reason: 'ภ.พ.30 เดือน ก.ย. 2569 ยื่นแล้ว', exits: ['ออกใบลดหนี้ / ใบเพิ่มหนี้ในงวดถัดไป'] };

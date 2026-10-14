@@ -1,6 +1,7 @@
+import { docListHref } from '@/descriptors';
 import { describe, expect, it } from 'vitest';
 import { PERMISSIONS_BY_ROLE } from '@/mocks/permissions';
-import { NAV, docHref, matchNavItem, visibleNav } from './nav';
+import { NAV, matchNavItem, visibleNav } from './nav';
 
 const labels = (g: ReturnType<typeof visibleNav>) => g.flatMap((x) => x.items.map((i) => i.key));
 
@@ -33,16 +34,16 @@ describe('navigation', () => {
   });
 });
 
-describe('docHref / matchNavItem', () => {
+describe('docListHref / matchNavItem', () => {
   it('routes a document type to its list, honouring VAT status', () => {
-    expect(docHref('TI', true)).toBe('/sales/tax-invoices');
-    expect(docHref('TI', false)).toBeUndefined();
-    expect(docHref('IV', false)).toBe('/sales/invoices');
-    expect(docHref('IV', true)).toBeUndefined();
-    expect(docHref('QT', true)).toBe('/sales/quotations');
+    expect(docListHref('TI', true)).toBe('/sales/tax-invoices');
+    expect(docListHref('TI', false)).toBeUndefined();
+    expect(docListHref('IV', false)).toBeUndefined();
+    expect(docListHref('IV', true)).toBeUndefined();
+    expect(docListHref('QT', true)).toBeUndefined();
   });
   it('has no route (so no link) for types without a nav page', () => {
-    for (const t of ['JV', 'DP', 'WT', 'FA', 'PR', 'OB'] as const) expect(docHref(t, true)).toBeUndefined();
+    for (const t of ['JV', 'DP', 'WT', 'FA', 'PR', 'OB'] as const) expect(docListHref(t, true)).toBeUndefined();
   });
   it('matches the longest list route, and only on a segment boundary', () => {
     expect(matchNavItem('/sales/tax-invoices/abc')?.item.key).toBe('taxInvoices');

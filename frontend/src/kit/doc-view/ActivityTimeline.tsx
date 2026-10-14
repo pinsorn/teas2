@@ -17,7 +17,7 @@ export function ActivityTimeline({ type, id }: { type: DocType; id: string }) {
   const t = useTranslations('docView.activity');
   const tc = useTranslations('common');
   const { me } = useMe();
-  const q = useQuery({ queryKey: qk.activity(me!.activeCompanyId, id), queryFn: () => endpoints.getActivity(type, id) });
+  const q = useQuery({ queryKey: qk.activity(me!.activeCompanyId, type, id), queryFn: () => endpoints.getActivity(type, id) });
   if (q.isPending) return <LoadingState rows={3} />;
   if (q.error) return isForbidden(q.error) ? <ForbiddenState permission={`doc.${type}.read`} /> : <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
   if (!q.data.length) return <p className="text-body text-muted-foreground">{t('empty')}</p>;

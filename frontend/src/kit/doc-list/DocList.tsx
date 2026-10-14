@@ -3,7 +3,7 @@ import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useLocale, useTranslations } from 'next-intl';
+import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -50,7 +50,7 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
   const ts = useTranslations('state');
   const tStatus = useTranslations('status');
   const tc = useTranslations('common');
-  const locale = useLocale();
+  const td = useTranslations(`docTypes.${d.type}`);
   const router = useRouter();
   const { me, isError: meFailed, error: meError, refetch: refetchMe } = useMe();
   const { filters, setFilters, patch } = useDocListParams();
@@ -59,7 +59,7 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
   const searchRef = useRef<HTMLInputElement>(null);
   const debounce = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const title = locale === 'en' ? d.titleEn : d.titleTh;
+  const title = td('title');
   const routes = routesOf(d);
   const canCreate = !!me?.permissions.includes(d.permissions.create);
   const companyId = me?.activeCompanyId;
@@ -90,7 +90,7 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
-      if (e.key === '/') { e.preventDefault(); searchRef.current?.focus(); }
+      if (e.code === 'Slash') { e.preventDefault(); searchRef.current?.focus(); }
       else if (e.code === 'KeyN' && canCreate) { e.preventDefault(); router.push(routes.create); }
     };
     window.addEventListener('keydown', onKey);
@@ -103,7 +103,7 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
   if ((meFailed && !me) || (q.isError && !q.data)) {
     const e = meFailed && !me ? meError : q.error;
     if (e instanceof ApiError && e.problem.status === 403) return <ForbiddenState detail={e.problem.detail} permission={meFailed && !me ? undefined : d.permissions.read} />;
-    if (e instanceof ApiError && e.problem.status === 404 && e.code === 'doc.type_not_available') return <NotAvailableState />;
+    if (e instanceof ApiError && e.problem.status === 404 && e.code === 'doc.type_not_available') return <NotAvailableState reason={d.vat === 'non-vat-only' ? 'nonVatOnly' : 'vatOnly'} />;
     return <ErrorState error={e} onRetry={() => void (meFailed && !me ? refetchMe() : q.refetch())} />;
   }
   if (!q.data) return <LoadingState />;
@@ -123,6 +123,7 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
   const field = 'h-(--ctl-h) rounded-lg border border-input bg-card px-3 text-body outline-none';
   return (
     <div className="flex flex-col gap-3">
+      <h1 className="text-title font-semibold">{title}</h1>
       <SavedViews type={d.type} presets={savedViews} activeKey={filters.view} current={Object.fromEntries(Object.entries(filters).filter(([k]) => k !== 'view'))}
         onSelect={(v) => { if (searchRef.current) searchRef.current.value = v?.params.q ?? ''; apply(v ? { ...v.params, view: v.key } : {}, true); }} />
       <div className="flex flex-wrap items-end gap-2">
@@ -151,7 +152,7 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
       {rows.length === 0 && !q.hasNextPage && !q.isError ? (
         hasFilters
           ? <EmptyState title={t('noMatchTitle')} body={t('noMatchBody')} action={<Button variant="outline" onClick={clearFilters}>{t('clearFilters')}</Button>} />
-          : <EmptyState title={ts('emptyTitle', { title })} body={ts('emptyBody')} action={createLink('emptyCreate')} />
+          : <EmptyState title={td('empty')} body={ts('emptyBody')} action={createLink('emptyCreate')} />
       ) : (
         <div className="overflow-hidden rounded-lg border bg-card">
           <Table>

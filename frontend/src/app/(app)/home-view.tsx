@@ -4,7 +4,7 @@ import { LockIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
-import { docHref } from '@/app-shell/nav';
+import { docListHref } from '@/descriptors';
 import { isForbidden, useMe } from '@/app-shell/useMe';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -87,7 +87,7 @@ function DocRows({ docs, mode }: { docs: DocSummary[]; mode: 'document' | 'overd
         <li key={d.id} className="flex items-baseline justify-between gap-3 py-2">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <DocNumber href={docHref(d.type, me?.vatRegistered ?? false)} id={d.id} label={d.number ?? t('common.draftNoNumber')} />
+              <DocNumber href={docListHref(d.type, me?.vatRegistered ?? false)} id={d.id} label={d.number ?? t('common.draftNoNumber')} />
               {d.createdByAgent && <Badge variant="secondary">{t('common.agent')}</Badge>}
             </div>
             <p className="truncate text-sm text-muted-foreground">{d.partyName}</p>

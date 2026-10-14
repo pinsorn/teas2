@@ -1,7 +1,7 @@
 import type {
   Actor, ComputeResult, Doc, DocHeader, DocLine, DocStatus, DocType, IsoDate, JournalPreview, Lock, MissingItem, Money, PartySummary, Qty,
 } from '@/domain/types';
-import { CLASS } from '../fixtures/documents';
+import { CLASS, CONVERSIONS, DOC_TYPES, isTypeAvailable } from '@/domain/doc-types';
 import type { MockState } from '../store';
 import { consumed, fmtQ, q4 } from './chain';
 import { ledgerFor, reversalOf } from './ledger';
@@ -16,7 +16,8 @@ type Stored = MockState['docs'][number];
 export const LIVE: DocStatus[] = ['issued', 'partly_settled', 'settled'];
 const HAS_OUT: DocType[] = ['TI', 'IV']; // documents that carry an outstanding balance
 const TAX_BUYER: DocType[] = ['TI', 'CN', 'DN']; // the buyer's TIN + branch must be on the document
-const CONVERT_TO: Partial<Record<DocType, DocType[]>> = { QT: ['SO', 'TI', 'IV'], SO: ['DO', 'TI', 'IV'], DO: ['TI', 'IV', 'BL'] };
+
+export const unavailableTh = (t: DocType) => (DOC_TYPES[t].vat === 'vat-only' ? 'บริษัทนี้ไม่ได้จดทะเบียนภาษีมูลค่าเพิ่ม' : 'บริษัทที่จดทะเบียน VAT ใช้ใบกำกับภาษีแทนใบแจ้งหนี้');
 
 /** I4: shown whenever an active receipt / settlement is applied; derived in recomputeSettlement so it follows settle / unsettle / cancel. */
 const SETTLEMENT_LOCK: Lock = { kind: 'settlement', reason: 'มีใบเสร็จ/การชำระที่ผูกอยู่ ยกเลิกเอกสารนี้ไม่ได้', exits: ['ยกเลิกหรือถอนการชำระก่อน'] };
@@ -64,7 +65,7 @@ const incomplete = (m: MissingItem[]) => new MockError(422, 'doc.incomplete', m.
 export function missingOf(st: MockState, companyId: string, type: DocType, body: Body): MissingItem[] {
   const out: MissingItem[] = [];
   const company = st.companies.find((c) => c.id === companyId);
-  if (type === 'TI' && !company?.vatRegistered) out.push({ field: 'type', message: 'บริษัทที่ไม่ได้จดทะเบียน VAT ออกใบกำกับภาษีไม่ได้' });
+  if (!isTypeAvailable(type, !!company?.vatRegistered)) out.push({ field: 'type', message: unavailableTh(type) });
   if (!body.header.partyId) out.push({ field: 'header.partyId', message: 'ต้องเลือกคู่ค้า' });
   else {
     const p = partyOf(st, companyId, body.header.partyId);
@@ -293,9 +294,9 @@ export function reissue(st: MockState, id: string, body: Body, actor: Actor, rea
 export function convert(st: MockState, id: string, targetType: DocType, lines: { sourceLineId: string; qty: Qty }[], actor: Actor): Doc {
   const src = getDoc(st, id);
   if (!LIVE.includes(src.status)) throw new MockError(409, 'doc.not_convertible', 'แปลงได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
-  if (!CONVERT_TO[src.type]?.includes(targetType)) throw new MockError(422, 'doc.conversion_not_allowed', `แปลง ${src.type} เป็น ${targetType} ไม่ได้`);
-  if (targetType === 'TI' && !st.companies.find((c) => c.id === src.companyId)?.vatRegistered) {
-    throw new MockError(422, 'doc.type_not_available', 'บริษัทนี้ไม่ได้จดทะเบียนภาษีมูลค่าเพิ่ม');
+  if (!CONVERSIONS[src.type]?.includes(targetType)) throw new MockError(422, 'doc.conversion_not_allowed', `แปลง ${src.type} เป็น ${targetType} ไม่ได้`);
+  if (!isTypeAvailable(targetType, !!st.companies.find((c) => c.id === src.companyId)?.vatRegistered)) {
+    throw new MockError(422, 'doc.type_not_available', unavailableTh(targetType));
   }
   if (!lines.length) throw new MockError(422, 'doc.incomplete', 'ต้องเลือกรายการอย่างน้อย 1 รายการ');
   const wanted = new Map<string, number>();

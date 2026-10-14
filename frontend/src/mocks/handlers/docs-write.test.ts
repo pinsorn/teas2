@@ -110,6 +110,12 @@ describe('paper endpoint', () => {
     await call('POST', `/docs/TI/${d.id}/cancel`, { version: issued.version, reasonCode: 'OTHER', reasonText: 'ทดสอบ' });
     expect((await paper(d.id)).voidMark.label).toBe('ยกเลิก');
   });
+  it('a type without a paper builder is 404 doc.paper_not_available (registry, not a TI literal)', async () => {
+    const qt = loadState().docs.find((x) => x.type === 'QT' && x.status === 'issued' && x.companyId === 'co-vat')!;
+    const r = await call('GET', `/docs/QT/${qt.id}/paper`);
+    expect(r.status).toBe(404);
+    expect((await r.json()).code).toBe('doc.paper_not_available');
+  });
   it('a document of another company is 404', async () => {
     const id = issuedTi().id;
     setSettings({ companyKey: 'nonvat' });

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { HttpResponse, http } from 'msw';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CorrectionPlan } from '@/domain/types';
+import { DESCRIPTORS } from '@/descriptors';
 import { taxInvoice } from '@/descriptors/tax-invoice';
 import { setSettings } from '@/mocks/settings';
 import { loadState, resetState } from '@/mocks/store';
@@ -31,12 +32,15 @@ Element.prototype.releasePointerCapture ??= () => {};
 Element.prototype.scrollIntoView ??= () => {};
 const client = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
 const ui = (id: string) => render(<QueryClientProvider client={client()}><DocView descriptor={taxInvoice} id={id} /></QueryClientProvider>);
+/** Types whose own task has not landed yet: register a stand-in so link/route resolution through the registry is still exercised. */
+const stub = (type: 'RC' | 'CN', basePath: string) => { DESCRIPTORS[type] = { ...taxInvoice, type, basePath } as never; };
+afterEach(() => { delete DESCRIPTORS.RC; delete DESCRIPTORS.CN; });
 const find = (pred: (d: ReturnType<typeof loadState>['docs'][number]) => boolean) => loadState().docs.find(pred)!;
 
 describe('DocView', () => {
   it('correction confirmation shows signed engine amounts per tax code and full-credit mode', () => {
     const state = loadState();
-    const ti = state.docs.find((d) => d.type === 'TI' && d.status === 'issued')!;
+    const ti = state.docs.find((d) => d.type === taxInvoice.type && d.status === 'issued')!;
     ti.locks.push({ kind: 'filing', reason: 'Filed', exits: [] });
     const plan = correctionPlan(state, ti.id, { header: { ...ti.header, partyId: 'different' }, lines: ti.lines }, 'accountant');
     const note = plan.steps[0].note!;
@@ -48,25 +52,25 @@ describe('DocView', () => {
     for (const amount of ['-50.00', '-3.50', '-53.50']) expect(within(table).getByText(amount)).toBeVisible();
   });
   it('a replaced TI shows the pointer to its replacement in the chain', async () => {
-    const replaced = find((d) => d.type === 'TI' && d.status === 'replaced');
+    const replaced = find((d) => d.type === taxInvoice.type && d.status === 'replaced');
     ui(replaced.id);
     const chain = await screen.findByRole('region', { name: 'เอกสารที่เกี่ยวข้อง' });
     expect(within(chain).getByText(/ออกแทนโดย/)).toBeVisible();
   });
   it('the filing lock is shown with its exit, and fiscal edit is disabled with the reason', async () => {
     setSettings({ screenState: 'locked' });
-    const issued = find((d) => d.type === 'TI' && d.status === 'issued');
+    const issued = find((d) => d.type === taxInvoice.type && d.status === 'issued');
     ui(issued.id);
     expect(await screen.findByRole('status', { name: 'ล็อก' })).toHaveTextContent('ภ.พ.30');
     expect(screen.getByText(/ออกใบลดหนี้/)).toBeVisible();
   });
   it('shows the document number with the doc-number test id', async () => {
-    const issued = find((d) => d.type === 'TI' && d.status === 'issued' && !d.locks.length);
+    const issued = find((d) => d.type === taxInvoice.type && d.status === 'issued' && !d.locks.length);
     ui(issued.id);
     expect(await screen.findByTestId('doc-number')).toHaveTextContent(issued.number!);
   });
   it('the paper tab shows the server-built tax invoice and signals readiness', async () => {
-    const issued = find((d) => d.type === 'TI' && d.status === 'issued' && !d.locks.length);
+    const issued = find((d) => d.type === taxInvoice.type && d.status === 'issued' && !d.locks.length);
     const { container } = ui(issued.id);
     await waitFor(() => expect(container.querySelector('[data-paper-ready="true"]')).not.toBeNull());
     const page = container.querySelector('[data-paper-page]')!;
@@ -75,11 +79,11 @@ describe('DocView', () => {
     expect(page.textContent).toContain('ผู้มีอำนาจลงนาม');
   });
   it('a draft paper tab says it is not printable, not "no data"', async () => {
-    ui(find((d) => d.type === 'TI' && d.status === 'draft').id);
+    ui(find((d) => d.type === taxInvoice.type && d.status === 'draft').id);
     expect(await screen.findByText(/ยังไม่ได้ออก จึงพิมพ์เป็นใบกำกับภาษีไม่ได้/)).toBeVisible();
   });
   it('cancel needs a reason code', async () => {
-    const issued = find((d) => d.type === 'TI' && d.status === 'issued' && !d.locks.length);
+    const issued = find((d) => d.type === taxInvoice.type && d.status === 'issued' && !d.locks.length);
     ui(issued.id);
     await userEvent.click(await screen.findByRole('button', { name: 'ยกเลิกเอกสาร' }));
     const dialog = screen.getByRole('alertdialog');
@@ -87,7 +91,7 @@ describe('DocView', () => {
   });
   it('an operator sees disabled cancel with the missing permission', async () => {
     setSettings({ role: 'operator' });
-    const issued = find((d) => d.type === 'TI' && d.status === 'issued' && !d.locks.length);
+    const issued = find((d) => d.type === taxInvoice.type && d.status === 'issued' && !d.locks.length);
     ui(issued.id);
     const btn = await screen.findByRole('button', { name: 'ยกเลิกเอกสาร' });
     expect(btn).toBeDisabled();
@@ -101,7 +105,7 @@ describe('DocView', () => {
   });
   it('a load failure is an error with retry, not an empty page', async () => {
     setSettings({ screenState: 'error' });
-    ui(find((d) => d.type === 'TI').id);
+    ui(find((d) => d.type === taxInvoice.type).id);
     expect(await screen.findByRole('button', { name: 'ลองใหม่' })).toBeVisible();
   });
 });
@@ -110,12 +114,12 @@ const plain = (d: ReturnType<typeof loadState>['docs'][number]) => { const { com
 const withLock = (id: string, kind: 'period' | 'filing' | 'settlement', reason: string, exit: string) =>
   testServer.use(http.get('*/bff/v1/docs/TI/:id', ({ params }) => params.id === id
     ? HttpResponse.json({ ...plain(find((d) => d.id === id)), locks: [{ kind, reason, exits: [exit] }] }) : undefined));
-const lone = () => find((d) => d.type === 'TI' && d.status === 'issued' && !d.locks.length && !loadState().links.some((l) => l.to === d.id || l.from === d.id));
+const lone = () => find((d) => d.type === taxInvoice.type && d.status === 'issued' && !d.locks.length && !loadState().links.some((l) => l.to === d.id || l.from === d.id));
 
 describe('DocView locks and actions (fix round 1)', () => {
   it('filing lock: edit stays enabled, cancel is disabled with the reason, the exit is a button that starts the correction flow', async () => {
     setSettings({ screenState: 'locked' });
-    const issued = find((d) => d.type === 'TI' && d.status === 'issued');
+    const issued = find((d) => d.type === taxInvoice.type && d.status === 'issued');
     ui(issued.id);
     expect(await screen.findByRole('link', { name: 'แก้ไข' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'ยกเลิกเอกสาร' })).toBeDisabled();
@@ -125,7 +129,7 @@ describe('DocView locks and actions (fix round 1)', () => {
   });
   it('filing lock exit is enabled for an operator: proposing a correction needs create, the plan lists the rest', async () => {
     setSettings({ screenState: 'locked', role: 'operator' });
-    const issued = find((d) => d.type === 'TI' && d.status === 'issued');
+    const issued = find((d) => d.type === taxInvoice.type && d.status === 'issued');
     ui(issued.id);
     const exit = await screen.findByRole('button', { name: /ออกใบลดหนี้/ });
     expect(exit).toBeEnabled();
@@ -163,14 +167,14 @@ describe('DocView locks and actions (fix round 1)', () => {
     expect(await screen.findByRole('button', { name: 'ยกเลิกเอกสาร' })).toBeDisabled();
   });
   it('a replaced document shows edit disabled with the reason, not hidden', async () => {
-    ui(find((d) => d.type === 'TI' && d.status === 'replaced').id);
+    ui(find((d) => d.type === taxInvoice.type && d.status === 'replaced').id);
     const btn = await screen.findByRole('button', { name: 'แก้ไข' });
     expect(btn).toBeDisabled();
     expect(btn).toHaveAccessibleDescription(/ถูกแทนที่/);
   });
   it('the lock banner uses the amber pending tokens', async () => {
     setSettings({ screenState: 'locked' });
-    ui(find((d) => d.type === 'TI' && d.status === 'issued').id);
+    ui(find((d) => d.type === taxInvoice.type && d.status === 'issued').id);
     expect((await screen.findByRole('status', { name: 'ล็อก' })).className).toContain('--color-status-pending');
   });
 });
@@ -203,7 +207,8 @@ describe('DocView cancel and tabs (fix round 1)', () => {
     spy.mockRestore();
   });
   it('ledger, activity and chain tabs render server data', async () => {
-    const ti = find((d) => d.type === 'TI' && loadState().links.some((l) => l.kind === 'settles' && l.to === d.id && l.active));
+    stub('RC', '/sales/receipts');
+    const ti = find((d) => d.type === taxInvoice.type && loadState().links.some((l) => l.kind === 'settles' && l.to === d.id && l.active));
     const rc = find((d) => d.id === loadState().links.find((l) => l.kind === 'settles' && l.to === ti.id && l.active)!.from);
     const line = loadState().journals.find((j) => j.docId === ti.id)!.preview.entries[0].lines.find((l) => l.debit !== '0.00')!;
     ui(ti.id);
@@ -231,6 +236,7 @@ describe('useCorrectionFlow (fix round 1)', () => {
     return screen.findByRole('alertdialog', { name: 'แผนการแก้ไข' });
   };
   it('executes with the server planId and planHash, then opens the CN on the CN route', async () => {
+    stub('CN', '/sales/credit-notes');
     const plan = vi.spyOn(endpoints, 'getCorrectionPlan');
     const exec = vi.spyOn(endpoints, 'executeCorrection');
     const dialog = await open(lone().id);
@@ -265,7 +271,7 @@ describe('CorrectionPlanDialog', () => {
     planId: 'p', planHash: 'h', explanation: 'ยกเลิกและออกใหม่', missingPermissions: missing,
     steps: [
       { order: 1, action: 'cancel', docId: 'a', docType: 'RC', number: 'RC-1', summary: 'ยกเลิก RC RC-1', permission: 'doc.RC.cancel' },
-      { order: 2, action: 'reissue', docId: 'b', docType: 'TI', number: 'TI-1', summary: 'ออก TI ใหม่', permission: 'doc.TI.correct' },
+      { order: 2, action: 'reissue', docId: 'b', docType: taxInvoice.type, number: 'TI-1', summary: 'ออก TI ใหม่', permission: 'doc.TI.correct' },
     ],
   });
   it('initial focus is on the back button, never the irreversible confirm', () => {

@@ -17,7 +17,7 @@ export function RevisionHistory({ type, id, renderPaper }: { type: DocType; id: 
   const t = useTranslations('docView.revisions');
   const { me } = useMe();
   const [open, setOpen] = useState<number>();
-  const q = useQuery({ queryKey: qk.revisions(me!.activeCompanyId, id), queryFn: () => endpoints.getRevisions(type, id) });
+  const q = useQuery({ queryKey: qk.revisions(me!.activeCompanyId, type, id), queryFn: () => endpoints.getRevisions(type, id) });
   if (q.isPending) return <LoadingState rows={3} />;
   if (q.error) return isForbidden(q.error) ? <ForbiddenState permission={`doc.${type}.read`} /> : <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
   if (!q.data.length) return <p className="text-body text-muted-foreground">{t('empty')}</p>;

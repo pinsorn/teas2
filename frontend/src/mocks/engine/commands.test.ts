@@ -56,6 +56,15 @@ describe('drafts and issue', () => {
   });
 });
 
+describe('doc-type table drives the engine (SP0 3.1, 7.7)', () => {
+  it('DO -> BL is refused (D-07) and a VAT company cannot use IV', () => {
+    const dod = st.docs.find((d) => d.companyId === vatCo && d.type === 'DO' && ['issued', 'partly_settled', 'settled'].includes(d.status))!;
+    expect(() => convert(st, dod.id, 'BL', [{ sourceLineId: dod.lines[0].id, qty: dod.lines[0].qty }], me)).toThrow(/doc.conversion_not_allowed/);
+    const m = missingOf(st, vatCo, 'IV', { header: { partyId: vatCustomer, documentDate: '2026-10-14' }, lines: [line()] });
+    expect(m.find((x) => x.field === 'type')?.message).toBe('บริษัทที่จดทะเบียน VAT ใช้ใบกำกับภาษีแทนใบแจ้งหนี้');
+  });
+});
+
 describe('revisions (classes N and L)', () => {
   it('an N-class revision keeps the number, bumps the revision and records a diff', () => {
     const qt = st.docs.find((d) => d.companyId === vatCo && d.type === 'QT' && d.status === 'issued')!;
@@ -66,7 +75,10 @@ describe('revisions (classes N and L)', () => {
     expect(rev.diff).toContainEqual({ path: 'header.notes', before: qt.header.notes ?? null, after: 'ยืนราคา 45 วัน' });
   });
   it('an L-class revision writes a reversal plus a correcting entry, all balanced', () => {
-    const d = createDraft(st, vatCo, 'IV', { header: { partyId: vatCustomer, documentDate: '2026-10-14' }, lines: [line()] }, me, 'k7');
+    // IV exists only for a non-VAT company (SP0 §3.1)
+    const nvCo = st.companies.find((c) => !c.vatRegistered)!.id;
+    const nvCustomer = st.parties.find((p) => p.companyId === nvCo && p.kind === 'customer')!.id;
+    const d = createDraft(st, nvCo, 'IV', { header: { partyId: nvCustomer, documentDate: '2026-10-14' }, lines: [line({ taxCode: 'EX' })] }, me, 'k7');
     const a = issue(st, d.id, d.version, me);
     const r = revise(st, a.id, { header: a.header, lines: [line({ unitPrice: '2500.00' })] }, a.version, 'แก้ราคา', me);
     expect(r.number).toBe(a.number);

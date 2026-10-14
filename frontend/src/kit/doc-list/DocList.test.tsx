@@ -50,8 +50,12 @@ describe('DocList', () => {
   it('"/" focuses search', async () => {
     ui();
     await screen.findAllByRole('row');
-    await userEvent.keyboard('/');
+    await userEvent.keyboard('[Slash]');
     expect(screen.getByRole('searchbox')).toHaveFocus();
+  });
+  it('the page has one h1 with the type title', async () => {
+    ui();
+    expect(await screen.findByRole('heading', { level: 1, name: 'ใบกำกับภาษี' })).toBeVisible();
   });
   it('selecting rows shows the bulk bar with the count', async () => {
     ui();
@@ -122,7 +126,7 @@ describe('DocList', () => {
     let mode: 'empty' | 'fail' | 'rows' = 'empty';
     testServer.use(http.get('*/bff/v1/docs/:type', () => mode === 'fail'
       ? HttpResponse.json({ status: 500, code: 'x', title: 'ล้มเหลว' }, { status: 500 })
-      : HttpResponse.json(mode === 'empty' ? { items: [] } : { items: [{ id: 'd1', type: 'TI', number: 'TI-X1', status: 'issued', documentDate: '2026-10-01', partyName: 'ก', total: '1.00', createdByAgent: false }] })));
+      : HttpResponse.json(mode === 'empty' ? { items: [] } : { items: [{ id: 'd1', type: taxInvoice.type, number: 'TI-X1', status: 'issued', documentDate: '2026-10-01', partyName: 'ก', total: '1.00', createdByAgent: false }] })));
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     ui([], qc);
     expect(await screen.findByText(/ยังไม่มี/)).toBeVisible();

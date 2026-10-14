@@ -94,8 +94,8 @@ describe('DocEditor', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
   it('revise mode hands the proposal off instead of issuing', async () => {
-    const issued = (await endpoints.listDocs('TI', { status: 'issued', limit: 1 })).items[0];
-    const doc = await endpoints.getDoc('TI', issued.id);
+    const issued = (await endpoints.listDocs(taxInvoice.type, { status: 'issued', limit: 1 })).items[0];
+    const doc = await endpoints.getDoc(taxInvoice.type, issued.id);
     const onRevisionRequested = vi.fn();
     render(<QueryClientProvider client={new QueryClient()}><DocEditor descriptor={taxInvoice} mode="revise" initial={doc} onIssued={vi.fn()} onRevisionRequested={onRevisionRequested} /></QueryClientProvider>);
     const save = await screen.findByRole('button', { name: 'บันทึกการแก้ไข' });
@@ -219,7 +219,7 @@ describe('final review: I2 / I3 / I7', () => {
     await waitFor(() => expect(calls).toContain('POST /bff/v1/docs/TI'), { timeout: 1500 });
   });
   it('I3: a copied draft (create mode with initial content) saves and issues like any new draft', async () => {
-    const src = await endpoints.getDoc('TI', (await endpoints.listDocs('TI', { status: 'issued', limit: 1 })).items[0].id);
+    const src = await endpoints.getDoc(taxInvoice.type, (await endpoints.listDocs(taxInvoice.type, { status: 'issued', limit: 1 })).items[0].id);
     const copy: Doc = { ...src, id: '', number: undefined, status: 'draft', version: 0, revision: 0, locks: [], issuedAt: undefined, outstanding: undefined,
       header: { ...src.header, dueDate: undefined }, lines: src.lines.map((l) => ({ ...l, id: crypto.randomUUID() })) };
     const onIssued = vi.fn();

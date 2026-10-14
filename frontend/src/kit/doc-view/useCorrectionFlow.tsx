@@ -10,7 +10,7 @@ import type { CorrectionPlan, Doc } from '@/domain/types';
 import { ApiError } from '@/lib/api/client';
 import { endpoints, type DocInput } from '@/lib/api/endpoints';
 import { CorrectionPlanDialog } from '../dialogs/CorrectionPlanDialog';
-import { docHref } from './ChainPanel';
+import { docViewHref } from '@/descriptors';
 
 /**
  * Glue for revise mode: the editor's `onRevisionRequested(proposed)` calls `request`, which fetches the plan and opens the dialog.
@@ -42,7 +42,7 @@ export function useCorrectionFlow(d: DocDescriptor, doc: Doc) {
       const next = [...affected].reverse().find((a) => a.type === d.type) ?? affected[affected.length - 1];
       setPlan(undefined);
       // each affected document opens on its own type's route (a CN-only plan lands on the CN, never a TI route)
-      router.push((next && docHref(next.type, next.docId)) ?? docHref(d.type, doc.id) ?? d.basePath);
+      router.push((next && docViewHref(next.type, next.docId)) ?? docViewHref(d.type, doc.id) ?? d.basePath);
     } catch (e) {
       setError(e);
     } finally {
