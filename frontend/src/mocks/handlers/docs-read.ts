@@ -20,12 +20,12 @@ export const docsReadHandlers = [
     if (VAT_ONLY.includes(type) && !company.vatRegistered) return problem(404, 'doc.type_not_available', 'บริษัทนี้ไม่ได้จดทะเบียนภาษีมูลค่าเพิ่ม');
     if (!perms.includes(`doc.${type}.read`)) return forbidden(`doc.${type}.read`);
     const u = new URL(request.url);
-    const status = u.searchParams.get('status'), from = u.searchParams.get('from'), to = u.searchParams.get('to');
+    const statuses = u.searchParams.get('status')?.split(',').filter(Boolean), from = u.searchParams.get('from'), to = u.searchParams.get('to');
     const q = (u.searchParams.get('q') ?? '').toLowerCase();
     const limit = Math.min(Number(u.searchParams.get('limit')) || 25, 100);
     const offset = u.searchParams.get('cursor') ? Number(atob(u.searchParams.get('cursor')!)) || 0 : 0;
     const rows = st.docs
-      .filter((d) => d.companyId === company.id && d.type === type && (!status || d.status === status)
+      .filter((d) => d.companyId === company.id && d.type === type && (!statuses?.length || statuses.includes(d.status))
         && (!from || d.header.documentDate >= from) && (!to || d.header.documentDate <= to)
         && (!q || `${d.number ?? ''} ${d.party?.name ?? ''}`.toLowerCase().includes(q)))
       .sort((a, b) => b.header.documentDate.localeCompare(a.header.documentDate) || (a.number ?? '').localeCompare(b.number ?? ''));

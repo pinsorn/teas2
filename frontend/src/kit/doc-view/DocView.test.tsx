@@ -107,12 +107,14 @@ describe('DocView locks and actions (fix round 1)', () => {
     await userEvent.click(screen.getByRole('button', { name: /ออกใบลดหนี้/ }));
     expect(vi.mocked(useRouter().push).mock.lastCall![0]).toBe(`/sales/tax-invoices/${issued.id}/edit`);
   });
-  it('filing lock exit is disabled and names the missing permission for an operator', async () => {
+  it('filing lock exit is enabled for an operator: proposing a correction needs create, the plan lists the rest', async () => {
     setSettings({ screenState: 'locked', role: 'operator' });
-    ui(find((d) => d.type === 'TI' && d.status === 'issued').id);
+    const issued = find((d) => d.type === 'TI' && d.status === 'issued');
+    ui(issued.id);
     const exit = await screen.findByRole('button', { name: /ออกใบลดหนี้/ });
-    expect(exit).toBeDisabled();
-    expect(exit).toHaveAccessibleDescription(/doc\.TI\.correct/);
+    expect(exit).toBeEnabled();
+    await userEvent.click(exit);
+    expect(vi.mocked(useRouter().push).mock.lastCall![0]).toBe(`/sales/tax-invoices/${issued.id}/edit`);
   });
   it('a period lock does not block cancel, end to end', async () => {
     const d = lone();

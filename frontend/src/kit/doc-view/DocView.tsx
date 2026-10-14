@@ -84,10 +84,10 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
     },
   });
 
-  // Exits are real actions. Filing / period: the same correction flow as the edit button (needs the correct permission); settlement: the chain, where the receipt is un-applied.
+  // Exits are real actions. Filing / period: the same correction flow as the edit button (proposing a correction needs the create permission; the plan lists what its steps need); settlement: the chain, where the receipt is un-applied.
   const exitAction: ExitAction = (lock) => {
     if (lock.kind === 'filing' || lock.kind === 'period') {
-      return { onClick: () => router.push(routesOf(d).edit(doc.id)), why: permissions.includes(d.permissions.correct) ? undefined : ts('needPermission', { permission: d.permissions.correct }) };
+      return { onClick: () => router.push(routesOf(d).edit(doc.id)), why: permissions.includes(d.permissions.create) ? undefined : ts('needPermission', { permission: d.permissions.create }) };
     }
     if (lock.kind === 'settlement') return { onClick: () => setTab('chain') };
     return undefined;

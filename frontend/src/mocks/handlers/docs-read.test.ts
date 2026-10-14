@@ -18,6 +18,11 @@ describe('read handlers', () => {
     expect(r.nextCursor).toBeTruthy();
     expect(r.items[0].documentDate >= r.items[9].documentDate).toBe(true);
   });
+  it('filters by a comma-separated status list', async () => {
+    const r = await (await get('/docs/TI?status=issued,partly_settled&limit=100')).json();
+    const seen = new Set(r.items.map((d: { status: string }) => d.status));
+    expect([...seen].sort()).toEqual(['issued', 'partly_settled']);
+  });
   it('filters by status', async () => {
     const r = await (await get('/docs/TI?status=draft&limit=50')).json();
     expect(r.items.every((d: { status: string }) => d.status === 'draft')).toBe(true);

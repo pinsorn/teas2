@@ -12,7 +12,8 @@ test('1-line TI for a known customer with a usual item takes <= 5 actions (SP0 S
   await expect(page.getByRole('region', { name: 'ยังขาดอะไร' })).toHaveText(/ครบแล้ว/);
   await u.press('Control+Enter');                                         // open confirm
   await u.press('Enter');                                                 // issue
-  await expect(page.getByText(/TI-\d{6}-\d{4}/).first()).toBeVisible();
+  await expect(page).toHaveURL(/\/sales\/tax-invoices\/[^/]+$/); // issued: the view route, not new/edit
+  await expect(page.getByTestId('doc-number')).toHaveText(/^TI-\d{6}-\d{4}$/);
+  await expect(page.locator('[data-status="issued"]').first()).toHaveText('ออกแล้ว');
   expect(u.count).toBeLessThanOrEqual(5);
-  console.log(`ACTION_COUNT=${u.count}`);
 });

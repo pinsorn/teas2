@@ -412,7 +412,6 @@
       "outstanding": "Outstanding",
       "overdue": "Overdue",
       "cancelled": "Cancelled"
-    },
-    "copyFailed": "Could not copy from the source document"
+    }
   }
 }
