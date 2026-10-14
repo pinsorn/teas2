@@ -28,7 +28,7 @@ export function PartyField({ kind, value, search, onPick, onClear }: PartyFieldP
         <Input id={id} type="text" role="combobox" autoComplete="off" aria-autocomplete="list" aria-expanded={s.expanded}
           aria-controls={s.expanded ? s.listId : undefined} aria-activedescendant={s.expanded ? s.optionId(s.active) : undefined}
           aria-describedby={`${id}-hint`} value={text} data-field="party"
-          onChange={(e) => { setText(e.target.value); if (value && e.target.value !== value.name) onClear(); s.query(e.target.value); }}
+          onChange={(e) => { setText(e.target.value); if (e.target.value !== value?.name) onClear(); /* also cancels a pick whose lookup is still pending */ s.query(e.target.value); }}
           onKeyDown={(e) => { s.onKeyDown(e); }} onBlur={s.blur} />
         <SuggestList s={s} label={label} render={(p) => (
           <span className="flex items-baseline justify-between gap-3">

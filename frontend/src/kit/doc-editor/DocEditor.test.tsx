@@ -149,6 +149,24 @@ describe('DocEditor fix round 1', () => {
     expect(box).toHaveValue('บริษัท ปิ่นทองการพิมพ์ จำกัด');
   });
 
+  it('clearing the picker while the first selection is still resolving leaves the party unset', async () => {
+    testServer.use(http.get('*/bff/v1/items', async ({ request }) => {
+      const q = new URL(request.url).searchParams.get('q') ?? '';
+      if (q === 'SV-01') await delay(600);
+      return HttpResponse.json({ items: vatItems().filter((i) => !q || i.id === q).map((i) => { const { companyId, ...rest } = i; void companyId; return rest; }) });
+    }));
+    ui();
+    const box = screen.getByRole('combobox', { name: 'ลูกค้า' });
+    await userEvent.type(box, 'นาวา{Enter}');
+    await waitFor(() => expect(calls).toContain('GET /bff/v1/items'));
+    await userEvent.clear(box);
+    await new Promise((r) => setTimeout(r, 900));
+    expect(screen.queryByText(/0105568024684/)).toBeNull();
+    expect(box).toHaveValue('');
+    expect(screen.getByRole('combobox', { name: 'รายการ 1' })).toHaveValue('');
+    expect(screen.getByLabelText('ครบกำหนดชำระ')).toHaveValue('');
+  });
+
   it('the item field is a real combobox with a listbox, active option and a results announcement', async () => {
     ui();
     const box = screen.getByRole('combobox', { name: 'รายการ 1' });
