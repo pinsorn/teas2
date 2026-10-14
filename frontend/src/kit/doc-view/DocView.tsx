@@ -131,7 +131,11 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="h-auto flex-wrap group-data-horizontal/tabs:h-auto">{tabs.map((k) => <TabsTrigger key={k} value={k} className="h-8 flex-auto">{t(`tabs.${k}`)}</TabsTrigger>)}</TabsList>
-        <TabsContent value="paper" className="overflow-x-auto">{PAPERS[doc.type] ? <PaperView type={doc.type} id={doc.id} /> : <PaperStub doc={doc} />}</TabsContent>
+        <TabsContent value="paper">
+          <section role="region" aria-label={t('tabs.paper')} tabIndex={0} className="overflow-x-auto">
+            {PAPERS[doc.type] ? <PaperView type={doc.type} id={doc.id} /> : <PaperStub doc={doc} />}
+          </section>
+        </TabsContent>
         <TabsContent value="chain"><ChainPanel type={d.type} id={doc.id} /></TabsContent>
         <TabsContent value="ledger"><LedgerTab type={d.type} id={doc.id} /></TabsContent>
         <TabsContent value="activity"><ActivityTimeline type={d.type} id={doc.id} /></TabsContent>

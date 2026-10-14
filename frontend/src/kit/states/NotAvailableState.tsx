@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 export function NotAvailableState({ reason }: { reason: 'vatOnly' | 'nonVatOnly' }) {
   const t = useTranslations("state");
   return (
-    <Alert role="status">
+    <Alert role="status" data-screen-state="not-available">
       <InfoIcon aria-hidden />
       <AlertTitle>{t("notAvailableTitle")}</AlertTitle>
       <AlertDescription>{t(`notAvailable.${reason}`)}</AlertDescription>

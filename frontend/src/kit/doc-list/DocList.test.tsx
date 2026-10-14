@@ -38,7 +38,7 @@ describe('DocList', () => {
     expect(screen.getByRole('button', { name: 'ลองใหม่' })).toBeVisible();
   });
   it('forbidden names the permission', async () => {
-    setSettings({ screenState: 'forbidden' });
+    testServer.use(http.get('*/bff/v1/me', () => HttpResponse.json({ type: 'about:blank', status: 403, code: 'auth.forbidden', title: 'คุณไม่มีสิทธิ์ดูข้อมูลนี้', traceId: 't' }, { status: 403 })));
     ui();
     expect(await screen.findByText(/ไม่มีสิทธิ์/)).toBeVisible();
   });
@@ -82,7 +82,7 @@ describe('DocList', () => {
     expect(await screen.findByText(/doc\.TI\.read/)).toBeVisible();
   });
   it('a failed /me is forbidden without claiming the list permission is missing', async () => {
-    setSettings({ screenState: 'forbidden' });
+    testServer.use(http.get('*/bff/v1/me', () => HttpResponse.json({ type: 'about:blank', status: 403, code: 'auth.forbidden', title: 'คุณไม่มีสิทธิ์ดูข้อมูลนี้', traceId: 't' }, { status: 403 })));
     ui();
     expect(await screen.findByText(/ไม่มีสิทธิ์/)).toBeVisible();
     expect(screen.queryByText(/doc\.TI\.read/)).toBeNull();

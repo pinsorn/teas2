@@ -1,23 +1,26 @@
 import { expect, test } from '@playwright/test';
 import { axeClean } from './helpers/axe';
+import { fixtureId } from './helpers/fixtures';
 
 test.beforeEach(async ({ page }) => { await page.goto('/'); await page.evaluate(() => localStorage.clear()); await page.reload(); });
 
 test('list → view → paper', async ({ page }) => {
+  const id = await fixtureId(page, 'tiIssuedUnpaid');
   await page.goto('/sales/tax-invoices');
   await expect(page.getByRole('row').nth(1)).toBeVisible();
   await axeClean(page);
-  await page.getByRole('row').nth(1).getByRole('link').first().click();
+  const number = (await page.evaluate(async (i) => (await (await fetch(`/bff/v1/docs/TI/${i}`)).json()).number, id)) as string;
+  await page.getByRole('link', { name: number }).first().click(); // the fixture document, found by its number in the list
+  await expect(page).toHaveURL(new RegExp(`/${id}$`));
   await expect(page.getByRole('tab', { name: 'กระดาษ' })).toBeVisible();
   await axeClean(page);
 });
 
 test('print route shows the paper with its number and total', async ({ page }) => {
-  await page.goto('/sales/tax-invoices?status=issued');
-  await page.getByRole('row').nth(1).getByRole('link').first().click();
+  const id = await fixtureId(page, 'tiIssuedUnpaid');
+  await page.goto(`/sales/tax-invoices/${id}`);
   const number = (await page.getByTestId('doc-number').textContent())!;
   const total = (await page.getByText(/^฿[\d,]+\.\d{2}$/).first().textContent())!;
-  const id = page.url().split('/').pop()!;
   await page.goto(`/print/TI/${id}`);
   await page.waitForSelector('[data-paper-ready="true"]');
   await expect(page.locator('.paper-root')).toContainText(number);
@@ -26,8 +29,7 @@ test('print route shows the paper with its number and total', async ({ page }) =
 });
 
 test('non-fiscal edit after issue → revision 1, same number', async ({ page }) => {
-  await page.goto('/sales/tax-invoices?status=issued');
-  await page.getByRole('row').nth(1).getByRole('link').first().click();
+  await page.goto(`/sales/tax-invoices/${await fixtureId(page, 'tiIssuedUnpaid')}`);
   const number = await page.getByTestId('doc-number').textContent();
   await page.getByRole('link', { name: 'แก้ไข' }).click();
   await expect(page.getByRole('region', { name: 'ยังขาดอะไร' })).toHaveText(/ครบแล้ว/); // totals settled, nothing mid-transition
@@ -43,8 +45,7 @@ test('non-fiscal edit after issue → revision 1, same number', async ({ page })
 });
 
 test('change customer on a paid TI → plan of 3 steps → replacement chain', async ({ page }) => {
-  await page.goto('/sales/tax-invoices?status=settled');
-  await page.getByRole('row').nth(2).getByRole('link').first().click();
+  await page.goto(`/sales/tax-invoices/${await fixtureId(page, 'tiSettled')}`);
   await page.getByRole('link', { name: 'แก้ไข' }).click();
   await page.getByRole('combobox', { name: 'ลูกค้า' }).fill('นาวา');
   await page.keyboard.press('Enter');
@@ -58,8 +59,7 @@ test('change customer on a paid TI → plan of 3 steps → replacement chain', a
 });
 
 test('lower amount → plan proposes a credit note', async ({ page }) => {
-  await page.goto('/sales/tax-invoices?status=issued');
-  await page.getByRole('row').nth(1).getByRole('link').first().click();
+  await page.goto(`/sales/tax-invoices/${await fixtureId(page, 'tiIssuedUnpaid')}`);
   await page.getByRole('link', { name: 'แก้ไข' }).click();
   await page.getByRole('textbox', { name: 'ราคาต่อหน่วย 1' }).fill('1.00');
   await page.getByRole('button', { name: 'บันทึกการแก้ไข' }).click();
@@ -67,10 +67,10 @@ test('lower amount → plan proposes a credit note', async ({ page }) => {
 });
 
 test('operator: correction shows missing permissions and the send-to-approver path', async ({ page }) => {
+  const id = await fixtureId(page, 'tiSettled');
   await page.getByRole('button', { name: 'โหมดตัวอย่าง' }).click();
   await page.getByLabel('บทบาท').selectOption('operator');
-  await page.goto('/sales/tax-invoices?status=settled');
-  await page.getByRole('row').nth(1).getByRole('link').first().click();
+  await page.goto(`/sales/tax-invoices/${id}`);
   await page.getByRole('link', { name: 'แก้ไข' }).click();
   await page.getByRole('combobox', { name: 'ลูกค้า' }).fill('นาวา');
   await page.keyboard.press('Enter');
@@ -101,10 +101,10 @@ for (const state of ['empty', 'error', 'forbidden'] as const) {
 }
 
 test('screen state locked shows the lock banner with its exit on an issued TI', async ({ page }) => {
+  const id = await fixtureId(page, 'tiIssuedUnpaid');
   await page.getByRole('button', { name: 'โหมดตัวอย่าง' }).click();
   await page.getByLabel('สถานะหน้าจอ').selectOption('locked');
-  await page.goto('/sales/tax-invoices?status=issued');
-  await page.getByRole('row').nth(1).getByRole('link').first().click();
+  await page.goto(`/sales/tax-invoices/${id}`);
   const banner = page.getByRole('status', { name: 'ล็อก' });
   await expect(banner).toContainText('ภ.พ.30');
   await expect(banner.getByRole('button', { name: /ออกใบลดหนี้/ })).toBeEnabled();
@@ -134,19 +134,19 @@ test('I2: the first autosave moves the URL to /edit without remounting the edito
 });
 
 test('I2: leaving within the idle window still saves the draft', async ({ page }) => {
+  await page.goto('/sales/tax-invoices?status=draft');
+  await expect(page.getByRole('row').nth(1)).toBeVisible();
+  const before = await page.getByRole('row').count();
   await page.goto('/sales/tax-invoices/new');
   await page.getByRole('textbox', { name: 'หมายเหตุ' }).fill('อย่าให้หาย');
   await page.getByRole('link', { name: 'ใบกำกับภาษี' }).first().click();
   await expect(page).toHaveURL(/\/sales\/tax-invoices$/);
   await page.goto('/sales/tax-invoices?status=draft');
-  await expect(page.getByRole('row').nth(1)).toBeVisible();
-  await page.getByRole('row').nth(1).getByRole('link').first().click();
-  await expect(page.getByTestId('doc-number')).toBeVisible();
+  await expect(page.getByRole('row')).toHaveCount(before + 1); // the new draft exists next to the seeded ones
 });
 
 test('I4: a paid TI shows its settlement lock and cancel is disabled before any dialog', async ({ page }) => {
-  await page.goto('/sales/tax-invoices?status=settled');
-  await page.getByRole('row').nth(1).getByRole('link').first().click();
+  await page.goto(`/sales/tax-invoices/${await fixtureId(page, 'tiSettled')}`);
   await expect(page.getByRole('status', { name: 'ล็อก' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'ยกเลิกเอกสาร' })).toBeDisabled();
 });

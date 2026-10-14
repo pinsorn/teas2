@@ -15,7 +15,7 @@ export function LockBanner({ locks, exitAction }: { locks: Lock[]; exitAction?: 
   if (!locks.length) return null;
   return (
     <TooltipProvider>
-      <div role="status" aria-label={t('label')}
+      <div role="status" aria-label={t('label')} data-screen-state="locked"
         className="flex gap-3 rounded-lg border border-(--color-status-pending-fg)/30 bg-(--color-status-pending-bg) p-3 text-body text-(--color-status-pending-fg)">
         <LockIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
         <div className="grid gap-2">

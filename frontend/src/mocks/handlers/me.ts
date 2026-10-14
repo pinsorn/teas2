@@ -12,7 +12,7 @@ export const buildMe = (): Me => {
 };
 
 export const meHandlers = [
-  http.get('*/bff/v1/me', async () => (await screenGate('item')) ?? HttpResponse.json(buildMe())),
+  http.get('*/bff/v1/me', async () => (await screenGate('me')) ?? HttpResponse.json(buildMe())),
   http.post('*/bff/v1/me/active-company', async ({ request }) => {
     const { companyId } = (await request.json()) as { companyId?: string };
     if (companyId !== 'co-vat' && companyId !== 'co-nonvat') return problem(404, 'company.not_found', 'ไม่พบบริษัท');

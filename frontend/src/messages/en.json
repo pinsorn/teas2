@@ -31,7 +31,7 @@
     "revisions": {
       "empty": "No history yet", "first": "First issued version", "n": "Revision {n}", "view": "View this version", "hide": "Hide this version",
       "noChange": "No data changes", "blank": "(empty)", "reason": "Reason: {reason}",
-      "field": { "header.notes": "Notes", "header.reference": "Reference", "header.dueDate": "Due date", "header.documentDate": "Document date", "header.partyId": "Counterparty" }
+      "field": { "header": { "notes": "Notes", "reference": "Reference", "dueDate": "Due date", "documentDate": "Document date", "partyId": "Counterparty" } }
     },
     "cancel": {
       "stale": "The document changed. The latest data was loaded; check it and confirm again.", "title": "Cancel document {doc}", "body": "The ledger entries of this document are reversed and the document is cancelled. This cannot be undone.",
@@ -115,7 +115,8 @@
   "shell": {
     "skipToContent": "Skip to content",
     "navLabel": "Main menu",
-    "breadcrumbLabel": "Page path",
+    "breadcrumbLabel": "Breadcrumb",
+    "crumb": { "draft": "Draft", "edit": "Edit", "new": "New" },
     "openMenu": "Open menu",
     "menuTitle": "Menu",
     "search": "Search or go to",

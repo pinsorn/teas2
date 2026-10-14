@@ -31,7 +31,7 @@
     "revisions": {
       "empty": "ยังไม่มีประวัติ", "first": "ฉบับที่ออกครั้งแรก", "n": "ฉบับแก้ไขครั้งที่ {n}", "view": "ดูฉบับนี้", "hide": "ซ่อนฉบับนี้",
       "noChange": "ไม่มีการเปลี่ยนแปลงข้อมูล", "blank": "(ว่าง)", "reason": "เหตุผล: {reason}",
-      "field": { "header.notes": "หมายเหตุ", "header.reference": "อ้างอิง", "header.dueDate": "วันครบกำหนด", "header.documentDate": "วันที่เอกสาร", "header.partyId": "คู่ค้า" }
+      "field": { "header": { "notes": "หมายเหตุ", "reference": "อ้างอิง", "dueDate": "วันครบกำหนด", "documentDate": "วันที่เอกสาร", "partyId": "คู่ค้า" } }
     },
     "cancel": {
       "stale": "ข้อมูลเอกสารเปลี่ยนไป โหลดข้อมูลล่าสุดให้แล้ว ตรวจแล้วยืนยันอีกครั้ง", "title": "ยกเลิกเอกสาร {doc}", "body": "ระบบจะกลับรายการบัญชีของเอกสารนี้และยกเลิกเอกสาร ย้อนกลับไม่ได้",
@@ -115,7 +115,8 @@
   "shell": {
     "skipToContent": "ข้ามไปยังเนื้อหา",
     "navLabel": "เมนูหลัก",
-    "breadcrumbLabel": "เส้นทางหน้าจอ",
+    "breadcrumbLabel": "breadcrumb",
+    "crumb": { "draft": "ร่าง", "edit": "แก้ไข", "new": "สร้างใหม่" },
     "openMenu": "เปิดเมนู",
     "menuTitle": "เมนู",
     "search": "ค้นหาหรือไปที่",

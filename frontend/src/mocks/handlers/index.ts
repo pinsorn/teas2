@@ -3,8 +3,9 @@ import { docsWriteHandlers } from './docs-write';
 import { homeHandlers } from './home';
 import { itemsHandlers } from './items';
 import { meHandlers } from './me';
+import { mockFixturesHandlers } from './mock-fixtures';
 import { partiesHandlers } from './parties';
 import { searchHandlers } from './search';
 
 export * from './common';
-export const handlers = [...meHandlers, ...homeHandlers, ...partiesHandlers, ...itemsHandlers, ...docsReadHandlers, ...docsWriteHandlers, ...searchHandlers];
+export const handlers = [...meHandlers, ...homeHandlers, ...partiesHandlers, ...itemsHandlers, ...docsReadHandlers, ...docsWriteHandlers, ...searchHandlers, ...mockFixturesHandlers];

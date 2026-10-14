@@ -6,15 +6,13 @@ import { afterEach, vi } from 'vitest';
 afterEach(cleanup);
 import th from '@/messages/th.json';
 
-// next-intl shim: component tests resolve keys from th.json without a provider.
-const lookup = (ns: string | undefined, key: string): unknown =>
-  [...(ns ? ns.split('.') : []), ...key.split('.')].reduce<unknown>((a, k) => (a as Record<string, unknown> | undefined)?.[k], th);
-vi.mock('next-intl', () => ({
-  useTranslations: (ns?: string) => (key: string, values?: Record<string, string | number>) => {
-    const m = lookup(ns, key);
-    if (typeof m !== 'string') return `${ns ? `${ns}.` : ''}${key}`;
-    return m.replace(/\{(\w+)\}/g, (_, k: string) => String(values?.[k] ?? `{${k}}`));
-  },
-  useLocale: () => 'th',
-  NextIntlClientProvider: ({ children }: { children: unknown }) => children,
-}));
+// next-intl: component tests use the REAL translator over th.json, strict: a missing key or argument throws (no silent key echo).
+vi.mock('next-intl', async (orig) => {
+  const m = await orig<typeof import('next-intl')>();
+  return {
+    ...m,
+    useTranslations: (ns?: string) => m.createTranslator({ locale: 'th', messages: th, namespace: ns as never, onError: (e) => { throw e; } }),
+    useLocale: () => 'th',
+    NextIntlClientProvider: ({ children }: { children: unknown }) => children,
+  };
+});

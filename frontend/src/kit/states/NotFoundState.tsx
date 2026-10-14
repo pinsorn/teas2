@@ -11,7 +11,7 @@ export const isNotFound = (e: unknown) => e instanceof ApiError && e.problem.sta
 export function NotFoundState({ listHref }: { listHref: string }) {
   const t = useTranslations("state");
   return (
-    <Alert role="status">
+    <Alert role="status" data-screen-state="not-found">
       <SearchXIcon aria-hidden />
       <AlertTitle>{t("notFoundTitle")}</AlertTitle>
       <AlertDescription>{t("notFoundBody")}</AlertDescription>

@@ -1,32 +1,17 @@
 import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
 import { NAV } from "@/app-shell/nav";
+import { descriptorByPath } from "@/descriptors";
+import { fixtureIds } from "@/mocks/fixtures/ids";
+import { buildSeedState } from "@/mocks/store";
+import { SCREENS, TI_BASE, type Screen } from "./screens";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: (await getTranslations("screens"))("title"), robots: { index: false } };
 }
 
-type Vat = "both" | "vat";
-interface Screen { name: string; route: string; vat: Vat; states?: boolean }
-// Seeded ids (src/mocks/fixtures/documents.ts): ti-001 draft, ti-007 issued, ti-010 settled + filing lock, ti-016 replaced, spike-60 long.
-const TI = "/sales/tax-invoices";
-const BUILT: Screen[] = [
-  { name: "home", route: "/", vat: "both", states: true },
-  { name: "tiList", route: TI, vat: "vat", states: true },
-  { name: "tiNew", route: `${TI}/new`, vat: "vat", states: true },
-  { name: "tiDraft", route: `${TI}/ti-001`, vat: "vat", states: true },
-  { name: "tiIssued", route: `${TI}/ti-007`, vat: "vat", states: true },
-  { name: "tiLocked", route: `${TI}/ti-010`, vat: "vat", states: true },
-  { name: "tiReplaced", route: `${TI}/ti-016`, vat: "vat", states: true },
-  { name: "tiLong", route: `${TI}/spike-60`, vat: "vat", states: true },
-  { name: "tiEdit", route: `${TI}/ti-001/edit`, vat: "vat", states: true },
-  { name: "print", route: "/print/TI/ti-007", vat: "vat" },
-  { name: "printLong", route: "/print/TI/spike-60", vat: "vat" },
-  { name: "styleGuide", route: "/style-guide", vat: "both" },
-];
 const STATES = ["normal", "empty", "loading", "error", "forbidden", "locked"] as const;
 const ROLES = ["operator", "accountant", "admin"] as const;
-const BUILT_HREFS = new Set(["/", TI]);
 
 // Plain anchors on purpose: the mock layer reads the query once on a full page load (MockProvider).
 const href = (route: string, q: { state?: string; role?: string; company: string }) => {
@@ -38,8 +23,11 @@ const link = "text-brand underline underline-offset-2";
 export default async function ScreenIndexPage() {
   const t = await getTranslations("screens");
   const tn = await getTranslations();
-  const vatLabel = (v: Vat) => t(v === "vat" ? "vatOnly" : "vatBoth");
-  const pending = NAV.flatMap((g) => g.items).filter((i) => !BUILT_HREFS.has(i.href));
+  const ids = fixtureIds(buildSeedState()); // server-side, accountant seed
+  const resolve = (r: Screen["route"]) => typeof r === "string" ? r : `${r.base ?? TI_BASE}/${ids[r.fixture]}${r.suffix ?? ""}`;
+  const built = SCREENS.map((s) => ({ ...s, path: resolve(s.route) }));
+  // pending = a nav entry with no descriptor, no screen-index entry (record descriptors join here when they exist)
+  const pending = NAV.flatMap((g) => g.items).filter((i) => !descriptorByPath(i.href) && !SCREENS.some((s) => s.route === i.href));
   return (
     <main className="mx-auto max-w-5xl space-y-8 p-4 md:p-6">
       <header>
@@ -50,25 +38,25 @@ export default async function ScreenIndexPage() {
       <section aria-labelledby="built" className="space-y-3">
         <h2 id="built" className="text-section font-semibold">{t("built")}</h2>
         <ul className="space-y-3">
-          {BUILT.map((s) => (
+          {built.map((s) => (
             <li key={s.name} className="space-y-2 rounded-xl border bg-card p-4">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h3 className="font-semibold">{t(`name.${s.name}`)}</h3>
-                <span className="text-small text-muted-foreground">{t("vat")}: {vatLabel(s.vat)}</span>
+                <span className="text-small text-muted-foreground">{t("vat")}: {t(s.company === "vat" ? "vatOnly" : s.company === "nonvat" ? "nonVatOnly" : "vatBoth")}</span>
               </div>
-              <p className="text-small text-muted-foreground">{t("route")}: <code className="tabular-nums">{s.route}</code></p>
+              <p className="text-small text-muted-foreground">{t("route")}: <code className="tabular-nums">{s.path}</code></p>
               <p>
-                <a className={link} href={href(s.route, { role: "accountant", company: "vat" })}>{t("open")} {t(`name.${s.name}`)}</a>
+                <a className={link} href={href(s.path, { role: "accountant", company: s.company === "nonvat" ? "nonvat" : "vat" })}>{t("open")} {t(`name.${s.name}`)}</a>
               </p>
               {s.states && (
                 <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-small">
                   <span className="text-muted-foreground">{t("states")}:</span>
-                  {STATES.map((st) => <a key={st} className={link} href={href(s.route, { state: st, role: "accountant", company: "vat" })}>{t(`state.${st}`)}</a>)}
+                  {STATES.map((st) => <a key={st} className={link} href={href(s.path, { state: st, role: "accountant", company: "vat" })}>{t(`state.${st}`)}</a>)}
                 </p>
               )}
               <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-small">
                 <span className="text-muted-foreground">{t("roles")}:</span>
-                {ROLES.map((r) => <a key={r} className={link} href={href(s.route, { role: r, company: "vat" })}>{t(`role.${r}`)}</a>)}
+                {ROLES.map((r) => <a key={r} className={link} href={href(s.path, { role: r, company: "vat" })}>{t(`role.${r}`)}</a>)}
               </p>
             </li>
           ))}

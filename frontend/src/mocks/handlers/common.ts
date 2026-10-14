@@ -16,11 +16,12 @@ export function ctx() {
 }
 
 /** Applies the toolbar's screen state. Returns a response to short-circuit, or null to continue. */
-export async function screenGate(kind: 'list' | 'item') {
+/** `me` is the session, not screen content: "forbidden" / "empty" leave it alone so the shell (nav, company) still renders around the forbidden screen. */
+export async function screenGate(kind: 'list' | 'item' | 'me') {
   const { s } = ctx();
   if (s.screenState === 'loading') { await delay('infinite'); }
   if (s.screenState === 'error') return problem(500, 'mock.server_error', 'ระบบขัดข้องชั่วคราว ลองใหม่อีกครั้ง');
-  if (s.screenState === 'forbidden') return problem(403, 'auth.forbidden', 'คุณไม่มีสิทธิ์ดูข้อมูลนี้');
+  if (s.screenState === 'forbidden' && kind !== 'me') return problem(403, 'auth.forbidden', 'คุณไม่มีสิทธิ์ดูข้อมูลนี้');
   if (s.screenState === 'empty' && kind === 'list') return HttpResponse.json({ items: [] });
   return null;
 }

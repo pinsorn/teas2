@@ -16,4 +16,8 @@ describe('messages', () => {
       expect(typeof get(en, l), l).toBe('string');
     }
   });
+  it('the test translator throws on a missing key (no silent key echo)', async () => {
+    const { useTranslations } = await import('next-intl');
+    expect(() => useTranslations('docList')('no.such.key')).toThrow();
+  });
 });

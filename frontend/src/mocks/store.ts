@@ -27,8 +27,9 @@ export interface MockState {
 
 const KEY = 'teas2.mock.state.v2';
 
-export function seed(): MockState {
-  const s = buildSeed(getSettings().role);
+/** The seed for a given role (default accountant: the screen index resolves fixture ids on the server, where there is no toolbar). */
+export function buildSeedState(role: Role = 'accountant'): MockState {
+  const s = buildSeed(role);
   for (const d of s.docs) if (d.type === 'TI' || d.type === 'IV') recomputeSettlement(s, d.id); // balances follow the links (§7.11)
   for (const d of s.docs) {
     if (d.status === 'draft') continue;
@@ -37,6 +38,8 @@ export function seed(): MockState {
   }
   return s;
 }
+
+export const seed = (): MockState => buildSeedState(getSettings().role);
 
 export function loadState(): MockState {
   try {

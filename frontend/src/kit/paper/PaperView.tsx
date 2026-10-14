@@ -26,7 +26,7 @@ export function PaperView({ type, id, copy = false, toolbar = false }: { type: D
   const q = useQuery({ queryKey: qk.paper(me?.activeCompanyId ?? '', type, id, copy), queryFn: () => endpoints.getPaper(type, id, copy), enabled: !!me });
   useEffect(() => {
     const el = root.current;
-    if (!el) return;
+    if (!el) { setReady(false); return; } // model changed and the new one is not rendered yet: the old "ready" must not linger
     const check = () => setReady(!!el.querySelector('[data-paper-ready="true"]'));
     const observer = new MutationObserver(check);
     observer.observe(el, { subtree: true, attributes: true, childList: true });

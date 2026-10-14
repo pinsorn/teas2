@@ -100,8 +100,8 @@ export function buildDocs(parties: SeedParty[], items: SeedItem[]) {
   });
   add({ key: 'qt-r1', type: 'QT', party: customers[5], date: addDays(ANCHOR, -12), lines: linesFor('qt-r1', customers[5], 12), status: 'issued',
     by: USER, revision: 1, prevNotes: 'ราคายังไม่รวมค่าจัดส่ง', notes: 'ราคารวมค่าจัดส่ง ชำระภายใน 30 วัน' });
-  // ---- 2 credit notes adjusting issued TIs ----
-  tis().filter((s) => s.status === 'issued' && !s.replaces).slice(0, 2).forEach((ti, n) => {
+  // ---- 2 credit notes adjusting issued TIs (never the open-month one: the tiIssuedUnpaid fixture stays untouched) ----
+  tis().filter((s) => s.status === 'issued' && !s.replaces && s.date < '2026-10-01').slice(0, 2).forEach((ti, n) => {
     const key = `cn-${n + 1}`; const d = addDays(ti.date, 5);
     add({ key, type: 'CN', party: ti.party, date: ANCHOR < d ? ANCHOR : d, status: 'issued', by: USER, adjusts: ti.key,
       lines: [{ id: `${key}-l1`, description: 'ลดหนี้ส่วนลดการค้า', qty: '1', unit: 'งาน', unitPrice: n ? '2500.00' : '1000.00', taxCode: 'S7' }] });
