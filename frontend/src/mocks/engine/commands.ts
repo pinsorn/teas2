@@ -112,7 +112,7 @@ export function isFiscalChange(d: Doc, b: Body): boolean {
     || !!b.header.priceIncludesVat !== !!d.header.priceIncludesVat || JSON.stringify(b.lines) !== JSON.stringify(d.lines)
     // settlement: who is paid how much and into which account changes the books (a certificate number does not)
     || (b.allocations !== undefined && fiscalAllocations(b.allocations) !== fiscalAllocations(d.allocations))
-    || b.header.bankAccountId !== d.header.bankAccountId || b.header.whtMode !== d.header.whtMode || (b.header.depositAmount ?? '0.00') !== (d.header.depositAmount ?? '0.00');
+    || b.header.bankAccountId !== d.header.bankAccountId || (b.header.paymentMethod ?? 'transfer') !== (d.header.paymentMethod ?? 'transfer') || b.header.whtMode !== d.header.whtMode || (b.header.depositAmount ?? '0.00') !== (d.header.depositAmount ?? '0.00');
 }
 
 /** SP0 §7.11: outstanding = total - active credit notes + active debit notes - active settlements (active links only). */
@@ -181,7 +181,7 @@ export function compute(st: MockState, companyId: string, type: DocType, raw: Bo
     ...(body.allocations ? { allocations: body.allocations } : {}),
   };
   const missing = missingOf(st, companyId, type, body);
-  const bad = settleProblem(st, companyId, type, body, ownBack(st, outstandingNow(st), opts?.docId));
+  const bad = settleProblem(st, companyId, type, body, ownBack(st, outstandingNow(st), opts?.docId), { prior: opts?.docId ? st.docs.find((x) => x.id === opts.docId)?.allocations : undefined });
   if (bad) missing.push({ field: 'allocations', message: bad.title });
   return { lines: c.lines, totals, missing, journal: ledgerFor(st, { ...doc, companyId }), ...settleExtras(st, companyId, type, body) };
 }
@@ -232,7 +232,7 @@ function settleTargets(st: MockState, d: Stored, allocations: Allocation[] | und
 
 /** `keepDate`: a correction re-issues a document at its original date (I9), so the period / future checks do not apply.
  *  `partyExempt`: target ids a correction plan retargeted to a reissued invoice, whose customer may differ from the receipt's. */
-export function issue(st: MockState, id: string, version: number, actor: Actor, opts?: { keepDate?: boolean; partyExempt?: string[] }): Doc {
+export function issue(st: MockState, id: string, version: number, actor: Actor, opts?: { keepDate?: boolean; partyExempt?: string[]; prior?: Allocation[] }): Doc {
   const d = getDoc(st, id);
   if (d.status !== 'draft') throw new MockError(409, 'doc.not_draft', 'ออกได้เฉพาะเอกสารฉบับร่าง');
   checkVersion(d, version);
@@ -245,7 +245,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
       throw new MockError(422, 'period.closed', `งวดบัญชี ${monthLabelTh(d.header.documentDate.slice(0, 7))} ปิดแล้ว ออกเอกสารลงวันที่ในงวดนี้ไม่ได้ ให้เปลี่ยนวันที่เป็น ${firstOpenDate(st, d.companyId)} เป็นต้นไป หรือขอเปิดงวดอีกครั้ง`);
     }
   }
-  const bad = settleProblem(st, d.companyId, d.type, body, outstandingNow(st), { partyExempt: opts?.partyExempt });
+  const bad = settleProblem(st, d.companyId, d.type, body, outstandingNow(st), { partyExempt: opts?.partyExempt, prior: opts?.prior });
   if (bad) throw bad; // nothing has been written yet: a refused issue leaves no number, link or journal behind
   const totals = totalsOf(st, d.companyId, d.type, body);
   const next: Stored = {
@@ -296,7 +296,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   if (d.correctionClass !== 'T') { const m = missingOf(st, d.companyId, d.type, body); if (m.length) throw incomplete(m); }
   const resettle = SETTLES[d.type] !== undefined && d.correctionClass !== 'T'; // a payment voucher re-points its own links; a receipt (T) can only change a certificate number here
   if (resettle) { // the voucher's own current links give their amounts back before the new list is checked
-    const bad = settleProblem(st, d.companyId, d.type, body, ownBack(st, outstandingNow(st), id));
+    const bad = settleProblem(st, d.companyId, d.type, body, ownBack(st, outstandingNow(st), id), { prior: d.allocations });
     if (bad) throw bad;
   }
   const { allocations: _a, ...rest } = d; void _a;

@@ -98,9 +98,11 @@ export function settleTotals(st: MockState, companyId: string, type: DocType, bo
 /**
  * The command-time rules for an RC / PV allocation list (undefined = fine). `outstanding(id)` reads the target's balance NOW.
  * `partyExempt`: target ids a correction plan retargeted to a reissued invoice (its customer may have changed) - every other rule still applies, to them and to every other target.
+ * `prior`: the allocations this document already carries (revise / compute / reissue). A carried allocation keeps the party recorded on it (engine-set from its target when it was created or moved),
+ *  and one whose amount is unchanged is not re-judged against outstanding (a later credit may legitimately have left it negative); a NEW or CHANGED allocation is checked in full.
  */
 export function allocationError(st: MockState, companyId: string, type: DocType, header: DocHeader, allocs: Allocation[] | undefined,
-  outstanding: (id: string) => number, opts: { partyExempt?: string[] } = {}): MockError | undefined {
+  outstanding: (id: string) => number, opts: { partyExempt?: string[]; prior?: Allocation[] } = {}): MockError | undefined {
   if (!allocs?.length) return undefined;
   const settles = SETTLES[type];
   if (!settles) return new MockError(422, 'settle.not_allowed', 'เอกสารประเภทนี้จัดสรรการชำระไม่ได้');
@@ -113,15 +115,17 @@ export function allocationError(st: MockState, companyId: string, type: DocType,
     seen.add(a.targetId);
     if (!settles.includes(target.type) || a.targetType !== target.type) return new MockError(422, 'settle.wrong_type', `${label} ชำระด้วยเอกสารนี้ไม่ได้`);
     if (!LIVE.includes(target.status)) return new MockError(422, 'settle.target_not_open', `${label} ไม่อยู่ในสถานะที่ชำระได้`);
-    if (!opts.partyExempt?.includes(a.targetId) && target.header.partyId !== header.partyId) return new MockError(422, 'settle.party_mismatch', `${label} เป็นของคู่ค้าคนละราย`);
+    const was = opts.prior?.find((p) => p.targetId === a.targetId);
+    const carriedParty = !!was?.partyId && was.partyId === target.header.partyId; // recorded when it was legitimately created / moved
+    if (!opts.partyExempt?.includes(a.targetId) && !carriedParty && target.header.partyId !== header.partyId) return new MockError(422, 'settle.party_mismatch', `${label} เป็นของคู่ค้าคนละราย`);
     const amount = money(a.amount, 'settle.invalid_amount');
     if (amount <= 0) return new MockError(422, 'settle.invalid_amount', `จำนวนที่ชำระ ${label} ต้องมากกว่า 0`);
     const out = outstanding(a.targetId);
-    if (amount > out) return new MockError(422, 'settle.over_allocation', `ชำระ ${label} เกินยอดค้างชำระ (ค้างชำระ ${fromSatang(out)} บาท)`);
+    if (amount > out && !(was && toSatang(was.amount) === amount)) return new MockError(422, 'settle.over_allocation', `ชำระ ${label} เกินยอดค้างชำระ (ค้างชำระ ${fromSatang(out)} บาท)`);
     const wht = money(a.wht, 'settle.invalid_wht');
     if (wht < 0) return new MockError(422, 'settle.invalid_wht', `ภาษีหัก ณ ที่จ่ายของ ${label} ต้องไม่ติดลบ`);
     if (wht > amount) return new MockError(422, 'rc.wht_exceeds_amount', `ภาษีหัก ณ ที่จ่ายของ ${label} เกินยอดที่ชำระ`);
-    if (wht > 0 && a.whtTypeCode) { try { whtTypeOf(st, a.whtTypeCode, payeeOf(st, companyId, header.partyId), header.documentDate); } catch (e) { return e as MockError; } }
+    if (a.whtTypeCode) { try { whtTypeOf(st, a.whtTypeCode, payeeOf(st, companyId, header.partyId), header.documentDate); } catch (e) { return e as MockError; } }
     if (wht > 0 && type !== 'RC') return new MockError(422, 'settle.wht_not_allowed', 'ภาษีหัก ณ ที่จ่ายของใบสำคัญจ่ายคำนวณจากรายการ ไม่ระบุที่การจัดสรร');
   }
   if (sum(allocs.map((a) => money(a.wht, 'settle.invalid_wht'))) > sum(allocs.map((a) => money(a.amount, 'settle.invalid_amount')))) {
@@ -150,7 +154,7 @@ export function payError(st: MockState, companyId: string, type: DocType, body: 
 }
 
 /** Every command-time rule of an RC / PV, first violation wins. */
-export const settleProblem = (st: MockState, companyId: string, type: DocType, body: Part, outstanding: (id: string) => number, opts: { partyExempt?: string[] } = {}) =>
+export const settleProblem = (st: MockState, companyId: string, type: DocType, body: Part, outstanding: (id: string) => number, opts: { partyExempt?: string[]; prior?: Allocation[] } = {}) =>
   allocationError(st, companyId, type, body.header, body.allocations, outstanding, opts) ?? payError(st, companyId, type, body);
 
 /** RC suggestion per allocation: round(service net of the target x rate x amount / target total), the target's service lines' WHT type. */
