@@ -58,6 +58,10 @@ describe('DocView', () => {
     expect(page.textContent).toContain(issued.totals.amountInWords);
     expect(page.textContent).toContain('ผู้มีอำนาจลงนาม');
   });
+  it('a draft paper tab says it is not printable, not "no data"', async () => {
+    ui(find((d) => d.type === 'TI' && d.status === 'draft').id);
+    expect(await screen.findByText(/ยังไม่ได้ออก จึงพิมพ์เป็นใบกำกับภาษีไม่ได้/)).toBeVisible();
+  });
   it('cancel needs a reason code', async () => {
     const issued = find((d) => d.type === 'TI' && d.status === 'issued' && !d.locks.length);
     ui(issued.id);

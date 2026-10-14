@@ -78,7 +78,7 @@ export function buildDocs(parties: SeedParty[], items: SeedItem[]) {
   const tis = () => specs.filter((s) => s.type === 'TI');
   for (const old of tis().filter((s) => s.status === 'replaced')) {
     const key = tiKey(); k++;
-    add({ key, type: 'TI', party: old.party, date: addDays(old.date, 2), lines: copyLines(key, old.lines), status: 'issued', by: USER,
+    add({ key, type: 'TI', party: old.party, date: old.date, lines: copyLines(key, old.lines), status: 'issued', by: USER,
       term: true, replaces: old.key });
     old.replacedBy = key;
   }

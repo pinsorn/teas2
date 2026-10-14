@@ -31,7 +31,7 @@
 .paper-page {
   position: relative; display: flex; flex-direction: column; overflow: hidden;
   width: var(--paper-w); height: var(--paper-h); padding: var(--paper-pad-y) var(--paper-pad-x);
-  background: var(--paper-sheet); box-shadow: 0 2px 18px rgb(26 24 22 / 0.18);
+  background: var(--paper-sheet); box-shadow: 0 2px 18px color-mix(in srgb, var(--color-ink) 18%, transparent);
 }
 .paper-probe { position: absolute; left: -10000px; top: 0; visibility: hidden; width: calc(var(--paper-w) - 2 * var(--paper-pad-x)); }
 @page { size: A4; margin: 0; }

@@ -86,6 +86,8 @@ describe('paper endpoint', () => {
     expect(pn.replacementNote).toContain('ยกเลิกและออกแทนฉบับเดิม เลขที่ ' + old.number);
     expect(pn.replacementNote).toMatch(/ลงวันที่ \d+ \S+ \d{4}$/);
     expect(pn.voidMark).toBeUndefined();
+    expect(pn.documentDate).toBe(po.documentDate); // I9: the replacement keeps the original date and total
+    expect(pn.totals.total).toBe(po.totals.total);
   });
   it('a cancelled document is stamped ยกเลิก', async () => {
     const d = await (await call('POST', '/docs/TI', body())).json();
@@ -97,5 +99,30 @@ describe('paper endpoint', () => {
     const id = issuedTi().id;
     setSettings({ companyKey: 'nonvat' });
     expect((await call('GET', `/docs/TI/${id}/paper`)).status).toBe(404);
+  });
+  const issue = async (lines: { taxCode: string; unitPrice: string }[]) => {
+    const b = body();
+    b.lines = lines.map((l, i) => ({ id: 'z' + i, description: 'รายการ ' + i, qty: '1', unit: 'งาน', unitPrice: l.unitPrice, taxCode: l.taxCode })) as never;
+    const d = await (await call('POST', '/docs/TI', b)).json();
+    const iss = await (await call('POST', `/docs/TI/${d.id}/issue`, { version: d.version })).json();
+    return { paper: await paper(iss.id), doc: iss };
+  };
+  it('a draft is not printable: 409 doc.not_printable', async () => {
+    const d = await (await call('POST', '/docs/TI', body())).json();
+    const r = await call('GET', `/docs/TI/${d.id}/paper`);
+    expect(r.status).toBe(409);
+    expect((await r.json()).code).toBe('doc.not_printable');
+  });
+  it('vatLines: all zero-rated shows no 7% line; mixed shows both with the engine VAT', async () => {
+    const z = await issue([{ taxCode: 'Z0', unitPrice: '1000.00' }]);
+    expect(z.paper.vatLines.map((l: { label: string }) => l.label).join('|')).not.toContain('7%');
+    expect(z.paper.vatLines).toContainEqual({ label: 'ยอดขายอัตราร้อยละ 0', amount: '1000.00' });
+    expect(z.paper.vatLines.at(-1)).toEqual({ label: 'ภาษีมูลค่าเพิ่ม', amount: '0.00' });
+    const m = await issue([{ taxCode: 'S7', unitPrice: '1000.00' }, { taxCode: 'Z0', unitPrice: '500.00' }, { taxCode: 'EX', unitPrice: '200.00' }]);
+    expect(m.paper.vatLines).toEqual([
+      { label: 'ยอดขายอัตราร้อยละ 0', amount: '500.00' }, { label: 'ยอดขายที่ได้รับยกเว้น', amount: '200.00' },
+      { label: 'ภาษีมูลค่าเพิ่ม 7%', amount: m.doc.totals.vat },
+    ]);
+    expect(m.doc.totals.vat).toBe('70.00');
   });
 });

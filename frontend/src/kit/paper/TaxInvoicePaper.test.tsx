@@ -9,6 +9,7 @@ const model = (n: number): PaperModel => ({
   buyer: { name: 'บริษัท นาวาพาณิชย์ จำกัด', address: '…', taxId: '0105568024684', branchLabel: 'สำนักงานใหญ่' },
   lines: Array.from({ length: n }, (_, i) => ({ no: i + 1, description: `รายการ ${i + 1}`, qty: '1', unit: 'งาน', unitPrice: '100.00', amount: '100.00', taxCode: 'S7' as const })),
   totals: { gross: '100.00', discount: '0.00', net: '100.00', vat: '7.00', total: '107.00', amountInWords: 'หนึ่งร้อยเจ็ดบาทถ้วน' },
+  vatLines: [{ label: 'ภาษีมูลค่าเพิ่ม 7%', amount: '7.00' }],
   signatures: ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'],
 });
 
@@ -41,6 +42,11 @@ describe('TaxInvoicePaper (ม.86/4)', () => {
       expect(p.querySelector('[data-paper-void]')?.textContent).toContain('ถูกแทนที่');
       expect(p.textContent).toContain('ยกเลิกและออกแทนฉบับเดิม เลขที่ TI-1');
     });
+  });
+  it('prints the server VAT lines and no rate of its own', () => {
+    render(<TaxInvoicePaper model={{ ...model(1), vatLines: [{ label: 'ยอดขายอัตราร้อยละ 0', amount: '100.00' }, { label: 'ภาษีมูลค่าเพิ่ม', amount: '0.00' }] }} measure={() => 30} />);
+    expect(screen.getByText('ยอดขายอัตราร้อยละ 0')).toBeInTheDocument();
+    expect(screen.queryByText(/7%/)).toBeNull();
   });
   it('an untouched original has no stamp', () => {
     const { container } = render(<TaxInvoicePaper model={model(1)} measure={() => 30} />);

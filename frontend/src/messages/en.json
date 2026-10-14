@@ -8,7 +8,7 @@
       "label": "Actions", "issueDraft": "Save and issue…", "edit": "Edit", "print": "Print", "copy": "Copy as new",
       "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}"
     },
-    "paper": { "stub": "The document paper preview appears here", "snapshot": "Revision {n}" },
+    "paper": { "notPrintable": "This document has not been issued, so it cannot be printed as a tax invoice. Issue it first.", "stub": "The document paper preview appears here", "snapshot": "Revision {n}" },
     "chain": {
       "empty": "No related documents", "self": "This document", "inactive": "No longer in effect",
       "rel": {

@@ -10,11 +10,11 @@ const L = {
   customer: 'ลูกค้า', taxId: 'เลขประจำตัวผู้เสียภาษี', phone: 'โทร', no: 'เลขที่', date: 'วันที่', due: 'ครบกำหนดชำระ', ref: 'เลขที่อ้างอิง',
   seq: 'ลำดับ', desc: 'รายการ', qty: 'จำนวน', unit: 'หน่วย', price: 'ราคา/หน่วย', amount: 'จำนวนเงิน',
   words: 'จำนวนเงินรวมทั้งสิ้น (ตัวอักษร)', notes: 'หมายเหตุ', gross: 'รวมเป็นเงิน', discount: 'ส่วนลด', net: 'มูลค่าก่อนภาษี',
-  vat: 'ภาษีมูลค่าเพิ่ม 7%', total: 'จำนวนเงินรวมทั้งสิ้น', baht: 'บาท', discountOn: 'ส่วนลด', z0: 'อัตราภาษีร้อยละ 0', ex: 'ได้รับยกเว้นภาษี',
+  total: 'จำนวนเงินรวมทั้งสิ้น', baht: 'บาท', discountOn: 'ส่วนลด', z0: 'อัตราภาษีร้อยละ 0', ex: 'ได้รับยกเว้นภาษี',
 };
 
 /** px; the real sheet (794 x 1123, 42 px top/bottom padding) minus a safety margin so print never clips a row. */
-const INNER = 1123 - 2 * 42 - 8;
+const INNER = 1123 - 2 * 42 - 8 - 42; // 42 = .paper-pg margin-top (6mm) + .paper-items padding-top (5mm), outside the measured blocks
 /** Used where nothing can be measured (jsdom) or a block measures 0. */
 const FALLBACK = { head: 230, thead: 38, pg: 34, foot: 330 };
 interface Metrics { rows: number[]; head: number; thead: number; pg: number; foot: number }
@@ -105,7 +105,7 @@ function Foot({ m }: { m: PaperModel }) {
               <tr><td>{L.gross}</td><td>{formatMoney(t.gross)}</td></tr>
               {Number(t.discount) !== 0 ? <tr><td>{L.discount}</td><td>{formatMoney(t.discount)}</td></tr> : null}
               <tr className="sub"><td>{L.net}</td><td>{formatMoney(t.net)}</td></tr>
-              <tr><td>{L.vat}</td><td>{formatMoney(t.vat)}</td></tr>
+              {m.vatLines.map((v) => <tr key={v.label}><td>{v.label}</td><td>{formatMoney(v.amount)}</td></tr>)}
             </tbody>
           </table>
           <div className="paper-grand"><span className="l">{L.total}<span className="paper-en">{L.baht}</span></span><span className="v">{formatMoney(t.total)}</span></div>
@@ -126,7 +126,7 @@ const fontsReady = () => (typeof document !== 'undefined' && document.fonts ? do
 const h = (e: Element | null) => (e ? Math.ceil(e.getBoundingClientRect().height) : 0);
 
 /** The printed tax invoice. Rows are measured once in a hidden probe (real layout, after fonts load); `measure` replaces that in tests. */
-export function TaxInvoicePaper({ model, measure }: { model: PaperModel; measure?: (rowIndex: number) => number }) {
+export function TaxInvoicePaper({ model, measure, onReady }: { model: PaperModel; measure?: (rowIndex: number) => number; onReady?: () => void }) {
   const probe = useRef<HTMLDivElement>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
 
@@ -152,6 +152,8 @@ export function TaxInvoicePaper({ model, measure }: { model: PaperModel; measure
     return paginate(m.rows, { first: cap, next: cap, lastReserve: m.foot });
   }, [m]);
 
+  const ready = pages !== null;
+  useEffect(() => { if (ready) onReady?.(); }, [ready, onReady]);
   const stamp = model.voidMark;
   return (
     <Paper ready={pages !== null}>
