@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { isValidTin } from '@/domain/tin';
+import { toSatang } from './engine/money';
 import { loadState, resetState, saveState, seed } from './store';
 
 describe('mock store', () => {
@@ -8,6 +9,18 @@ describe('mock store', () => {
     const s = seed();
     expect(s.companies.map((c) => c.vatRegistered)).toEqual([true, false]);
     for (const p of s.parties) if (p.taxId) expect(isValidTin(p.taxId)).toBe(true);
+  });
+  it('seed money: no credit note exceeds its target TI total, and no TI without a settlement has negative outstanding', () => {
+    const s = seed();
+    const cns = s.links.filter((l) => l.kind === 'adjusts' && l.active);
+    expect(cns.length).toBeGreaterThan(0);
+    for (const l of cns) {
+      const ti = s.docs.find((d) => d.id === l.to)!;
+      expect({ id: ti.id, ok: toSatang(l.amount!) <= toSatang(ti.totals.total) }).toEqual({ id: ti.id, ok: true });
+    }
+    for (const d of s.docs.filter((x) => x.type === 'TI' && x.outstanding !== undefined && !s.links.some((l) => l.kind === 'settles' && l.active && l.to === x.id))) {
+      expect({ id: d.id, neg: toSatang(d.outstanding!) < 0 }).toEqual({ id: d.id, neg: false });
+    }
   });
   it('seed is deterministic', () => {
     expect(JSON.stringify(seed())).toBe(JSON.stringify(seed()));

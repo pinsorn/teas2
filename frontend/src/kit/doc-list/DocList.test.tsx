@@ -81,11 +81,18 @@ describe('DocList', () => {
     ui();
     expect(await screen.findByText(/doc\.TI\.read/)).toBeVisible();
   });
-  it('a failed /me is forbidden without claiming the list permission is missing', async () => {
+  it('a 403 from /me itself is forbidden without claiming the list permission is missing', async () => {
     testServer.use(http.get('*/bff/v1/me', () => HttpResponse.json({ type: 'about:blank', status: 403, code: 'auth.forbidden', title: 'คุณไม่มีสิทธิ์ดูข้อมูลนี้', traceId: 't' }, { status: 403 })));
     ui();
     expect(await screen.findByText(/ไม่มีสิทธิ์/)).toBeVisible();
     expect(screen.queryByText(/doc\.TI\.read/)).toBeNull();
+  });
+  it('toolbar screen state "forbidden": /me succeeds, the list 403 renders the forbidden state (not an error, not empty)', async () => {
+    setSettings({ screenState: 'forbidden' });
+    const { container } = ui();
+    await waitFor(() => expect(container.querySelector('[data-screen-state="forbidden"]')).not.toBeNull());
+    expect(container.querySelector('[data-screen-state="error"]')).toBeNull();
+    expect(container.querySelector('[data-screen-state="empty"]')).toBeNull();
   });
   it('row checkboxes have unique names and the header shows a partial selection', async () => {
     ui();

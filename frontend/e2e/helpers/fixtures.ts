@@ -6,10 +6,13 @@ export async function fixtureId(page: Page, key: string): Promise<string> {
   if (page.url() === 'about:blank') await page.goto('/');
   let ids: Record<string, string> | undefined;
   await expect.poll(async () => {
-    ids = await page.evaluate(async () => {
-      const r = await fetch('/bff/v1/mock/fixtures');
-      return r.ok && (r.headers.get('content-type') ?? '').includes('json') ? ((await r.json()) as Record<string, string>) : undefined;
+    const r = await page.evaluate(async () => {
+      const res = await fetch('/bff/v1/mock/fixtures');
+      const type = res.headers.get('content-type') ?? '';
+      return { ok: res.ok, status: res.status, problem: type.includes('problem+json'), json: type.includes('json') ? await res.json() : undefined };
     });
+    if (r.problem) throw new Error(`/bff/v1/mock/fixtures failed (${r.status}): ${(r.json as { title?: string }).title}`); // handler answered: do not keep polling
+    ids = r.ok ? (r.json as Record<string, string>) : undefined; // anything else is the Next 404 page: the worker is not up yet
     return ids !== undefined;
   }, { message: 'mock worker did not answer /bff/v1/mock/fixtures' }).toBe(true);
   const id = ids![key];

@@ -17,6 +17,8 @@ describe('named fixture ids', () => {
   });
   it('fails loudly when a predicate matches nothing (can fail)', () => {
     const st = seed(); st.docs = st.docs.filter((d) => d.type !== 'TI');
-    expect(() => fixtureIds(st)).toThrow(/tiDraft/);
+    const keys = Object.keys(FIXTURE_PREDICATES);
+    let msg = ''; try { fixtureIds(st); } catch (e) { msg = String(e); }
+    for (const k of keys) expect(msg, k).toContain(k); // every unresolved key is listed, not just the first
   });
 });
