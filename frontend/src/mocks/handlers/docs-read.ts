@@ -4,6 +4,7 @@ import type { Doc, DocType, DocSummary, Lock, Page } from '@/domain/types';
 import { ctx, forbidden, problem, screenGate } from './common';
 
 import { recomputeSettlement, unavailableTh } from '../engine/commands';
+import { today } from '../engine/log';
 import { derivedLocks } from '../engine/locks';
 
 const LOCKED: Lock = { kind: 'filing', reason: 'ภ.พ.30 เดือน ก.ย. 2569 ยื่นแล้ว', exits: ['ออกใบลดหนี้ / ใบเพิ่มหนี้ในงวดถัดไป'] };
@@ -27,11 +28,13 @@ export const docsReadHandlers = [
     const u = new URL(request.url);
     const statuses = u.searchParams.get('status')?.split(',').filter(Boolean), from = u.searchParams.get('from'), to = u.searchParams.get('to');
     const q = (u.searchParams.get('q') ?? '').toLowerCase(), owing = u.searchParams.get('outstanding') === 'positive';
+    const overdue = u.searchParams.get('overdue') === '1', agent = u.searchParams.get('agent') === '1', now = today();
     const limit = Math.min(Number(u.searchParams.get('limit')) || 25, 100);
     const offset = u.searchParams.get('cursor') ? Number(atob(u.searchParams.get('cursor')!)) || 0 : 0;
     const rows = st.docs
       .filter((d) => d.companyId === company.id && d.type === type && (!statuses?.length || statuses.includes(d.status))
-        && (!owing || Number(d.outstanding ?? 0) > 0) && (!from || d.header.documentDate >= from) && (!to || d.header.documentDate <= to)
+        && (!owing || Number(d.outstanding ?? 0) > 0)
+        && (!overdue || (!!d.header.dueDate && d.header.dueDate < now && Number(d.outstanding ?? 0) > 0)) && (!agent || d.createdBy.kind === 'agent') && (!from || d.header.documentDate >= from) && (!to || d.header.documentDate <= to)
         && (!q || `${d.number ?? ''} ${d.party?.name ?? ''}`.toLowerCase().includes(q)))
       .sort((a, b) => b.header.documentDate.localeCompare(a.header.documentDate) || (a.number ?? '').localeCompare(b.number ?? ''));
     const items = rows.slice(offset, offset + limit).map(toSummary);

@@ -59,7 +59,7 @@ export interface JournalPreview { entries: JournalEntryPreview[] }
 
 export interface MissingItem { field: string; message: string }
 export interface ComputeResult { lines: { id: string; net: Money; vat: Money; total: Money }[]; totals: DocTotals;
-  missing: MissingItem[]; journal: JournalPreview }
+  missing: MissingItem[]; /** Omitted without ledger.read (D-09). */ journal?: JournalPreview }
 
 export interface CorrectionNote { type: 'CN' | 'DN'; fullCredit: boolean; priceIncludesVat: boolean;
   lines: DocLine[]; total: Money;

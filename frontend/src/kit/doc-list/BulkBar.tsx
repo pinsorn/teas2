@@ -23,7 +23,10 @@ export function BulkBar({ ids, actions, permissions, onClear, onDone }: {
     <TooltipProvider>
       <div role="region" aria-label={t('selected', { count: ids.length })}
         className="flex flex-wrap items-center gap-2 rounded-lg border bg-card px-3 py-2">
-        <span role="status" className="font-medium tabular-nums">{t('selected', { count: ids.length })}</span>
+        <span role="status" className="flex items-center gap-2">
+          <span className="font-medium tabular-nums">{t('selected', { count: ids.length })}</span>
+          {failed ? <span className="text-destructive">{failed}</span> : null}
+        </span>
         {actions.map((a) => {
           const allowed = permissions.includes(a.permission);
           const btn = (
@@ -37,7 +40,6 @@ export function BulkBar({ ids, actions, permissions, onClear, onDone }: {
           );
         })}
         <Button size="sm" variant="ghost" onClick={onClear}>{t('clearSelection')}</Button>
-        {failed ? <span role="alert" className="text-destructive">{failed}</span> : null}
       </div>
     </TooltipProvider>
   );

@@ -12,9 +12,9 @@ const DEBOUNCE_MS = 150;
 /**
  * Shared type-ahead behind PartyField and ItemField: debounced search, arrow keys, Enter accepts the highlighted match.
  * Enter pressed before the results arrive waits for them (typing fast then Enter must still pick the first match);
- * no match keeps the typed text; Enter while composing (Thai IME) does nothing.
+ * no match keeps the typed text and (T11) still performs the Enter the user pressed, via `onEnterNoMatch`; Enter while composing (Thai IME) does nothing.
  */
-export function useSuggest<T>(search: (q: string) => Promise<T[]>, onPick: (item: T) => void) {
+export function useSuggest<T>(search: (q: string) => Promise<T[]>, onPick: (item: T) => void, onEnterNoMatch?: (back: boolean) => void) {
   const listId = useId();
   const [items, setItems] = useState<T[]>([]);
   const [open, setOpen] = useState(false);
@@ -25,9 +25,10 @@ export function useSuggest<T>(search: (q: string) => Promise<T[]>, onPick: (item
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const busy = useRef(false);
   const enterWaiting = useRef(false);
+  const enterBack = useRef(false);
   const blurred = useRef(false);
-  const cb = useRef({ search, onPick });
-  useEffect(() => { cb.current = { search, onPick }; });
+  const cb = useRef({ search, onPick, onEnterNoMatch });
+  useEffect(() => { cb.current = { search, onPick, onEnterNoMatch }; });
   useEffect(() => () => clearTimeout(timer.current), []);
 
   const cancel = () => { clearTimeout(timer.current); seq.current++; busy.current = false; enterWaiting.current = false; setNote(undefined); };
@@ -53,6 +54,7 @@ export function useSuggest<T>(search: (q: string) => Promise<T[]>, onPick: (item
       if (enterWaiting.current) {
         enterWaiting.current = false;
         if (r[0]) { choose(r[0]); return; }
+        if (!blurred.current) cb.current.onEnterNoMatch?.(enterBack.current);
       }
       setOpen(!blurred.current);
     }, DEBOUNCE_MS);
@@ -63,7 +65,7 @@ export function useSuggest<T>(search: (q: string) => Promise<T[]>, onPick: (item
     if (e.key === 'Enter') {
       if (isComposing(e)) return true;
       if (e.ctrlKey || e.metaKey) return false;
-      if (busy.current) { e.preventDefault(); enterWaiting.current = true; return true; }
+      if (busy.current) { e.preventDefault(); enterWaiting.current = true; enterBack.current = e.shiftKey; return true; }
       if (open && items[active]) { e.preventDefault(); choose(items[active]); return true; }
       return false;
     }
@@ -126,11 +128,13 @@ export interface ItemFieldProps {
   /** Keys the suggest list did not consume (Enter = next cell). */
   onKey: (e: KeyboardEvent<HTMLInputElement>) => void;
   onPaste: (e: ClipboardEvent<HTMLInputElement>) => void;
+  /** An Enter that waited for results which turned out empty: do what Enter does on a plain cell (move on). */
+  onAdvance?: (back: boolean) => void;
 }
 
 /** Description cell: an editable combobox over the item list. Free text is always allowed. */
-export function ItemField({ value, label, cell, search, onText, onPick, onKey, onPaste }: ItemFieldProps) {
-  const s = useSuggest(search, onPick);
+export function ItemField({ value, label, cell, search, onText, onPick, onKey, onPaste, onAdvance }: ItemFieldProps) {
+  const s = useSuggest(search, onPick, onAdvance);
   return (
     <div className="relative">
       <Input type="text" role="combobox" autoComplete="off" aria-autocomplete="list" aria-label={label} data-cell={cell} value={value}

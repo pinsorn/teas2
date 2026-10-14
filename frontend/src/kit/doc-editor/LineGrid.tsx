@@ -76,7 +76,7 @@ export function LineGrid({ lines, onChange, searchItems, amounts, computing }: L
             <div className="col-span-2 md:col-span-1">
               <ItemField value={l.description} label={t('description', { n })} cell={`${i}:description`} search={searchItems}
                 onText={(description) => patch(i, { description, itemId: undefined })} onPick={(it) => pick(i, it)}
-                onKey={(e) => onCellKey(e, i, 'description')} onPaste={(e) => onPaste(e, i)} />
+                onKey={(e) => onCellKey(e, i, 'description')} onPaste={(e) => onPaste(e, i)} onAdvance={(back) => move(i, 'description', back)} />
             </div>
             <label className="grid gap-1">
               <span aria-hidden className="text-small text-muted-foreground md:hidden">{t('colQty')}</span>

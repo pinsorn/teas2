@@ -182,11 +182,13 @@ function runStep(w: MockState, s: CorrectionStep, proposed: Body, actor: Actor, 
   }
 }
 
+export const planStale = () => new MockError(409, 'correction.plan_stale', 'ข้อมูลเปลี่ยนไปหลังจากสร้างแผน กรุณาสร้างแผนใหม่');
+
 /** All or nothing: every step runs on a clone; `st` is only touched when the whole plan succeeded. */
 export function executePlan(st: MockState, planId: string, planHash: string, actor: Actor, role?: Role): CorrectionResult {
   const stored = st.plans?.[planId];
   if (!stored) throw new MockError(404, 'correction.plan_not_found', 'ไม่พบแผนการแก้ไข');
-  const stale = () => new MockError(409, 'correction.plan_stale', 'ข้อมูลเปลี่ยนไปหลังจากสร้างแผน กรุณาสร้างแผนใหม่');
+  const stale = planStale;
   const plan = stored.plan;
   if (!plan || plan.planHash !== planHash) throw stale();
   let current: CorrectionPlan;

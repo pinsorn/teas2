@@ -11,7 +11,7 @@ import { routesOf, type DocDescriptor } from '@/domain/descriptors';
 import type { Doc, DocType } from '@/domain/types';
 import { ApiError } from '@/lib/api/client';
 import { endpoints } from '@/lib/api/endpoints';
-import { formatDateBE, formatTHB } from '@/lib/format';
+import { formatDateBE, formatTHB, todayIso } from '@/lib/format';
 import { qk } from '@/lib/query/keys';
 import { CancelDialog } from '../dialogs/CancelDialog';
 import { StatusChip } from '../doc-list/StatusChip';
@@ -106,6 +106,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
   const title = locale === 'en' ? d.titleEn : d.titleTh;
   const label = `${doc.type} ${doc.number ?? ''}`.trim();
   const tabs = ['paper', 'chain', 'ledger', 'activity', 'revisions'] as const;
+  const canLedger = permissions.includes('ledger.read'); // D-09: journals need ledger.read, not just the document's read
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
@@ -130,7 +131,11 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
       {convert.error ? <Alert variant="destructive"><AlertTitle>{convert.error instanceof ApiError ? convert.error.problem.title : tc('retry')}</AlertTitle></Alert> : null}
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="h-auto flex-wrap group-data-horizontal/tabs:h-auto">{tabs.map((k) => <TabsTrigger key={k} value={k} className="h-8 flex-auto">{t(`tabs.${k}`)}</TabsTrigger>)}</TabsList>
+        <TabsList className="h-auto flex-wrap group-data-horizontal/tabs:h-auto">{tabs.map((k) => k === 'ledger' && !canLedger ? (
+          <span key={k} title={t('ledger.needsPermission')} className="flex flex-auto">
+            <TabsTrigger value={k} disabled className="h-8 flex-auto">{t(`tabs.${k}`)}<span className="sr-only"> ({t('ledger.needsPermission')})</span></TabsTrigger>
+          </span>
+        ) : <TabsTrigger key={k} value={k} className="h-8 flex-auto">{t(`tabs.${k}`)}</TabsTrigger>)}</TabsList>
         <TabsContent value="paper">
           <section role="region" aria-label={t('tabs.paper')} tabIndex={0} className="overflow-x-auto">
             {PAPERS[doc.type] ? <PaperView type={doc.type} id={doc.id} /> : <PaperStub doc={doc} />}
@@ -145,7 +150,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
       </Tabs>
 
       {cancelOpen ? (
-        <CancelDialog docLabel={label} busy={cancel.isPending} error={cancel.error} hint={cancel.error instanceof ApiError && cancel.error.code === 'doc.version_conflict' ? t('cancel.stale') : undefined} onCancel={() => setCancelOpen(false)}
+        <CancelDialog docLabel={label} total={doc.totals.total} reversalDate={todayIso()} busy={cancel.isPending} error={cancel.error} hint={cancel.error instanceof ApiError && cancel.error.code === 'doc.version_conflict' ? t('cancel.stale') : undefined} onCancel={() => setCancelOpen(false)}
           onConfirm={(code, text) => cancel.mutate({ code, text })} />
       ) : null}
     </div>

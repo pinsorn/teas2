@@ -4,7 +4,7 @@ import type { Actor, DocType, Qty } from '@/domain/types';
 import { PAPER_BUILDERS } from '../engine/paper';
 import { buildChain } from '../engine/chain';
 import { type Body, unavailableTh, cancel, compute, convert, createDraft, deleteDraft, issue, publicDoc, updateDraft } from '../engine/commands';
-import { buildPlan, correctionPlan, executePlan } from '../engine/corrections';
+import { buildPlan, correctionPlan, executePlan, planStale } from '../engine/corrections';
 import { MockError } from '../engine/log';
 import { CLASS } from '../fixtures/documents';
 import { saveState } from '../store';
@@ -54,7 +54,10 @@ const P = (perm: string) => (t: DocType) => `doc.${t}.${perm}`;
 
 export const docsWriteHandlers = [
   http.post('*/bff/v1/docs/:type/compute', ({ request, params }) => guarded(String(params.type), P('read'), async (c, t) =>
-    HttpResponse.json(compute(c.st, c.company.id, t, stripOverrides((await request.json()) as Body))))),
+    {
+    const { journal, ...r } = compute(c.st, c.company.id, t, stripOverrides((await request.json()) as Body));
+    return HttpResponse.json(c.perms.includes('ledger.read') ? { ...r, journal } : r); // D-09: no journal without ledger.read
+  })),
 
   http.post('*/bff/v1/docs/:type', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
     const key = request.headers.get('Idempotency-Key') ?? crypto.randomUUID();
@@ -111,7 +114,9 @@ export const docsWriteHandlers = [
       const stored = c.st.plans?.[planId];
       const target = stored && c.st.docs.find((d) => d.id === stored.docId && d.companyId === c.company.id);
       if (!stored || !target) throw new MockError(404, 'correction.plan_not_found', 'ไม่พบแผนการแก้ไข');
-      for (const s of buildPlan(c.st, stored.docId, stored.proposed, c.s.role).steps) if (!c.perms.includes(s.permission)) return forbidden(s.permission);
+      let current;
+      try { current = buildPlan(c.st, stored.docId, stored.proposed, c.s.role); } catch { throw planStale(); } // the world moved since the plan: stale, not a raw engine error
+      for (const s of current.steps) if (!c.perms.includes(s.permission)) return forbidden(s.permission);
       const result = executePlan(c.st, planId, planHash, ACTOR, c.s.role);
       done(c);
       return HttpResponse.json(result);
@@ -144,7 +149,7 @@ export const docsWriteHandlers = [
     own(c, t, params.id);
     return HttpResponse.json(c.st.revisions.filter((r) => r.docId === params.id).map(({ docId, ...r }) => (void docId, r)).sort((a, b) => b.revision - a.revision));
   })),
-  http.get('*/bff/v1/docs/:type/:id/ledger', ({ params }) => guarded(String(params.type), P('read'), (c, t) => {
+  http.get('*/bff/v1/docs/:type/:id/ledger', ({ params }) => guarded(String(params.type), 'ledger.read', (c, t) => {
     own(c, t, params.id);
     return HttpResponse.json(c.st.journals.find((j) => j.docId === params.id)?.preview ?? { entries: [] });
   })),

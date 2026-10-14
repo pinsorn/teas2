@@ -7,10 +7,11 @@ import { Alert, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import type { CorrectionPlan } from '@/domain/types';
 import { ApiError } from '@/lib/api/client';
+import { formatMoney, formatTHB } from '@/lib/format';
 
 /** SP0 section 7.3: one "แก้ไข" button, the system picks the behaviour. This shows what it will do, in order, before anything is written. */
-export function CorrectionPlanDialog({ plan, busy, error, onRegenerate, onConfirm, onSendToApprover, onCancel }: {
-  plan: CorrectionPlan; busy?: boolean; error?: unknown; onRegenerate?: () => void; onConfirm: () => void; onSendToApprover: () => void; onCancel: () => void;
+export function CorrectionPlanDialog({ plan, busy, loading, error, onRegenerate, onConfirm, onSendToApprover, onCancel }: {
+  plan: CorrectionPlan; busy?: boolean; /** A newer plan is being fetched: this one must not be confirmed meanwhile. */ loading?: boolean; error?: unknown; onRegenerate?: () => void; onConfirm: () => void; onSendToApprover: () => void; onCancel: () => void;
 }) {
   const t = useTranslations('docView.plan');
   const tp = useTranslations('problem');
@@ -36,10 +37,10 @@ export function CorrectionPlanDialog({ plan, busy, error, onRegenerate, onConfir
                     <table className="w-full tabular-nums">
                       <thead><tr>{(['taxCode', 'net', 'vat', 'total'] as const).map((key) => <th key={key} scope="col" className="text-left">{t(key)}</th>)}</tr></thead>
                       <tbody>{s.note.taxLines.map((line) => <tr key={line.taxCode}>
-                        <th scope="row" className="text-left">{line.taxCode}</th><td>{line.net}</td><td>{line.vat}</td><td>{line.total}</td>
+                        <th scope="row" className="text-left">{line.taxCode}</th><td>{formatMoney(line.net)}</td><td>{formatMoney(line.vat)}</td><td>{formatMoney(line.total)}</td>
                       </tr>)}</tbody>
                     </table>
-                    <p>{t('total')}: {s.note.total}</p>
+                    <p>{t('total')}: {formatTHB(s.note.total)}</p>
                   </div> : null}
                 </li>
               ))}
@@ -52,7 +53,7 @@ export function CorrectionPlanDialog({ plan, busy, error, onRegenerate, onConfir
           <AlertDialogCancel>{t('back')}</AlertDialogCancel>
           {blocked ? <Button type="button" variant="outline" onClick={onSendToApprover}>{t('send')}</Button> : null}
           {onRegenerate ? <Button type="button" variant="outline" onClick={onRegenerate}>{t('regenerate')}</Button> : null}
-          <Button type="button" disabled={blocked || !!onRegenerate || busy || !plan.steps.length} onClick={onConfirm}>{t('confirm')}</Button>
+          <Button type="button" disabled={blocked || !!onRegenerate || busy || loading || !plan.steps.length} onClick={onConfirm}>{t('confirm')}</Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

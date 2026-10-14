@@ -65,7 +65,7 @@ describe('DocEditor', () => {
     await userEvent.type(screen.getByRole('textbox', { name: 'หมายเหตุ' }), 'ส่งภายในวันศุกร์');
     await waitFor(() => expect(calls.some((c) => c.startsWith('PUT /bff/v1/docs/TI/'))).toBe(true), { timeout: 4000 });
     expect(calls.filter((c) => c === 'POST /bff/v1/docs/TI')).toHaveLength(1);
-  });
+  }, 12_000); // two 2 s idle windows back to back: the default 5 s leaves ~0.5 s of slack and flaked under load
   it('Ctrl+Enter opens the confirm dialog with totals; Enter issues', async () => {
     const onIssued = ui();
     await userEvent.type(screen.getByRole('combobox', { name: 'ลูกค้า' }), 'นาวา{Enter}');
@@ -247,4 +247,18 @@ describe('final review: I2 / I3 / I7', () => {
     await new Promise((r) => setTimeout(r, 2600));
     expect(calls.filter((c) => /^(POST|PUT) \/bff\/v1\/docs\/TI(\/|$)/.test(c) && !c.endsWith('/compute'))).toEqual([]);
   }, 15000);
+});
+
+describe('D-09 journal drawer needs ledger.read', () => {
+  it('without ledger.read the journal button is disabled and names the permission; with it the button is enabled', async () => {
+    setSettings({ role: 'operator' });
+    ui();
+    const off = await screen.findByRole('button', { name: /ต้องมีสิทธิ์ ดูบัญชี/ });
+    expect(off).toBeDisabled();
+    expect(off).toHaveAccessibleName(/ดูรายการบัญชี.*ledger\.read/);
+    cleanup();
+    setSettings({ role: 'accountant' });
+    ui();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'ดูรายการบัญชี' })).toBeEnabled());
+  });
 });

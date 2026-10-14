@@ -9,13 +9,15 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import type { IsoDate, Money } from '@/domain/types';
 import { ApiError } from '@/lib/api/client';
+import { formatDateBE, formatTHB } from '@/lib/format';
 
 export const CANCEL_REASONS = ['WRONG_PARTY', 'WRONG_AMOUNT', 'WRONG_ITEMS', 'DUPLICATE', 'OTHER'] as const;
 
 /** Cancel is irreversible: a reason code is required (and a text when the code is OTHER). The server's refusal (e.g. an applied receipt) is shown in place. */
-export function CancelDialog({ docLabel, busy, error, hint, onConfirm, onCancel }: {
-  docLabel: string; busy?: boolean; error?: unknown; hint?: string; onConfirm: (reasonCode: string, reasonText: string) => void; onCancel: () => void;
+export function CancelDialog({ docLabel, total, reversalDate, busy, error, hint, onConfirm, onCancel }: {
+  docLabel: string; /** What is being cancelled and when the reversal posts: shown before the irreversible click (rule 3). */ total: Money; reversalDate: IsoDate; busy?: boolean; error?: unknown; hint?: string; onConfirm: (reasonCode: string, reasonText: string) => void; onCancel: () => void;
 }) {
   const t = useTranslations('docView.cancel');
   const tp = useTranslations('problem');
@@ -30,6 +32,10 @@ export function CancelDialog({ docLabel, busy, error, hint, onConfirm, onCancel 
           <AlertDialogTitle>{t('title', { doc: docLabel })}</AlertDialogTitle>
           <AlertDialogDescription>{t('body')}</AlertDialogDescription>
         </AlertDialogHeader>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-body">
+          <dt className="text-muted-foreground">{t('total')}</dt><dd className="tabular-nums">{formatTHB(total)}</dd>
+          <dt className="text-muted-foreground">{t('reversalDate')}</dt><dd className="tabular-nums">{formatDateBE(reversalDate)}</dd>
+        </dl>
         <div className="grid gap-1.5">
           <Label htmlFor={`${id}-code`}>{t('reason')}</Label>
           <Select value={code} onValueChange={setCode}>

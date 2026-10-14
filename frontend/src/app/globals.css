@@ -112,6 +112,15 @@
   outline-offset: var(--focus-offset);
 }
 
+/* A composite control draws ONE outline, on the group: the inner input must not draw a second box inside it (unlayered like the rule above). */
+[data-slot="input-group"] :is(input, textarea):focus-visible {
+  outline: none;
+}
+[data-slot="input-group"]:has(:is(input, textarea):focus-visible) {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }

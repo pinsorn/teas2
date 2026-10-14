@@ -16,8 +16,7 @@ export const isComposing = (e: KeyboardEvent) => e.nativeEvent.isComposing || e.
 export function parseClipboardRows(text: string): { description: string; qty: string; unitPrice: string }[] {
   return text.trim().split(/\r?\n/).map((row) => {
     const [description = '', qty = '1', price = '0'] = row.split('\t');
-    const n = Number(price.replace(/,/g, ''));
-    return { description: description.trim(), qty: qty.trim() || '1', unitPrice: Number.isFinite(n) ? n.toFixed(2) : '0.00' };
+    return { description: description.trim(), qty: qty.trim() || '1', unitPrice: moneyText(price) }; // same rule as typed text (truncate to 2 dp, string only: no float round-trip)
   }).filter((r) => r.description);
 }
 

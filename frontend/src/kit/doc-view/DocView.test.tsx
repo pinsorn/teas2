@@ -13,7 +13,8 @@ import { testServer } from '@/mocks/test-server';
 import { CorrectionPlanDialog } from '../dialogs/CorrectionPlanDialog';
 import { endpoints } from '@/lib/api/endpoints';
 import { problem } from '@/mocks/handlers/common';
-import { formatMoney } from '@/lib/format';
+import { formatDateBE, formatMoney, formatTHB, todayIso } from '@/lib/format';
+import { fixtureIds } from '@/mocks/fixtures/ids';
 import { useRouter } from 'next/navigation';
 import { qk } from '@/lib/query/keys';
 import type { Me } from '@/domain/types';
@@ -309,5 +310,88 @@ describe('I7 company scope', () => {
     expect(await screen.findByText('ไม่พบเอกสารนี้')).toBeVisible();
     expect(screen.queryByTestId('doc-number')).toBeNull();
     expect(screen.queryByRole('button', { name: 'ลองใหม่' })).toBeNull();
+  });
+});
+
+describe('F3 debt — plan dialog, chain, ledger.read, cancel, revisions', () => {
+  it('plan amounts are formatted as Thai baht', () => {
+    const base = { planId: 'p', planHash: 'h', explanation: 'ลดหนี้', missingPermissions: [] as string[] };
+    const note = { type: 'CN' as const, fullCredit: false, priceIncludesVat: false, lines: [], total: '1234567.50',
+      taxLines: [{ taxCode: 'S7' as const, net: '1000.00', vat: '70.00', total: '1070.00' }] };
+    const plan: CorrectionPlan = { ...base, steps: [{ order: 1, action: 'issue_cn', docId: 'a', docType: 'CN', summary: 's', permission: 'doc.CN.issue', note }] };
+    render(<CorrectionPlanDialog plan={plan} onConfirm={() => {}} onSendToApprover={() => {}} onCancel={() => {}} />);
+    const table = screen.getByRole('table');
+    expect(within(table).getByText('1,070.00')).toBeVisible();
+    expect(within(table).getByText('1,000.00')).toBeVisible();
+    expect(screen.queryByText('1070.00')).toBeNull();
+    expect(screen.getByText('฿1,234,567.50', { exact: false })).toBeVisible(); // the note total line
+    expect(screen.queryByText('1234567.50', { exact: false })).toBeNull();
+  });
+  it('confirm is disabled while a newer plan is loading (T12)', async () => {
+    testServer.use(http.post('*/bff/v1/corrections', () => problem(409, 'correction.plan_stale', 'ข้อมูลเปลี่ยนไปหลังจากสร้างแผน กรุณาสร้างแผนใหม่')));
+    const plan = vi.spyOn(endpoints, 'getCorrectionPlan');
+    const doc = plain(lone()) as never;
+    function Flow() {
+      const { request, ui: flow } = useCorrectionFlow(taxInvoice, doc);
+      const d = doc as ReturnType<typeof plain>;
+      return <><button onClick={() => void request({ header: d.header, lines: d.lines.map((l, i) => (i === 0 ? { ...l, unitPrice: '1.00' } : l)) })}>go</button>{flow}</>;
+    }
+    render(<QueryClientProvider client={client()}><Flow /></QueryClientProvider>);
+    await userEvent.click(await screen.findByRole('button', { name: 'go' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'แผนการแก้ไข' });
+    const first = await plan.mock.results[0].value;
+    await userEvent.click(within(dialog).getByRole('button', { name: 'ยืนยันทั้งหมด' }));
+    await within(dialog).findByText(/กรุณาสร้างแผนใหม่/);
+    let release!: (p: CorrectionPlan) => void;
+    plan.mockImplementationOnce(() => new Promise<CorrectionPlan>((r) => { release = r; }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'สร้างแผนใหม่' }));
+    await waitFor(() => expect(plan).toHaveBeenCalledTimes(2));
+    expect(within(dialog).getByRole('button', { name: 'ยืนยันทั้งหมด' })).toBeDisabled(); // the old plan must not be confirmable while its replacement loads
+    act(() => release(first));
+    await waitFor(() => expect(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'ยืนยันทั้งหมด' })).toBeEnabled());
+    plan.mockRestore();
+  });
+  it('chain 403 renders ForbiddenState naming doc.<T>.read', async () => {
+    const d = lone();
+    testServer.use(http.get('*/bff/v1/docs/:type/:id/chain', () => problem(403, 'auth.forbidden', 'คุณไม่มีสิทธิ์ดูข้อมูลนี้')));
+    ui(d.id);
+    await userEvent.click(await screen.findByRole('tab', { name: 'เอกสารที่เกี่ยวข้อง' }));
+    expect(await screen.findByText(/doc\.TI\.read/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'ลองใหม่' })).toBeNull(); // forbidden is not a retryable error
+  });
+  it('ledger tab without ledger.read is disabled with the permission named (D-09)', async () => {
+    setSettings({ role: 'operator' });
+    ui(lone().id);
+    const tab = await screen.findByRole('tab', { name: /ผลต่อบัญชี/ });
+    expect(tab).toBeDisabled();
+    expect(tab).toHaveAccessibleName(/ต้องมีสิทธิ์ ดูบัญชี.*ledger\.read/);
+  });
+  it('ledger tab stays usable with ledger.read', async () => {
+    ui(lone().id);
+    expect(await screen.findByRole('tab', { name: 'ผลต่อบัญชี' })).toBeEnabled();
+  });
+  it('cancel dialog shows the document total and the reversal date before confirming (rule 3)', async () => {
+    const d = find((x) => x.id === fixtureIds(loadState()).tiIssuedUnpaid);
+    ui(d.id);
+    await userEvent.click(await screen.findByRole('button', { name: 'ยกเลิกเอกสาร' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(formatTHB(d.totals.total))).toBeVisible();
+    expect(within(dialog).getByText(formatDateBE(todayIso()))).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'ยืนยันยกเลิก' })).toBeDisabled(); // still needs a reason
+  });
+  it('revision diffs name the field and the line number, never the raw path', async () => {
+    const d = lone();
+    const snap = { ...plain(d), lines: [{ ...d.lines[0], id: 'l-a' }, { ...d.lines[0], id: 'l-b' }] };
+    testServer.use(http.get('*/bff/v1/docs/:type/:id/revisions', () => HttpResponse.json([
+      { revision: 1, at: '2026-10-10T09:00:00.000Z', actor: { kind: 'user', id: 'u', name: 'สมศรี' }, snapshot: snap,
+        diff: [{ path: 'lines.l-b.unitPrice', before: '100.00', after: '120.00' }, { path: 'header.notes', before: null, after: 'x' }, { path: 'lines.l-b.qty', before: '1', after: '2' }] },
+      { revision: 0, at: '2026-10-09T09:00:00.000Z', actor: { kind: 'user', id: 'u', name: 'สมศรี' }, snapshot: snap, diff: [] },
+    ])));
+    ui(d.id);
+    await userEvent.click(await screen.findByRole('tab', { name: 'ประวัติการแก้ไข' }));
+    expect(await screen.findByText('รายการที่ 2 · ราคาต่อหน่วย')).toBeVisible();
+    expect(screen.getByText('รายการที่ 2 · จำนวน')).toBeVisible();
+    expect(screen.getByText('หมายเหตุ')).toBeVisible();
+    expect(screen.queryByText(/lines\./)).toBeNull();
   });
 });

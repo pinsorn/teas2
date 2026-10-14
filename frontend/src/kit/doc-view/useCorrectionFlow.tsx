@@ -25,13 +25,14 @@ export function useCorrectionFlow(d: DocDescriptor, doc: Doc) {
   const router = useRouter();
   const [plan, setPlan] = useState<CorrectionPlan>();
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>();
   const [sent, setSent] = useState(false);
   const [proposed, setProposed] = useState<DocInput>();
 
   const request = async (next: DocInput) => {
-    setError(undefined); setSent(false); setProposed(next);
-    try { setPlan(await endpoints.getCorrectionPlan(d.type, doc.id, next)); } catch (e) { setError(e); }
+    setError(undefined); setSent(false); setProposed(next); setLoading(true);
+    try { setPlan(await endpoints.getCorrectionPlan(d.type, doc.id, next)); } catch (e) { setError(e); } finally { setLoading(false); }
   };
   const confirm = async () => {
     if (!plan) return;
@@ -56,7 +57,7 @@ export function useCorrectionFlow(d: DocDescriptor, doc: Doc) {
   const stale = error instanceof ApiError && ['correction.plan_stale', 'correction.plan_not_found'].includes(error.code) && !!proposed;
   const ui = (
     <>
-      {plan ? <CorrectionPlanDialog plan={plan} busy={busy} error={error} onRegenerate={stale ? () => void request(proposed!) : undefined} onConfirm={() => void confirm()} onSendToApprover={send} onCancel={() => { setPlan(undefined); setError(undefined); }} /> : null}
+      {plan ? <CorrectionPlanDialog plan={plan} busy={busy} loading={loading} error={error} onRegenerate={stale ? () => void request(proposed!) : undefined} onConfirm={() => void confirm()} onSendToApprover={send} onCancel={() => { setPlan(undefined); setError(undefined); }} /> : null}
       {!plan && error ? <Alert variant="destructive"><AlertTitle>{error instanceof ApiError ? error.code === 'correction.unrepresentable' ? tp('correctionUnrepresentable') : error.problem.title : tp('default')}</AlertTitle></Alert> : null}
       {sent ? <Alert role="status"><AlertTitle>{t('sent')}</AlertTitle></Alert> : null}
     </>

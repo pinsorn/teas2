@@ -21,7 +21,7 @@
       }
     },
     "ledger": {
-      "empty": "เอกสารนี้ยังไม่มีรายการบัญชี", "account": "บัญชี", "debit": "เดบิต", "credit": "เครดิต",
+      "needsPermission": "ต้องมีสิทธิ์ ดูบัญชี (ledger.read)", "empty": "เอกสารนี้ยังไม่มีรายการบัญชี", "account": "บัญชี", "debit": "เดบิต", "credit": "เครดิต",
       "kind": { "original": "รายการบัญชีเดิม", "reversal": "รายการกลับรายการ", "correction": "รายการแก้ไข" }
     },
     "activity": {
@@ -31,9 +31,14 @@
     "revisions": {
       "empty": "ยังไม่มีประวัติ", "first": "ฉบับที่ออกครั้งแรก", "n": "ฉบับแก้ไขครั้งที่ {n}", "view": "ดูฉบับนี้", "hide": "ซ่อนฉบับนี้",
       "noChange": "ไม่มีการเปลี่ยนแปลงข้อมูล", "blank": "(ว่าง)", "reason": "เหตุผล: {reason}",
-      "field": { "header": { "notes": "หมายเหตุ", "reference": "อ้างอิง", "dueDate": "วันครบกำหนด", "documentDate": "วันที่เอกสาร", "partyId": "คู่ค้า" } }
+      "lineN": "รายการที่ {n}", "lineField": "{line} · {field}",
+      "fields": {
+        "header": { "notes": "หมายเหตุ", "reference": "อ้างอิง", "dueDate": "วันครบกำหนด", "documentDate": "วันที่เอกสาร", "partyId": "คู่ค้า", "dimensions": "มิติ", "priceIncludesVat": "ราคารวมภาษีมูลค่าเพิ่มแล้ว" },
+        "line": { "description": "รายการ", "itemId": "สินค้า/บริการ", "qty": "จำนวน", "unit": "หน่วย", "unitPrice": "ราคาต่อหน่วย", "discountPct": "ส่วนลด (%)", "taxCode": "รหัสภาษี", "dimensions": "มิติ", "sourceLineId": "รายการต้นทาง", "vatOverride": "ภาษีมูลค่าเพิ่ม" }
+      }
     },
     "cancel": {
+      "total": "ยอดรวมของเอกสาร", "reversalDate": "วันที่กลับรายการบัญชี",
       "stale": "ข้อมูลเอกสารเปลี่ยนไป โหลดข้อมูลล่าสุดให้แล้ว ตรวจแล้วยืนยันอีกครั้ง", "title": "ยกเลิกเอกสาร {doc}", "body": "ระบบจะกลับรายการบัญชีของเอกสารนี้และยกเลิกเอกสาร ย้อนกลับไม่ได้",
       "reason": "เหตุผล", "pick": "เลือกเหตุผล", "text": "รายละเอียด", "confirm": "ยืนยันยกเลิก", "back": "กลับ",
       "code": { "WRONG_PARTY": "ผู้ซื้อ/ผู้ขายไม่ถูกต้อง", "WRONG_AMOUNT": "ยอดเงินไม่ถูกต้อง", "WRONG_ITEMS": "รายการสินค้า/บริการไม่ถูกต้อง", "DUPLICATE": "ออกซ้ำ", "OTHER": "อื่น ๆ" }
@@ -110,6 +115,7 @@
     "needsPermission": "ต้องมีสิทธิ์ {permission}",
     "bulkFailed": "ทำรายการไม่สำเร็จ ลองอีกครั้ง",
     "agentChip": "ตัวแทน AI",
+    "rangeInvalid": "วันที่เริ่มต้องไม่เกินวันที่สิ้นสุด",
     "overdueDays": "เกินกำหนด {days} วัน"
   },
   "shell": {
@@ -403,7 +409,7 @@
     "save": "บันทึกร่าง",
     "saveRevision": "บันทึกการแก้ไข",
     "preview": "ตัวอย่างเอกสาร",
-    "journal": "ดูรายการบัญชี",
+    "journal": "ดูรายการบัญชี", "journalNeedsPermission": "ต้องมีสิทธิ์ ดูบัญชี (ledger.read)",
     "status": {
       "pending": "มีการเปลี่ยนแปลงที่ยังไม่บันทึก",
       "saving": "กำลังบันทึกร่าง…",

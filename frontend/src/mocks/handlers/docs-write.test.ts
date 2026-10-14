@@ -147,3 +147,16 @@ describe('paper endpoint', () => {
     expect(m.doc.totals.vat).toBe('70.00');
   });
 });
+
+describe('ledger 186: the confirm endpoint reports a vanished plan as plan_stale', () => {
+  it('a document cancelled after the plan was built is plan_stale (409), not a raw doc.not_correctable', async () => {
+    const d = await (await call('POST', '/docs/TI', body())).json();
+    const issued = await (await call('POST', `/docs/TI/${d.id}/issue`, { version: d.version })).json();
+    const plan = await (await call('POST', `/docs/TI/${d.id}/correction-plan`, { header: issued.header, lines: [{ ...issued.lines[0], unitPrice: '900.00' }] })).json();
+    expect(plan.steps.length).toBeGreaterThan(0);
+    expect((await call('POST', `/docs/TI/${d.id}/cancel`, { version: issued.version, reasonCode: 'OTHER', reasonText: 'x' })).status).toBe(200);
+    const r = await call('POST', '/corrections', { planId: plan.planId, planHash: plan.planHash });
+    expect(r.status).toBe(409);
+    expect((await r.json()).code).toBe('correction.plan_stale');
+  });
+});

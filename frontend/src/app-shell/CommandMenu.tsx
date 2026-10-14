@@ -50,7 +50,7 @@ export function CommandMenu({ open, onOpenChange }: { open: boolean; onOpenChang
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} title={t('command.title')} description={t('command.description')}>
-      <Command>
+      <Command shouldFilter={false}>{/* every group is already filtered: pages / creates here by `needle`, hits by the server */}
         <CommandInput value={q} onValueChange={setQ} placeholder={t('command.placeholder')} />
         <CommandList>
           {creates.length > 0 && (

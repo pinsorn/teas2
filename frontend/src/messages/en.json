@@ -21,7 +21,7 @@
       }
     },
     "ledger": {
-      "empty": "This document has no journal entries yet", "account": "Account", "debit": "Debit", "credit": "Credit",
+      "needsPermission": "Requires the View ledger permission (ledger.read)", "empty": "This document has no journal entries yet", "account": "Account", "debit": "Debit", "credit": "Credit",
       "kind": { "original": "Original entry", "reversal": "Reversal entry", "correction": "Correction entry" }
     },
     "activity": {
@@ -31,9 +31,14 @@
     "revisions": {
       "empty": "No history yet", "first": "First issued version", "n": "Revision {n}", "view": "View this version", "hide": "Hide this version",
       "noChange": "No data changes", "blank": "(empty)", "reason": "Reason: {reason}",
-      "field": { "header": { "notes": "Notes", "reference": "Reference", "dueDate": "Due date", "documentDate": "Document date", "partyId": "Counterparty" } }
+      "lineN": "Line {n}", "lineField": "{line} · {field}",
+      "fields": {
+        "header": { "notes": "Notes", "reference": "Reference", "dueDate": "Due date", "documentDate": "Document date", "partyId": "Counterparty", "dimensions": "Dimensions", "priceIncludesVat": "Prices include VAT" },
+        "line": { "description": "Description", "itemId": "Item", "qty": "Quantity", "unit": "Unit", "unitPrice": "Unit price", "discountPct": "Discount (%)", "taxCode": "Tax code", "dimensions": "Dimensions", "sourceLineId": "Source line", "vatOverride": "VAT" }
+      }
     },
     "cancel": {
+      "total": "Document total", "reversalDate": "Reversal posting date",
       "stale": "The document changed. The latest data was loaded; check it and confirm again.", "title": "Cancel document {doc}", "body": "The ledger entries of this document are reversed and the document is cancelled. This cannot be undone.",
       "reason": "Reason", "pick": "Choose a reason", "text": "Details", "confirm": "Confirm cancellation", "back": "Back",
       "code": { "WRONG_PARTY": "Wrong customer/vendor", "WRONG_AMOUNT": "Wrong amount", "WRONG_ITEMS": "Wrong items", "DUPLICATE": "Duplicate", "OTHER": "Other" }
@@ -110,6 +115,7 @@
     "needsPermission": "Requires permission {permission}",
     "bulkFailed": "The action failed. Try again",
     "agentChip": "AI agent",
+    "rangeInvalid": "The start date must not be after the end date",
     "overdueDays": "{days} days overdue"
   },
   "shell": {
@@ -403,7 +409,7 @@
     "save": "Save draft",
     "saveRevision": "Save changes",
     "preview": "Document preview",
-    "journal": "View journal entry",
+    "journal": "View journal entry", "journalNeedsPermission": "Requires the View ledger permission (ledger.read)",
     "status": {
       "pending": "Unsaved changes",
       "saving": "Saving draft…",

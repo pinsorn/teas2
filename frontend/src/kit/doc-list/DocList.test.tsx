@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HttpResponse, http } from 'msw';
+import { ApiError } from '@/lib/api/client';
+import { routesOf } from '@/domain/descriptors';
 import { qk } from '@/lib/query/keys';
 import type { Me } from '@/domain/types';
 import { __setSearch, useRouter } from '@/test/next-navigation';
@@ -162,5 +164,119 @@ describe('DocList', () => {
     await waitFor(() => expect(run).toHaveBeenCalledTimes(1));
     expect(run.mock.calls[0]).toHaveLength(1);
     await waitFor(() => expect(screen.queryByText('เลือก 1 รายการ')).toBeNull());
+  });
+});
+
+describe('DocList — SP1ab kit debt (F3)', () => {
+  const row = (id: string) => ({ id, type: taxInvoice.type, number: id.toUpperCase(), status: 'issued', documentDate: '2026-10-01', partyName: 'ก', total: '1.00', createdByAgent: false });
+  it('saved view "ค้างชำระ" shows as selected in the status filter (M10)', async () => {
+    __setSearch('status=issued,partly_settled&outstanding=positive&view=outstanding');
+    ui();
+    const select = await screen.findByRole('combobox', { name: 'สถานะ' });
+    expect(select).toHaveValue('issued,partly_settled');
+    expect(select).toHaveDisplayValue('ค้างชำระ');
+  });
+  it('retry after a failed page-1 refetch refetches page 1, not the next page (SP1ab I8 regression)', async () => {
+    const cursors: (string | null)[] = [];
+    let fail = true;
+    testServer.use(http.get('*/bff/v1/docs/:type', ({ request }) => {
+      cursors.push(new URL(request.url).searchParams.get('cursor'));
+      return fail ? HttpResponse.json({ status: 500, code: 'x', title: 'ล้มเหลว' }, { status: 500 }) : HttpResponse.json({ items: [row('ti-x1')], nextCursor: 'c2' });
+    }));
+    ui();
+    expect(await screen.findByRole('alert')).toHaveTextContent('ล้มเหลว');
+    fail = false;
+    await userEvent.click(screen.getByRole('button', { name: 'ลองใหม่' }));
+    expect(await screen.findByText('TI-X1')).toBeVisible();
+    expect(cursors).toEqual([null, null]); // the second GET is page 1 again, with no cursor
+  });
+  it('from > to shows an inline error and does not query', async () => {
+    const seen: string[] = [];
+    testServer.use(http.get('*/bff/v1/docs/:type', ({ request }) => { seen.push(new URL(request.url).search); return HttpResponse.json({ items: [row('ti-x1')] }); }));
+    ui();
+    await screen.findByText('TI-X1');
+    fireEvent.change(screen.getByLabelText('ตั้งแต่วันที่'), { target: { value: '2026-10-10' } });
+    await waitFor(() => expect(seen.some((s) => s.includes('from=2026-10-10'))).toBe(true));
+    const before = seen.length;
+    fireEvent.change(screen.getByLabelText('ถึงวันที่'), { target: { value: '2026-10-01' } });
+    expect(await screen.findByText('วันที่เริ่มต้องไม่เกินวันที่สิ้นสุด')).toBeVisible();
+    await new Promise((r) => setTimeout(r, 100));
+    expect(seen).toHaveLength(before);
+    expect(screen.getByText('TI-X1')).toBeVisible(); // the last good result stays, it is not blanked into "no data"
+    fireEvent.change(screen.getByLabelText('ถึงวันที่'), { target: { value: '2026-10-20' } });
+    await waitFor(() => expect(screen.queryByText('วันที่เริ่มต้องไม่เกินวันที่สิ้นสุด')).toBeNull());
+    await waitFor(() => expect(seen.some((s) => s.includes('to=2026-10-20'))).toBe(true));
+  });
+  it('back-forward restores the search box text from the URL', async () => {
+    __setSearch('q=นาวา');
+    ui();
+    const box = await screen.findByRole('searchbox');
+    expect(box).toHaveValue('นาวา');
+    act(() => __setSearch(''));
+    await waitFor(() => expect(box).toHaveValue(''));
+    act(() => __setSearch('q=ลิลลี่'));
+    await waitFor(() => expect(box).toHaveValue('ลิลลี่'));
+  });
+  it('a status change inside the search debounce window is not overwritten by the late search (stale filters)', async () => {
+    ui();
+    await screen.findByRole('searchbox');
+    await userEvent.type(screen.getByRole('searchbox'), 'นาวา');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'สถานะ' }), 'draft');
+    await waitFor(() => expect(vi.mocked(useRouter().replace).mock.lastCall![0]).toContain('q='));
+    const url = vi.mocked(useRouter().replace).mock.lastCall![0] as string;
+    expect(url).toContain('status=draft');
+  });
+  it('bulk action failure keeps the selection and announces the error in the live region', async () => {
+    const run = vi.fn(async () => { throw new ApiError({ type: 'about:blank', status: 500, code: 'x', title: 'ทำรายการไม่ได้เพราะระบบขัดข้อง', traceId: 't' }); });
+    ui([{ key: 'x', label: 'ทำรายการ', permission: 'doc.TI.read', run }]);
+    const rows = await screen.findAllByRole('row');
+    await userEvent.click(within(rows[1]).getByRole('checkbox'));
+    await userEvent.click(screen.getByRole('button', { name: 'ทำรายการ' }));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('ทำรายการไม่ได้เพราะระบบขัดข้อง'));
+    expect(screen.getByText('เลือก 1 รายการ')).toBeVisible(); // selection kept
+    expect(within(screen.getAllByRole('row')[1]).getByRole('checkbox')).toBeChecked();
+  });
+  it('a successful bulk run refetches the list', async () => {
+    let gets = 0;
+    testServer.use(http.get('*/bff/v1/docs/:type', () => { gets++; return HttpResponse.json({ items: [row('ti-x1')] }); }));
+    ui([{ key: 'x', label: 'ทำรายการ', permission: 'doc.TI.read', run: async () => {} }]);
+    const rows = await screen.findAllByRole('row');
+    await userEvent.click(within(rows[1]).getByRole('checkbox'));
+    const before = gets;
+    await userEvent.click(screen.getByRole('button', { name: 'ทำรายการ' }));
+    await waitFor(() => expect(gets).toBeGreaterThan(before));
+  });
+  it('KeyN on a list opens the create route; KeyN while typing in the search box does not', async () => {
+    ui();
+    await screen.findAllByRole('row');
+    const push = vi.mocked(useRouter().push);
+    push.mockClear();
+    await userEvent.type(screen.getByRole('searchbox'), 'n');
+    expect(push).not.toHaveBeenCalled();
+    await userEvent.click(document.body);
+    await userEvent.keyboard('[KeyN]');
+    expect(push).toHaveBeenCalledWith(routesOf(taxInvoice).create);
+  });
+  it('overdue and agent are server filters: the params reach the request and the rows the server returns are shown as-is', async () => {
+    const seen: string[] = [];
+    testServer.use(http.get('*/bff/v1/docs/:type', ({ request }) => { seen.push(new URL(request.url).search); return HttpResponse.json({ items: [row('ti-x1')] }); }));
+    __setSearch('status=issued,partly_settled&outstanding=positive&overdue=1&agent=1');
+    ui();
+    expect(await screen.findByText('TI-X1')).toBeVisible(); // no due date on the row: a client-side re-filter would have hidden it
+    expect(seen[0]).toContain('overdue=1');
+    expect(seen[0]).toContain('agent=1');
+  });
+});
+
+describe('DocList — filter changes', () => {
+  it('the search box element survives a filter change (results swap in place, no skeleton tear-down)', async () => {
+    ui();
+    const box = await screen.findByRole('searchbox');
+    box.focus();
+    await userEvent.type(box, 'นาวา');
+    await waitFor(() => expect(vi.mocked(useRouter().replace).mock.lastCall![0]).toContain('q='));
+    await screen.findAllByRole('row');
+    expect(screen.getByRole('searchbox')).toBe(box);
+    expect(box).toHaveFocus();
   });
 });
