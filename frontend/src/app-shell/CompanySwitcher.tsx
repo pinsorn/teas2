@@ -25,7 +25,7 @@ export function CompanySwitcher() {
   const active = me?.memberships.find((m) => m.companyId === me.activeCompanyId);
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="m-3 flex min-h-12 items-center gap-2 rounded-lg border bg-background px-3 py-2 text-left text-sm outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring">
+      <DropdownMenuTrigger className="m-3 flex min-h-12 items-center gap-2 rounded-lg border bg-background px-3 py-2 text-left text-sm outline-none hover:bg-muted">
         <span className="min-w-0 flex-1">
           <span className="block text-xs text-muted-foreground">{t('label')}</span>
           <span className="block truncate font-medium">{active?.companyName ?? t('none')}</span>

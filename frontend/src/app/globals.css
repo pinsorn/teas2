@@ -110,7 +110,6 @@
 :focus-visible {
   outline: var(--focus-ring);
   outline-offset: var(--focus-offset);
-  box-shadow: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

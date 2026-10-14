@@ -16,7 +16,7 @@ const ratio = (a: string, b: string) => {
 // docs/specs/SP1-design-system.md lists these ratios; keep both in step.
 const TEXT: [string, string][] = [
   ['--color-ink', '--color-bg'], ['--color-ink', '--color-surface'], ['--color-ink-muted', '--color-bg'],
-  ['--color-ink-muted', '--color-surface'], ['--color-ink-muted', '--color-subtle'], ['--color-brand-contrast', '--color-brand'],
+  ['--color-ink-muted', '--color-surface'], ['--color-ink-muted', '--color-subtle'], ['--color-brand-contrast', '--color-brand'], ['--color-brand-contrast', '--color-brand-hover'],
   ['--color-brand', '--color-bg'], ['--color-brand-ink', '--color-brand-soft'], ['--color-danger', '--color-surface'],
   ['--color-danger', '--color-bg'],
 ];

@@ -12,7 +12,9 @@ import { StatusChip } from "@/kit/doc-list/StatusChip";
 import { formatDateBE, formatMoney } from "@/lib/format";
 import { ConfirmDemo } from "./ConfirmDemo";
 
-export const metadata: Metadata = { title: "Style guide", robots: { index: false } };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getTranslations("styleGuide"))("title"), robots: { index: false } };
+}
 
 const STATUSES: DocStatus[] = ["draft", "pending", "approved", "issued", "partly_settled", "settled", "cancelled", "replaced"];
 const SWATCHES: [string, string][] = [
@@ -20,12 +22,12 @@ const SWATCHES: [string, string][] = [
   ["rule", "--color-rule"], ["controlBorder", "--color-control-border"], ["brand", "--color-brand"], ["brandSoft", "--color-brand-soft"],
   ["brandInk", "--color-brand-ink"], ["danger", "--color-danger"],
 ];
-const ROWS: [string, string, string, DocStatus | "overdue", string][] = [
-  ["2026-0042", "บริษัท ตัวอย่าง จำกัด", "2026-10-14", "issued", "64200"],
-  ["2026-0041", "ห้างหุ้นส่วน สยามพาณิชย์", "2026-10-09", "partly_settled", "18725.5"],
-  ["2026-0040", "คุณสมชาย ใจดี", "2026-09-30", "overdue", "5350"],
-  ["2026-0039", "บริษัท ไทยเทรด จำกัด", "2026-09-22", "settled", "120000"],
-  ["", "บริษัท รุ่งเรือง จำกัด", "2026-10-14", "draft", "9800"],
+const ROWS: [string, number, string, DocStatus | "overdue", string][] = [
+  ["TI-202610-0042", 0, "2026-10-14", "issued", "64200"],
+  ["TI-202610-0041", 1, "2026-10-09", "partly_settled", "18725.5"],
+  ["TI-202610-0040", 2, "2026-09-30", "overdue", "5350"],
+  ["TI-202610-0039", 3, "2026-09-22", "settled", "120000"],
+  ["", 4, "2026-10-14", "draft", "9800"],
 ];
 
 function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
@@ -96,7 +98,7 @@ export default async function StyleGuidePage() {
             <Input id="sg-tin" defaultValue="123456" aria-invalid aria-describedby="sg-tin-err" />
             <p id="sg-tin-err" className="text-small text-destructive">{t("errorText")}</p>
           </div>
-          <div className="space-y-1.5"><Label htmlFor="sg-no">{t("labelDisabled")}</Label><Input id="sg-no" disabled defaultValue="2026-0042" /></div>
+          <div className="space-y-1.5"><Label htmlFor="sg-no">{t("labelDisabled")}</Label><Input id="sg-no" disabled defaultValue="TI-202610-0042" /></div>
         </div>
       </Section>
 
@@ -158,7 +160,7 @@ export default async function StyleGuidePage() {
               {ROWS.map(([no, party, date, st, total]) => (
                 <TableRow key={party}>
                   <TableCell className="tabular-nums">{no || tc("draftNoNumber")}</TableCell>
-                  <TableCell>{party}</TableCell>
+                  <TableCell>{t(`party${party}`)}</TableCell>
                   <TableCell className="tabular-nums">{formatDateBE(date)}</TableCell>
                   <TableCell><StatusChip status={st} /></TableCell>
                   <TableCell className="text-right tabular-nums">{formatMoney(total)}</TableCell>

@@ -44,7 +44,7 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
                   onClick={onNavigate}
                   aria-current={i.href === active ? 'page' : undefined}
                   className={cn(
-                    'block rounded-md px-2 py-1.5 text-sm outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring',
+                    'block rounded-md px-2 py-1.5 text-sm outline-none hover:bg-sidebar-accent',
                     i.href === active && 'bg-sidebar-accent font-medium text-sidebar-accent-foreground',
                   )}
                 >

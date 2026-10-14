@@ -6,7 +6,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { formatMoney } from "@/lib/format";
+import { formatMoney, formatTHB } from "@/lib/format";
 
 /** Anatomy: title = verb + object; consequence line; the totals being committed; back (secondary) + the verb button (primary). */
 export function ConfirmDemo() {
@@ -23,7 +23,7 @@ export function ConfirmDemo() {
           <dt className="text-muted-foreground">{t("confirmNet")}</dt><dd className="text-right tabular-nums">{formatMoney("60000")}</dd>
           <dt className="text-muted-foreground">{t("confirmVat")}</dt><dd className="text-right tabular-nums">{formatMoney("4200")}</dd>
           <dt className="border-t border-foreground pt-1 font-semibold">{t("confirmTotal")}</dt>
-          <dd className="border-t border-foreground pt-1 text-right font-semibold tabular-nums">฿{formatMoney("64200")}</dd>
+          <dd className="border-t border-foreground pt-1 text-right font-semibold tabular-nums">{formatTHB("64200")}</dd>
         </dl>
         <p className="text-small text-muted-foreground">{t("confirmWords")}</p>
         <AlertDialogFooter>

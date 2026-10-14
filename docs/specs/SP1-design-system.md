@@ -15,7 +15,7 @@ confirm dialogs, and which component enforces each of the 12 UX rules. Live vers
 - Colours only through tokens (`frontend/src/styles/tokens.css`). No hex, no Tailwind palette classes (`bg-red-500`) in app code.
 - Light only. No `dark:` variants (D-13).
 - No hard-coded UI strings in components: `src/messages/{th,en}.json` (th is the source; en is the second language).
-- One accent. Peach (`--color-brand`) marks the primary action, the current nav item and focus; nothing else is peach-filled.
+- One accent. Peach (`--color-brand`) marks the primary action, the current nav item and focus; nothing else is peach-filled. Do not put brand-coloured text on `--color-brand-soft` (4.19:1, below AA): use `--color-brand-ink` there.
 - Status is never colour alone: every chip carries its Thai label.
 - Fonts: Noto Sans Thai for UI (`--font-ui`), Sarabun for paper/print (`--font-paper`), both via `next/font` in `layout.tsx`.
   No third family; numbers use `tabular-nums`, not a mono font.
@@ -24,7 +24,7 @@ confirm dialogs, and which component enforces each of the 12 UX rules. Live vers
 
 Defined in `src/styles/tokens.css`; the shadcn names (`--primary`, `--border`, ...) in `globals.css` point at them, so
 shadcn components and Tailwind utilities (`bg-primary`, `text-muted-foreground`) pick them up. `src/styles/tokens.test.ts`
-asserts every ratio below.
+asserts the AA threshold for every text pair below (4.5:1), the 3:1 UI pairs, every status chip and the primary-button hover pair; the printed ratios come from the same WCAG formula.
 
 Ratios are WCAG 2.x relative-luminance contrast. Text needs 4.5:1; UI components (control borders, focus ring) need 3:1.
 
@@ -39,13 +39,14 @@ Ratios are WCAG 2.x relative-luminance contrast. Text needs 4.5:1; UI components
 | `--color-rule-soft` | `#ECE7DF` | in-table row rules (reserved) | decorative |
 | `--color-control-border` (`--input`) | `#8A847A` | input, select, checkbox and outline-button borders | 3.71:1 on surface, 3.50:1 on bg (needs 3) |
 | `--color-brand` (`--primary`, `--ring`) | `#9E5C34` | primary button, focus ring, links | white on it 5.21:1; as text on bg 4.91:1; ring on bg/surface 4.91 / 5.21 (needs 3) |
+| `--color-brand-hover` | `#874E2B` | primary button hover (solid; never `bg-primary/80`, which falls to 3.60:1) | white on it 6.66:1 |
 | `--color-brand-contrast` | `#FFFFFF` | text on brand | 5.21:1 |
 | `--color-brand-soft` (`--accent`) | `#F8E3D0` | active nav item, selected row, avatar chip | ink on it 14.24:1 |
 | `--color-brand-ink` (`--accent-foreground`) | `#86492A` | text on brand-soft; approved chip | on soft 5.63:1, on surface 7.00:1 |
 | `--color-danger` (`--destructive`) | `#9B3F38` | error text, invalid border, destructive button text | on surface 6.64:1, on bg 6.27:1, on danger-soft 5.47:1 |
 | `--color-danger-soft` | `#FBE4E1` | overdue chip fill | with danger 5.47:1 |
 
-Status chips (`src/kit/doc-list/StatusChip.tsx`; text on tint, 24 px high, radius 6):
+Status chips (`src/kit/doc-list/StatusChip.tsx`; text on tint, 24 px high, radius 8 = `rounded-md`):
 
 | Status (`DocStatus`) | Thai label | fg token | fg | bg | Contrast |
 |---|---|---|---|---|---|
@@ -77,7 +78,7 @@ Disabled controls use 50% opacity and must show why (§6, rule 2).
 
 ## 2. Typography
 
-Thai needs air: body line-height is 1.6, never below 1.5 for any text.
+Thai needs air: body line-height is 1.6. Running text (body, small, section) is never below 1.5 (small 1.55, section 1.5); only the single-line `text-title` goes to 1.35.
 
 | Class | Size / line | Weight | Use |
 |---|---|---|---|
@@ -95,7 +96,7 @@ command list) are acceptable; app code uses the four classes above.
 
 Direction B is "comfortable": 40 px rows and controls, 12 px cell padding, 20 px (`p-5`) panel padding, 24 px page
 padding (`p-6`), 16 px between related blocks (`gap-4`), 40 px between page sections (`space-y-10`). Tables are plain:
-a subtle header band, hairline row rules, no zebra. Touch targets stay at least 40 px; mobile (>= 390 px) uses the same sizes.
+a subtle header band, hairline row rules, no zebra. Default and `lg` buttons, inputs, selects and rows are at least 40 px (`lg` 44 px); mobile (>= 390 px) uses the same sizes. `sm` (28 px), `xs` (24 px) and `icon-sm`/`icon-xs` exist for dense desktop toolbars only; never use them as the main touch action.
 
 ## 4. The five screen states (rule 10)
 
@@ -126,7 +127,7 @@ Empty and forbidden must never be confused: forbidden does not say "ไม่ม
 
 Use `AlertDialog` (modal, focus-trapped, Esc closes without action). Top to bottom:
 
-1. **Title**: verb + object with the document number ("ออกใบกำกับภาษี 2026-0042").
+1. **Title**: verb + object with the document number ("ออกใบกำกับภาษี TI-202610-0042").
 2. **Consequence line** (muted): what happens now and what the way back is ("... ถ้าผิดพลาดแก้ได้โดยยกเลิกและออกใหม่").
 3. **Totals block** for anything number-consuming or irreversible: net, VAT, grand total (`ยอดรวมทั้งสิ้น`, bold, rule above), amount in words. Nothing is confirmed blind.
 4. **Footer**: back button (outline, left/second on mobile, label "กลับไปแก้ไข") and the **primary action named by the same verb as the title** ("ออกใบกำกับภาษี"). On mobile the primary is on top, full width.
