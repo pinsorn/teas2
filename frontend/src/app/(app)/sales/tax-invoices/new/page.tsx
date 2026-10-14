@@ -1,7 +1,7 @@
 'use client';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
+import { Suspense, useState } from 'react';
 import { useMe } from '@/app-shell/useMe';
 import { taxInvoice } from '@/descriptors/tax-invoice';
 import { routesOf } from '@/domain/descriptors';
@@ -10,13 +10,9 @@ import { DocEditor } from '@/kit/doc-editor/DocEditor';
 import { ErrorState } from '@/kit/states/ErrorState';
 import { LoadingState } from '@/kit/states/LoadingState';
 import { endpoints } from '@/lib/api/endpoints';
+import { todayIso } from '@/lib/format';
 import { qk } from '@/lib/query/keys';
 import { VatGate } from '../gate';
-
-const todayIso = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
 
 /** "Copy as new": the source's party and lines, a fresh date, no number, no due date, never the source's links. */
 const asNewDraft = (src: Doc): Doc => ({
@@ -28,7 +24,11 @@ const asNewDraft = (src: Doc): Doc => ({
 
 function NewTaxInvoice() {
   const router = useRouter();
-  const copyFrom = useSearchParams().get('copyFrom');
+  // read once: the first autosave rewrites the address bar to /edit/<id> (no copyFrom), which must not reset the editor
+  const sp = useSearchParams();
+  const [copyFrom, setCopyFrom] = useState(() => sp.get('copyFrom'));
+  const live = sp.get('copyFrom');
+  if (live && live !== copyFrom) setCopyFrom(live); // a new ?copyFrom= (another document) starts a new copy
   const { me } = useMe();
   const src = useQuery({
     queryKey: qk.doc(me?.activeCompanyId ?? '', taxInvoice.type, copyFrom ?? ''),

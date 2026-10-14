@@ -1,9 +1,9 @@
 'use client';
 import { useQueryClient } from '@tanstack/react-query';
 import { EyeIcon, ListTreeIcon } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { useId, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
+import { useCompanyEpoch } from '@/app-shell/useCompanyEpoch';
 import { useMe } from '@/app-shell/useMe';
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -11,10 +11,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { routesOf, type DocDescriptor } from '@/domain/descriptors';
-import type { Doc, DocHeader, DocLine, ItemSummary, PartySummary } from '@/domain/types';
+import type { Doc, DocHeader, DocLine, ItemSummary, Me, PartySummary } from '@/domain/types';
 import { ApiError } from '@/lib/api/client';
 import { endpoints, type DocInput } from '@/lib/api/endpoints';
-import { formatDateBE } from '@/lib/format';
+import { formatDateBE, todayIso } from '@/lib/format';
+import { qk } from '@/lib/query/keys';
 import { cn } from '@/lib/utils';
 import { ConfirmIssueDialog } from '../dialogs/ConfirmIssueDialog';
 import { StatusChip } from '../doc-list/StatusChip';
@@ -47,10 +48,6 @@ const useWide = () => useSyncExternalStore(
   () => false,
 );
 
-const todayIso = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
 /** Calendar-date arithmetic for the payment-terms due date (not money, not tax). */
 const addDays = (iso: string, n: number) => {
   const [y, m, d] = iso.split('-').map(Number);
@@ -73,12 +70,18 @@ function ProblemBanner({ error, hint, action }: { error: unknown; hint?: string;
   );
 }
 
-export function DocEditor({ descriptor: d, mode, initial, onIssued, onRevisionRequested }: DocEditorProps) {
+/** Keyed by the active company: a switch starts a fresh editor (nothing typed for company A is ever saved into B). */
+export function DocEditor(props: DocEditorProps) {
+  return <DocEditorInner key={useCompanyEpoch()} {...props} />;
+}
+
+function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequested }: DocEditorProps) {
   const t = useTranslations('docEditor');
   const locale = useLocale();
-  const router = useRouter();
   const qc = useQueryClient();
   const { me } = useMe();
+  const owner = useRef<string>(undefined); // the company this editor belongs to
+  useEffect(() => { owner.current ??= me?.activeCompanyId; });
   const ids = useId();
   const root = useRef<HTMLDivElement>(null);
   const missingRef = useRef<HTMLElement>(null);
@@ -112,7 +115,10 @@ export function DocEditor({ descriptor: d, mode, initial, onIssued, onRevisionRe
   const autosave = useAutosave({
     type: d.type, payload, enabled: mode !== 'revise',
     initial: mode === 'edit-draft' && initial ? { id: initial.id, version: initial.version } : undefined,
-    onCreated: (id) => { router.replace(routesOf(d).edit(id)); invalidate(); },
+    startUnsaved: mode === 'create' && !!initial,
+    flushOnLeave: () => qc.getQueryData<Me>(qk.me())?.activeCompanyId === owner.current,
+    // the address bar follows the draft, but the editor stays mounted (a router navigation would remount it and lose focus / input)
+    onCreated: (id) => { if (root.current) window.history.replaceState(window.history.state, '', routesOf(d).edit(id)); invalidate(); },
   });
 
   const title = locale === 'en' ? d.titleEn : d.titleTh;

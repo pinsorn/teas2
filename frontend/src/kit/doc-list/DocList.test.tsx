@@ -118,6 +118,30 @@ describe('DocList', () => {
     await userEvent.click(screen.getByRole('button', { name: 'ของฉัน' }));
     expect(vi.mocked(useRouter().replace).mock.lastCall![0]).toContain('overdue=1');
   });
+  it('I8: a failed refetch of an empty list shows only the error, and its retry refetches', async () => {
+    let mode: 'empty' | 'fail' | 'rows' = 'empty';
+    testServer.use(http.get('*/bff/v1/docs/:type', () => mode === 'fail'
+      ? HttpResponse.json({ status: 500, code: 'x', title: 'ล้มเหลว' }, { status: 500 })
+      : HttpResponse.json(mode === 'empty' ? { items: [] } : { items: [{ id: 'd1', type: 'TI', number: 'TI-X1', status: 'issued', documentDate: '2026-10-01', partyName: 'ก', total: '1.00', createdByAgent: false }] })));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    ui([], qc);
+    expect(await screen.findByText(/ยังไม่มี/)).toBeVisible();
+    mode = 'fail';
+    await act(async () => { await qc.refetchQueries({ predicate: (q) => q.queryKey.includes('docs') }).catch(() => undefined); });
+    expect(await screen.findByRole('alert')).toHaveTextContent('ล้มเหลว');
+    expect(screen.queryByText(/ยังไม่มี/)).toBeNull(); // empty + error never together
+    mode = 'rows';
+    await userEvent.click(screen.getByRole('button', { name: 'ลองใหม่' }));
+    expect(await screen.findByText('TI-X1')).toBeVisible();
+  });
+  it('I5: the outstanding filter goes to the server', async () => {
+    const seen: string[] = [];
+    testServer.use(http.get('*/bff/v1/docs/:type', ({ request }) => { seen.push(new URL(request.url).search); return HttpResponse.json({ items: [] }); }));
+    __setSearch('status=issued,partly_settled&outstanding=positive&view=outstanding');
+    ui();
+    await screen.findByRole('searchbox');
+    await waitFor(() => expect(seen.some((s) => s.includes('outstanding=positive'))).toBe(true));
+  });
   it('a successful bulk run calls the action with the selected ids and clears the selection', async () => {
     const run = vi.fn(async () => {});
     ui([{ key: 'x', label: 'ทำรายการ', permission: 'doc.TI.read', run }]);

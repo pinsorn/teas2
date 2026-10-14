@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse, http } from 'msw';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,6 +13,8 @@ import { endpoints } from '@/lib/api/endpoints';
 import { problem } from '@/mocks/handlers/common';
 import { formatMoney } from '@/lib/format';
 import { useRouter } from 'next/navigation';
+import { qk } from '@/lib/query/keys';
+import type { Me } from '@/domain/types';
 import { DocView } from './DocView';
 import { useCorrectionFlow } from './useCorrectionFlow';
 
@@ -271,5 +273,21 @@ describe('CorrectionPlanDialog', () => {
     expect(screen.getByText(/doc\.RC\.cancel/, { selector: 'p' })).toBeVisible();
     await userEvent.click(screen.getByRole('button', { name: 'ส่งให้ผู้มีสิทธิ์อนุมัติ' }));
     await waitFor(() => expect(onSend).toHaveBeenCalled());
+  });
+});
+
+describe('I7 company scope', () => {
+  it('a document id from another company shows the not-found state, not stale data', async () => {
+    const qt = find((d) => d.type === 'QT');
+    const qc = client();
+    const desc = { ...taxInvoice, type: 'QT' as const, correctionClass: 'N' as const, basePath: '/sales/quotations' };
+    render(<QueryClientProvider client={qc}><DocView descriptor={desc} id={qt.id} /></QueryClientProvider>);
+    expect(await screen.findByTestId('doc-number')).toHaveTextContent(qt.number!);
+    const me = qc.getQueryData<Me>(qk.me())!;
+    setSettings({ companyKey: 'nonvat' });
+    act(() => { qc.setQueryData(qk.me(), { ...me, activeCompanyId: 'co-nonvat', vatRegistered: false }); });
+    expect(await screen.findByText('ไม่พบเอกสารนี้')).toBeVisible();
+    expect(screen.queryByTestId('doc-number')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'ลองใหม่' })).toBeNull();
   });
 });

@@ -15,6 +15,7 @@ import { routesOf } from '@/domain/descriptors';
 import type { DocStatus, DocSummary } from '@/domain/types';
 import { ApiError } from '@/lib/api/client';
 import { endpoints } from '@/lib/api/endpoints';
+import { todayIso } from '@/lib/format';
 import { qk } from '@/lib/query/keys';
 import { cn } from '@/lib/utils';
 import { EmptyState } from '../states/EmptyState';
@@ -34,10 +35,6 @@ export interface DocListProps { descriptor: DocDescriptor; columns: DocListColum
 const PAGE = 25;
 const STATUSES: DocStatus[] = ['draft', 'pending', 'approved', 'issued', 'partly_settled', 'settled', 'cancelled', 'replaced'];
 const DAY = 86_400_000;
-const todayIso = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
 
 /** Days past the due date for a document that still owes money; 0 when not overdue. Derived, never stored. */
 export function daysOverdue(r: DocSummary, today = todayIso()): number {
@@ -74,7 +71,7 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
   const setSelected = (u: Set<string> | ((s: Set<string>) => Set<string>)) =>
     setSel((c) => ({ scope, ids: typeof u === 'function' ? u(c.scope === scope ? c.ids : new Set()) : u }));
 
-  const server = { status: filters.status, q: filters.q, from: filters.from, to: filters.to };
+  const server = { status: filters.status, q: filters.q, from: filters.from, to: filters.to, outstanding: filters.outstanding === 'positive' ? ('positive' as const) : undefined };
   const q = useInfiniteQuery({
     queryKey: qk.docs(companyId ?? '', d.type, server),
     enabled: !!companyId,
@@ -151,7 +148,7 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
           onDone={() => void qc.invalidateQueries({ queryKey: [companyId, 'docs', d.type] })} />
       ) : null}
 
-      {rows.length === 0 && !q.hasNextPage ? (
+      {rows.length === 0 && !q.hasNextPage && !q.isError ? (
         hasFilters
           ? <EmptyState title={t('noMatchTitle')} body={t('noMatchBody')} action={<Button variant="outline" onClick={clearFilters}>{t('clearFilters')}</Button>} />
           : <EmptyState title={ts('emptyTitle', { title })} body={ts('emptyBody')} action={createLink('emptyCreate')} />
@@ -194,7 +191,7 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
         </div>
       )}
 
-      {q.isError ? <ErrorState error={q.error} onRetry={() => void q.fetchNextPage()} /> : null}
+      {q.isError ? <ErrorState error={q.error} onRetry={() => void (q.isFetchNextPageError ? q.fetchNextPage() : q.refetch())} /> : null}
       {q.hasNextPage ? (
         <div className="flex justify-center">
           <Button variant="outline" disabled={q.isFetchingNextPage} onClick={() => void q.fetchNextPage()}>

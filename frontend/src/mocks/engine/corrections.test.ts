@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { seed } from '../store';
 import { buildChain } from './chain';
-import { cancel, reissue } from './commands';
+import { cancel, createDraft, issue, reissue } from './commands';
 import { correctionPlan, executePlan } from './corrections';
 import { toSatang } from './money';
-import { assertBalanced, type MockStateLike } from './test-helpers';
+import { assertBalanced, type DocLine, type MockStateLike } from './test-helpers';
 
 const me = { kind: 'user' as const, id: 'u-1', name: 'สมศรี บัญชีดี' };
 let st: MockStateLike;
@@ -12,7 +12,7 @@ let paidTi: MockStateLike['docs'][number];
 
 beforeEach(() => {
   st = seed();
-  paidTi = st.docs.find((d) => d.type === 'TI' && d.status === 'settled' && !d.locks.length)!;
+  paidTi = st.docs.find((d) => d.type === 'TI' && d.status === 'settled' && !d.locks.some((l) => l.kind === 'filing'))!;
 });
 
 describe('chain-aware corrections (SP0 §7.11)', () => {
@@ -49,7 +49,7 @@ describe('chain-aware corrections (SP0 §7.11)', () => {
     assertBalanced(st);
   });
   it('a credit-note plan executes: CN issued, adjusts the TI, ledger balanced', () => {
-    const ti = st.docs.find((d) => d.type === 'TI' && d.status === 'settled' && !d.locks.length && st.parties.find((p) => p.id === d.header.partyId)?.taxId)!;
+    const ti = st.docs.find((d) => d.type === 'TI' && d.status === 'settled' && !d.locks.some((l) => l.kind === 'filing') && st.parties.find((p) => p.id === d.header.partyId)?.taxId)!;
     const lines = ti.lines.map((l, i) => (i === 0 ? { ...l, unitPrice: '1.00' } : l));
     const plan = correctionPlan(st, ti.id, { header: ti.header, lines }, 'accountant');
     const result = executePlan(st, plan.planId, plan.planHash, me);
@@ -115,5 +115,81 @@ describe('chain-aware corrections (SP0 §7.11)', () => {
     const snapshot = JSON.stringify(st);
     expect(() => executePlan(st, plan.planId, 'stale', me)).toThrow(/correction.plan_stale/);
     expect(JSON.stringify(st)).toBe(snapshot);
+  });
+});
+
+describe('I1: a CN / DN carries one line per tax code and the plan shows exactly what posts', () => {
+  const line = (id: string, taxCode: DocLine['taxCode'], unitPrice: string): DocLine => ({ id, description: id, qty: '1', unit: 'งาน', unitPrice, taxCode });
+  let n = 0;
+  const mkTi = (lines: DocLine[], priceIncludesVat = false) => {
+    const party = st.parties.find((p) => p.kind === 'customer' && p.vatRegistered && p.taxId)!;
+    const d = createDraft(st, 'co-vat', 'TI', { header: { partyId: party.id, documentDate: '2026-10-01', priceIncludesVat }, lines }, me, `i1-${n++}`);
+    const id = issue(st, d.id, d.version, me).id;
+    return st.docs.find((x) => x.id === id)!;
+  };
+  const noteOf = (planned: ReturnType<typeof correctionPlan>, res: ReturnType<typeof executePlan>) => {
+    const doc = st.docs.find((d) => d.id === res.affected.find((a) => a.type === 'CN' || a.type === 'DN')!.docId)!;
+    expect(planned.steps[0].summary).toContain(` ${doc.totals.total} `); // the plan amount is the posted amount
+    return doc;
+  };
+
+  it('1,500.00 -> 1,499.95 at S7 is an S7 credit note of 0.05 net, not Z0', () => {
+    const ti = mkTi([line('a', 'S7', '1500.00')]);
+    const plan = correctionPlan(st, ti.id, { header: ti.header, lines: [line('a', 'S7', '1499.95')] }, 'accountant');
+    const cn = noteOf(plan, executePlan(st, plan.planId, plan.planHash, me));
+    expect(cn.lines.map((l) => [l.taxCode, l.unitPrice])).toEqual([['S7', '0.05']]);
+    expect(cn.totals.net).toBe('0.05');
+    assertBalanced(st);
+  });
+  it('mixed S7 / Z0 change: plan amount == posted CN amount, ledger balanced, TI outstanding follows', () => {
+    const ti = mkTi([line('a', 'Z0', '200.00')]);
+    const proposed = { header: ti.header, lines: [line('a', 'Z0', '100.00'), line('b', 'S7', '50.00')] };
+    const plan = correctionPlan(st, ti.id, proposed, 'accountant');
+    expect(plan.steps.map((s) => s.action)).toEqual(['issue_cn']);
+    const cn = noteOf(plan, executePlan(st, plan.planId, plan.planHash, me));
+    expect(cn.lines.map((l) => [l.taxCode, l.unitPrice]).sort()).toEqual([['S7', '-50.00'], ['Z0', '100.00']]);
+    expect(cn.totals.total).toBe('46.50');
+    expect(st.docs.find((d) => d.id === ti.id)!.outstanding).toBe('153.50');
+    assertBalanced(st);
+  });
+  it('net-neutral shift S7 -> Z0 (total changes by the VAT): a credit note that executes', () => {
+    const ti = mkTi([line('a', 'S7', '100.00')]);
+    const plan = correctionPlan(st, ti.id, { header: ti.header, lines: [line('a', 'Z0', '100.00')] }, 'accountant');
+    expect(plan.steps.map((s) => s.action)).toEqual(['issue_cn']);
+    const cn = noteOf(plan, executePlan(st, plan.planId, plan.planHash, me));
+    expect(cn.totals.vat).toBe('7.00');
+    assertBalanced(st);
+  });
+  it('proposed total == original total with a code shift (price-inclusive) goes the reissue path and executes', () => {
+    const ti = mkTi([line('a', 'S7', '107.00')], true);
+    const plan = correctionPlan(st, ti.id, { header: ti.header, lines: [line('a', 'Z0', '107.00')] }, 'accountant');
+    expect(plan.steps.map((s) => s.action)).toEqual(['reissue']);
+    executePlan(st, plan.planId, plan.planHash, me);
+    const nw = st.docs.find((d) => d.replacesId === ti.id)!;
+    expect(nw.lines[0].taxCode).toBe('Z0');
+    expect(nw.totals.total).toBe(ti.totals.total);
+    assertBalanced(st);
+  });
+  it('a debit note (higher total) carries per-code lines too', () => {
+    const ti = mkTi([line('a', 'S7', '100.00')]);
+    const plan = correctionPlan(st, ti.id, { header: ti.header, lines: [line('a', 'S7', '100.00'), line('b', 'Z0', '40.00')] }, 'accountant');
+    expect(plan.steps.map((s) => s.action)).toEqual(['issue_dn']);
+    const dn = noteOf(plan, executePlan(st, plan.planId, plan.planHash, me));
+    expect(dn.lines.map((l) => [l.taxCode, l.unitPrice])).toEqual([['Z0', '40.00']]);
+    assertBalanced(st);
+  });
+});
+
+describe('I1: ledger never posts a negative amount', () => {
+  it('a CN with a negative VAT line posts that side on the opposite column', () => {
+    const party = st.parties.find((p) => p.kind === 'customer' && p.vatRegistered && p.taxId)!;
+    const l = (id: string, taxCode: 'S7' | 'Z0', unitPrice: string) => ({ id, description: id, qty: '1', unit: 'งาน', unitPrice, taxCode });
+    const d = createDraft(st, 'co-vat', 'TI', { header: { partyId: party.id, documentDate: '2026-10-01' }, lines: [l('a', 'Z0', '200.00')] }, me, 'neg');
+    const ti = issue(st, d.id, d.version, me);
+    const plan = correctionPlan(st, ti.id, { header: ti.header, lines: [l('a', 'Z0', '100.00'), l('b', 'S7', '50.00')] }, 'accountant');
+    const cn = executePlan(st, plan.planId, plan.planHash, me).affected.find((a) => a.type === 'CN')!;
+    const entry = st.journals.find((j) => j.docId === cn.docId)!.preview.entries[0];
+    expect(entry.lines.every((x) => !x.debit.startsWith('-') && !x.credit.startsWith('-'))).toBe(true);
+    assertBalanced(st);
   });
 });

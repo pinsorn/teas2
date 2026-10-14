@@ -24,7 +24,7 @@ confirm dialogs, and which component enforces each of the 12 UX rules. Live vers
 
 Defined in `src/styles/tokens.css`; the shadcn names (`--primary`, `--border`, ...) in `globals.css` point at them, so
 shadcn components and Tailwind utilities (`bg-primary`, `text-muted-foreground`) pick them up. `src/styles/tokens.test.ts`
-asserts the AA threshold for every text pair below (4.5:1), the 3:1 UI pairs, every status chip and the primary-button hover pair; the printed ratios come from the same WCAG formula.
+asserts the AA threshold only for the pairs listed in its `TEXT` table (4.5:1), the 3:1 UI pairs on the backgrounds it lists, and every status chip. Other rows below (for example the destructive hover and the brand-on-accent pair) are computed with the same WCAG formula but NOT asserted: a change to those tokens is not caught by the test, so check them by hand.
 
 Ratios are WCAG 2.x relative-luminance contrast. Text needs 4.5:1; UI components (control borders, focus ring) need 3:1.
 
@@ -163,7 +163,7 @@ Demo: `/style-guide`, "กล่องยืนยัน"; code `src/app/style-g
 
 ## Definition of Done
 - [x] Tokens, type scale, density, states, action hierarchy, confirm dialog, rules documented
-- [x] Contrast ratios computed and asserted in `src/styles/tokens.test.ts`
+- [x] Contrast ratios computed; the pairs listed in `src/styles/tokens.test.ts` are asserted (see the note above for what is not)
 - [x] `/style-guide` shows tokens, type, buttons, inputs, every `DocStatus` chip, the five states, a table and the confirm dialog
 - [x] Shell and Home pass `e2e/shell.spec.ts` (incl. axe) on the new tokens
 

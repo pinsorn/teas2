@@ -121,3 +121,32 @@ test('reload mid-edit reopens the same draft (Review Focus 4)', async ({ page })
   await page.reload();
   await expect(page.getByText('0105568024684')).toBeVisible();
 });
+
+test('I2: the first autosave moves the URL to /edit without remounting the editor', async ({ page }) => {
+  await page.goto('/sales/tax-invoices/new');
+  const note = page.getByRole('textbox', { name: 'หมายเหตุ' });
+  await note.fill('ก');
+  await note.evaluate((el) => { (el as HTMLElement & { __mark?: number }).__mark = 1; });
+  await expect(page).toHaveURL(/\/sales\/tax-invoices\/[^/]+\/edit$/, { timeout: 10_000 });
+  await expect(note).toBeFocused();
+  await expect(note).toHaveValue('ก');
+  expect(await note.evaluate((el) => (el as HTMLElement & { __mark?: number }).__mark)).toBe(1); // same DOM node: no remount
+});
+
+test('I2: leaving within the idle window still saves the draft', async ({ page }) => {
+  await page.goto('/sales/tax-invoices/new');
+  await page.getByRole('textbox', { name: 'หมายเหตุ' }).fill('อย่าให้หาย');
+  await page.getByRole('link', { name: 'ใบกำกับภาษี' }).first().click();
+  await expect(page).toHaveURL(/\/sales\/tax-invoices$/);
+  await page.goto('/sales/tax-invoices?status=draft');
+  await expect(page.getByRole('row').nth(1)).toBeVisible();
+  await page.getByRole('row').nth(1).getByRole('link').first().click();
+  await expect(page.getByTestId('doc-number')).toBeVisible();
+});
+
+test('I4: a paid TI shows its settlement lock and cancel is disabled before any dialog', async ({ page }) => {
+  await page.goto('/sales/tax-invoices?status=settled');
+  await page.getByRole('row').nth(1).getByRole('link').first().click();
+  await expect(page.getByRole('status', { name: 'ล็อก' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'ยกเลิกเอกสาร' })).toBeDisabled();
+});

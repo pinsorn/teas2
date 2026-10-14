@@ -73,7 +73,12 @@
     "emptyCreate": "Create {title}",
     "notAvailableTitle": "Only for VAT-registered companies",
     "notAvailableBody": "The active company is not VAT-registered, so this document type does not exist for it",
-    "notAvailableBack": "Back to home"
+    "notAvailableBack": "Back to home",
+    "notFoundTitle": "Document not found",
+    "notFoundBody": "It may have been deleted, or it belongs to a company that is not active.",
+    "notFoundBack": "Back to the list",
+    "mockFailedTitle": "Could not start the mock backend",
+    "mockFailedBody": "The browser may be blocking the service worker (private window or an enterprise policy). Try a normal window or clear site data, then reload."
   },
   "docList": {
     "searchLabel": "Search documents",

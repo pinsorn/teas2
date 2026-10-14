@@ -1,5 +1,5 @@
 import type {
-  Actor, ComputeResult, Doc, DocHeader, DocLine, DocStatus, DocType, IsoDate, JournalPreview, MissingItem, Money, PartySummary, Qty,
+  Actor, ComputeResult, Doc, DocHeader, DocLine, DocStatus, DocType, IsoDate, JournalPreview, Lock, MissingItem, Money, PartySummary, Qty,
 } from '@/domain/types';
 import { CLASS } from '../fixtures/documents';
 import type { MockState } from '../store';
@@ -17,6 +17,11 @@ export const LIVE: DocStatus[] = ['issued', 'partly_settled', 'settled'];
 const HAS_OUT: DocType[] = ['TI', 'IV']; // documents that carry an outstanding balance
 const TAX_BUYER: DocType[] = ['TI', 'CN', 'DN']; // the buyer's TIN + branch must be on the document
 const CONVERT_TO: Partial<Record<DocType, DocType[]>> = { QT: ['SO', 'TI', 'IV'], SO: ['DO', 'TI', 'IV'], DO: ['TI', 'IV', 'BL'] };
+
+/** I4: shown whenever an active receipt / settlement is applied; derived in recomputeSettlement so it follows settle / unsettle / cancel. */
+const SETTLEMENT_LOCK: Lock = { kind: 'settlement', reason: 'มีใบเสร็จ/การชำระที่ผูกอยู่ ยกเลิกเอกสารนี้ไม่ได้', exits: ['ยกเลิกหรือถอนการชำระก่อน'] };
+/** Locks that stop corrections. The settlement lock is informative: the correction plan cancels / re-issues the receipt itself. */
+export const blockingLocks = (d: { locks: Lock[] }) => d.locks.filter((l) => l.kind !== 'settlement');
 
 export const publicDoc = (d: Stored): Doc => { const { companyId, ...r } = d; void companyId; return structuredClone(r); };
 export function getDoc(st: MockState, id: string): Stored {
@@ -83,17 +88,19 @@ export function recomputeSettlement(st: MockState, id: string): void {
   const d = st.docs.find((x) => x.id === id);
   if (!d || !HAS_OUT.includes(d.type) || !LIVE.includes(d.status)) return;
   const total = toSatang(d.totals.total);
-  let out = total, paid = 0;
+  let out = total, paid = 0, settled = false;
   for (const l of st.links) {
     if (!l.active || l.to !== id) continue;
     const amt = toSatang(l.amount ?? '0.00');
-    if (l.kind === 'settles') { out -= amt; paid += amt; }
+    if (l.kind === 'settles') { out -= amt; paid += amt; settled = true; }
     else if (l.kind === 'adjusts') {
       const t = st.docs.find((x) => x.id === l.from)?.type;
       if (t === 'CN') out -= amt; else if (t === 'DN') out += amt;
     }
   }
-  put(st, { ...d, outstanding: fromSatang(out), status: out <= 0 && total > 0 ? 'settled' : paid > 0 ? 'partly_settled' : 'issued' });
+  // I5: 'settled' needs settlements; a TI credited to 0 by CNs alone stays 'issued' with outstanding 0.00
+  const locks = [...d.locks.filter((l) => l.kind !== 'settlement'), ...(settled ? [SETTLEMENT_LOCK] : [])];
+  put(st, { ...d, locks, outstanding: fromSatang(out), status: settled && out <= 0 ? 'settled' : paid > 0 ? 'partly_settled' : 'issued' });
 }
 
 /** Links a receipt to the document it settles (used by corrections, which re-create receipts). */
@@ -195,7 +202,7 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_cancellable', 'ยกเลิกได้เฉพาะเอกสารที่ออกแล้ว');
   checkVersion(d, version);
   // SP0 §7.5: a period lock does not block cancel (the reversal posts in the current open period); the other locks do.
-  if (d.locks.some((l) => l.kind !== 'period')) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ยกเลิกไม่ได้');
+  if (blockingLocks(d).some((l) => l.kind !== 'period')) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ยกเลิกไม่ได้');
   // SP0 §7.4: only an applied receipt (TI) or settlements (IV) block a cancel; N-class and CN/DN do not.
   if (st.links.some((l) => l.to === id && l.active && l.kind === 'settles')) throw new MockError(409, 'doc.has_dependents', 'มีใบเสร็จ/การชำระที่ผูกอยู่ ต้องยกเลิกหรือถอนการชำระก่อน');
   const { outstanding: _o, ...rest } = d; void _o;
@@ -220,7 +227,7 @@ export function revise(st: MockState, id: string, body: Body, version: number, r
   if (d.correctionClass === 'T' && isFiscalChange(d, body)) {
     throw new MockError(422, 'doc.revise_not_allowed', 'การแก้ไขนี้กระทบภาษี ต้องทำผ่านแผนการแก้ไข (ยกเลิก/ออกใหม่/ใบลดหนี้)');
   }
-  if (d.correctionClass === 'L' && d.locks.length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก แก้ไขไม่ได้');
+  if (d.correctionClass === 'L' && blockingLocks(d).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก แก้ไขไม่ได้');
   if (d.correctionClass !== 'T') { const m = missingOf(st, d.companyId, d.type, body); if (m.length) throw incomplete(m); }
   const next: Stored = {
     ...d, header: body.header, lines: body.lines, totals: calc(body).totals, party: partyOf(st, d.companyId, body.header.partyId),
@@ -245,7 +252,7 @@ export function revise(st: MockState, id: string, body: Body, version: number, r
 export function reissue(st: MockState, id: string, body: Body, actor: Actor, reason: string): Doc {
   const old = getDoc(st, id);
   if (!LIVE.includes(old.status)) throw new MockError(409, 'doc.not_correctable', 'ออกใหม่ได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
-  if (old.locks.length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ออกใหม่ไม่ได้');
+  if (blockingLocks(old).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ออกใหม่ไม่ได้');
   if (st.links.some((l) => l.to === id && l.active)) throw new MockError(409, 'doc.has_dependents', 'มีเอกสารอ้างอิงอยู่ ต้องยกเลิกเอกสารนั้นก่อน');
   if (old.type === 'TI' || old.type === 'RC') body = { ...body, header: { ...body.header, documentDate: old.header.documentDate } }; // I9: original date
   const missing = missingOf(st, old.companyId, old.type, body);
@@ -267,7 +274,7 @@ export function reissue(st: MockState, id: string, body: Body, actor: Actor, rea
   const carried = st.links.filter((l) => l.from === old.id && l.active);
   st.links = st.links.map((l) => (l.from === old.id && l.active ? { ...l, active: false } : l));
   for (const l of carried) {
-    st.links.push({ ...l, from: created.id, ...(l.kind === 'settles' || l.kind === 'adjusts' ? { amount: totals.total } : {}) });
+    st.links.push({ ...l, from: created.id, ...(l.kind === 'adjusts' ? { amount: totals.total } : {}) });
   }
   st.links.push({ companyId: old.companyId, from: created.id, to: old.id, kind: 'replaces', active: true });
   const oj = st.journals.find((j) => j.docId === old.id);

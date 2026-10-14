@@ -13,4 +13,8 @@ export function formatMoney(m: Money): string {
   return `${neg ? '-' : ''}${i.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${(f + '00').slice(0, 2)}`;
 }
 
-export const formatTHB = (m: Money) => `฿${formatMoney(m)}`;
+export const formatTHB = (m: Money) => (m.startsWith('-') ? `-฿${formatMoney(m).slice(1)}` : `฿${formatMoney(m)}`);
+
+/** Today's local calendar date (YYYY-MM-DD). The one copy: editor default, copy-as-new and overdue maths all use it. */
+export const todayIso = (d = new Date()): IsoDate =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

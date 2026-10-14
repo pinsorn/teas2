@@ -35,7 +35,8 @@ export function ledgerFor(st: MockState, doc: Doc): JournalPreview {
   if (!post) return { entries: [] };
   const partyName = doc.party?.name ?? st.parties.find((p) => p.id === doc.header.partyId)?.name;
   const t: T = { net: toSatang(doc.totals.net), vat: toSatang(doc.totals.vat), total: toSatang(doc.totals.total), wht: toSatang(doc.totals.wht ?? '0.00') };
-  const lines = post(t).filter(([, d, c]) => d !== 0 || c !== 0).map(([a, d, c]) => ({
+  // a negative side (e.g. a CN line with a negative VAT) is posted on the opposite side, never as a negative amount
+  const lines = post(t).map(([a, d, c]) => [a, Math.max(d - c, 0), Math.max(c - d, 0)] as const).filter(([, d, c]) => d !== 0 || c !== 0).map(([a, d, c]) => ({
     accountCode: ACC[a][0], accountName: ACC[a][1], debit: fromSatang(d), credit: fromSatang(c), rule: RULE,
     ...(a === 'AR' || a === 'AP' ? (partyName ? { partyName } : {}) : {}),
   }));

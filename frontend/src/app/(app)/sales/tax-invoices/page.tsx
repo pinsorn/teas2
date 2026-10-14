@@ -21,8 +21,8 @@ export default function TaxInvoicesPage() {
   ];
   const savedViews: SavedView[] = [
     { key: 'draft', label: t('views.draft'), params: { status: 'draft' } },
-    { key: 'outstanding', label: t('views.outstanding'), params: { status: 'issued,partly_settled' } },
-    { key: 'overdue', label: t('views.overdue'), params: { status: 'issued,partly_settled', overdue: '1' } },
+    { key: 'outstanding', label: t('views.outstanding'), params: { status: 'issued,partly_settled', outstanding: 'positive' } },
+    { key: 'overdue', label: t('views.overdue'), params: { status: 'issued,partly_settled', outstanding: 'positive', overdue: '1' } },
     { key: 'cancelled', label: t('views.cancelled'), params: { status: 'cancelled' } },
   ];
   return (

@@ -123,7 +123,7 @@ describe('fix round 1: outstanding, seed validity, cancel blocks (SP0 7.4 / 7.11
     expect(s.docs.some((d) => d.status === 'draft' && tinless(d.header.partyId))).toBe(true); // ...as a draft buyer
   });
   it('a TI with an applied receipt cannot be cancelled; a QT with a converted child can', () => {
-    const paid = st.docs.find((d) => d.type === 'TI' && d.status === 'settled' && !d.locks.length)!;
+    const paid = st.docs.find((d) => d.type === 'TI' && d.status === 'settled' && !d.locks.some((l) => l.kind === 'filing'))!;
     expect(() => cancel(st, paid.id, paid.version, 'OTHER', 'x', me)).toThrow(/doc.has_dependents/);
     const qt = st.docs.find((d) => d.type === 'QT' && st.links.some((l) => l.to === d.id && l.active))!;
     expect(cancel(st, qt.id, qt.version, 'OTHER', 'x', me).status).toBe('cancelled');
@@ -164,5 +164,50 @@ describe('ledger', () => {
     const [o, rv] = st.journals.find((j) => j.docId === a.id)!.preview.entries;
     expect(rv.kind).toBe('reversal');
     expect(rv.lines.map((x) => [x.accountCode, x.credit, x.debit])).toEqual(o.lines.map((x) => [x.accountCode, x.debit, x.credit]));
+  });
+});
+
+describe('I4 settlement lock follows the active settles links', () => {
+  it('a paid TI carries a settlement lock with an exit; cancelling its receipt removes it', () => {
+    const paid = st.docs.find((d) => d.type === 'TI' && d.status === 'settled' && !d.locks.some((l) => l.kind === 'filing'))!;
+    expect(paid.locks).toEqual([expect.objectContaining({ kind: 'settlement', exits: [expect.any(String)] })]);
+    const rcId = st.links.find((l) => l.kind === 'settles' && l.to === paid.id && l.active)!.from;
+    const rc = st.docs.find((d) => d.id === rcId)!;
+    cancel(st, rc.id, rc.version, 'OTHER', 'x', me);
+    const after = st.docs.find((d) => d.id === paid.id)!;
+    expect(after.locks).toEqual([]);
+    expect(after.status).toBe('issued');
+  });
+  it('an unpaid TI has no settlement lock', () => {
+    const open = st.docs.find((d) => d.type === 'TI' && d.status === 'issued' && !st.links.some((l) => l.to === d.id && l.active))!;
+    expect(open.locks).toEqual([]);
+  });
+});
+
+describe('I5 only settlements make a document settled', () => {
+  const mkCn = (ti: MockStateLike['docs'][number]) => {
+    const d = createDraft(st, vatCo, 'CN', { header: { partyId: ti.header.partyId, documentDate: '2026-10-14', priceIncludesVat: ti.header.priceIncludesVat }, lines: ti.lines }, me, `cn-${ti.id}`);
+    return issue(st, d.id, d.version, me);
+  };
+  it('an unpaid TI credited to 0 by a CN stays issued with outstanding 0.00', async () => {
+    const { addAdjustment } = await import('./commands');
+    const d = createDraft(st, vatCo, 'TI', { header: { partyId: vatCustomer, documentDate: '2026-10-14' }, lines: [line()] }, me, 'i5');
+    const ti = issue(st, d.id, d.version, me);
+    const cn = mkCn(st.docs.find((x) => x.id === ti.id)!);
+    addAdjustment(st, cn.id, ti.id, cn.totals.total);
+    const after = st.docs.find((x) => x.id === ti.id)!;
+    expect([after.status, after.outstanding]).toEqual(['issued', '0.00']);
+  });
+  it('M3: a reissued receipt keeps its own settled amount on each of several invoices', async () => {
+    const { addSettlement, reissue } = await import('./commands');
+    const mk = (k: string) => { const d = createDraft(st, vatCo, 'TI', { header: { partyId: vatCustomer, documentDate: '2026-10-14' }, lines: [line()] }, me, k); return issue(st, d.id, d.version, me); };
+    const a = mk('m3a'), b = mk('m3b');
+    const rcd = createDraft(st, vatCo, 'RC', { header: { partyId: vatCustomer, documentDate: '2026-10-14' }, lines: [line({ unitPrice: '1500.00', taxCode: 'EX' })] }, me, 'm3rc');
+    const rc = issue(st, rcd.id, rcd.version, me);
+    addSettlement(st, rc.id, a.id, '1000.00');
+    addSettlement(st, rc.id, b.id, '500.00');
+    const nrc = reissue(st, rc.id, { header: rc.header, lines: rc.lines }, me, 'x');
+    const amounts = st.links.filter((l) => l.from === nrc.id && l.kind === 'settles' && l.active).map((l) => l.amount).sort();
+    expect(amounts).toEqual(['1000.00', '500.00']);
   });
 });

@@ -10,6 +10,7 @@ import { DocEditor } from '@/kit/doc-editor/DocEditor';
 import { useCorrectionFlow } from '@/kit/doc-view/useCorrectionFlow';
 import { ErrorState } from '@/kit/states/ErrorState';
 import { ForbiddenState } from '@/kit/states/ForbiddenState';
+import { isNotFound, NotFoundState } from '@/kit/states/NotFoundState';
 import { LoadingState } from '@/kit/states/LoadingState';
 import { endpoints } from '@/lib/api/endpoints';
 import { qk } from '@/lib/query/keys';
@@ -44,6 +45,7 @@ function Edit({ id }: { id: string }) {
   useEffect(() => { if (doc && !editable) router.replace(routes.view(id)); }, [doc, editable, id, router]);
 
   if (meFailed && !me) return <ErrorState error={meError} onRetry={() => void refetchMe()} />;
+  if (q.isError && isNotFound(q.error)) return <NotFoundState listHref={routes.list} />;
   if (q.isError) return isForbidden(q.error) ? <ForbiddenState permission={taxInvoice.permissions.read} /> : <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
   if (!doc || !editable) return <LoadingState />;
   if (DRAFTABLE.includes(doc.status)) {

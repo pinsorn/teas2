@@ -5,6 +5,8 @@ import { useTranslations } from 'next-intl';
 import { Fragment } from 'react';
 import { matchNavItem } from './nav';
 
+const safeDecode = (s: string) => { try { return decodeURIComponent(s); } catch { return s; } };
+
 /** Group > list page (link) > document (current). Document numbers arrive as the last path segment. */
 export function Breadcrumbs() {
   const t = useTranslations();
@@ -15,7 +17,7 @@ export function Breadcrumbs() {
   if (hit && hit.group.key !== 'home') crumbs.push({ label: t(hit.group.labelKey) });
   if (hit) crumbs.push({ label: t(hit.item.labelKey), href: rest.length ? hit.item.href : undefined });
   rest.forEach((s, i) => crumbs.push({
-    label: decodeURIComponent(s),
+    label: safeDecode(s),
     href: i < rest.length - 1 ? `${hit?.item.href}/${rest.slice(0, i + 1).join('/')}` : undefined,
   }));
 

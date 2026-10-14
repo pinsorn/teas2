@@ -23,6 +23,14 @@ describe('read handlers', () => {
     const seen = new Set(r.items.map((d: { status: string }) => d.status));
     expect([...seen].sort()).toEqual(['issued', 'partly_settled']);
   });
+  it('I5: outstanding=positive keeps only documents that still owe money', async () => {
+    const all = (await (await get('/docs/TI?limit=100')).json()).items as { outstanding?: string; status: string }[];
+    const r = (await (await get('/docs/TI?outstanding=positive&limit=100')).json()).items as { outstanding?: string }[];
+    expect(r.length).toBeGreaterThan(0);
+    expect(r.length).toBeLessThan(all.length);
+    expect(r.every((d) => Number(d.outstanding) > 0)).toBe(true);
+    expect(all.filter((d) => Number(d.outstanding) > 0)).toHaveLength(r.length);
+  });
   it('filters by status', async () => {
     const r = await (await get('/docs/TI?status=draft&limit=50')).json();
     expect(r.items.every((d: { status: string }) => d.status === 'draft')).toBe(true);
@@ -107,12 +115,12 @@ describe('doc detail, locked, forbidden', () => {
   it('locked screen state adds the filing lock to issued docs only', async () => {
     const unlocked = (await json('/docs/TI?status=settled&limit=100')).items as { id: string }[];
     let settled = '';
-    for (const d of unlocked) if (!(await json(`/docs/TI/${d.id}`)).locks.length) { settled = d.id; break; }
+    for (const d of unlocked) if (!(await json(`/docs/TI/${d.id}`)).locks.some((l: { kind: string }) => l.kind === 'filing')) { settled = d.id; break; }
     expect(settled).not.toBe('');
     const draft = await firstId('status=draft&limit=1');
     expect((await json(`/docs/TI/${settled}`)).locks.filter((l: { kind: string }) => l.kind === 'filing')).toHaveLength(0);
     setSettings({ screenState: 'locked' });
-    const locks = (await json(`/docs/TI/${settled}`)).locks;
+    const locks = (await json(`/docs/TI/${settled}`)).locks.filter((l: { kind: string }) => l.kind === 'filing');
     expect(locks).toHaveLength(1);
     expect(locks[0]).toMatchObject({ kind: 'filing', reason: 'ภ.พ.30 เดือน ก.ย. 2569 ยื่นแล้ว' });
     expect((await json(`/docs/TI/${draft}`)).locks).toEqual([]);

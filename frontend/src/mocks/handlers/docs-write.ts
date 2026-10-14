@@ -122,7 +122,7 @@ export const docsWriteHandlers = [
     return HttpResponse.json(doc);
   })),
 
-  http.post('*/bff/v1/docs/:type/:id/correction-plan', ({ request, params }) => guarded(String(params.type), P('read'), async (c, t) => {
+  http.post('*/bff/v1/docs/:type/:id/correction-plan', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
     own(c, t, params.id);
     const plan = correctionPlan(c.st, String(params.id), (await request.json()) as Body, c.s.role);
     done(c);

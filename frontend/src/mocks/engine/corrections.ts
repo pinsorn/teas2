@@ -1,8 +1,8 @@
-import type { Actor, CorrectionPlan, CorrectionResult, CorrectionStep, Role } from '@/domain/types';
+import type { Actor, CorrectionPlan, CorrectionResult, CorrectionStep, DocLine, Role, TaxCode } from '@/domain/types';
 import { PERMISSIONS_BY_ROLE } from '../permissions';
 import type { MockState } from '../store';
 import {
-  type Body, LIVE, addAdjustment, addSettlement, calc, cancel, createDraft, getDoc, isFiscalChange, issue, markReplaced, reissue, revise,
+  type Body, LIVE, addAdjustment, blockingLocks, addSettlement, calc, cancel, createDraft, getDoc, isFiscalChange, issue, markReplaced, reissue, revise,
 } from './commands';
 import { MockError, today } from './log';
 import { fromSatang, toSatang } from './money';
@@ -15,12 +15,27 @@ function fnv(s: string): string {
 }
 
 type Stored = MockState['docs'][number];
-/** Net/VAT change a CN / DN must carry. `full` = credit the whole document (locked TI whose buyer changes). */
-function adjustment(d: Stored, p: Body, full: boolean) {
-  const t = calc(p).totals;
-  const dNet = full ? -toSatang(d.totals.net) : toSatang(t.net) - toSatang(d.totals.net);
-  const dVat = full ? -toSatang(d.totals.vat) : toSatang(t.vat) - toSatang(d.totals.vat);
-  return { dNet, dVat, dTotal: dNet + dVat };
+/** The CN / DN a correction would issue, built by the engine: ONE line per tax code carrying that code's net difference
+ *  between the original and the proposed lines (VAT is the engine's per line). `full` = credit the whole document instead.
+ *  A pure shift between codes yields a signed (negative) line. Null = nothing to adjust. */
+function noteFor(d: Stored, p: Body, full: boolean): { type: 'CN' | 'DN'; lines: DocLine[]; total: number; incl: boolean } | null {
+  const orig: Body = { header: d.header, lines: d.lines };
+  let lines: DocLine[];
+  let type: 'CN' | 'DN';
+  if (full) { // mirror the original lines so the credit clears the balance to the satang
+    type = 'CN';
+    lines = d.lines.map((l, i) => ({ ...l, id: `l${i + 1}`, itemId: undefined, sourceLineId: undefined }));
+  } else {
+    const byCode = (b: Body) => { const m = new Map<TaxCode, number>(); calc(b).lines.forEach((r, i) => m.set(b.lines[i].taxCode, (m.get(b.lines[i].taxCode) ?? 0) + toSatang(r.net))); return m; };
+    const o = byCode(orig), n = byCode(p);
+    const diff = [...new Set([...o.keys(), ...n.keys()])].map((c) => [c, (n.get(c) ?? 0) - (o.get(c) ?? 0)] as const).filter(([, v]) => v !== 0);
+    type = toSatang(calc(p).totals.total) < toSatang(d.totals.total) ? 'CN' : 'DN';
+    lines = diff.map(([taxCode, v], i) => ({ id: `l${i + 1}`, description: `ปรับปรุงใบกำกับภาษี ${d.number} (${taxCode})`, qty: '1', unit: 'งาน', unitPrice: fromSatang(type === 'CN' ? -v : v), taxCode }));
+  }
+  if (!lines.length) return null;
+  const incl = full && !!d.header.priceIncludesVat;
+  const total = Math.abs(toSatang(calc({ header: { ...d.header, priceIncludesVat: incl }, lines }).totals.total));
+  return total === 0 ? null : { type, lines, total, incl };
 }
 
 /** Pure: what a correction would do, from the current state. */
@@ -43,18 +58,23 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
     const delta = newTotal - toSatang(d.totals.total);
     const partyChanged = proposed.header.partyId !== d.header.partyId;
     const contentChanged = JSON.stringify(proposed.lines) !== JSON.stringify(d.lines) || !!proposed.header.priceIncludesVat !== !!d.header.priceIncludesVat;
-    const note = (amt: number, full: boolean) => add(amt < 0 ? 'issue_cn' : 'issue_dn', d,
-      `${amt < 0 ? 'ออกใบลดหนี้' : 'ออกใบเพิ่มหนี้'} ${fromSatang(Math.abs(amt))} บาท ${full ? 'เต็มจำนวน ' : ''}อ้างอิง ${label}`, amt < 0 ? 'doc.CN.issue' : 'doc.DN.issue');
+    /** Adds the CN / DN step with the amount the engine will post; false = nothing to adjust (no step shown). */
+    const note = (full: boolean) => {
+      const n = noteFor(d, proposed, full);
+      if (!n) return false;
+      add(n.type === 'CN' ? 'issue_cn' : 'issue_dn', d,
+        `${n.type === 'CN' ? 'ออกใบลดหนี้' : 'ออกใบเพิ่มหนี้'} ${fromSatang(n.total)} บาท ${full ? 'เต็มจำนวน ' : ''}อ้างอิง ${label}`, n.type === 'CN' ? 'doc.CN.issue' : 'doc.DN.issue');
+      return true;
+    };
     const deps = st.links.filter((l) => l.to === id && l.active);
     // I9: a reissue keeps the original date and total; a different total is always a CN / DN (TI) or a new receipt (RC)
     const needsReissue = d.type === 'TI' ? partyChanged || (delta === 0 && contentChanged) : true;
-    if (d.type === 'TI' && !needsReissue && delta !== 0) {
-      note(delta, false);
+    if (d.type === 'TI' && !needsReissue && delta !== 0 && note(false)) {
       explanation = 'ยอดรวมเปลี่ยน ออกใบลดหนี้/ใบเพิ่มหนี้เฉพาะส่วนต่าง เอกสารเดิมไม่ถูกยกเลิก';
     } else if (d.type === 'TI' && !needsReissue) {
       explanation = 'วันที่ของเอกสารแก้ไขไม่ได้ (ออกใหม่ต้องใช้วันที่เดิม) จึงไม่มีขั้นตอนที่ต้องทำ';
-    } else if (d.locks.length) {
-      if (d.type === 'TI') { note(-toSatang(d.totals.total), true); explanation = 'เอกสารถูกล็อก ออกใบลดหนี้เต็มจำนวน แล้วออกใบกำกับภาษีฉบับใหม่แยกต่างหาก'; }
+    } else if (blockingLocks(d).length) {
+      if (d.type === 'TI') { note(true); explanation = 'เอกสารถูกล็อก ออกใบลดหนี้เต็มจำนวน แล้วออกใบกำกับภาษีฉบับใหม่แยกต่างหาก'; }
       else explanation = 'เอกสารถูกล็อก ทำไม่ได้';
     } else if (d.type === 'TI' && deps.some((l) => l.kind !== 'settles')) {
       explanation = 'มีใบลดหนี้/ใบเพิ่มหนี้/ใบวางบิลอ้างอิงอยู่ ต้องจัดการเอกสารเหล่านั้นก่อน';
@@ -70,7 +90,7 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
       for (const rc of receipts) add('cancel', rc, `ยกเลิก ${rc.type} ${rc.number}`, `doc.${rc.type}.cancel`);
       add('reissue', d, `ยกเลิกและออก ${label} ใหม่ (วันที่และยอดเดิม)`, `doc.${d.type}.correct`);
       for (const rc of receipts) add('reissue', rc, `ออก ${rc.type} ใหม่ผูกกับเอกสารใหม่`, `doc.${rc.type}.correct`);
-      if (delta !== 0) note(delta, false);
+      if (delta !== 0) note(false);
       explanation = 'การแก้ไขนี้กระทบภาษี ยกเลิกใบเสร็จที่เกี่ยวข้อง ออกเอกสารใหม่ด้วยยอดเดิม แล้วออกใบเพิ่ม/ลดหนี้สำหรับส่วนต่าง';
     }
   }
@@ -128,13 +148,12 @@ function runStep(w: MockState, s: CorrectionStep, proposed: Body, actor: Actor, 
     touch(doc.id, nd.id);
   } else {
     const target = c.newTi && doc.status === 'replaced' ? getDoc(w, c.newTi) : doc; // after a reissue the note adjusts the new TI
-    const full = target.locks.length > 0 && proposed.header.partyId !== target.header.partyId;
-    const adj = adjustment(target, proposed, full);
-    if (adj.dNet === 0) throw new MockError(422, 'correction.nothing_to_adjust', 'ไม่มียอดที่ต้องปรับ');
-    const type = s.action === 'issue_cn' ? 'CN' : 'DN';
-    const draft = createDraft(w, target.companyId, type, {
-      header: { partyId: target.header.partyId, documentDate: today(), reference: target.number, priceIncludesVat: false },
-      lines: [{ id: 'l1', description: `ปรับปรุงใบกำกับภาษี ${target.number}`, qty: '1', unit: 'งาน', unitPrice: fromSatang(Math.abs(adj.dNet)), taxCode: adj.dVat !== 0 ? 'S7' : 'Z0' }],
+    const full = blockingLocks(target).length > 0 && proposed.header.partyId !== target.header.partyId;
+    const n = noteFor(target, proposed, full);
+    if (!n) throw new MockError(422, 'correction.nothing_to_adjust', 'ไม่มียอดที่ต้องปรับ');
+    const draft = createDraft(w, target.companyId, n.type, {
+      header: { partyId: target.header.partyId, documentDate: today(), reference: target.number, priceIncludesVat: n.incl },
+      lines: n.lines,
     }, actor, `${c.planId}-${s.order}`);
     const noteDoc = issue(w, draft.id, draft.version, actor);
     addAdjustment(w, noteDoc.id, target.id, noteDoc.totals.total);

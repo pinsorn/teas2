@@ -5,9 +5,6 @@ export interface MockSettings { companyKey: 'vat' | 'nonvat'; role: Role; screen
 const KEY = 'teas2.mock.settings.v1';
 const DEFAULTS: MockSettings = { companyKey: 'vat', role: 'accountant', screenState: 'normal' };
 
-export function getSettings(): MockSettings {
-  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') }; } catch { return DEFAULTS; }
-}
 export function setSettings(p: Partial<MockSettings>): MockSettings {
   const next = { ...getSettings(), ...p };
   try { localStorage.setItem(KEY, JSON.stringify(next)); } catch { /* private mode: settings stay default */ }
@@ -16,6 +13,18 @@ export function setSettings(p: Partial<MockSettings>): MockSettings {
 
 const STATES: ScreenState[] = ['normal', 'empty', 'loading', 'error', 'forbidden', 'locked'];
 const ROLES: Role[] = ['operator', 'accountant', 'admin'];
+/** Stored values are untrusted (stale / hand-edited localStorage): anything unknown falls back to its default. */
+export function getSettings(): MockSettings {
+  let raw: Partial<Record<keyof MockSettings, unknown>> = {};
+  try { raw = JSON.parse(localStorage.getItem(KEY) ?? '{}') ?? {}; } catch { /* defaults */ }
+  const pick = <T extends string>(v: unknown, ok: readonly T[], dflt: T): T => (ok.includes(v as T) ? (v as T) : dflt);
+  return {
+    companyKey: pick(raw.companyKey, ['vat', 'nonvat'], DEFAULTS.companyKey),
+    role: pick(raw.role, ROLES, DEFAULTS.role),
+    screenState: pick(raw.screenState, STATES, DEFAULTS.screenState),
+  };
+}
+
 /** The screen index links set the toolbar through `?state=&role=&company=`; unknown values are ignored. */
 export function applyUrlSettings(search: string) {
   const q = new URLSearchParams(search);

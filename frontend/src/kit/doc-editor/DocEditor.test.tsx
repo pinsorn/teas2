@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse, delay, http } from 'msw';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -9,12 +9,16 @@ import { resetState } from '@/mocks/store';
 import { testServer } from '@/mocks/test-server';
 import { vatItems } from '@/mocks/fixtures/items';
 import { endpoints } from '@/lib/api/endpoints';
+import { qk } from '@/lib/query/keys';
+import type { Doc, Me } from '@/domain/types';
+import { useRouter } from 'next/navigation';
 import { DocEditor } from './DocEditor';
 
 vi.mock('next/navigation', () => import('@/test/next-navigation'));
 const calls: string[] = [];
 beforeAll(() => testServer.listen({ onUnhandledFrame: 'error' }));
-afterEach(() => { testServer.resetHandlers(); testServer.events.removeAllListeners(); });
+// unmounting a dirty editor flushes it (I2): let that save land before the next test resets the store
+afterEach(async () => { cleanup(); await new Promise((r) => setTimeout(r, 150)); testServer.resetHandlers(); testServer.events.removeAllListeners(); });
 afterAll(() => testServer.close());
 beforeEach(() => {
   localStorage.clear(); resetState(); calls.length = 0;
@@ -187,4 +191,60 @@ describe('DocEditor fix round 1', () => {
     expect(within(dlg).getByRole('button', { name: 'ลองใหม่' })).toBeVisible();
     expect(within(dlg).queryByText('ยังไม่มีรายการบัญชี')).toBeNull();
   });
+});
+
+describe('final review: I2 / I3 / I7', () => {
+  it('I2: leaving the editor within the idle window still saves what was typed', async () => {
+    const { unmount } = render(<QueryClientProvider client={new QueryClient()}><DocEditor descriptor={taxInvoice} mode="create" onIssued={vi.fn()} /></QueryClientProvider>);
+    await userEvent.type(screen.getByRole('textbox', { name: 'หมายเหตุ' }), 'ห้ามหาย');
+    expect(calls).not.toContain('POST /bff/v1/docs/TI'); // still inside the 2 s idle window
+    unmount();
+    await waitFor(() => expect(calls).toContain('POST /bff/v1/docs/TI'), { timeout: 1500 });
+  });
+  it('I2: the first autosave puts the edit URL in the address bar without a router navigation (no remount)', async () => {
+    const replaceState = vi.spyOn(window.history, 'replaceState');
+    ui();
+    const note = screen.getByRole('textbox', { name: 'หมายเหตุ' });
+    await userEvent.type(note, 'a');
+    await waitFor(() => expect(calls).toContain('POST /bff/v1/docs/TI'), { timeout: 4000 });
+    await waitFor(() => expect(replaceState).toHaveBeenCalledWith(null, '', expect.stringMatching(/^\/sales\/tax-invoices\/[^/]+\/edit$/)));
+    expect(useRouter().replace).not.toHaveBeenCalled();
+    expect(screen.getByRole('textbox', { name: 'หมายเหตุ' })).toBe(note);
+    replaceState.mockRestore();
+  });
+  it('I2: closing the tab flushes pending input', async () => {
+    ui();
+    await userEvent.type(screen.getByRole('textbox', { name: 'หมายเหตุ' }), 'x');
+    window.dispatchEvent(new Event('beforeunload', { cancelable: true }));
+    await waitFor(() => expect(calls).toContain('POST /bff/v1/docs/TI'), { timeout: 1500 });
+  });
+  it('I3: a copied draft (create mode with initial content) saves and issues like any new draft', async () => {
+    const src = await endpoints.getDoc('TI', (await endpoints.listDocs('TI', { status: 'issued', limit: 1 })).items[0].id);
+    const copy: Doc = { ...src, id: '', number: undefined, status: 'draft', version: 0, revision: 0, locks: [], issuedAt: undefined, outstanding: undefined,
+      header: { ...src.header, dueDate: undefined }, lines: src.lines.map((l) => ({ ...l, id: crypto.randomUUID() })) };
+    const onIssued = vi.fn();
+    render(<QueryClientProvider client={new QueryClient()}><DocEditor descriptor={taxInvoice} mode="create" initial={copy} onIssued={onIssued} /></QueryClientProvider>);
+    await waitFor(() => expect(screen.getByRole('region', { name: 'ยังขาดอะไร' })).toHaveTextContent('ครบแล้ว'));
+    await userEvent.click(screen.getByRole('textbox', { name: 'หมายเหตุ' }));
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+    await screen.findByRole('alertdialog');
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() => expect(onIssued).toHaveBeenCalledWith(expect.objectContaining({ status: 'issued', number: expect.any(String) })), { timeout: 4000 });
+    expect(calls).toContain('POST /bff/v1/docs/TI');
+  });
+  it('I7: switching company drops the old party and lines and never saves them into the new company', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={qc}><DocEditor descriptor={taxInvoice} mode="create" onIssued={vi.fn()} /></QueryClientProvider>);
+    await userEvent.type(screen.getByRole('combobox', { name: 'ลูกค้า' }), 'นาวา{Enter}');
+    await waitFor(() => expect(qc.getQueryData(qk.me())).toBeTruthy());
+    await userEvent.type(screen.getByRole('textbox', { name: 'หมายเหตุ' }), 'ของบริษัท A');
+    const me = qc.getQueryData<Me>(qk.me())!;
+    calls.length = 0;
+    setSettings({ companyKey: 'nonvat' });
+    act(() => { qc.setQueryData(qk.me(), { ...me, activeCompanyId: 'co-nonvat', vatRegistered: false }); });
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'ลูกค้า' })).toHaveValue(''));
+    expect(screen.getByRole('textbox', { name: 'หมายเหตุ' })).toHaveValue('');
+    await new Promise((r) => setTimeout(r, 2600));
+    expect(calls.filter((c) => /^(POST|PUT) \/bff\/v1\/docs\/TI(\/|$)/.test(c) && !c.endsWith('/compute'))).toEqual([]);
+  }, 15000);
 });

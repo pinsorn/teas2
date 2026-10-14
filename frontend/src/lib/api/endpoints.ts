@@ -5,7 +5,7 @@ import type {
 import { api } from './client';
 
 export type DocInput = { header: DocHeader; lines: DocLine[] };
-export interface ListDocsParams { status?: string; from?: string; to?: string; q?: string; limit?: number; cursor?: string }
+export interface ListDocsParams { status?: string; from?: string; to?: string; q?: string; outstanding?: 'positive'; limit?: number; cursor?: string }
 
 /** Query string without undefined / empty values. */
 const qs = (p: Record<string, string | number | undefined>) => {

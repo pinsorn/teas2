@@ -31,8 +31,9 @@ export async function api<T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: st
   });
   if (res.status === 204) return undefined as T;
   const text = await res.text();
-  let json: unknown;
-  try { json = text ? JSON.parse(text) : undefined; } catch { json = text; }
+  let json: unknown, parsed = true;
+  try { json = text ? JSON.parse(text) : undefined; } catch { json = text; parsed = false; }
   if (!res.ok) throw new ApiError(normalizeProblem(res.status, json));
+  if (!parsed) throw new ApiError(normalizeProblem(res.status, { code: 'http.invalid_body' })); // 2xx but not JSON: a proxy / login page, not data
   return json as T;
 }

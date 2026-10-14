@@ -16,23 +16,27 @@ export interface AutosaveOptions {
   initial?: Saved;
   /** Called once, after the first successful POST. */
   onCreated?: (id: string) => void;
+  /** The initial content (a copied draft) is not on the server yet: the first save POSTs it. */
+  startUnsaved?: boolean;
+  /** Leaving the editor flushes pending input, unless this says the context changed (e.g. another company is now active). */
+  flushOnLeave?: () => boolean;
 }
 
 /**
  * First change POSTs (one idempotency key per editor session); later changes PUT with the current version, 2 s after the
  * last change. A 409 stops autosave and is surfaced (never retried, never overwritten); local input is untouched.
  */
-export function useAutosave({ type, payload, enabled, initial, onCreated }: AutosaveOptions) {
+export function useAutosave({ type, payload, enabled, initial, onCreated, startUnsaved, flushOnLeave }: AutosaveOptions) {
   const json = JSON.stringify(payload);
   const [key] = useState(() => crypto.randomUUID());
-  const [savedJson, setSavedJson] = useState(json);
+  const [savedJson, setSavedJson] = useState(startUnsaved && !initial ? '' : json);
   const [phase, setPhase] = useState<'idle' | 'saving' | 'conflict' | 'error'>('idle');
   const [problem, setProblem] = useState<unknown>();
   const [hasDoc, setHasDoc] = useState(!!initial);
 
-  const latest = useRef({ payload, json, enabled, onCreated });
-  useEffect(() => { latest.current = { payload, json, enabled, onCreated }; });
-  const saved = useRef(json); // last JSON the server has
+  const latest = useRef({ payload, json, enabled, onCreated, flushOnLeave });
+  useEffect(() => { latest.current = { payload, json, enabled, onCreated, flushOnLeave }; });
+  const saved = useRef(startUnsaved && !initial ? '' : json); // last JSON the server has ('' = nothing yet: a copied draft)
   const doc = useRef<Saved | undefined>(initial);
   const blocked = useRef(false);
   const chain = useRef<Promise<unknown>>(Promise.resolve());
@@ -46,7 +50,7 @@ export function useAutosave({ type, payload, enabled, initial, onCreated }: Auto
     const next = chain.current.then(async () => {
       const { payload: body, json: sent, enabled: on } = latest.current;
       if (!on || blocked.current || (doc.current && sent === saved.current)) return;
-      if (!doc.current && !pendingCreate.current && sent === saved.current) return;
+      if (!doc.current && !pendingCreate.current && sent === saved.current) return; // a blank new editor never POSTs
       setPhase('saving');
       try {
         let d: Doc;
@@ -99,11 +103,15 @@ export function useAutosave({ type, payload, enabled, initial, onCreated }: Auto
   useEffect(() => {
     const hide = () => { if (document.visibilityState === 'hidden') void flushRef.current(); };
     const warn = (e: BeforeUnloadEvent) => {
-      if (latest.current.enabled && (latest.current.json !== saved.current)) { e.preventDefault(); e.returnValue = ''; }
+      if (latest.current.enabled && (latest.current.json !== saved.current)) { void flushRef.current(); e.preventDefault(); e.returnValue = ''; }
     };
     document.addEventListener('visibilitychange', hide);
     window.addEventListener('beforeunload', warn);
-    return () => { document.removeEventListener('visibilitychange', hide); window.removeEventListener('beforeunload', warn); };
+    return () => {
+      document.removeEventListener('visibilitychange', hide); window.removeEventListener('beforeunload', warn);
+      // client-side navigation fires no beforeunload: save what is pending (never into another company)
+      if (latest.current.enabled && (latest.current.flushOnLeave?.() ?? true)) void flushRef.current();
+    };
   }, []);
 
   const dirty = enabled && json !== savedJson;

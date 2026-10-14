@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { setSettings } from '../settings';
+import { PERMISSIONS_BY_ROLE } from '../permissions';
 import { loadState, resetState } from '../store';
 import { testServer } from '../test-server';
 
@@ -38,7 +39,7 @@ describe('write handlers', () => {
     expect((await call('POST', `/docs/TI/${d.id}/cancel`, { version: 1, reasonCode: 'OTHER', reasonText: 'x' })).status).toBe(403);
   });
   it('/corrections refuses a plan from another company (404) and a downgraded role (403)', async () => {
-    const ti = loadState().docs.find((x) => x.type === 'TI' && x.status === 'settled' && !x.locks.length)!;
+    const ti = loadState().docs.find((x) => x.type === 'TI' && x.status === 'settled' && !x.locks.some((l) => l.kind === 'filing'))!;
     const p1 = await (await call('POST', `/docs/TI/${ti.id}/correction-plan`, { header: { ...ti.header, notes: 'อ้างอิง PO' }, lines: ti.lines })).json();
     setSettings({ companyKey: 'nonvat' });
     expect((await call('POST', '/corrections', { planId: p1.planId, planHash: p1.planHash })).status).toBe(404);
@@ -47,13 +48,27 @@ describe('write handlers', () => {
     expect(loadState().docs.find((x) => x.id === ti.id)!.header.notes).toBe(ti.header.notes); // nothing executed
   });
   it('correction plan then execute through /corrections', async () => {
-    const ti = loadState().docs.find((x) => x.type === 'TI' && x.status === 'settled' && !x.locks.length)!;
+    const ti = loadState().docs.find((x) => x.type === 'TI' && x.status === 'settled' && !x.locks.some((l) => l.kind === 'filing'))!;
     const plan = await (await call('POST', `/docs/TI/${ti.id}/correction-plan`, { header: { ...ti.header, notes: 'อ้างอิง PO' }, lines: ti.lines })).json();
     expect(plan.steps.map((s: { action: string }) => s.action)).toEqual(['revise']);
     const r = await call('POST', '/corrections', { planId: plan.planId, planHash: plan.planHash });
     expect(r.status).toBe(200);
     expect(loadState().docs.find((x) => x.id === ti.id)!.header.notes).toBe('อ้างอิง PO');
     expect((await call('POST', '/corrections', { planId: plan.planId, planHash: plan.planHash })).status).toBe(404); // single use
+  });
+});
+
+describe('I6 correction-plan needs the create permission', () => {
+  it('a role that can read but not create gets 403 and no plan is stored', async () => {
+    const ti = loadState().docs.find((x) => x.type === 'TI' && x.status === 'issued')!;
+    const saved = PERMISSIONS_BY_ROLE.operator;
+    PERMISSIONS_BY_ROLE.operator = saved.filter((p) => p !== 'doc.TI.create');
+    try {
+      setSettings({ role: 'operator' });
+      const r = await call('POST', `/docs/TI/${ti.id}/correction-plan`, { header: { ...ti.header, notes: 'x' }, lines: ti.lines });
+      expect(r.status).toBe(403);
+      expect(Object.keys(loadState().plans ?? {})).toEqual([]);
+    } finally { PERMISSIONS_BY_ROLE.operator = saved; }
   });
 });
 

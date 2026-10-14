@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
+import { useCompanyEpoch } from '@/app-shell/useCompanyEpoch';
 import { isForbidden, useMe } from '@/app-shell/useMe';
 import { Alert, AlertTitle } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -17,6 +18,7 @@ import { StatusChip } from '../doc-list/StatusChip';
 import { ErrorState } from '../states/ErrorState';
 import { ForbiddenState } from '../states/ForbiddenState';
 import { LoadingState } from '../states/LoadingState';
+import { isNotFound, NotFoundState } from '../states/NotFoundState';
 import { ActionBar, type ConvertibleDescriptor } from './ActionBar';
 import { ActivityTimeline } from './ActivityTimeline';
 import { ChainPanel, docHref } from './ChainPanel';
@@ -39,7 +41,12 @@ function PaperStub({ doc, revision }: { doc: Doc; revision?: number }) {
   );
 }
 
-export function DocView({ descriptor: d, id }: DocViewProps) {
+/** Keyed by the active company: a switch drops the open tab / dialogs and re-reads the document in the new company. */
+export function DocView(props: DocViewProps) {
+  return <DocViewInner key={useCompanyEpoch()} {...props} />;
+}
+
+function DocViewInner({ descriptor: d, id }: DocViewProps) {
   const { me, isPending: mePending, error: meError, refetch: refetchMe } = useMe();
   const q = useQuery({
     queryKey: qk.doc(me?.activeCompanyId ?? '', d.type, id),
@@ -49,6 +56,7 @@ export function DocView({ descriptor: d, id }: DocViewProps) {
   if (meError) return <ErrorState error={meError} onRetry={() => void refetchMe()} />;
   if (mePending || q.isPending) return <LoadingState />;
   if (q.error) {
+    if (isNotFound(q.error)) return <NotFoundState listHref={routesOf(d).list} />;
     return isForbidden(q.error)
       ? <ForbiddenState permission={d.permissions.read} detail={q.error instanceof ApiError ? q.error.problem.detail : undefined} />
       : <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
