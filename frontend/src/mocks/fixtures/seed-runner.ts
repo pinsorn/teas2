@@ -30,7 +30,7 @@ export function runSeed(st: MockState, specs: SeedSpec[]): void {
 
 function runOne(st: MockState, s: SeedSpec): void {
   const actor = s.by ?? USER;
-  const header: DocHeader = { partyId: s.partyId, documentDate: s.date, priceIncludesVat: false, ...s.header };
+  const header: DocHeader = { partyId: s.partyId, documentDate: s.date, ...(s.convertFrom ? {} : { priceIncludesVat: false }), ...s.header };
   let d = s.convertFrom
     ? convert(st, s.convertFrom.id, s.type, s.convertFrom.lines, actor, { id: s.id })
     : createDraft(st, s.companyId, s.type, { header, lines: s.lines, ...(s.allocations ? { allocations: s.allocations } : {}) } as never, actor, `seed-${s.id}`, { id: s.id });

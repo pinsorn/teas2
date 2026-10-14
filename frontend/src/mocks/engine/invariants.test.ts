@@ -81,6 +81,17 @@ describe('ledger invariants over the whole seed (S7)', () => {
     jOf(b, d2.id).preview.entries.push({ ...structuredClone(jOf(b, d2.id).preview.entries[0]), kind: 'reversal', date: '2026-03-05' });
     expect(msgs(b)).toMatch(/closed period/);
   });
+  it('report an original posted after its period closed (can fail)', () => {
+    const st = buildSeedState(); const d = st.docs.find((x) => x.type === 'TI' && x.status === 'issued' && x.header.documentDate < '2026-07-01')!;
+    expect(msgs(st)).toBe('');
+    d.issuedAt = '2026-10-01T10:00:00+07:00';
+    expect(msgs(st)).toMatch(/closed period/);
+  });
+  it('report an issued ledger document of a type with no posting (no journal) (can fail)', () => {
+    const st = buildSeedState(); const base = issuedTi(st);
+    st.docs.push({ ...structuredClone(base), id: 'jv-x', type: 'JV', outstanding: undefined });
+    expect(msgs(st)).toMatch(/jv-x.*no journal/);
+  });
   it('report a numbering gap and a stored period lock (can fail)', () => {
     const a = buildSeedState(); const d = a.docs.find((x) => x.type === 'TI' && x.number)!;
     d.number = 'TI-202610-0099';

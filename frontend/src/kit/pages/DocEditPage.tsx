@@ -7,6 +7,7 @@ import { DESCRIPTORS } from '@/descriptors';
 import type { DocDescriptor } from '@/domain/descriptors';
 import type { DocType } from '@/domain/types';
 import { routesOf } from '@/domain/descriptors';
+import { LIVE } from '@/domain/doc-types';
 import type { Doc } from '@/domain/types';
 import { DocEditor } from '@/kit/doc-editor/DocEditor';
 import { useCorrectionFlow } from '@/kit/doc-view/useCorrectionFlow';
@@ -19,7 +20,6 @@ import { qk } from '@/lib/query/keys';
 import { TypeGate } from './TypeGate';
 
 const DRAFTABLE = ['draft', 'approved'];
-const REVISABLE = ['issued', 'partly_settled', 'settled'];
 
 /** Issued documents change through the correction plan; the editor only hands the proposal over. */
 function Revise({ doc, d }: { doc: Doc; d: DocDescriptor }) {
@@ -42,7 +42,7 @@ function Edit({ id, d }: { id: string; d: DocDescriptor }) {
     enabled: !!me,
   });
   const doc = q.data;
-  const editable = !!doc && (DRAFTABLE.includes(doc.status) || REVISABLE.includes(doc.status));
+  const editable = !!doc && (DRAFTABLE.includes(doc.status) || LIVE.includes(doc.status));
   // Cancelled / replaced / pending documents cannot be edited: send the reader to the view, which says why.
   useEffect(() => { if (doc && !editable) router.replace(routesOf(d).view(id)); }, [doc, editable, id, router, d]);
 

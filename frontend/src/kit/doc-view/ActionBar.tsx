@@ -6,12 +6,12 @@ import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { routesOf, type DocDescriptor } from '@/domain/descriptors';
+import { LIVE } from '@/domain/doc-types';
 import type { Doc, DocType } from '@/domain/types';
 
 /** A descriptor may list the conversions it allows; none of the SP1 descriptors do yet, so the menu stays hidden. */
 export type ConvertibleDescriptor = DocDescriptor & { convertsTo?: DocType[] };
 
-const LIVE = ['issued', 'partly_settled', 'settled'];
 
 /** A disabled action keeps its place and says why (aria-describedby + tooltip), never just goes grey. */
 export function Guarded({ why, children }: { why?: string; children: (p: { disabled: boolean; 'aria-describedby'?: string }) => ReactNode }) {

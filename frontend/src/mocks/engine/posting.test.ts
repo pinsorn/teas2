@@ -29,8 +29,13 @@ describe('posting resolution (SP0 §5.5)', () => {
   it('an unresolvable role throws posting.unresolved naming the role', () => {
     const st = seed(); st.postingRules = st.postingRules.filter((r) => r.role !== 'Revenue');
     expect(() => resolveRole(st, 'Revenue', { companyId: CO, docType: 'TI' })).toThrow(/posting\.unresolved.*Revenue/);
-    st.postingRules.push({ companyId: CO, level: 'default', role: 'Revenue', accountCode: '9999' }); // a rule onto a missing account is unresolved too
-    expect(() => resolveRole(st, 'Revenue', { companyId: CO, docType: 'TI' })).toThrow(/posting\.unresolved.*Revenue/);
+  });
+  it('a rule onto a missing or non-postable account throws posting.invalid_rule instead of falling through', () => {
+    for (const accountCode of ['9999', '1000']) {
+      const st = seed();
+      st.postingRules.push({ companyId: CO, level: 'docType', key: 'TI', role: 'Revenue', accountCode });
+      expect(() => resolveRole(st, 'Revenue', { companyId: CO, docType: 'TI' })).toThrow(/posting\.invalid_rule.*Revenue/);
+    }
   });
   it('keyed company defaults: WHT form accounts, bank accounts, asset classes', () => {
     const st = seed();

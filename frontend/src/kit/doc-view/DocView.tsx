@@ -95,7 +95,8 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
   });
 
   // Exits are real actions. Filing / period: the same correction flow as the edit button (proposing a correction needs the create permission; the plan lists what its steps need); settlement: the chain, where the receipt is un-applied.
-  const exitAction: ExitAction = (lock) => {
+  const exitAction: ExitAction = (lock, exit) => {
+    if (lock.kind === 'period' && exit !== lock.exits[0]) return undefined; // the reopen exit is plain text until AC6 builds period reopen
     if (lock.kind === 'filing' || lock.kind === 'period') {
       return { onClick: () => router.push(routesOf(d).edit(doc.id)), why: permissions.includes(d.permissions.create) ? undefined : ts('needPermission', { permission: d.permissions.create }) };
     }

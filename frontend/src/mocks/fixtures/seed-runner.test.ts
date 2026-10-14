@@ -44,8 +44,22 @@ describe('runSeed (D-23)', () => {
     runSeed(st, [ti(st, 'dr', '2026-08-03', { status: 'draft' }), ti(st, 'cx', '2026-08-04', { status: 'cancelled' })]);
     expect(st.docs.find((x) => x.id === 'dr')!.status).toBe('draft');
     expect(st.docs.find((x) => x.id === 'cx')!.status).toBe('cancelled');
-    expect(st.journals.find((j) => j.docId === 'cx')!.preview.entries.map((e) => e.kind)).toEqual(['original', 'reversal']);
+    expect(st.journals.find((j) => j.docId === 'cx')!.preview.entries.map((e) => [e.kind, e.date, e.late ?? false])).toEqual([['original', '2026-08-04', false], ['reversal', '2026-08-04', false]]);
     expect(checkInvariants(st)).toEqual([]);
+  });
+  it('a cancellation inside a closed month reverses on its own (pinned) date, not late', () => {
+    const st = buildSeedState();
+    runSeed(st, [ti(st, 'cx2', '2025-06-12', { status: 'cancelled' })]);
+    expect(st.journals.find((j) => j.docId === 'cx2')!.preview.entries.map((e) => [e.kind, e.date, e.late ?? false])).toEqual([['original', '2025-06-12', false], ['reversal', '2025-06-12', false]]);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('a converted draft keeps its source priceIncludesVat', () => {
+    const st = buildSeedState();
+    runSeed(st, [
+      { id: 'qt-v', type: 'QT', companyId: 'co-vat', date: '2026-08-01', partyId: customer(st), lines: [line({ id: 'q1' })], status: 'issued', header: { priceIncludesVat: true } },
+      { id: 'so-v', type: 'SO', companyId: 'co-vat', date: '2026-08-02', lines: [], status: 'draft', convertFrom: { id: 'qt-v', lines: [{ sourceLineId: 'q1', qty: '1' }] } },
+    ]);
+    expect(st.docs.find((d) => d.id === 'so-v')!.header.priceIncludesVat).toBe(true);
   });
   it('convertFrom converts the listed source lines and the `after` hook sees the finished state', () => {
     const st = buildSeedState(); let seen = '';

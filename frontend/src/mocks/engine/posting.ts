@@ -34,8 +34,9 @@ export function resolveRole(st: MockState, role: AccountingRole, ctx: PostingCon
     for (const key of keys) {
       if (key === undefined && level !== 'default') continue;
       const hit = mine.find((r) => r.level === level && r.key === key);
-      const acc = hit && st.accounts.find((a) => a.companyId === ctx.companyId && a.code === hit.accountCode && a.postable);
-      if (!hit || !acc) continue; // a rule onto a missing / non-postable account is not a match
+      if (!hit) continue;
+      const acc = st.accounts.find((a) => a.companyId === ctx.companyId && a.code === hit.accountCode);
+      if (!acc?.postable) throw new MockError(422, 'posting.invalid_rule', `กฎบัญชี ${LEVEL_TH[level]}${hit.key ? ` ${hit.key}` : ''}: ${role} → ${hit.accountCode} ชี้ไปยังบัญชีที่ไม่มีหรือลงบัญชีไม่ได้`);
       const label = hit.key === undefined ? LEVEL_TH[level] : `${LEVEL_TH[level]} ${hit.key}`;
       return { code: acc.code, name: acc.nameTh, rule: `${label}: ${role} → ${acc.code}` };
     }

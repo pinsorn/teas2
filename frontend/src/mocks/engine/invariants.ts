@@ -1,9 +1,7 @@
-import { DOC_TYPES } from '@/domain/doc-types';
+import { DOC_TYPES, LIVE } from '@/domain/doc-types';
 import type { Doc } from '@/domain/types';
 import type { MockState } from '../store';
 import { consumed, q4 } from './chain';
-import { LIVE } from './commands';
-import { POST } from './ledger';
 import { fromSatang, toSatang } from './money';
 import { firstOpenDate, isClosed } from './periods';
 
@@ -92,21 +90,22 @@ export function checkInvariants(st: MockState): string[] {
     else if (a.companyId !== b.companyId || (l.companyId !== undefined && l.companyId !== a.companyId)) out.push(`link ${l.from} → ${l.to} joins different companies`);
   }
   for (const d of st.docs) {
-    if (d.status === 'draft' || !DOC_TYPES[d.type].ledger || !POST[d.type] || d.totals.total === '0.00') continue;
+    if (d.status === 'draft' || !DOC_TYPES[d.type].ledger || d.totals.total === '0.00') continue;
     const entries = st.journals.find((j) => j.docId === d.id)?.preview.entries;
     if (!entries?.length) { out.push(`${d.id}: ${d.status} ${d.type} has no journal`); continue; }
     if ((d.status === 'cancelled' || d.status === 'replaced') && entries[entries.length - 1].kind !== 'reversal') out.push(`${d.id}: ${d.status} but its journal ends without a reversal`);
   }
 
-  // 7. an entry dated in a closed period was posted before the close (a reversal / correction from before closedAt), is an original, or is late and in the first open period
+  // 7. an entry dated in a closed period was posted before the close (issuedAt / cancel / revision <= closedAt), or is late and in the first open period
   for (const j of st.journals) {
     const d = doc(j.docId);
     if (!d) continue;
     for (const e of j.preview.entries) {
       const p = st.periods.find((x) => x.companyId === d.companyId && x.month === e.date.slice(0, 7));
-      if (p?.status !== 'closed' || e.kind === 'original' && !e.late) continue;
+      if (p?.status !== 'closed') continue;
       let ok: boolean;
-      if (e.late) ok = e.date >= firstOpenDate(st, d.companyId) && !isClosed(st, d.companyId, e.date);
+      if (e.kind === 'original' && !e.late) ok = !!d.issuedAt && !!p.closedAt && Date.parse(d.issuedAt) <= Date.parse(p.closedAt); // an original in a closed month was issued before the close
+      else if (e.late) ok = e.date >= firstOpenDate(st, d.companyId) && !isClosed(st, d.companyId, e.date);
       else {
         const at = e.kind === 'reversal' ? d.cancel?.at : st.revisions.filter((r) => r.docId === d.id).map((r) => r.at).sort().pop();
         ok = !!at && !!p.closedAt && Date.parse(at) <= Date.parse(p.closedAt);

@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { withFixedClock } from './log';
+import { revise } from './commands';
 import { fixtureIds } from '../fixtures/ids';
 import { seed } from '../store';
 import { assertBalanced, type Actor, type DocLine, type MockStateLike } from './test-helpers';
@@ -10,6 +12,12 @@ import { firstOpenDate, isClosed, periodLock } from './periods';
 
 const me: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
 const line = (p: Partial<DocLine> = {}): DocLine => ({ id: 'l1', description: 'ออกแบบ', qty: '1', unit: 'งาน', unitPrice: '1000.00', taxCode: 'S7', ...p });
+/** Σ (debit - credit) per account over every entry dated on/before `cutoff`: what a closed month's books say. */
+const glUpTo = (s: MockStateLike, cutoff: string) => {
+  const m: Record<string, number> = {};
+  for (const j of s.journals) for (const e of j.preview.entries) if (e.date <= cutoff) for (const l of e.lines) m[l.accountCode] = (m[l.accountCode] ?? 0) + Number(l.debit.replace('.', '')) - Number(l.credit.replace('.', ''));
+  return m;
+};
 let st: MockStateLike;
 let co: string;
 let customer: string;
@@ -71,6 +79,7 @@ describe('periods (D-10)', () => {
     const plan = buildPlan(st, ti.id, proposed, 'accountant');
     expect(plan.steps.map((s) => s.action)).toContain('reissue');
     expect(plan.explanation).not.toMatch(/ทำไม่ได้/);
+    const closedBooks = glUpTo(st, '2026-06-30');
     const p = correctionPlan(st, ti.id, proposed, 'accountant');
     const res = executePlan(st, p.planId, p.planHash, me);
     const old = st.docs.find((d) => d.id === ti.id)!;
@@ -80,8 +89,10 @@ describe('periods (D-10)', () => {
     const created = st.docs.find((d) => d.id === old.replacedById)!;
     expect(res.affected.map((a) => a.docId)).toContain(created.id);
     const ne = st.journals.find((j) => j.docId === created.id)!.preview.entries[0];
-    expect(ne.date).toBe(ti.header.documentDate); // I9: the replacement keeps the original date
-    expect(created.header.documentDate).toBe(ti.header.documentDate);
+    expect(ne).toMatchObject({ kind: 'original', date: firstOpenDate(st, co), late: true }); // D-10: the new entry posts in the first open period too
+    expect(created.header.documentDate).toBe(ti.header.documentDate); // I9: the DOCUMENT date is unchanged
+    expect(created.outstanding).toBe(created.totals.total);
+    expect(glUpTo(st, '2026-06-30')).toEqual(closedBooks); // closed months' books did not move
     assertBalanced(st);
     expect(checkInvariants(st)).toEqual([]);
   });
@@ -99,5 +110,42 @@ describe('periods (D-10)', () => {
     const e = st.journals.find((j) => j.docId === a.id)!.preview.entries[1];
     expect(e.date).toBe('2026-10-14');
     expect(e.late).toBeUndefined();
+  });
+  it('a paid TI in a closed month: cancel RC, reissue TI, reissue RC all post in the first open period, closed books unchanged', () => {
+    const ti = st.docs.find((d) => d.type === 'TI' && d.status === 'settled' && d.header.documentDate < '2026-07-01' && !d.locks.some((l) => l.kind === 'filing')
+      && st.links.filter((l) => l.active && l.to === d.id).every((l) => l.kind === 'settles')
+      && st.links.some((l) => l.active && l.to === d.id && st.docs.find((x) => x.id === l.from)!.header.documentDate < '2026-07-01'))!; // its receipt is in a closed month too
+    const other = st.parties.find((p) => p.companyId === co && p.kind === 'customer' && p.id !== ti.header.partyId && p.vatRegistered && p.taxId)!;
+    const rcId = st.links.find((l) => l.active && l.to === ti.id && l.kind === 'settles')!.from;
+    const rcDate = st.docs.find((d) => d.id === rcId)!.header.documentDate;
+    const before = glUpTo(st, '2026-06-30');
+    const p = correctionPlan(st, ti.id, { header: { ...ti.header, partyId: other.id }, lines: ti.lines }, 'accountant');
+    expect(p.steps.map((s) => [s.action, s.docType])).toEqual([['cancel', 'RC'], ['reissue', 'TI'], ['reissue', 'RC']]);
+    executePlan(st, p.planId, p.planHash, me);
+    const rc2 = st.docs.find((d) => d.replacesId === rcId)!;
+    expect(rc2.header.documentDate).toBe(rcDate); // document date kept
+    const rcEntry = st.journals.find((j) => j.docId === rc2.id)!.preview.entries[0];
+    expect(rcEntry).toMatchObject({ kind: 'original', date: firstOpenDate(st, co), late: true });
+    const ti2 = st.docs.find((d) => d.id === st.docs.find((x) => x.id === ti.id)!.replacedById)!;
+    expect(st.journals.find((j) => j.docId === ti2.id)!.preview.entries[0]).toMatchObject({ date: firstOpenDate(st, co), late: true });
+    expect(glUpTo(st, '2026-06-30')).toEqual(before);
+    assertBalanced(st); // includes checkInvariants: outstanding per 7.11, subledger = GL
+  });
+  it('L-class revise in a closed month: reversal and correction entry both post on the first open date, late', () => {
+    const nv = 'co-nonvat';
+    const party = st.parties.find((p) => p.companyId === nv && p.kind === 'customer')!.id;
+    const d = withFixedClock('2025-06-10T10:00:00+07:00', () => {
+      const dr = createDraft(st, nv, 'IV', { header: { partyId: party, documentDate: '2025-06-10' }, lines: [line()] }, me, 'iv1');
+      return issue(st, dr.id, dr.version, me);
+    });
+    expect(d.status).toBe('issued');
+    revise(st, d.id, { header: d.header, lines: [line({ unitPrice: '1500.00' })] }, d.version, 'แก้ราคา', me);
+    const es = st.journals.find((j) => j.docId === d.id)!.preview.entries;
+    expect(es.map((e) => [e.kind, e.date, e.late ?? false])).toEqual([['original', '2025-06-10', false], ['reversal', '2026-10-01', true], ['correction', '2026-10-01', true]]);
+    assertBalanced(st);
+  });
+  it('issue under a pinned clock still refuses a future date', () => {
+    const dr = draftOn('2026-10-15', 'p9');
+    expect(() => withFixedClock('2026-10-14T10:00:00+07:00', () => issue(st, dr.id, dr.version, me))).toThrow(/doc\.future_date/);
   });
 });

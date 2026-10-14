@@ -1,7 +1,7 @@
 import type {
-  Actor, ComputeResult, Doc, DocHeader, DocLine, DocStatus, DocType, IsoDate, JournalEntryPreview, JournalPreview, Lock, MissingItem, Money, PartySummary, Qty,
+  Actor, ComputeResult, Doc, DocHeader, DocLine, DocType, IsoDate, JournalEntryPreview, JournalPreview, Lock, MissingItem, Money, PartySummary, Qty,
 } from '@/domain/types';
-import { CLASS, CONVERSIONS, DOC_TYPES, isTypeAvailable } from '@/domain/doc-types';
+import { CLASS, CONVERSIONS, DOC_TYPES, LIVE, isTypeAvailable } from '@/domain/doc-types';
 import type { MockState } from '../store';
 import { consumed, fmtQ, q4 } from './chain';
 import { ledgerFor, reversalOf } from './ledger';
@@ -14,7 +14,7 @@ import { computeDoc } from './vat';
 export type Body = { header: DocHeader; lines: DocLine[] };
 type Stored = MockState['docs'][number];
 
-export const LIVE: DocStatus[] = ['issued', 'partly_settled', 'settled'];
+export { LIVE };
 const hasOut = (t: DocType) => DOC_TYPES[t].outstanding; // documents that carry an outstanding balance
 const TAX_BUYER: DocType[] = ['TI', 'CN', 'DN']; // the buyer's TIN + branch must be on the document
 
@@ -28,7 +28,14 @@ export const blockingLocks = (d: { locks: Lock[] }) => d.locks.filter((l) => l.k
 
 /** Reversal of `e`: dated today, or in the first open period (late) when `e` sits in a closed one. */
 const reverseEntry = (st: MockState, companyId: string, e: JournalEntryPreview): JournalEntryPreview =>
-  isClosed(st, companyId, e.date) ? { ...reversalOf(e, firstOpenDate(st, companyId)), late: true } : reversalOf(e, today());
+  isPinned() ? reversalOf(e, stamp().slice(0, 10)) // seed history: reversed on its own (pinned) date, in the period that was open then
+    : isClosed(st, companyId, e.date) ? { ...reversalOf(e, firstOpenDate(st, companyId)), late: true } : reversalOf(e, today());
+
+/** D-10: a NEW entry for a document dated in a closed month posts on the first open date, late; the document date is unchanged (I9). */
+const postedNow = (st: MockState, companyId: string, p: JournalPreview): JournalPreview => {
+  const [first, ...rest] = p.entries;
+  return first && !isPinned() && isClosed(st, companyId, first.date) ? { entries: [{ ...first, date: firstOpenDate(st, companyId), late: true }, ...rest] } : p;
+};
 
 export const publicDoc = (d: Stored): Doc => { const { companyId, ...r } = d; void companyId; return structuredClone(r); };
 export function getDoc(st: MockState, id: string): Stored {
@@ -194,9 +201,9 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   const body = { header: d.header, lines: d.lines };
   const missing = missingOf(st, d.companyId, d.type, body);
   if (missing.length) throw incomplete(missing);
-  if (!isPinned() && !opts?.keepDate) { // D-10; seed history is posted as of its own date
+  if (!opts?.keepDate) { // D-10; seed history (pinned clock) is issued as of its own date, so only the closed-period refusal is skipped
     if (d.header.documentDate > today()) throw new MockError(422, 'doc.future_date', `วันที่เอกสารอยู่ในอนาคต (วันนี้ ${today()}) ออกเอกสารไม่ได้ ให้แก้วันที่เป็นวันนี้หรือก่อนหน้า`);
-    if (isClosed(st, d.companyId, d.header.documentDate)) {
+    if (!isPinned() && isClosed(st, d.companyId, d.header.documentDate)) {
       throw new MockError(422, 'period.closed', `งวดบัญชี ${monthLabelTh(d.header.documentDate.slice(0, 7))} ปิดแล้ว ออกเอกสารลงวันที่ในงวดนี้ไม่ได้ ให้เปลี่ยนวันที่เป็น ${firstOpenDate(st, d.companyId)} เป็นต้นไป หรือขอเปิดงวดอีกครั้ง`);
     }
   }
@@ -206,7 +213,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
     version: d.version + 1, issuedAt: stamp(), ...(hasOut(d.type) ? { outstanding: totals.total } : {}),
   };
   put(st, next);
-  setJournal(st, id, ledgerFor(st, next));
+  setJournal(st, id, postedNow(st, d.companyId, ledgerFor(st, next)));
   st.revisions.push({ docId: id, revision: 0, at: next.issuedAt!, actor, snapshot: publicDoc(next), diff: [] });
   logActivity(st, id, actor, 'issue', next.number);
   logAudit(st, actor, d.companyId, 'doc.issue', id, { status: 'draft' }, { status: 'issued', number: next.number });
@@ -297,7 +304,7 @@ export function reissue(st: MockState, id: string, body: Body, actor: Actor, rea
   const oj = st.journals.find((j) => j.docId === old.id);
   const last = oj?.preview.entries[oj.preview.entries.length - 1];
   if (oj && last && last.kind !== 'reversal') oj.preview = { entries: [...oj.preview.entries, reverseEntry(st, old.companyId, last)] };
-  setJournal(st, created.id, ledgerFor(st, created));
+  setJournal(st, created.id, postedNow(st, created.companyId, ledgerFor(st, created)));
   st.revisions.push({ docId: created.id, revision: 0, at, actor, reason, snapshot: publicDoc(created), diff: [] });
   for (const l of carried) if (l.kind === 'settles' || l.kind === 'adjusts') recomputeSettlement(st, l.to);
   logActivity(st, old.id, actor, 'reissue', `แทนที่ด้วย ${created.number}`);

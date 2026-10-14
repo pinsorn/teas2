@@ -1,4 +1,7 @@
-import type { CorrectionClass, DocType } from './types';
+import type { CorrectionClass, DocStatus, DocType } from './types';
+
+/** Statuses of a document that is in force (the one definition: engine, locks, invariants, action bar). */
+export const LIVE: DocStatus[] = ['issued', 'partly_settled', 'settled'];
 export type VatScope = 'vat-only' | 'non-vat-only' | 'both';
 export interface DocTypeInfo { class: CorrectionClass; vat: VatScope; ledger: boolean; outstanding: boolean; printable: boolean }
 export const DOC_TYPES: Record<DocType, DocTypeInfo> = {

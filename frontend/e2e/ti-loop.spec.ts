@@ -116,8 +116,10 @@ test('F4: a TI in a closed period shows the period lock with the retroactive-cor
   await page.goto(`/sales/tax-invoices/${id}`);
   const banner = page.getByRole('status', { name: 'ล็อก' });
   await expect(banner).toContainText('ปิดแล้ว');
-  await expect(banner.getByRole('button', { name: /แก้ไขย้อนหลัง/ })).toBeEnabled();
-  await expect(page.getByRole('link', { name: 'แก้ไข', exact: true })).toBeEnabled(); // SP0 7.5: a period lock never blocks a correction
+  await expect(banner.getByRole('button', { name: /เปิดงวด/ })).toHaveCount(0); // the reopen exit is plain text until AC6
+  await expect(page.getByRole('link', { name: 'แก้ไข', exact: true })).toHaveAttribute('href', new RegExp(`/${id}/edit$`)); // SP0 7.5: a period lock never blocks a correction
+  await banner.getByRole('button', { name: /แก้ไขย้อนหลัง/ }).click();
+  await expect(page).toHaveURL(new RegExp(`/${id}/edit$`));
   await axeClean(page);
 });
 
