@@ -59,8 +59,11 @@ export interface MissingItem { field: string; message: string }
 export interface ComputeResult { lines: { id: string; net: Money; vat: Money; total: Money }[]; totals: DocTotals;
   missing: MissingItem[]; journal: JournalPreview }
 
+export interface CorrectionNote { type: 'CN' | 'DN'; fullCredit: boolean; priceIncludesVat: boolean;
+  lines: DocLine[]; total: Money;
+  taxLines: { taxCode: TaxCode; net: Money; vat: Money; total: Money }[] }
 export interface CorrectionStep { order: number; action: 'revise' | 'cancel' | 'reissue' | 'issue_cn' | 'issue_dn';
-  docId: string; docType: DocType; number?: string; summary: string; permission: string }
+  docId: string; docType: DocType; number?: string; summary: string; permission: string; note?: CorrectionNote }
 export interface CorrectionPlan { planId: string; planHash: string; steps: CorrectionStep[]; missingPermissions: string[];
   explanation: string }
 export interface CorrectionResult { affected: { docId: string; type: DocType; number?: string; status: DocStatus }[] }

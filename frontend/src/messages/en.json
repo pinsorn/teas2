@@ -39,6 +39,7 @@
       "code": { "WRONG_PARTY": "Wrong customer/vendor", "WRONG_AMOUNT": "Wrong amount", "WRONG_ITEMS": "Wrong items", "DUPLICATE": "Duplicate", "OTHER": "Other" }
     },
     "plan": {
+      "taxCode": "Tax code", "net": "Net", "vat": "VAT", "total": "Total", "fullCredit": "Full credit", "difference": "Difference",
       "title": "Correction plan", "steps": "Steps, in order", "noSteps": "There is nothing to do", "missing": "Missing permissions: {list}",
       "confirm": "Confirm all", "regenerate": "Create a new plan", "send": "Send to someone who can approve", "back": "Back", "sent": "Plan sent to an approver",
       "action": { "revise": "Revise", "cancel": "Cancel", "reissue": "Reissue", "issue_cn": "Issue credit note", "issue_dn": "Issue debit note" }
@@ -53,6 +54,7 @@
     "dueOn": "Due {date}"
   },
   "problem": {
+    "correctionUnrepresentable": "Rounded tax does not match the document difference. Adjust the lines and try again.",
     "400": "The data is not valid",
     "401": "Please sign in again",
     "403": "You do not have permission to do this",

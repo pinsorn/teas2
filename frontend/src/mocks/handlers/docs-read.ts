@@ -2,6 +2,8 @@ import { HttpResponse, http } from 'msw';
 import type { Doc, DocSummary, Lock, Page } from '@/domain/types';
 import { ctx, forbidden, problem, screenGate } from './common';
 
+import { recomputeSettlement } from '../engine/commands';
+
 const VAT_ONLY = ['TI'];
 const LOCKED: Lock = { kind: 'filing', reason: 'ภ.พ.30 เดือน ก.ย. 2569 ยื่นแล้ว', exits: ['ออกใบลดหนี้ / ใบเพิ่มหนี้ในงวดถัดไป'] };
 const LOCKABLE = ['issued', 'partly_settled', 'settled'];
@@ -42,7 +44,8 @@ export const docsReadHandlers = [
     if (!perms.includes(`doc.${type}.read`)) return forbidden(`doc.${type}.read`);
     const found = st.docs.find((d) => d.id === params.id && d.type === type && d.companyId === company.id);
     if (!found) return problem(404, 'doc.not_found', 'ไม่พบเอกสาร');
-    const { companyId, ...doc } = found; void companyId;
+    recomputeSettlement(st, found.id);
+    const { companyId, ...doc } = st.docs.find((d) => d.id === found.id)!; void companyId;
     const locks = s.screenState === 'locked' && LOCKABLE.includes(doc.status) && !doc.locks.some((l) => l.kind === 'filing') ? [...doc.locks, LOCKED] : doc.locks;
     return HttpResponse.json({ ...doc, locks } satisfies Doc);
   }),

@@ -1,4 +1,4 @@
-import type { Actor, CorrectionPlan, CorrectionResult, CorrectionStep, DocLine, Role, TaxCode } from '@/domain/types';
+import type { Actor, CorrectionNote, CorrectionPlan, CorrectionResult, CorrectionStep, DocLine, Role, TaxCode } from '@/domain/types';
 import { PERMISSIONS_BY_ROLE } from '../permissions';
 import type { MockState } from '../store';
 import {
@@ -18,7 +18,7 @@ type Stored = MockState['docs'][number];
 /** The CN / DN a correction would issue, built by the engine: ONE line per tax code carrying that code's net difference
  *  between the original and the proposed lines (VAT is the engine's per line). `full` = credit the whole document instead.
  *  A pure shift between codes yields a signed (negative) line. Null = nothing to adjust. */
-function noteFor(d: Stored, p: Body, full: boolean): { type: 'CN' | 'DN'; lines: DocLine[]; total: number; incl: boolean } | null {
+function noteFor(d: Stored, p: Body, full: boolean): CorrectionNote | null {
   const orig: Body = { header: d.header, lines: d.lines };
   let lines: DocLine[];
   let type: 'CN' | 'DN';
@@ -32,10 +32,22 @@ function noteFor(d: Stored, p: Body, full: boolean): { type: 'CN' | 'DN'; lines:
     type = toSatang(calc(p).totals.total) < toSatang(d.totals.total) ? 'CN' : 'DN';
     lines = diff.map(([taxCode, v], i) => ({ id: `l${i + 1}`, description: `ปรับปรุงใบกำกับภาษี ${d.number} (${taxCode})`, qty: '1', unit: 'งาน', unitPrice: fromSatang(type === 'CN' ? -v : v), taxCode }));
   }
-  if (!lines.length) return null;
+  if (!lines.length && calc(p).totals.total === d.totals.total && !full) return null;
   const incl = full && !!d.header.priceIncludesVat;
-  const total = Math.abs(toSatang(calc({ header: { ...d.header, priceIncludesVat: incl }, lines }).totals.total));
-  return total === 0 ? null : { type, lines, total, incl };
+  const computed = calc({ header: { ...d.header, priceIncludesVat: incl }, lines });
+  const total = toSatang(computed.totals.total);
+  const original = toSatang(d.totals.total), proposed = toSatang(calc(p).totals.total);
+  const expected = full ? original : type === 'CN' ? original - proposed : proposed - original;
+  if (total <= 0 || total !== expected) {
+    throw new MockError(422, 'correction.unrepresentable', 'ยอดภาษีที่ปัดเศษไม่ตรงกับส่วนต่าง กรุณาปรับรายการแล้วลองใหม่');
+  }
+  const codes = [...new Set(lines.map((l) => l.taxCode))];
+  const taxLines = codes.map((taxCode) => {
+    const rows = computed.lines.filter((_, i) => lines[i].taxCode === taxCode);
+    const sum = (key: 'net' | 'vat' | 'total') => fromSatang(rows.reduce((n, r) => n + toSatang(r[key]), 0));
+    return { taxCode, net: sum('net'), vat: sum('vat'), total: sum('total') };
+  });
+  return { type, lines, total: computed.totals.total, priceIncludesVat: incl, fullCredit: full, taxLines };
 }
 
 /** Pure: what a correction would do, from the current state. */
@@ -44,8 +56,8 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_correctable', 'แก้ไขได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   const label = `${d.type} ${d.number ?? ''}`.trim();
   const steps: Omit<CorrectionStep, 'order'>[] = [];
-  const add = (action: CorrectionStep['action'], doc: Stored, summary: string, permission: string) =>
-    steps.push({ action, docId: doc.id, docType: action === 'issue_cn' ? 'CN' : action === 'issue_dn' ? 'DN' : doc.type, number: doc.number, summary, permission });
+  const add = (action: CorrectionStep['action'], doc: Stored, summary: string, permission: string, note?: CorrectionNote) =>
+    steps.push({ action, docId: doc.id, docType: action === 'issue_cn' ? 'CN' : action === 'issue_dn' ? 'DN' : doc.type, number: doc.number, summary, permission, ...(note ? { note } : {}) });
   let explanation: string;
 
   if (JSON.stringify({ header: d.header, lines: d.lines }) === JSON.stringify(proposed)) {
@@ -63,7 +75,7 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
       const n = noteFor(d, proposed, full);
       if (!n) return false;
       add(n.type === 'CN' ? 'issue_cn' : 'issue_dn', d,
-        `${n.type === 'CN' ? 'ออกใบลดหนี้' : 'ออกใบเพิ่มหนี้'} ${fromSatang(n.total)} บาท ${full ? 'เต็มจำนวน ' : ''}อ้างอิง ${label}`, n.type === 'CN' ? 'doc.CN.issue' : 'doc.DN.issue');
+        `${n.type === 'CN' ? 'ออกใบลดหนี้' : 'ออกใบเพิ่มหนี้'} ${n.total} บาท ${full ? 'เต็มจำนวน ' : ''}อ้างอิง ${label}`, n.type === 'CN' ? 'doc.CN.issue' : 'doc.DN.issue', n);
       return true;
     };
     const deps = st.links.filter((l) => l.to === id && l.active);
@@ -108,7 +120,7 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
 /** Builds the plan and remembers it (single use) so `executePlan` can recompute it. */
 export function correctionPlan(st: MockState, id: string, proposed: Body, role: Role): CorrectionPlan {
   const plan = buildPlan(st, id, proposed, role);
-  (st.plans ??= {})[plan.planId] = { docId: id, proposed: structuredClone(proposed), role };
+  (st.plans ??= {})[plan.planId] = { docId: id, proposed: structuredClone(proposed), role, plan: structuredClone(plan) };
   return plan;
 }
 
@@ -148,11 +160,9 @@ function runStep(w: MockState, s: CorrectionStep, proposed: Body, actor: Actor, 
     touch(doc.id, nd.id);
   } else {
     const target = c.newTi && doc.status === 'replaced' ? getDoc(w, c.newTi) : doc; // after a reissue the note adjusts the new TI
-    const full = blockingLocks(target).length > 0 && proposed.header.partyId !== target.header.partyId;
-    const n = noteFor(target, proposed, full);
-    if (!n) throw new MockError(422, 'correction.nothing_to_adjust', 'ไม่มียอดที่ต้องปรับ');
+    const n = s.note!; // verified before any writes; execute the confirmed contract
     const draft = createDraft(w, target.companyId, n.type, {
-      header: { partyId: target.header.partyId, documentDate: today(), reference: target.number, priceIncludesVat: n.incl },
+      header: { partyId: target.header.partyId, documentDate: today(), reference: target.number, priceIncludesVat: n.priceIncludesVat },
       lines: n.lines,
     }, actor, `${c.planId}-${s.order}`);
     const noteDoc = issue(w, draft.id, draft.version, actor);
@@ -165,9 +175,16 @@ function runStep(w: MockState, s: CorrectionStep, proposed: Body, actor: Actor, 
 export function executePlan(st: MockState, planId: string, planHash: string, actor: Actor, role?: Role): CorrectionResult {
   const stored = st.plans?.[planId];
   if (!stored) throw new MockError(404, 'correction.plan_not_found', 'ไม่พบแผนการแก้ไข');
-  const plan = buildPlan(st, stored.docId, stored.proposed, role ?? stored.role);
-  if (plan.planHash !== planHash) throw new MockError(409, 'correction.plan_stale', 'ข้อมูลเปลี่ยนไปหลังจากสร้างแผน กรุณาสร้างแผนใหม่');
-  if (plan.missingPermissions.length) throw new MockError(403, 'auth.forbidden', `ต้องมีสิทธิ์ ${plan.missingPermissions.join(', ')}`);
+  const stale = () => new MockError(409, 'correction.plan_stale', 'ข้อมูลเปลี่ยนไปหลังจากสร้างแผน กรุณาสร้างแผนใหม่');
+  const plan = stored.plan;
+  if (!plan || plan.planHash !== planHash) throw stale();
+  let current: CorrectionPlan;
+  try { current = buildPlan(st, stored.docId, stored.proposed, role ?? stored.role); }
+  catch { throw stale(); }
+  if (current.planHash !== planHash || JSON.stringify(current.steps) !== JSON.stringify(plan.steps)) throw stale();
+  const granted = PERMISSIONS_BY_ROLE[role ?? stored.role];
+  const missing = plan.steps.map((s) => s.note ? `doc.${s.note.type}.issue` : s.permission).filter((p) => !granted.includes(p));
+  if (missing.length) throw new MockError(403, 'auth.forbidden', `ต้องมีสิทธิ์ ${missing.join(', ')}`);
   if (!plan.steps.length) throw new MockError(422, 'correction.empty_plan', 'แผนนี้ไม่มีขั้นตอน');
   const work = structuredClone(st);
   const c: Ctx = { planId, planDocId: stored.docId, touched: [] };

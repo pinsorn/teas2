@@ -100,6 +100,23 @@ describe('tenant isolation', () => {
 });
 
 describe('doc detail, locked, forbidden', () => {
+  it('a pre-wave stored session (v1 key, paid TI, locks: []) reseeds and the paid TI shows its settlement lock', async () => {
+    const state = loadState();
+    const paid = state.docs.find((d) => d.type === 'TI' && d.status === 'settled')!;
+    paid.locks = [];
+    localStorage.setItem('teas2.mock.state.v1', JSON.stringify({ ...state, version: 1 }));
+    localStorage.removeItem('teas2.mock.state.v2');
+    expect(loadState().version).toBe(2);
+    expect(loadState().docs.find((d) => d.id === paid.id)!.locks).toContainEqual(expect.objectContaining({ kind: 'settlement' }));
+  });
+  it('GET derives the settlement lock on read even when the stored doc has locks: []', async () => {
+    const state = loadState();
+    const paid = state.docs.find((d) => d.type === 'TI' && d.status === 'settled')!;
+    paid.locks = [];
+    localStorage.setItem('teas2.mock.state.v2', JSON.stringify(state));
+    const doc = await json(`/docs/TI/${paid.id}`);
+    expect(doc.locks).toContainEqual(expect.objectContaining({ kind: 'settlement' }));
+  });
   const firstId = async (q: string) => (await json(`/docs/TI?${q}`)).items[0].id as string;
 
   it('returns the full document with its party and lines', async () => {

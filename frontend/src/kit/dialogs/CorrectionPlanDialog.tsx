@@ -31,6 +31,16 @@ export function CorrectionPlanDialog({ plan, busy, error, onRegenerate, onConfir
                   <span className="font-medium">{t(`action.${s.action}`)}</span>{' '}
                   <span className="tabular-nums text-muted-foreground">{s.docType}{s.number ? ` ${s.number}` : ''}</span>
                   <div className="text-small text-muted-foreground">{s.summary}</div>
+                  {s.note ? <div className="text-small">
+                    <p>{s.note.type} · {t(s.note.fullCredit ? 'fullCredit' : 'difference')}</p>
+                    <table className="w-full tabular-nums">
+                      <thead><tr>{(['taxCode', 'net', 'vat', 'total'] as const).map((key) => <th key={key} scope="col" className="text-left">{t(key)}</th>)}</tr></thead>
+                      <tbody>{s.note.taxLines.map((line) => <tr key={line.taxCode}>
+                        <th scope="row" className="text-left">{line.taxCode}</th><td>{line.net}</td><td>{line.vat}</td><td>{line.total}</td>
+                      </tr>)}</tbody>
+                    </table>
+                    <p>{t('total')}: {s.note.total}</p>
+                  </div> : null}
                 </li>
               ))}
             </ol>

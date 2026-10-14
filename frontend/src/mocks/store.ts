@@ -1,5 +1,5 @@
 import type {
-  ActivityEntry, AuditEntry, ChainEdge, Company, Doc, DocHeader, DocLine, ItemSummary, JournalPreview, Membership, PartySummary, Revision, Role,
+  ActivityEntry, AuditEntry, ChainEdge, Company, CorrectionPlan, Doc, DocHeader, DocLine, ItemSummary, JournalPreview, Membership, PartySummary, Revision, Role,
 } from '@/domain/types';
 import { recomputeSettlement } from './engine/commands';
 import { ledgerFor } from './engine/ledger';
@@ -7,7 +7,7 @@ import { buildSeed } from './fixtures';
 import { getSettings } from './settings';
 
 export interface MockState {
-  version: 1;
+  version: 2;
   companies: Company[];
   memberships: (Membership & { userId: string })[];
   parties: (PartySummary & { companyId: string })[];
@@ -22,10 +22,10 @@ export interface MockState {
   /** `companyId|type|Idempotency-Key` -> draft id. */
   idempotency?: Record<string, string>;
   /** Correction plans awaiting execution (single use). */
-  plans?: Record<string, { docId: string; proposed: { header: DocHeader; lines: DocLine[] }; role: Role }>;
+  plans?: Record<string, { docId: string; proposed: { header: DocHeader; lines: DocLine[] }; role: Role; plan: CorrectionPlan }>;
 }
 
-const KEY = 'teas2.mock.state.v1';
+const KEY = 'teas2.mock.state.v2';
 
 export function seed(): MockState {
   const s = buildSeed(getSettings().role);
@@ -41,7 +41,7 @@ export function seed(): MockState {
 export function loadState(): MockState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 1) return s; }
+    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 2) return s; }
   } catch { /* fall through to a fresh seed */ }
   return seed();
 }

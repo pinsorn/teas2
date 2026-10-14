@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { seed } from '../store';
 import { buildChain } from './chain';
-import { cancel, createDraft, issue, reissue } from './commands';
+import { calc, cancel, createDraft, issue, reissue } from './commands';
+import { PERMISSIONS_BY_ROLE } from '../permissions';
 import { correctionPlan, executePlan } from './corrections';
 import { toSatang } from './money';
 import { assertBalanced, type DocLine, type MockStateLike } from './test-helpers';
@@ -130,8 +131,80 @@ describe('I1: a CN / DN carries one line per tax code and the plan shows exactly
   const noteOf = (planned: ReturnType<typeof correctionPlan>, res: ReturnType<typeof executePlan>) => {
     const doc = st.docs.find((d) => d.id === res.affected.find((a) => a.type === 'CN' || a.type === 'DN')!.docId)!;
     expect(planned.steps[0].summary).toContain(` ${doc.totals.total} `); // the plan amount is the posted amount
+    const note = planned.steps[0].note!;
+    expect(doc.type).toBe(note.type);
+    expect(doc.lines).toEqual(note.lines);
+    expect(doc.header.priceIncludesVat).toBe(note.priceIncludesVat);
+    expect(doc.totals.total).toBe(note.total);
+    for (const row of note.taxLines) {
+      const computed = calc({ header: doc.header, lines: doc.lines.filter((l) => l.taxCode === row.taxCode) });
+      expect(row).toEqual({ taxCode: row.taxCode, net: computed.totals.net, vat: computed.totals.vat, total: computed.totals.total });
+    }
     return doc;
   };
+
+  it.each([
+    ['negative CN', ['0.08', '0.08', '0.08', '0.08'], ['0.33']],
+    ['CN rounding residue', ['0.07', '0.07'], ['0.08']],
+    ['DN rounding residue', ['0.08'], ['0.07', '0.07']],
+  ])('rejects unrepresentable %s before storing a plan or raising outstanding', (_, before, after) => {
+    const ti = mkTi(before.map((v, i) => line(String(i), 'S7', v)));
+    const snapshot = structuredClone(st);
+    expect(() => correctionPlan(st, ti.id, { header: ti.header, lines: after.map((v, i) => line(String(i), 'S7', v)) }, 'accountant'))
+      .toThrow(expect.objectContaining({ status: 422, code: 'correction.unrepresentable' }));
+    expect(st).toEqual(snapshot);
+    assertBalanced(st);
+  });
+
+  it('locked same-party four-line S7 to Z0 executes exactly the full CN authorised without DN permission', () => {
+    const ti = mkTi(['a', 'b', 'c', 'd'].map((id) => line(id, 'S7', '0.08')));
+    ti.locks.push({ kind: 'filing', reason: 'Filed', exits: [] });
+    const permissions = [...PERMISSIONS_BY_ROLE.accountant];
+    PERMISSIONS_BY_ROLE.accountant = permissions.filter((p) => p !== 'doc.DN.issue');
+    try {
+      const plan = correctionPlan(st, ti.id, { header: ti.header, lines: [line('z', 'Z0', '0.36')] }, 'accountant');
+      expect(plan.steps[0].note).toMatchObject({ type: 'CN', fullCredit: true, total: '0.36', taxLines: [{ taxCode: 'S7', net: '0.32', vat: '0.04', total: '0.36' }] });
+      expect(st.plans![plan.planId].plan).toEqual(plan);
+      expect(plan.missingPermissions).toEqual([]);
+      const cn = noteOf(plan, executePlan(st, plan.planId, plan.planHash, me));
+      expect(cn.lines).toHaveLength(4);
+      expect(st.docs.find((d) => d.id === ti.id)!.outstanding).toBe('0.00');
+      assertBalanced(st);
+    } finally { PERMISSIONS_BY_ROLE.accountant = permissions; }
+  });
+
+  it('same-total four-line S7 to Z0 without a lock reissues with the original date and total', () => {
+    const ti = mkTi(['a', 'b', 'c', 'd'].map((id) => line(id, 'S7', '0.08')));
+    const plan = correctionPlan(st, ti.id, { header: { ...ti.header, documentDate: '2026-10-02' }, lines: [line('z', 'Z0', '0.36')] }, 'accountant');
+    expect(plan.steps.map((s) => s.action)).toEqual(['reissue']);
+    executePlan(st, plan.planId, plan.planHash, me);
+    expect(st.docs.find((d) => d.replacesId === ti.id)).toMatchObject({ header: { documentDate: ti.header.documentDate }, totals: { total: '0.36' }, outstanding: '0.36' });
+    assertBalanced(st);
+  });
+
+  it.each(['lines', 'lock', 'stored note'] as const)('refuses changed %s as plan_stale before writing', (change) => {
+    const ti = mkTi([line('a', 'S7', '100.00')]);
+    ti.locks.push({ kind: 'filing', reason: 'Filed', exits: [] });
+    const plan = correctionPlan(st, ti.id, { header: ti.header, lines: [line('a', 'Z0', '107.00')] }, 'accountant');
+    if (change === 'lines') ti.lines[0].unitPrice = '100.01';
+    if (change === 'lock') ti.locks = [];
+    if (change === 'stored note') st.plans![plan.planId].plan.steps[0].note!.lines[0].unitPrice = '90.00';
+    const snapshot = structuredClone(st);
+    expect(() => executePlan(st, plan.planId, plan.planHash, me)).toThrow(expect.objectContaining({ status: 409, code: 'correction.plan_stale' }));
+    expect(st).toEqual(snapshot);
+  });
+
+  it('rechecks permission for the stored note type before writing', () => {
+    const ti = mkTi([line('a', 'Z0', '100.00')]);
+    const plan = correctionPlan(st, ti.id, { header: ti.header, lines: [line('a', 'Z0', '90.00')] }, 'accountant');
+    const permissions = [...PERMISSIONS_BY_ROLE.accountant];
+    PERMISSIONS_BY_ROLE.accountant = permissions.filter((p) => p !== 'doc.CN.issue');
+    try {
+      const snapshot = structuredClone(st);
+      expect(() => executePlan(st, plan.planId, plan.planHash, me)).toThrow(/auth.forbidden/);
+      expect(st).toEqual(snapshot);
+    } finally { PERMISSIONS_BY_ROLE.accountant = permissions; }
+  });
 
   it('1,500.00 -> 1,499.95 at S7 is an S7 credit note of 0.05 net, not Z0', () => {
     const ti = mkTi([line('a', 'S7', '1500.00')]);

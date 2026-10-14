@@ -57,7 +57,7 @@ export function useCorrectionFlow(d: DocDescriptor, doc: Doc) {
   const ui = (
     <>
       {plan ? <CorrectionPlanDialog plan={plan} busy={busy} error={error} onRegenerate={stale ? () => void request(proposed!) : undefined} onConfirm={() => void confirm()} onSendToApprover={send} onCancel={() => { setPlan(undefined); setError(undefined); }} /> : null}
-      {!plan && error ? <Alert variant="destructive"><AlertTitle>{error instanceof ApiError ? error.problem.title : tp('default')}</AlertTitle></Alert> : null}
+      {!plan && error ? <Alert variant="destructive"><AlertTitle>{error instanceof ApiError ? error.code === 'correction.unrepresentable' ? tp('correctionUnrepresentable') : error.problem.title : tp('default')}</AlertTitle></Alert> : null}
       {sent ? <Alert role="status"><AlertTitle>{t('sent')}</AlertTitle></Alert> : null}
     </>
   );

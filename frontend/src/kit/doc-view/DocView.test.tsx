@@ -7,6 +7,7 @@ import type { CorrectionPlan } from '@/domain/types';
 import { taxInvoice } from '@/descriptors/tax-invoice';
 import { setSettings } from '@/mocks/settings';
 import { loadState, resetState } from '@/mocks/store';
+import { correctionPlan } from '@/mocks/engine/corrections';
 import { testServer } from '@/mocks/test-server';
 import { CorrectionPlanDialog } from '../dialogs/CorrectionPlanDialog';
 import { endpoints } from '@/lib/api/endpoints';
@@ -33,6 +34,19 @@ const ui = (id: string) => render(<QueryClientProvider client={client()}><DocVie
 const find = (pred: (d: ReturnType<typeof loadState>['docs'][number]) => boolean) => loadState().docs.find(pred)!;
 
 describe('DocView', () => {
+  it('correction confirmation shows signed engine amounts per tax code and full-credit mode', () => {
+    const state = loadState();
+    const ti = state.docs.find((d) => d.type === 'TI' && d.status === 'issued')!;
+    ti.locks.push({ kind: 'filing', reason: 'Filed', exits: [] });
+    const plan = correctionPlan(state, ti.id, { header: { ...ti.header, partyId: 'different' }, lines: ti.lines }, 'accountant');
+    const note = plan.steps[0].note!;
+    note.taxLines = [{ taxCode: 'S7', net: '-50.00', vat: '-3.50', total: '-53.50' }, { taxCode: 'Z0', net: '100.00', vat: '0.00', total: '100.00' }];
+    render(<CorrectionPlanDialog plan={plan} onConfirm={() => {}} onSendToApprover={() => {}} onCancel={() => {}} />);
+    expect(screen.getByText('CN · ลดหนี้เต็มจำนวน')).toBeVisible();
+    const table = screen.getByRole('table');
+    for (const label of ['รหัสภาษี', 'มูลค่าก่อนภาษี', 'ภาษีมูลค่าเพิ่ม', 'ยอดรวม']) expect(within(table).getByRole('columnheader', { name: label })).toBeVisible();
+    for (const amount of ['-50.00', '-3.50', '-53.50']) expect(within(table).getByText(amount)).toBeVisible();
+  });
   it('a replaced TI shows the pointer to its replacement in the chain', async () => {
     const replaced = find((d) => d.type === 'TI' && d.status === 'replaced');
     ui(replaced.id);
