@@ -232,6 +232,37 @@
     "replaced": "Replaced",
     "overdue": "Overdue"
   },
+  "screens": {
+    "title": "Mock screen index",
+    "lead": "Every built screen and the states you can try. Each link sets the mock toolbar before opening the page.",
+    "built": "Built screens",
+    "pending": "Waiting for SP1c",
+    "pendingLead": "These screens are not built yet. They open the waiting-for-SP1c page.",
+    "route": "Route",
+    "states": "Screen states",
+    "roles": "Try roles",
+    "vat": "VAT",
+    "open": "Open",
+    "vatBoth": "VAT and non-VAT companies",
+    "vatOnly": "VAT-registered companies only",
+    "nonVatOnly": "Non-VAT companies only",
+    "name": {
+      "home": "Home",
+      "tiList": "Tax invoices: list",
+      "tiNew": "Tax invoices: new",
+      "tiIssued": "Tax invoice: issued",
+      "tiLocked": "Tax invoice: settled and locked by a filing",
+      "tiReplaced": "Tax invoice: replaced",
+      "tiDraft": "Tax invoice: draft",
+      "tiEdit": "Tax invoice: edit",
+      "tiLong": "Tax invoice: 60 lines",
+      "print": "Print tax invoice",
+      "printLong": "Print tax invoice: 60 lines",
+      "styleGuide": "Style guide"
+    },
+    "state": { "normal": "Normal", "empty": "Empty", "loading": "Loading", "error": "Error", "forbidden": "Forbidden", "locked": "Locked" },
+    "role": { "operator": "Data-entry clerk", "accountant": "Accountant", "admin": "Administrator" }
+  },
   "styleGuide": {
     "title": "Style guide",
     "lead": "Direction B, continuing TEAS 1. The model for every screen.",

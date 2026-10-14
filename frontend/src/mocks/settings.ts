@@ -13,3 +13,16 @@ export function setSettings(p: Partial<MockSettings>): MockSettings {
   try { localStorage.setItem(KEY, JSON.stringify(next)); } catch { /* private mode: settings stay default */ }
   return next;
 }
+
+const STATES: ScreenState[] = ['normal', 'empty', 'loading', 'error', 'forbidden', 'locked'];
+const ROLES: Role[] = ['operator', 'accountant', 'admin'];
+/** The screen index links set the toolbar through `?state=&role=&company=`; unknown values are ignored. */
+export function applyUrlSettings(search: string) {
+  const q = new URLSearchParams(search);
+  const state = q.get('state') as ScreenState, role = q.get('role') as Role, company = q.get('company') as MockSettings['companyKey'];
+  const p: Partial<MockSettings> = {};
+  if (STATES.includes(state)) p.screenState = state;
+  if (ROLES.includes(role)) p.role = role;
+  if (company === 'vat' || company === 'nonvat') p.companyKey = company;
+  if (Object.keys(p).length) setSettings(p);
+}
