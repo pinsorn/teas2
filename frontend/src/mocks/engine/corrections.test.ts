@@ -143,17 +143,51 @@ describe('I1: a CN / DN carries one line per tax code and the plan shows exactly
     return doc;
   };
 
-  it.each([
-    ['negative CN', ['0.08', '0.08', '0.08', '0.08'], ['0.33']],
-    ['CN rounding residue', ['0.07', '0.07'], ['0.08']],
-    ['DN rounding residue', ['0.08'], ['0.07', '0.07']],
-  ])('rejects unrepresentable %s before storing a plan or raising outstanding', (_, before, after) => {
-    const ti = mkTi(before.map((v, i) => line(String(i), 'S7', v)));
-    const snapshot = structuredClone(st);
-    expect(() => correctionPlan(st, ti.id, { header: ti.header, lines: after.map((v, i) => line(String(i), 'S7', v)) }, 'accountant'))
-      .toThrow(expect.objectContaining({ status: 422, code: 'correction.unrepresentable' }));
-    expect(st).toEqual(snapshot);
+  // Rule B: per tax code, note net/VAT = |proposed - original| of the engine's own per-line figures; total == |delta| always.
+  const delta = (before: DocLine[], after: DocLine[], exp: { type: 'CN' | 'DN'; net: string; vat: string; total: string }, outstanding: string) => {
+    const ti = mkTi(before);
+    const plan = correctionPlan(st, ti.id, { header: ti.header, lines: after }, 'accountant');
+    expect(plan.steps.map((s) => s.action)).toEqual([exp.type === 'CN' ? 'issue_cn' : 'issue_dn']);
+    expect(toSatang(plan.steps[0].note!.total)).toBe(Math.abs(toSatang(calc({ header: ti.header, lines: after }).totals.total) - toSatang(ti.totals.total)));
+    const note = noteOf(plan, executePlan(st, plan.planId, plan.planHash, me));
+    expect(note.totals).toMatchObject({ net: exp.net, vat: exp.vat, total: exp.total });
+    expect(st.docs.find((d) => d.id === ti.id)!.outstanding).toBe(outstanding);
     assertBalanced(st);
+    return note;
+  };
+  it('S7 100.10 -> 100.60 (VAT 7.01 -> 7.04): DN net 0.50 VAT 0.03 total 0.53, outstanding 107.64', () => {
+    delta([line('a', 'S7', '100.10')], [line('a', 'S7', '100.60')], { type: 'DN', net: '0.50', vat: '0.03', total: '0.53' }, '107.64');
+  });
+  it('S7 12.34 qty 1 -> 2: DN net 12.34 VAT 0.87 total 13.21 == delta, outstanding 26.41', () => {
+    delta([line('a', 'S7', '12.34')], [{ ...line('a', 'S7', '12.34'), qty: '2' }], { type: 'DN', net: '12.34', vat: '0.87', total: '13.21' }, '26.41');
+  });
+  it('4 x S7 0.08 -> S7 0.33: CN net -0.01 VAT 0.02 total 0.01 (net up, VAT down), outstanding 0.35', () => {
+    const cn = delta(['a', 'b', 'c', 'd'].map((id) => line(id, 'S7', '0.08')), [line('z', 'S7', '0.33')], { type: 'CN', net: '-0.01', vat: '0.02', total: '0.01' }, '0.35');
+    expect(cn.lines[0].vatOverride).toBe('0.02');
+  });
+  it('2 x S7 0.07 -> S7 0.08: CN net 0.06 VAT -0.01 total 0.05, outstanding 0.09', () => {
+    delta([line('a', 'S7', '0.07'), line('b', 'S7', '0.07')], [line('z', 'S7', '0.08')], { type: 'CN', net: '0.06', vat: '-0.01', total: '0.05' }, '0.09');
+  });
+  it('reverse: S7 0.08 -> 2 x S7 0.07 is a DN of net 0.06 VAT -0.01 total 0.05, outstanding 0.14', () => {
+    delta([line('z', 'S7', '0.08')], [line('a', 'S7', '0.07'), line('b', 'S7', '0.07')], { type: 'DN', net: '0.06', vat: '-0.01', total: '0.05' }, '0.14');
+  });
+  it('mixed S7 / Z0 satang amounts: CN net 10.05 VAT -0.03 total 10.02 (157.66 -> 147.64)', () => {
+    delta([line('a', 'S7', '100.10'), line('b', 'Z0', '50.55')], [line('a', 'S7', '100.60'), line('b', 'Z0', '40.00')], { type: 'CN', net: '10.05', vat: '-0.03', total: '10.02' }, '147.64');
+  });
+  it('S7 -> Z0 code shift with satang: CN net 0 VAT 7.01 total 7.01', () => {
+    delta([line('a', 'S7', '100.10')], [line('a', 'Z0', '100.10')], { type: 'CN', net: '0.00', vat: '7.01', total: '7.01' }, '100.10');
+  });
+  it('a tampered stored vatOverride is refused as plan_stale before writing', () => {
+    const ti = mkTi([line('a', 'S7', '100.10')]);
+    const plan = correctionPlan(st, ti.id, { header: ti.header, lines: [line('a', 'S7', '100.60')] }, 'accountant');
+    st.plans![plan.planId].plan.steps[0].note!.lines[0].vatOverride = '0.99';
+    const snapshot = structuredClone(st);
+    expect(() => executePlan(st, plan.planId, plan.planHash, me)).toThrow(expect.objectContaining({ status: 409, code: 'correction.plan_stale' }));
+    expect(st).toEqual(snapshot);
+  });
+  it('a body arriving over HTTP cannot carry a vatOverride (stripped at the boundary)', async () => {
+    const { stripOverrides } = await import('../handlers/docs-write');
+    expect(stripOverrides({ header: { documentDate: '2026-10-01' }, lines: [{ ...line('a', 'S7', '1.00'), vatOverride: '0.00' }] }).lines[0].vatOverride).toBeUndefined();
   });
 
   it('locked same-party four-line S7 to Z0 executes exactly the full CN authorised without DN permission', () => {

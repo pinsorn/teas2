@@ -13,6 +13,9 @@ import { ctx, forbidden, problem, screenGate } from './common';
 const ACTOR: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
 const VAT_ONLY = ['TI'];
 
+/** vatOverride is engine-set (correction notes) only: never accepted from an API caller. */
+export const stripOverrides = <T extends Body>(b: T): T => ({ ...b, lines: b.lines.map(({ vatOverride, ...l }) => { void vatOverride; return l; }) });
+
 type Ctx = ReturnType<typeof ctx>;
 type Out = Response | Promise<Response>;
 
@@ -81,18 +84,18 @@ const P = (perm: string) => (t: DocType) => `doc.${t}.${perm}`;
 
 export const docsWriteHandlers = [
   http.post('*/bff/v1/docs/:type/compute', ({ request, params }) => guarded(String(params.type), P('read'), async (c, t) =>
-    HttpResponse.json(compute(c.st, c.company.id, t, (await request.json()) as Body)))),
+    HttpResponse.json(compute(c.st, c.company.id, t, stripOverrides((await request.json()) as Body))))),
 
   http.post('*/bff/v1/docs/:type', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
     const key = request.headers.get('Idempotency-Key') ?? crypto.randomUUID();
-    const doc = createDraft(c.st, c.company.id, t, (await request.json()) as Body, ACTOR, key);
+    const doc = createDraft(c.st, c.company.id, t, stripOverrides((await request.json()) as Body), ACTOR, key);
     done(c);
     return HttpResponse.json(doc, { status: 201 });
   })),
 
   http.put('*/bff/v1/docs/:type/:id', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
     own(c, t, params.id);
-    const body = (await request.json()) as Body & { version?: number };
+    const body = stripOverrides((await request.json()) as Body & { version?: number });
     const doc = updateDraft(c.st, String(params.id), body, versionOf(request, body), ACTOR);
     done(c);
     return HttpResponse.json(doc);
@@ -124,7 +127,7 @@ export const docsWriteHandlers = [
 
   http.post('*/bff/v1/docs/:type/:id/correction-plan', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
     own(c, t, params.id);
-    const plan = correctionPlan(c.st, String(params.id), (await request.json()) as Body, c.s.role);
+    const plan = correctionPlan(c.st, String(params.id), stripOverrides((await request.json()) as Body), c.s.role);
     done(c);
     return HttpResponse.json(plan);
   })),

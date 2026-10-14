@@ -54,7 +54,7 @@
     "dueOn": "Due {date}"
   },
   "problem": {
-    "correctionUnrepresentable": "Rounded tax does not match the document difference. Adjust the lines and try again.",
+    "correctionUnrepresentable": "This change would need a credit or debit note of zero or less, so it cannot be issued as a note.",
     "400": "The data is not valid",
     "401": "Please sign in again",
     "403": "You do not have permission to do this",
