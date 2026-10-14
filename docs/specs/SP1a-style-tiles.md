@@ -2,11 +2,11 @@
 
 | | |
 |---|---|
-| Status | Draft (awaiting Ham's pick: A / B / C) |
+| Status | Approved 2026-10-14 (Ham) |
 | Owner | Ham |
 | Implements | `docs/specs/SP0-charter.md` (visual direction); feeds SP1b design-system kit (Task 9) |
 | Blast cap | 1 spec · 1 page · 6 files in `frontend/src/style-tiles/` + e2e + vitest — no change to global tokens |
-| Chosen tile | _pending_ |
+| Chosen tile | **B — Continuity** |
 
 ## Goal
 Three genuinely different, production-credible visual directions for TEAS 2, shown on the same four surfaces with real
@@ -103,4 +103,4 @@ shown before hydration. Tokens are scoped under `[data-tile="a|b|c"]` and overri
 `corepack pnpm e2e e2e/style-tiles.spec.ts` (3 pass) · `corepack pnpm test` · `corepack pnpm typecheck` · `corepack pnpm lint`
 
 ## Decision
-Pending (Task 8 Step 5). Record: chosen tile, notes, date, Status -> Approved.
+Ham picked **B — Continuity** on 2026-10-14 (AskUserQuestion after viewing the three full-page tiles at 1440 px). No notes. Task 9 builds the design system from tile B's tokens.
