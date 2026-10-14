@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LIVE } from '@/domain/doc-types';
-import { todayIso } from '@/lib/format';
+import { today } from '../log';
 import { buildSeedState } from '@/mocks/store';
 import { fixtureIds } from '@/mocks/fixtures/ids';
 import { toSatang } from '../money';
@@ -9,7 +9,7 @@ import { trialBalance } from './trial-balance';
 describe('trial balance', () => {
   it.each(['co-vat', 'co-nonvat'])('debits equal credits and account balances equal the GL for %s', (company) => {
     const s = buildSeedState();
-    for (const asOf of [todayIso(), '2026-06-30']) {
+    for (const asOf of [today(), '2026-06-30']) {
       const report = trialBalance(s, company, { asOf });
       expect(report.tieOuts![0].diff).toBe('0.00');
       expect(report.tieOuts![0].left).toBe(report.tieOuts![0].right);

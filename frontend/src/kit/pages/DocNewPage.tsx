@@ -5,19 +5,17 @@ import { Suspense, useState } from 'react';
 import { useMe } from '@/app-shell/useMe';
 import { DESCRIPTORS } from '@/descriptors';
 import type { DocDescriptor } from '@/domain/descriptors';
-import type { DocType } from '@/domain/types';
+import type { Doc, DocType } from '@/domain/types';
 import { routesOf } from '@/domain/descriptors';
-import type { Doc } from '@/domain/types';
 import { DocEditor } from '@/kit/doc-editor/DocEditor';
 import { ErrorState } from '@/kit/states/ErrorState';
 import { LoadingState } from '@/kit/states/LoadingState';
 import { endpoints } from '@/lib/api/endpoints';
-import type { IsoDate } from '@/domain/types';
 import { qk } from '@/lib/query/keys';
 import { TypeGate } from './TypeGate';
 
 /** "Copy as new": the source's party and lines, a fresh date, no number, no due date, never the source's links. */
-const asNewDraft = (src: Doc, businessDate: IsoDate): Doc => ({
+const asNewDraft = (src: Doc, businessDate: string): Doc => ({
   ...src, id: '', number: undefined, status: 'draft', revision: 0, version: 0, locks: [], issuedAt: undefined,
   cancel: undefined, replacedById: undefined, replacesId: undefined,
   header: { ...src.header, documentDate: businessDate, dueDate: undefined },

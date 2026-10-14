@@ -89,6 +89,7 @@ export function missingOf(st: MockState, companyId: string, type: DocType, body:
   const out: MissingItem[] = [];
   const company = st.companies.find((c) => c.id === companyId);
   if (!isTypeAvailable(type, !!company?.vatRegistered)) out.push({ field: 'type', message: unavailableTh(type) });
+  if (!body.header.documentDate) out.push({ field: 'header.documentDate', message: 'ต้องระบุวันที่เอกสาร' });
   if (!body.header.partyId) out.push({ field: 'header.partyId', message: 'ต้องเลือกคู่ค้า' });
   else {
     const p = partyOf(st, companyId, body.header.partyId);

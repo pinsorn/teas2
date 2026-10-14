@@ -91,6 +91,17 @@ describe('DocEditor', () => {
       await waitFor(() => expect(onIssued).toHaveBeenCalledWith(expect.objectContaining({ status: 'issued' })));
     } finally { vi.useRealTimers(); }
   });
+  it('the business date fills a blank new document once: a cleared date stays empty, names the gap and blocks issuing', async () => {
+    ui();
+    const date = await screen.findByDisplayValue('2026-10-14');
+    await userEvent.clear(date);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(date).toHaveValue('');
+    await userEvent.type(screen.getByRole('combobox', { name: 'ลูกค้า' }), 'นาวา{Enter}');
+    expect(await screen.findByRole('region', { name: 'ยังขาดอะไร' })).toHaveTextContent('ต้องระบุวันที่เอกสาร');
+    expect(date).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'บันทึกและออกใบกำกับภาษี' })).toBeDisabled();
+  });
   it('a 409 on save tells the user and keeps their input', async () => {
     testServer.use(http.put('*/bff/v1/docs/TI/:id', () => new Response(JSON.stringify({ title: 'มีคนแก้เอกสารนี้ก่อนคุณ', code: 'doc.version_conflict', status: 409 }), { status: 409, headers: { 'content-type': 'application/problem+json' } })));
     ui();

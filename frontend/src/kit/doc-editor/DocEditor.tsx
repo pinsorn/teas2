@@ -92,7 +92,9 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
 
   const [header, setHeader] = useState<DocHeader>(initial?.header ?? { documentDate: me?.businessDate ?? '' });
   // /me can land after the first render (tests, direct mounts): a blank new document takes the server's business date as soon as it is known
-  if (!initial && !header.documentDate && me?.businessDate) setHeader((h) => ({ ...h, documentDate: me.businessDate }));
+  // ONCE: a date the user later clears or edits is theirs, never refilled.
+  const [dateAdopted, setDateAdopted] = useState(!!initial || !!me?.businessDate);
+  if (!dateAdopted && me?.businessDate) { setDateAdopted(true); setHeader((h) => (h.documentDate ? h : { ...h, documentDate: me.businessDate })); }
   const exemptOnly = d.lineEditor === 'amount' && d.headerFields.includes('whtMode'); // a voucher: input VAT only through a bill (PB)
   const [lines, setLines] = useState<DocLine[]>(initial?.lines.length ? initial.lines : [newLine(exemptOnly || (me && !me.vatRegistered) ? 'EX' : 'S7')]); // a non-VAT company sells without VAT
   const [party, setParty] = useState<PartySummary | undefined>(initial?.party);

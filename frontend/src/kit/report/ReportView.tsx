@@ -38,7 +38,7 @@ function Inner({ kind, params: specs, defaults, exportable = true }: ReportViewP
   const search = useSearchParams();
   const { me, isError: meFailed, error: meError, refetch: refetchMe } = useMe();
 
-  const fromUrl = Object.fromEntries(specs.map((s) => [s.key, search.get(s.key) ?? defaults[s.key] ?? '']));
+  const fromUrl = Object.fromEntries(specs.map((s) => [s.key, search.has(s.key) ? search.get(s.key) ?? '' : defaults[s.key] ?? '']));
   const [vals, setVals] = useState(fromUrl);       // what the inputs show
   const [applied, setApplied] = useState(fromUrl); // what the query uses (debounced)
   const [seen, setSeen] = useState(JSON.stringify(fromUrl));
@@ -47,6 +47,8 @@ function Inner({ kind, params: specs, defaults, exportable = true }: ReportViewP
     setSeen(JSON.stringify(fromUrl));
     if (!same(fromUrl, applied)) { setVals(fromUrl); setApplied(fromUrl); }
   }
+  const latest = useRef(search); // the debounced write merges into the URL as it is THEN (a tab change within 300 ms survives)
+  useEffect(() => { latest.current = search; });
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
   const change = (key: string, value: string) => {
@@ -55,8 +57,9 @@ function Inner({ kind, params: specs, defaults, exportable = true }: ReportViewP
     clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       setApplied(next);
-      const u = new URLSearchParams(search.toString());
-      for (const [k, v] of Object.entries(next)) if (v) u.set(k, v); else u.delete(k);
+      const u = new URLSearchParams(latest.current.toString());
+      // an empty value stays in the URL when the key has a default: absent = use the default, present-and-empty = the user cleared it
+      for (const [k, v] of Object.entries(next)) if (v || defaults[k]) u.set(k, v); else u.delete(k);
       router.replace(`${pathname}?${u}`);
     }, DEBOUNCE_MS);
   };
@@ -74,8 +77,9 @@ function Inner({ kind, params: specs, defaults, exportable = true }: ReportViewP
     try {
       const url = URL.createObjectURL(await endpoints.exportReport(kind, applied));
       const a = document.createElement('a');
-      a.href = url; a.download = `${kind}.csv`; a.click();
-      URL.revokeObjectURL(url);
+      a.href = url; a.download = `${kind}.csv`;
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000); // after the browser has started the download
     } catch { toast.error(t('reports.exportFailed')); }
   };
 
@@ -92,7 +96,7 @@ function Inner({ kind, params: specs, defaults, exportable = true }: ReportViewP
   } else if (!q.data) body = <LoadingState />;
   else {
     const m = q.data;
-    const ok = m.tieOuts?.filter((o) => o.diff === '0.00') ?? [];
+    const ok = m.rows.length ? m.tieOuts?.filter((o) => o.diff === '0.00') ?? [] : [];
     body = (
       <div className="grid gap-3">
         <TieOutBanner tieOuts={m.tieOuts ?? []} />

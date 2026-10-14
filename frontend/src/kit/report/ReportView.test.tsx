@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import userEvent from '@testing-library/user-event';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { endpoints } from '@/lib/api/endpoints';
@@ -67,4 +68,21 @@ it('adopts a default that arrives late (the server business date lands after /me
   expect(spy).not.toHaveBeenCalled();
   rerender(<QueryClientProvider client={qc}><ReportView kind="trial-balance" params={[{ key: 'asOf', kind: 'date', required: true, labelKey: 'reports.asOf' }]} defaults={{ asOf: '2099-12-31' }} /></QueryClientProvider>);
   await waitFor(() => expect(spy).toHaveBeenCalledWith('trial-balance', { asOf: '2099-12-31' }));
+});
+it('clearing a required param by hand reaches the needParams state and does not snap back to the default', async () => {
+  const spy = vi.spyOn(endpoints, 'getReport');
+  __setSearch('asOf=2099-12-31');
+  ui({ asOf: '2099-12-30' });
+  const date = await screen.findByLabelText(/ณ วันที่/);
+  await waitFor(() => expect(date).toHaveValue('2099-12-31'));
+  await userEvent.clear(date);
+  expect(await screen.findByText('เลือกตัวเลือกที่จำเป็นให้ครบเพื่อดูรายงาน')).toBeVisible();
+  await new Promise((r) => setTimeout(r, 500));
+  expect(date).toHaveValue('');
+  expect(spy).toHaveBeenCalledTimes(1);
+});
+it('the "tie-out matches" line is not shown under the empty state', async () => {
+  ui({ asOf: '1900-01-01' });
+  expect(await screen.findByText('ไม่มีรายการในช่วงที่เลือก')).toBeVisible();
+  expect(screen.queryByText(/ยอดกระทบตรงกัน/)).toBeNull();
 });
