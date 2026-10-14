@@ -1,5 +1,9 @@
 import '@testing-library/jest-dom/vitest';
-import { vi } from 'vitest';
+import { cleanup } from '@testing-library/react';
+import { afterEach, vi } from 'vitest';
+
+// vitest globals are off, so RTL's automatic cleanup never registers: unmount between tests.
+afterEach(cleanup);
 import th from '@/messages/th.json';
 
 // next-intl shim: component tests resolve keys from th.json without a provider.

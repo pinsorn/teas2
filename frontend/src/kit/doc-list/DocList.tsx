@@ -1,0 +1,197 @@
+'use client';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import { PlusIcon } from 'lucide-react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useLocale, useTranslations } from 'next-intl';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useMe } from '@/app-shell/useMe';
+import type { DocDescriptor } from '@/domain/descriptors';
+import { routesOf } from '@/domain/descriptors';
+import type { DocStatus, DocSummary } from '@/domain/types';
+import { ApiError } from '@/lib/api/client';
+import { endpoints } from '@/lib/api/endpoints';
+import { qk } from '@/lib/query/keys';
+import { cn } from '@/lib/utils';
+import { EmptyState } from '../states/EmptyState';
+import { ErrorState } from '../states/ErrorState';
+import { ForbiddenState } from '../states/ForbiddenState';
+import { LoadingState } from '../states/LoadingState';
+import { NotAvailableState } from '../states/NotAvailableState';
+import { BulkBar, type BulkAction } from './BulkBar';
+import { SavedViews, type SavedView } from './SavedViews';
+import { StatusChip } from './StatusChip';
+import { useDocListParams, type DocListFilters } from './useDocListParams';
+
+export type { BulkAction, SavedView };
+export interface DocListColumn { key: string; header: string; align?: 'start' | 'end'; cell: (row: DocSummary) => ReactNode }
+export interface DocListProps { descriptor: DocDescriptor; columns: DocListColumn[]; savedViews: SavedView[]; bulkActions: BulkAction[] }
+
+const PAGE = 25;
+const STATUSES: DocStatus[] = ['draft', 'pending', 'approved', 'issued', 'partly_settled', 'settled', 'cancelled', 'replaced'];
+const DAY = 86_400_000;
+const todayIso = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+/** Days past the due date for a document that still owes money; 0 when not overdue. Derived, never stored. */
+export function daysOverdue(r: DocSummary, today = todayIso()): number {
+  if (!r.dueDate || !r.outstanding || !(Number(r.outstanding) > 0) || (r.status !== 'issued' && r.status !== 'partly_settled')) return 0;
+  return Math.max(0, Math.floor((Date.parse(today) - Date.parse(r.dueDate)) / DAY));
+}
+
+const isTyping = (t: EventTarget | null) =>
+  t instanceof HTMLElement && (['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName) || t.isContentEditable);
+
+export function DocList({ descriptor: d, columns, savedViews, bulkActions }: DocListProps) {
+  const t = useTranslations('docList');
+  const ts = useTranslations('state');
+  const tStatus = useTranslations('status');
+  const locale = useLocale();
+  const router = useRouter();
+  const { me, isError: meFailed, error: meError, refetch: refetchMe } = useMe();
+  const { filters, setFilters, patch } = useDocListParams();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const searchRef = useRef<HTMLInputElement>(null);
+  const debounce = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const title = locale === 'en' ? d.titleEn : d.titleTh;
+  const routes = routesOf(d);
+  const canCreate = !!me?.permissions.includes(d.permissions.create);
+  const companyId = me?.activeCompanyId;
+
+  const server = { status: filters.status, q: filters.q, from: filters.from, to: filters.to };
+  const q = useInfiniteQuery({
+    queryKey: qk.docs(companyId ?? '', d.type, server),
+    enabled: !!companyId,
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) => endpoints.listDocs(d.type, { ...server, limit: PAGE, cursor: pageParam }),
+    getNextPageParam: (last) => last.nextCursor,
+  });
+
+  // Any filter change drops the selection; the query key changes too, so paging restarts from the first page.
+  const apply = (next: DocListFilters, replaceAll = false) => {
+    setSelected(new Set());
+    if (replaceAll) setFilters(next); else patch(next);
+  };
+  const hasFilters = Object.keys(filters).length > 0;
+  const clearFilters = () => { if (searchRef.current) searchRef.current.value = ''; apply({}, true); };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
+      if (e.key === '/') { e.preventDefault(); searchRef.current?.focus(); }
+      else if ((e.key === 'n' || e.key === 'N') && canCreate) { e.preventDefault(); router.push(routes.create); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [canCreate, router, routes.create]);
+  useEffect(() => () => clearTimeout(debounce.current), []);
+
+  // ---- state by cause: an error is never "no data" ----
+  // /me failing (403 / 5xx) means the active company is unknown, so the list cannot load: classify that error the same way.
+  if ((meFailed && !me) || (q.isError && !q.data)) {
+    const e = meFailed && !me ? meError : q.error;
+    if (e instanceof ApiError && e.problem.status === 403) return <ForbiddenState detail={e.problem.detail} permission={d.permissions.read} />;
+    if (e instanceof ApiError && e.problem.status === 404 && e.code === 'doc.type_not_available') return <NotAvailableState />;
+    return <ErrorState error={e} onRetry={() => void (meFailed && !me ? refetchMe() : q.refetch())} />;
+  }
+  if (!q.data) return <LoadingState />;
+
+  const all = q.data.pages.flatMap((p) => p.items);
+  // "overdue" is derived client-side (the list endpoint has no such filter), applied to the pages loaded so far.
+  const rows = filters.overdue === '1' ? all.filter((r) => daysOverdue(r) > 0) : all;
+  const today = todayIso();
+  const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
+  const toggle = (id: string, on: boolean) => setSelected((s) => { const n = new Set(s); if (on) n.add(id); else n.delete(id); return n; });
+  const createLabel = (key: 'create' | 'emptyCreate') => (key === 'create' ? t('create', { title }) : ts('emptyCreate', { title }));
+  const createLink = (key: 'create' | 'emptyCreate'): ReactNode => canCreate ? (
+    <Button asChild><Link href={routes.create}><PlusIcon aria-hidden />{createLabel(key)}</Link></Button>
+  ) : undefined;
+
+  const field = 'h-(--ctl-h) rounded-lg border border-input bg-card px-3 text-body outline-none';
+  return (
+    <div className="flex flex-col gap-3">
+      <SavedViews type={d.type} presets={savedViews} activeKey={filters.view} current={server as Record<string, string>}
+        onSelect={(v) => { if (searchRef.current) searchRef.current.value = v?.params.q ?? ''; apply(v ? { ...v.params, view: v.key } : {}, true); }} />
+      <div className="flex flex-wrap items-end gap-2">
+        <Input ref={searchRef} type="search" aria-label={t('searchLabel')} placeholder={t('searchPlaceholder')}
+          defaultValue={filters.q ?? ''} className="max-w-72"
+          onChange={(e) => {
+            const v = e.target.value; clearTimeout(debounce.current);
+            debounce.current = setTimeout(() => apply({ q: v || undefined }), 300);
+          }} />
+        <select aria-label={t('statusLabel')} className={field} value={filters.status ?? ''}
+          onChange={(e) => apply({ status: e.target.value || undefined })}>
+          <option value="">{t('statusAll')}</option>
+          {STATUSES.map((s) => <option key={s} value={s}>{tStatus(s)}</option>)}
+        </select>
+        <input type="date" aria-label={t('from')} className={field} value={filters.from ?? ''} onChange={(e) => apply({ from: e.target.value || undefined })} />
+        <input type="date" aria-label={t('to')} className={field} value={filters.to ?? ''} onChange={(e) => apply({ to: e.target.value || undefined })} />
+        {hasFilters ? <Button variant="ghost" onClick={clearFilters}>{t('clearFilters')}</Button> : null}
+        {rows.length > 0 ? <div className="ml-auto">{createLink('create')}</div> : null}
+      </div>
+
+      {selected.size > 0 ? (
+        <BulkBar ids={[...selected]} actions={bulkActions} permissions={me?.permissions ?? []} onClear={() => setSelected(new Set())} />
+      ) : null}
+
+      {rows.length === 0 && !q.hasNextPage ? (
+        hasFilters
+          ? <EmptyState title={t('noMatchTitle')} body={t('noMatchBody')} action={<Button variant="outline" onClick={clearFilters}>{t('clearFilters')}</Button>} />
+          : <EmptyState title={ts('emptyTitle', { title })} body={ts('emptyBody')} action={createLink('emptyCreate')} />
+      ) : (
+        <div className="overflow-hidden rounded-lg border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-10">
+                  <Checkbox aria-label={t('selectAll')} checked={allSelected}
+                    onCheckedChange={(v) => setSelected(v === true ? new Set(rows.map((r) => r.id)) : new Set())} />
+                </TableHead>
+                {columns.map((c) => <TableHead key={c.key} className={cn(c.align === 'end' && 'text-right')}>{c.header}</TableHead>)}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((r) => {
+                const od = daysOverdue(r, today);
+                return (
+                  <TableRow key={r.id} data-state={selected.has(r.id) ? 'selected' : undefined}>
+                    <TableCell className="w-10">
+                      <Checkbox aria-label={t('selectRow')} checked={selected.has(r.id)} onCheckedChange={(v) => toggle(r.id, v === true)} />
+                    </TableCell>
+                    {columns.map((c, i) => (
+                      <TableCell key={c.key} className={cn(c.align === 'end' && 'text-right tabular-nums')}>
+                        {i === 0 ? (
+                          <span className="inline-flex items-center gap-2">
+                            <Link href={routes.view(r.id)} className="text-primary hover:underline">{c.cell(r)}</Link>
+                            {r.createdByAgent ? <span className="rounded-md bg-muted px-2 text-small text-muted-foreground">{t('agentChip')}</span> : null}
+                            {od > 0 ? <><StatusChip status="overdue" /><span className="text-small text-muted-foreground tabular-nums">{t('overdueDays', { days: od })}</span></> : null}
+                          </span>
+                        ) : c.cell(r)}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {q.isError ? <ErrorState error={q.error} onRetry={() => void q.fetchNextPage()} /> : null}
+      {q.hasNextPage ? (
+        <div className="flex justify-center">
+          <Button variant="outline" disabled={q.isFetchingNextPage} onClick={() => void q.fetchNextPage()}>
+            {q.isFetchingNextPage ? t('loadingMore') : t('loadMore')}
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
