@@ -22,7 +22,9 @@ export interface ItemSummary { id: string; code: string; name: string; kind: 'go
   unitPrice: Money; taxCode: TaxCode; whtTypeCode?: string }
 
 export interface DocLine { id: string; itemId?: string; description: string; qty: Qty; unit: string; unitPrice: Money;
-  discountPct?: string; taxCode: TaxCode; dimensions?: Record<string, string>; sourceLineId?: string }
+  discountPct?: string; taxCode: TaxCode; dimensions?: Record<string, string>; sourceLineId?: string;
+  /** Engine-set only (CN / DN from a correction): this signed amount IS the line's VAT instead of rate x net. Stripped from API input. */
+  vatOverride?: Money }
 export interface DocHeader { partyId?: string; documentDate: IsoDate; dueDate?: IsoDate; reference?: string;
   notes?: string; dimensions?: Record<string, string>; priceIncludesVat?: boolean }
 export interface DocTotals { gross: Money; discount: Money; net: Money; vat: Money; total: Money; wht?: Money;

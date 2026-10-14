@@ -15,8 +15,8 @@ function fnv(s: string): string {
 }
 
 type Stored = MockState['docs'][number];
-/** The CN / DN a correction would issue, built by the engine: ONE line per tax code carrying that code's net difference
- *  between the original and the proposed lines (VAT is the engine's per line). `full` = credit the whole document instead.
+/** The CN / DN a correction would issue, built by the engine: ONE line per tax code carrying that code's net AND VAT change
+ *  between the original and the proposed document (rule B: VAT is fixed per line via `vatOverride`, not recomputed on the difference). `full` = credit the whole document instead.
  *  A pure shift between codes yields a signed (negative) line. Null = nothing to adjust. */
 function noteFor(d: Stored, p: Body, full: boolean): CorrectionNote | null {
   const orig: Body = { header: d.header, lines: d.lines };
@@ -26,20 +26,31 @@ function noteFor(d: Stored, p: Body, full: boolean): CorrectionNote | null {
     type = 'CN';
     lines = d.lines.map((l, i) => ({ ...l, id: `l${i + 1}`, itemId: undefined, sourceLineId: undefined }));
   } else {
-    const byCode = (b: Body) => { const m = new Map<TaxCode, number>(); calc(b).lines.forEach((r, i) => m.set(b.lines[i].taxCode, (m.get(b.lines[i].taxCode) ?? 0) + toSatang(r.net))); return m; };
+    // rule B: per tax code the note carries the ACTUAL change of the engine's own net and VAT (both with per-line rounding)
+    const byCode = (b: Body) => {
+      const m = new Map<TaxCode, { net: number; vat: number }>();
+      calc(b).lines.forEach((r, i) => { const c = b.lines[i].taxCode, x = m.get(c) ?? { net: 0, vat: 0 }; m.set(c, { net: x.net + toSatang(r.net), vat: x.vat + toSatang(r.vat) }); });
+      return m;
+    };
     const o = byCode(orig), n = byCode(p);
-    const diff = [...new Set([...o.keys(), ...n.keys()])].map((c) => [c, (n.get(c) ?? 0) - (o.get(c) ?? 0)] as const).filter(([, v]) => v !== 0);
     type = toSatang(calc(p).totals.total) < toSatang(d.totals.total) ? 'CN' : 'DN';
-    lines = diff.map(([taxCode, v], i) => ({ id: `l${i + 1}`, description: `ปรับปรุงใบกำกับภาษี ${d.number} (${taxCode})`, qty: '1', unit: 'งาน', unitPrice: fromSatang(type === 'CN' ? -v : v), taxCode }));
+    const sign = type === 'CN' ? -1 : 1;
+    const zero = { net: 0, vat: 0 };
+    lines = [...new Set([...o.keys(), ...n.keys()])]
+      .map((c) => ({ c, net: sign * ((n.get(c) ?? zero).net - (o.get(c) ?? zero).net), vat: sign * ((n.get(c) ?? zero).vat - (o.get(c) ?? zero).vat) }))
+      .filter((x) => x.net !== 0 || x.vat !== 0)
+      .map((x, i) => ({ id: `l${i + 1}`, description: `ปรับปรุงใบกำกับภาษี ${d.number} (${x.c})`, qty: '1', unit: 'งาน', unitPrice: fromSatang(x.net), taxCode: x.c, vatOverride: fromSatang(x.vat) }));
   }
   if (!lines.length && calc(p).totals.total === d.totals.total && !full) return null;
   const incl = full && !!d.header.priceIncludesVat;
   const computed = calc({ header: { ...d.header, priceIncludesVat: incl }, lines });
   const total = toSatang(computed.totals.total);
-  const original = toSatang(d.totals.total), proposed = toSatang(calc(p).totals.total);
-  const expected = full ? original : type === 'CN' ? original - proposed : proposed - original;
-  if (total <= 0 || total !== expected) {
-    throw new MockError(422, 'correction.unrepresentable', 'ยอดภาษีที่ปัดเศษไม่ตรงกับส่วนต่าง กรุณาปรับรายการแล้วลองใหม่');
+  // a difference note's total is |proposed - original| by construction (rule B); only a note that adjusts nothing is refused
+  if (!full && total > 0 && total !== Math.abs(toSatang(calc(p).totals.total) - toSatang(d.totals.total))) {
+    throw new MockError(500, 'engine.invariant', 'note total differs from |original - proposed| (rule B violated)'); // defence in depth, never expected
+  }
+  if (total <= 0 || (full && total !== toSatang(d.totals.total))) {
+    throw new MockError(422, 'correction.unrepresentable', 'ไม่สามารถออกใบลดหนี้/ใบเพิ่มหนี้ที่ยอดไม่เป็นบวกได้');
   }
   const codes = [...new Set(lines.map((l) => l.taxCode))];
   const taxLines = codes.map((taxCode) => {

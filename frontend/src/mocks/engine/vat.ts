@@ -15,6 +15,7 @@ export function computeLine(l: DocLine, priceIncludesVat: boolean): LineResult {
   let net: bigint, vat: bigint;
   if (priceIncludesVat) { vat = divRoundHalfAway(after * bp, 10000n + bp); net = after - vat; }
   else { net = after; vat = divRoundHalfAway(net * bp, 10000n); }
+  if (l.vatOverride !== undefined) vat = BigInt(toSatang(l.vatOverride)); // correction CN / DN: the engine-set VAT change of this tax code
   const n = (x: bigint) => { const v = Number(x); if (!Number.isSafeInteger(v)) throw new Error('amount too large'); return v; };
   return { id: l.id, gross: n(gross), discount: n(discount), net: n(net), vat: n(vat), total: n(net + vat) };
 }
