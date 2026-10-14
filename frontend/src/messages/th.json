@@ -51,7 +51,7 @@
     "saveViewConfirm": "บันทึก",
     "removeView": "ลบมุมมอง {name}",
     "selectAll": "เลือกทั้งหมดในหน้านี้",
-    "selectRow": "เลือกแถว",
+    "selectRowNamed": "เลือก {name}",
     "selected": "เลือก {count} รายการ",
     "clearSelection": "ล้างที่เลือก",
     "needsPermission": "ต้องมีสิทธิ์ {permission}",

@@ -51,7 +51,7 @@
     "saveViewConfirm": "Save",
     "removeView": "Remove view {name}",
     "selectAll": "Select all on this page",
-    "selectRow": "Select row",
+    "selectRowNamed": "Select {name}",
     "selected": "{count} selected",
     "clearSelection": "Clear selection",
     "needsPermission": "Requires permission {permission}",

@@ -1,5 +1,5 @@
 'use client';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { PlusIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -52,11 +52,13 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
   const t = useTranslations('docList');
   const ts = useTranslations('state');
   const tStatus = useTranslations('status');
+  const tc = useTranslations('common');
   const locale = useLocale();
   const router = useRouter();
   const { me, isError: meFailed, error: meError, refetch: refetchMe } = useMe();
   const { filters, setFilters, patch } = useDocListParams();
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const qc = useQueryClient();
+  const [sel, setSel] = useState<{ scope: string; ids: Set<string> }>({ scope: '', ids: new Set() });
   const searchRef = useRef<HTMLInputElement>(null);
   const debounce = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -64,6 +66,13 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
   const routes = routesOf(d);
   const canCreate = !!me?.permissions.includes(d.permissions.create);
   const companyId = me?.activeCompanyId;
+
+  // Selection belongs to one company + type + filter set; any change of that scope (company switch included) empties it.
+  const scope = JSON.stringify([companyId, d.type, filters]);
+  if (sel.scope !== scope) setSel({ scope, ids: new Set() });
+  const selected = sel.scope === scope ? sel.ids : new Set<string>();
+  const setSelected = (u: Set<string> | ((s: Set<string>) => Set<string>)) =>
+    setSel((c) => ({ scope, ids: typeof u === 'function' ? u(c.scope === scope ? c.ids : new Set()) : u }));
 
   const server = { status: filters.status, q: filters.q, from: filters.from, to: filters.to };
   const q = useInfiniteQuery({
@@ -76,7 +85,6 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
 
   // Any filter change drops the selection; the query key changes too, so paging restarts from the first page.
   const apply = (next: DocListFilters, replaceAll = false) => {
-    setSelected(new Set());
     if (replaceAll) setFilters(next); else patch(next);
   };
   const hasFilters = Object.keys(filters).length > 0;
@@ -86,7 +94,7 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
       if (e.key === '/') { e.preventDefault(); searchRef.current?.focus(); }
-      else if ((e.key === 'n' || e.key === 'N') && canCreate) { e.preventDefault(); router.push(routes.create); }
+      else if (e.code === 'KeyN' && canCreate) { e.preventDefault(); router.push(routes.create); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -97,7 +105,7 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
   // /me failing (403 / 5xx) means the active company is unknown, so the list cannot load: classify that error the same way.
   if ((meFailed && !me) || (q.isError && !q.data)) {
     const e = meFailed && !me ? meError : q.error;
-    if (e instanceof ApiError && e.problem.status === 403) return <ForbiddenState detail={e.problem.detail} permission={d.permissions.read} />;
+    if (e instanceof ApiError && e.problem.status === 403) return <ForbiddenState detail={e.problem.detail} permission={meFailed && !me ? undefined : d.permissions.read} />;
     if (e instanceof ApiError && e.problem.status === 404 && e.code === 'doc.type_not_available') return <NotAvailableState />;
     return <ErrorState error={e} onRetry={() => void (meFailed && !me ? refetchMe() : q.refetch())} />;
   }
@@ -108,6 +116,7 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
   const rows = filters.overdue === '1' ? all.filter((r) => daysOverdue(r) > 0) : all;
   const today = todayIso();
   const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
+  const someSelected = rows.some((r) => selected.has(r.id));
   const toggle = (id: string, on: boolean) => setSelected((s) => { const n = new Set(s); if (on) n.add(id); else n.delete(id); return n; });
   const createLabel = (key: 'create' | 'emptyCreate') => (key === 'create' ? t('create', { title }) : ts('emptyCreate', { title }));
   const createLink = (key: 'create' | 'emptyCreate'): ReactNode => canCreate ? (
@@ -117,7 +126,7 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
   const field = 'h-(--ctl-h) rounded-lg border border-input bg-card px-3 text-body outline-none';
   return (
     <div className="flex flex-col gap-3">
-      <SavedViews type={d.type} presets={savedViews} activeKey={filters.view} current={server as Record<string, string>}
+      <SavedViews type={d.type} presets={savedViews} activeKey={filters.view} current={Object.fromEntries(Object.entries(filters).filter(([k]) => k !== 'view'))}
         onSelect={(v) => { if (searchRef.current) searchRef.current.value = v?.params.q ?? ''; apply(v ? { ...v.params, view: v.key } : {}, true); }} />
       <div className="flex flex-wrap items-end gap-2">
         <Input ref={searchRef} type="search" aria-label={t('searchLabel')} placeholder={t('searchPlaceholder')}
@@ -138,7 +147,8 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
       </div>
 
       {selected.size > 0 ? (
-        <BulkBar ids={[...selected]} actions={bulkActions} permissions={me?.permissions ?? []} onClear={() => setSelected(new Set())} />
+        <BulkBar ids={[...selected]} actions={bulkActions} permissions={me?.permissions ?? []} onClear={() => setSelected(new Set())}
+          onDone={() => void qc.invalidateQueries({ queryKey: [companyId, 'docs', d.type] })} />
       ) : null}
 
       {rows.length === 0 && !q.hasNextPage ? (
@@ -151,7 +161,7 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10">
-                  <Checkbox aria-label={t('selectAll')} checked={allSelected}
+                  <Checkbox aria-label={t('selectAll')} checked={allSelected ? true : someSelected ? 'indeterminate' : false}
                     onCheckedChange={(v) => setSelected(v === true ? new Set(rows.map((r) => r.id)) : new Set())} />
                 </TableHead>
                 {columns.map((c) => <TableHead key={c.key} className={cn(c.align === 'end' && 'text-right')}>{c.header}</TableHead>)}
@@ -163,7 +173,7 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
                 return (
                   <TableRow key={r.id} data-state={selected.has(r.id) ? 'selected' : undefined}>
                     <TableCell className="w-10">
-                      <Checkbox aria-label={t('selectRow')} checked={selected.has(r.id)} onCheckedChange={(v) => toggle(r.id, v === true)} />
+                      <Checkbox aria-label={t('selectRowNamed', { name: r.number ?? `${tc('draftNoNumber')} ${r.partyName}` })} checked={selected.has(r.id)} onCheckedChange={(v) => toggle(r.id, v === true)} />
                     </TableCell>
                     {columns.map((c, i) => (
                       <TableCell key={c.key} className={cn(c.align === 'end' && 'text-right tabular-nums')}>
