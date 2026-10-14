@@ -389,7 +389,57 @@
       "amount": "Line amount {n}",
       "remove": "Remove line {n}",
       "add": "Add line",
-      "hint": "Enter moves to the next cell  ·  Enter in the last cell adds a line  ·  Paste from Excel (item, qty, price)"
+      "hint": "Enter moves to the next cell  ·  Enter in the last cell adds a line  ·  Paste from Excel (item, qty, price)",
+      "colCategory": "Expense category",
+      "colAmountInput": "Amount",
+      "colTax": "Tax",
+      "colWht": "Withholding",
+      "category": "Expense category of line {n}",
+      "amountInput": "Amount of line {n}",
+      "tax": "Tax of line {n}",
+      "wht": "Withholding of line {n}",
+      "whtNone": "None",
+      "hintAmount": "Enter moves to the next cell  ·  Enter in the last cell adds a line",
+      "taxCode": { "S7": "VAT 7%", "Z0": "VAT 0%", "EX": "No VAT / exempt" }
+    },
+    "bankAccount": "Bank / cash account",
+    "bankLoading": "Loading accounts…",
+    "bankFailed": "Could not load the accounts",
+    "paymentMethod": "Payment method",
+    "method": { "transfer": "Transfer", "cash": "Cash", "cheque": "Cheque" },
+    "chequeNumber": "Cheque number",
+    "chequeDate": "Cheque date",
+    "chequeBank": "Drawee bank",
+    "whtMode": "Who bears the withholding tax",
+    "whtModes": { "deduct": "Deducted from the payment (payee receives the net)", "grossup_once": "We bear it (computed once)", "grossup_always": "We bear it (computed on the grossed-up amount)" },
+    "whtSummary": {
+      "title": "Withholding tax by type",
+      "wht": "Withholding tax",
+      "cash": "Net payment",
+      "base": "Base",
+      "form": "Form",
+      "forms": { "PND2": "PND.2", "PND3": "PND.3", "PND53": "PND.53", "PND54": "PND.54" }
+    },
+    "settlement": {
+      "title": "Documents settled",
+      "pickParty": "Pick the party to see their open items",
+      "empty": "No open items",
+      "loadFailed": "Could not load the open items",
+      "number": "Number",
+      "due": "Due",
+      "total": "Document total",
+      "outstanding": "Outstanding",
+      "amount": "This payment",
+      "wht": "Withheld by the customer",
+      "cert": "Certificate number",
+      "pick": "Select {number}",
+      "amountOf": "Amount paid on {number}",
+      "whtOf": "Withholding tax on {number}",
+      "certOf": "Certificate number for {number}",
+      "suggest": "Use the suggested {wht}",
+      "allocated": "Allocated",
+      "unallocated": "Unallocated",
+      "forbidden": "Viewing open items needs permission"
     },
     "missing": {
       "title": "What is still missing",
@@ -445,7 +495,9 @@
     }
   },
   "docTypes": {
-    "TI": {"title": "Tax invoice", "issue": "Save and issue tax invoice", "create": "Create tax invoice", "empty": "No tax invoices yet"}
+    "TI": {"title": "Tax invoice", "issue": "Save and issue tax invoice", "create": "Create tax invoice", "empty": "No tax invoices yet"},
+    "RC": {"title": "Receipt", "issue": "Save and issue receipt", "create": "Create receipt", "empty": "No receipts yet"},
+    "PV": {"title": "Payment voucher", "issue": "Save and issue payment voucher", "create": "Create payment voucher", "empty": "No payment vouchers yet"}
   },
   "permissions": {
     "doc_QT_read": "Read quotation",

@@ -63,7 +63,13 @@ describe('posting resolution (SP0 §5.5)', () => {
     expect(ledgerFor(st, ti).entries[0].lines.map((l) => l.accountCode)).toEqual(['1130', '4100', '2151']);
     const cn = st.docs.find((d) => d.type === 'CN')!;
     expect(ledgerFor(st, cn).entries[0].lines.map((l) => [l.accountCode, l.debit !== '0.00'])).toEqual([['1130', false], ['4110', true], ['2151', true]]);
-    const rc = { ...structuredClone(ti), type: 'RC' as const, totals: { ...ti.totals, wht: '10.00' } };
+    // F5: a receipt posts from its allocations (no lines): cash + WHT = the AR it clears
+    const total = Number(ti.totals.total);
+    const rc = { ...structuredClone(ti), type: 'RC' as const, lines: [], totals: { ...ti.totals, net: '0.00', vat: '0.00', wht: '10.00', cash: (total - 10).toFixed(2) },
+      allocations: [{ targetId: ti.id, targetType: 'TI' as const, amount: ti.totals.total, wht: '10.00' }] };
     expect(ledgerFor(st, rc).entries[0].lines.map((l) => l.accountCode)).toEqual(['1120', '1180', '1130']);
+    // the receiving bank account reaches the Cash role (bank level of the profile)
+    const viaBank = { ...rc, header: { ...rc.header, bankAccountId: 'ba-scb' } };
+    expect(ledgerFor(st, viaBank).entries[0].lines[0]).toMatchObject({ accountCode: '1122', rule: expect.stringContaining('1122') });
   });
 });

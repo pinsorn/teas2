@@ -12,9 +12,15 @@ import { ctx, forbidden, problem, screenGate } from './common';
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
 
-/** vatOverride is engine-set (correction notes) only: never accepted from an API caller. */
-export const stripOverrides = <T extends Body>(b: T): T => (Array.isArray(b?.lines)
-  ? { ...b, lines: b.lines.map((l) => { if (!l || typeof l !== 'object') return l; const { vatOverride, ...r } = l; void vatOverride; return r; }) } : b);
+/** vatOverride (correction notes) and allocation targetNumber are engine-set only: never accepted from an API caller. */
+export const stripOverrides = <T extends Body>(b: T): T => {
+  if (!Array.isArray(b?.lines)) return b;
+  const lines = b.lines.map((l) => { if (!l || typeof l !== 'object') return l; const { vatOverride, ...r } = l; void vatOverride; return r; });
+  // `targetNumber` is engine-set (the engine re-reads it from the target); only the user's own figures and the certificate number come from the caller
+  const allocations = Array.isArray(b.allocations)
+    ? b.allocations.map((a) => { if (!a || typeof a !== 'object') return a; const { targetNumber, ...r } = a; void targetNumber; return r; }) : b.allocations;
+  return { ...b, lines, ...(allocations ? { allocations } : {}) };
+};
 
 type Ctx = ReturnType<typeof ctx>;
 type Out = Response | Promise<Response>;

@@ -1,4 +1,4 @@
-import type { Actor, DocHeader, DocLine, DocType, IsoDate, Qty } from '@/domain/types';
+import type { Actor, Allocation, DocHeader, DocLine, DocType, IsoDate, Qty } from '@/domain/types';
 import { cancel, convert, createDraft, issue, updateDraft } from '../engine/commands';
 import { withFixedClock } from '../engine/log';
 import type { MockState } from '../store';
@@ -6,7 +6,7 @@ import { USER } from './documents';
 
 export interface SeedSpec {
   id: string; type: DocType; companyId: string; date: IsoDate; partyId?: string; lines: DocLine[];
-  header?: Partial<DocHeader>; /** Widened to `Allocation[]` by F5. */ allocations?: unknown[]; status: 'draft' | 'issued' | 'cancelled';
+  header?: Partial<DocHeader>; allocations?: Allocation[]; status: 'draft' | 'issued' | 'cancelled';
   convertFrom?: { id: string; lines: { sourceLineId: string; qty: Qty }[] }; by?: Actor; after?: (st: MockState) => void;
 }
 
@@ -33,7 +33,7 @@ function runOne(st: MockState, s: SeedSpec): void {
   const header: DocHeader = { partyId: s.partyId, documentDate: s.date, ...(s.convertFrom ? {} : { priceIncludesVat: false }), ...s.header };
   let d = s.convertFrom
     ? convert(st, s.convertFrom.id, s.type, s.convertFrom.lines, actor, { id: s.id })
-    : createDraft(st, s.companyId, s.type, { header, lines: s.lines, ...(s.allocations ? { allocations: s.allocations } : {}) } as never, actor, `seed-${s.id}`, { id: s.id });
+    : createDraft(st, s.companyId, s.type, { header, lines: s.lines, ...(s.allocations ? { allocations: s.allocations } : {}) }, actor, `seed-${s.id}`, { id: s.id });
   if (s.convertFrom) d = updateDraft(st, d.id, { header: { ...d.header, ...header, partyId: header.partyId ?? d.header.partyId }, lines: d.lines }, d.version, actor);
   if (s.status !== 'draft') d = issue(st, d.id, d.version, actor);
   if (s.status === 'cancelled') cancel(st, d.id, d.version, 'OTHER', 'ยกเลิกในข้อมูลตั้งต้น', actor);

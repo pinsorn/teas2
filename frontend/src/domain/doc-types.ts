@@ -36,3 +36,5 @@ export const CONVERSIONS: Partial<Record<DocType, DocType[]>> = {
   PO: ['PB', 'PV'], PB: ['PCN', 'PDN', 'PV'], EX: ['PV'],
 };
 
+/** D-12 / D-17: the open-item types a document allocates to (RC settles TI / IV; PV settles PB and EX only). The engine refuses any other target. */
+export const SETTLES: Partial<Record<DocType, DocType[]>> = { RC: ['TI', 'IV'], PV: ['PB', 'EX'] };

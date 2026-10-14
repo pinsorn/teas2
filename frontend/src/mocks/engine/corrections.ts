@@ -1,8 +1,8 @@
-import type { Actor, CorrectionNote, CorrectionPlan, CorrectionResult, CorrectionStep, DocLine, Role, TaxCode } from '@/domain/types';
+import type { Actor, Allocation, ChainEdge, CorrectionNote, CorrectionPlan, CorrectionResult, CorrectionStep, DocLine, Role, TaxCode } from '@/domain/types';
 import { PERMISSIONS_BY_ROLE } from '../permissions';
 import type { MockState } from '../store';
 import {
-  type Body, LIVE, addAdjustment, blockingLocks, addSettlement, calc, cancel, createDraft, getDoc, isFiscalChange, issue, markReplaced, reissue, revise,
+  type Body, LIVE, addAdjustment, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, markReplaced, reissue, revise, totalsOf,
 } from './commands';
 import { MockError, today } from './log';
 import { fromSatang, toSatang } from './money';
@@ -71,13 +71,15 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
     steps.push({ action, docId: doc.id, docType: action === 'issue_cn' ? 'CN' : action === 'issue_dn' ? 'DN' : doc.type, number: doc.number, summary, permission, ...(note ? { note } : {}) });
   let explanation: string;
 
-  if (JSON.stringify({ header: d.header, lines: d.lines }) === JSON.stringify(proposed)) {
+  const sameBody = JSON.stringify({ header: d.header, lines: d.lines }) === JSON.stringify({ header: proposed.header, lines: proposed.lines })
+    && (proposed.allocations === undefined || JSON.stringify(d.allocations ?? []) === JSON.stringify(proposed.allocations));
+  if (sameBody) {
     explanation = 'ไม่มีการเปลี่ยนแปลง';
   } else if (d.correctionClass !== 'T' || !isFiscalChange(d, proposed)) {
     add('revise', d, `แก้ไข ${label} (เลขที่เดิม เพิ่มรุ่นแก้ไข)`, `doc.${d.type}.correct`);
     explanation = 'การแก้ไขนี้ไม่กระทบภาษี แก้ไขในเอกสารเดิมและเก็บประวัติการแก้ไข';
   } else {
-    const newTotal = toSatang(calc(proposed).totals.total);
+    const newTotal = toSatang(totalsOf(st, d.companyId, d.type, proposed).total);
     const delta = newTotal - toSatang(d.totals.total);
     const partyChanged = proposed.header.partyId !== d.header.partyId;
     const contentChanged = JSON.stringify(proposed.lines) !== JSON.stringify(d.lines) || !!proposed.header.priceIncludesVat !== !!d.header.priceIncludesVat;
@@ -135,7 +137,9 @@ export function correctionPlan(st: MockState, id: string, proposed: Body, role: 
   return plan;
 }
 
-interface Ctx { planId: string; planDocId: string; newTi?: string; touched: string[] }
+/** `rcLinks`: what each receipt of the plan had active BEFORE the plan's cancel step (amount + WHT per target), captured when the plan starts to run.
+ *  `moved`: invoices reissued by the plan (old id -> new id), so a receipt's link follows its invoice. */
+interface Ctx { planId: string; planDocId: string; newTi?: string; touched: string[]; rcLinks: Map<string, (ChainEdge & { companyId: string })[]>; moved: Map<string, string> }
 
 function runStep(w: MockState, s: CorrectionStep, proposed: Body, actor: Actor, c: Ctx): void {
   const doc = getDoc(w, s.docId);
@@ -147,27 +151,30 @@ function runStep(w: MockState, s: CorrectionStep, proposed: Body, actor: Actor, 
     cancel(w, doc.id, doc.version, 'CORRECTION', 'ยกเลิกเพื่อแก้ไขเอกสารต้นทาง', actor);
     touch(doc.id);
   } else if (s.action === 'reissue' && doc.type === 'RC') {
-    // the receipt was cancelled by the previous step: issue its replacement (original date) and mark the old one replaced
-    const ti = c.newTi ? getDoc(w, c.newTi) : undefined;
-    const old = [...w.links].reverse().find((l) => l.from === doc.id && l.kind === 'settles');
-    const target = ti ?? (old ? getDoc(w, old.to) : undefined);
-    if (!target) throw new MockError(409, 'correction.plan_invalid', 'แผนการแก้ไขไม่ถูกต้อง');
-    const own = doc.id === c.planDocId; // correcting the receipt itself: the proposed content, else a copy re-aimed at the new TI
+    // the receipt was cancelled by the previous step: issue its replacement (original date) with ONE settlement per link it had, then mark the old one replaced
+    const links = c.rcLinks.get(doc.id) ?? [];
+    if (!links.length && !doc.lines.length && !doc.header.depositAmount) throw new MockError(409, 'correction.plan_invalid', 'แผนการแก้ไขไม่ถูกต้อง');
+    const own = doc.id === c.planDocId; // correcting the receipt itself: the proposed content, else a copy re-aimed at the reissued invoice(s)
+    const carried: Allocation[] = links.map((l) => {
+      const was = doc.allocations?.find((a) => a.targetId === l.to);
+      const to = c.moved.get(l.to) ?? l.to;
+      return { targetId: to, targetType: getDoc(w, to).type, amount: l.amount!, ...(l.wht ? { wht: l.wht } : {}),
+        ...(was?.whtTypeCode ? { whtTypeCode: was.whtTypeCode } : {}), ...(was?.certNumber ? { certNumber: was.certNumber } : {}) };
+    });
+    const moved = links.find((l) => c.moved.has(l.to));
     const body: Body = own
-      ? { header: { ...proposed.header, documentDate: doc.header.documentDate }, lines: proposed.lines }
-      : { header: { ...doc.header, partyId: target.header.partyId },
-        lines: doc.lines.map((l, i) => (i === 0 ? { ...l, description: `รับชำระตามใบกำกับภาษี ${target.number}` } : l)) };
+      ? { header: { ...proposed.header, documentDate: doc.header.documentDate }, lines: proposed.lines, allocations: proposed.allocations ?? carried }
+      : { header: { ...doc.header, ...(moved ? { partyId: getDoc(w, c.moved.get(moved.to)!).header.partyId } : {}) }, lines: doc.lines, allocations: carried };
     const draft = createDraft(w, doc.companyId, 'RC', body, actor, `${c.planId}-${s.order}`);
-    const rc = issue(w, draft.id, draft.version, actor, { keepDate: true }); // the receipt keeps its original date (I9)
+    const rc = issue(w, draft.id, draft.version, actor, { keepDate: true, anyParty: true }); // original date (I9); issue re-creates every settlement and checks each target's outstanding
     markReplaced(w, doc.id, rc.id, actor);
-    addSettlement(w, rc.id, target.id, own ? rc.totals.total : old?.amount ?? rc.totals.total);
-    touch(doc.id, rc.id, target.id);
+    touch(doc.id, rc.id, ...(rc.allocations ?? []).map((x) => x.targetId));
   } else if (s.action === 'reissue') {
     // a TI keeps its original date and total: when the proposal changes the total, the delta goes through a CN / DN afterwards
     const same = calc(proposed).totals.total === doc.totals.total;
     const body: Body = same ? proposed : { header: { ...proposed.header, priceIncludesVat: doc.header.priceIncludesVat }, lines: doc.lines };
     const nd = reissue(w, doc.id, body, actor, 'ออกใหม่ตามแผนการแก้ไข');
-    if (doc.type === 'TI') c.newTi = nd.id;
+    if (doc.type === 'TI') { c.newTi = nd.id; c.moved.set(doc.id, nd.id); }
     touch(doc.id, nd.id);
   } else {
     const target = c.newTi && doc.status === 'replaced' ? getDoc(w, c.newTi) : doc; // after a reissue the note adjusts the new TI
@@ -200,7 +207,10 @@ export function executePlan(st: MockState, planId: string, planHash: string, act
   if (missing.length) throw new MockError(403, 'auth.forbidden', `ต้องมีสิทธิ์ ${missing.join(', ')}`);
   if (!plan.steps.length) throw new MockError(422, 'correction.empty_plan', 'แผนนี้ไม่มีขั้นตอน');
   const work = structuredClone(st);
-  const c: Ctx = { planId, planDocId: stored.docId, touched: [] };
+  const c: Ctx = { planId, planDocId: stored.docId, touched: [], rcLinks: new Map(), moved: new Map() };
+  for (const s of plan.steps) {
+    if (s.action === 'reissue' && s.docType === 'RC') c.rcLinks.set(s.docId, work.links.filter((l) => l.from === s.docId && l.kind === 'settles' && l.active).map((l) => structuredClone(l)));
+  }
   for (const s of plan.steps) runStep(work, s, stored.proposed, actor, c);
   delete work.plans![planId];
   Object.assign(st, work);

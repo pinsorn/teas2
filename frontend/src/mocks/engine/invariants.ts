@@ -1,9 +1,10 @@
-import { DOC_TYPES, LIVE } from '@/domain/doc-types';
+import { DOC_TYPES, LIVE, SETTLES } from '@/domain/doc-types';
 import type { Doc } from '@/domain/types';
 import type { MockState } from '../store';
 import { consumed, q4 } from './chain';
-import { fromSatang, toSatang } from './money';
+import { divRoundHalfAway, fromSatang, toSatang } from './money';
 import { firstOpenDate, isClosed } from './periods';
+import { computeDoc } from './vat';
 
 type Stored = MockState['docs'][number];
 
@@ -20,6 +21,28 @@ function expectedBalance(st: MockState, d: Stored) {
     }
   }
   return { out, status: settled && out <= 0 ? 'settled' : paid > 0 ? 'partly_settled' : 'issued' };
+}
+
+/** Satang sum of one side of a journal entry's lines for a role (the role is read from the rule text "<level>: <role> → <code>"). */
+const roleSum = (e: { lines: { debit: string; credit: string; rule: string }[] }, role: string, side: 'debit' | 'credit') =>
+  e.lines.filter((l) => new RegExp(`: ${role} → `).test(l.rule)).reduce((n, l) => n + toSatang(l[side]), 0);
+
+/** WHT of a PV recomputed from its lines and the fixture rate table, deliberately not through `computeWht` (D-14, [SP-R] rates). */
+function expectedWht(st: MockState, d: Stored): { tax: number; bad?: string } {
+  const nets = computeDoc(d.lines, !!d.header.priceIncludesVat).lines;
+  const base = new Map<string, bigint>();
+  d.lines.forEach((l, i) => { if (l.whtTypeCode) base.set(l.whtTypeCode, (base.get(l.whtTypeCode) ?? 0n) + BigInt(toSatang(nets[i].net))); });
+  const mode = d.header.whtMode ?? 'deduct';
+  let tax = 0n;
+  for (const [code, b] of base) {
+    const t = st.whtTypes.filter((x) => x.companyId === d.companyId && x.code === code && x.effectiveFrom <= d.header.documentDate).sort((x, y) => y.effectiveFrom.localeCompare(x.effectiveFrom))[0];
+    if (!t) return { tax: 0, bad: `unknown WHT type ${code}` };
+    if (b <= 0n) continue;
+    const r = BigInt(t.rateBp);
+    const income = mode === 'deduct' ? b : mode === 'grossup_always' ? divRoundHalfAway(b * 10000n, 10000n - r) : divRoundHalfAway(b * (10000n + r), 10000n);
+    tax += divRoundHalfAway(income * r, 10000n);
+  }
+  return { tax: Number(tax) };
 }
 
 /** Every violation in the state, as readable strings; [] = all hold (money invariants 1-7, numbering, derived locks). */
@@ -112,6 +135,59 @@ export function checkInvariants(st: MockState): string[] {
       }
       if (!ok) out.push(`${d.id} ${e.kind} entry ${e.date}: dated in closed period ${p.month} but was posted after it closed and is not a late entry in the first open period`);
     }
+  }
+
+  // 8. receipts and vouchers (D-12, D-14): allocations <-> links, totals, journal and the WHT formula tie out in satang
+  for (const d of st.docs) {
+    if (!SETTLES[d.type] || !LIVE.includes(d.status)) continue;
+    const allocs = d.allocations ?? [];
+    const alloc = allocs.reduce((n, a) => n + sat(a.amount, d.id), 0), allocWht = allocs.reduce((n, a) => n + sat(a.wht ?? '0.00', d.id), 0);
+    const links = st.links.filter((l) => l.active && l.kind === 'settles' && l.from === d.id);
+    const key = (id: string, amount: number, wht: number) => `${id}|${amount}|${wht}`;
+    const want = allocs.map((a) => key(a.targetId, sat(a.amount, d.id), sat(a.wht ?? '0.00', d.id))).sort().join(',');
+    const have = links.map((l) => key(l.to, sat(l.amount ?? '0.00', d.id), sat(l.wht ?? '0.00', d.id))).sort().join(',');
+    if (want !== have) out.push(`${d.id}: allocations [${want}] but the active settles links are [${have}]`);
+    for (const a of allocs) if (sat(a.amount, d.id) <= 0) out.push(`${d.id}: allocation to ${a.targetId} is not positive`);
+    const lineTotal = sat(d.totals.net, d.id) + sat(d.totals.vat, d.id);
+    const total = sat(d.totals.total, d.id), cash = sat(d.totals.cash ?? 'x', d.id), wht = sat(d.totals.wht ?? 'x', d.id);
+    const entries = st.journals.find((j) => j.docId === d.id)?.preview.entries.filter((e) => e.kind !== 'reversal');
+    const live = entries?.[entries.length - 1];
+    const j = (role: string, side: 'debit' | 'credit') => (live ? roleSum(live, role, side) : 0);
+    if (d.type === 'RC') {
+      const dep = sat(d.header.depositAmount ?? '0.00', d.id);
+      if (total !== alloc + dep + lineTotal) out.push(`${d.id}: RC total ${fromSatang(total)} is not Σ allocations + deposit + cash-bill lines (${fromSatang(alloc + dep + lineTotal)})`);
+      if (wht !== allocWht) out.push(`${d.id}: RC wht ${fromSatang(wht)} is not Σ allocation wht ${fromSatang(allocWht)}`);
+      if (cash + wht !== alloc + dep + lineTotal) out.push(`${d.id}: RC cash ${fromSatang(cash)} + WHT ${fromSatang(wht)} is not Σ allocations + deposit + cash-bill (${fromSatang(alloc + dep + lineTotal)})`);
+      if (live) {
+        if (j('Cash', 'debit') !== cash) out.push(`${d.id}: journal cash ${fromSatang(j('Cash', 'debit'))} but the receipt received ${fromSatang(cash)}`);
+        if (j('WhtReceivable', 'debit') !== wht) out.push(`${d.id}: journal WHT receivable ${fromSatang(j('WhtReceivable', 'debit'))} but the receipt withheld ${fromSatang(wht)}`);
+        if (j('AR', 'credit') !== alloc) out.push(`${d.id}: journal AR ${fromSatang(j('AR', 'credit'))} but the allocations clear ${fromSatang(alloc)}`);
+        if (j('CustomerDeposit', 'credit') !== dep) out.push(`${d.id}: journal deposit ${fromSatang(j('CustomerDeposit', 'credit'))} but the deposit is ${fromSatang(dep)}`);
+      }
+    } else {
+      const mode = d.header.whtMode ?? 'deduct';
+      const w = expectedWht(st, d);
+      if (w.bad) out.push(`${d.id}: ${w.bad}`);
+      else if (wht !== w.tax) out.push(`${d.id}: PV wht ${fromSatang(wht)} but round-half-away(base x rate) per WHT type gives ${fromSatang(w.tax)}`);
+      if (total !== alloc + lineTotal) out.push(`${d.id}: PV total ${fromSatang(total)} is not Σ allocations + line totals (${fromSatang(alloc + lineTotal)})`);
+      if (cash !== (mode === 'deduct' ? total - wht : total)) out.push(`${d.id}: PV cash ${fromSatang(cash)} is wrong for mode ${mode} (total ${fromSatang(total)}, wht ${fromSatang(wht)})`);
+      if (live) {
+        const expense = j('WhtExpense', 'debit');
+        if (expense !== (mode === 'deduct' ? 0 : wht)) out.push(`${d.id}: WHT expense ${fromSatang(expense)} is wrong for mode ${mode} (wht ${fromSatang(wht)})`);
+        if (j('Cash', 'credit') !== cash) out.push(`${d.id}: journal cash ${fromSatang(j('Cash', 'credit'))} but the voucher paid ${fromSatang(cash)}`);
+        if (j('WhtPayable', 'credit') !== wht) out.push(`${d.id}: journal WHT payable ${fromSatang(j('WhtPayable', 'credit'))} but the voucher withheld ${fromSatang(wht)}`);
+        if (j('AP', 'debit') + j('EmployeePayable', 'debit') !== alloc) out.push(`${d.id}: journal payables ${fromSatang(j('AP', 'debit') + j('EmployeePayable', 'debit'))} but the allocations clear ${fromSatang(alloc)}`);
+        // the balance identity: Σ allocations + line totals + the WHT we bear = cash + Σ tax
+        if (alloc + lineTotal + expense !== cash + wht) out.push(`${d.id}: PV Σ alloc + lines + expense (${fromSatang(alloc + lineTotal + expense)}) is not cash + WHT (${fromSatang(cash + wht)})`);
+      }
+    }
+  }
+  // a target is never settled for more than it was ever billed: Σ active settles <= total + Σ active DN / PDN (a later CN may leave a negative outstanding; that is shown, not an error)
+  for (const d of st.docs) {
+    if (!LIVE.includes(d.status) || !DOC_TYPES[d.type].outstanding) continue;
+    const settled = st.links.filter((l) => l.active && l.to === d.id && l.kind === 'settles').reduce((n, l) => n + sat(l.amount ?? '0.00', d.id), 0);
+    const debits = st.links.filter((l) => l.active && l.to === d.id && l.kind === 'adjusts' && ['DN', 'PDN'].includes(doc(l.from)?.type ?? '')).reduce((n, l) => n + sat(l.amount ?? '0.00', d.id), 0);
+    if (settled > sat(d.totals.total, d.id) + debits) out.push(`${d.id}: settled ${fromSatang(settled)} exceeds the total ${d.totals.total} plus debit notes`);
   }
 
   // numbering: gap-free per company x type x month, and the series counter agrees

@@ -1,5 +1,5 @@
 'use client';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { EyeIcon, ListTreeIcon } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
@@ -8,7 +8,7 @@ import { useMe } from '@/app-shell/useMe';
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { routesOf, type DocDescriptor } from '@/domain/descriptors';
-import type { Doc, DocHeader, DocLine, ItemSummary, Me, PartySummary } from '@/domain/types';
+import type { Allocation, Doc, DocHeader, DocLine, ItemSummary, Me, PartySummary } from '@/domain/types';
 import { ApiError } from '@/lib/api/client';
 import { endpoints, type DocInput } from '@/lib/api/endpoints';
 import { todayIso } from '@/lib/format';
@@ -22,6 +22,7 @@ import { isBlankLine, LineGrid, newLine } from './LineGrid';
 import { MissingSummary } from './MissingSummary';
 import { PartyField } from './PartyField';
 import { PreviewDrawer } from './PreviewDrawer';
+import { SettlementPanel } from './SettlementPanel';
 import { TotalsPanel } from './TotalsPanel';
 import { useAutosave } from './useAutosave';
 import { useCompute } from './useCompute';
@@ -32,7 +33,7 @@ export interface DocEditorProps {
   mode: 'create' | 'edit-draft' | 'revise';
   initial?: Doc;
   onIssued: (doc: Doc) => void;
-  onRevisionRequested?: (proposed: { header: DocHeader; lines: DocLine[] }) => void; // revise mode: hands off to the correction plan
+  onRevisionRequested?: (proposed: { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] }) => void; // revise mode: hands off to the correction plan
 }
 
 const WIDE = '(min-width: 1700px)';
@@ -91,8 +92,9 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   const [picking, setPicking] = useState(false);
 
   const [header, setHeader] = useState<DocHeader>(initial?.header ?? { documentDate: todayIso() });
-  const [lines, setLines] = useState<DocLine[]>(initial?.lines.length ? initial.lines : [newLine()]);
+  const [lines, setLines] = useState<DocLine[]>(initial?.lines.length ? initial.lines : [newLine(me && !me.vatRegistered ? 'EX' : 'S7')]); // a non-VAT company sells without VAT
   const [party, setParty] = useState<PartySummary | undefined>(initial?.party);
+  const [allocations, setAllocations] = useState<Allocation[]>(initial?.allocations ?? []); // RC / PV: the open items this document settles
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [want, setWant] = useState<string>(); // Ctrl+Enter pressed while computing: open the dialog once THIS input is computed
   const [issuingNow, setIssuingNow] = useState(false);
@@ -106,10 +108,15 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   const payload = useMemo<DocInput>(() => ({
     header,
     lines: lines.filter((l) => !isBlankLine(l)).map((l) => ({ ...l, qty: qtyText(l.qty), unitPrice: moneyText(l.unitPrice) })),
-  }), [header, lines]);
+    ...(d.settles ? { allocations } : {}),
+  }), [header, lines, allocations, d.settles]);
   const payloadJson = JSON.stringify(payload);
 
-  const invalidate = () => { if (me) void qc.invalidateQueries({ queryKey: [me.activeCompanyId, 'docs', d.type] }); };
+  const invalidate = () => {
+    if (!me) return;
+    void qc.invalidateQueries({ queryKey: [me.activeCompanyId, 'docs', d.type] });
+    if (d.settles) void qc.invalidateQueries({ queryKey: [me.activeCompanyId, 'open-items'] }); // the targets' balances just changed
+  };
   const compute = useCompute(d.type, payload);
   const autosave = useAutosave({
     type: d.type, payload, enabled: mode !== 'revise',
@@ -122,6 +129,10 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
 
   const title = locale === 'en' ? d.titleEn : d.titleTh;
   const partyKind = d.partyKind;
+  const showLines = d.lineEditor !== 'none' && !(d.linesWhen === 'non-vat' && me?.vatRegistered !== false); // D-12: a VAT company's receipt settles invoices, it has no line grid
+  const amountEditor = d.lineEditor === 'amount';
+  const withholds = d.headerFields.includes('whtMode'); // only a document that pays out withholds tax from its lines
+  const whtTypes = useQuery({ queryKey: qk.whtTypes(me?.activeCompanyId ?? ''), queryFn: endpoints.whtTypes, enabled: !!me && amountEditor && withholds });
   const missing = compute.data?.missing; // gates the actions: only a settled answer to the current input counts
   const canAct = !!me?.permissions.includes(mode === 'revise' ? d.permissions.create : d.permissions.issue);
   const why = me && !canAct ? 'permission'
@@ -132,7 +143,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   const dialogOpen = confirmOpen || (want === payloadJson && ready);
 
   const jump = (field: string) => {
-    const sel = field.startsWith('header.partyId') ? '[data-field="party"]' : '[data-cell="0:description"]';
+    const sel = field.startsWith('header.partyId') ? '[data-field="party"]' : field === 'allocations' ? '[role="checkbox"]' : '[data-cell="0:description"]';
     root.current?.querySelector<HTMLElement>(sel)?.focus();
   };
 
@@ -171,11 +182,13 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
     if (first && lines.length > 0 && isBlankLine(lines[0])) { try { item = await itemById(first); } catch { /* the prefill is a convenience */ } }
     if (gen !== pickGen.current) return;
     setPicking(false);
+    if (p.id !== header.partyId) setAllocations([]); // the ticked open items belong to the previous party
     setParty(p);
     setHeader((h) => ({ ...h, partyId: p.id, dueDate: addDays(h.documentDate, p.paymentTermDays) }));
-    if (item) {
+    if (item && showLines) {
       setLines((ls) => ls.length > 0 && isBlankLine(ls[0])
-        ? [{ ...ls[0], itemId: item.id, description: item.name, unit: item.unit, unitPrice: moneyText(item.unitPrice), taxCode: item.taxCode }, ...ls.slice(1)]
+        ? [{ ...ls[0], itemId: item.id, description: item.name, unit: item.unit, unitPrice: moneyText(item.unitPrice), taxCode: item.taxCode,
+          ...(amountEditor && withholds && item.whtTypeCode ? { whtTypeCode: item.whtTypeCode } : {}) }, ...ls.slice(1)]
         : ls);
     }
   };
@@ -212,22 +225,29 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
             {partyKind && (
               <div className="md:col-span-2">
                 <PartyField kind={partyKind} value={party} onPick={(p) => void onPickParty(p)}
-                  onPending={setPartyBusy} onClear={() => { pickGen.current++; setPicking(false); setParty(undefined); setHeader((h) => ({ ...h, partyId: undefined })); }}
+                  onPending={setPartyBusy} onClear={() => { pickGen.current++; setPicking(false); setParty(undefined); setAllocations([]); setHeader((h) => ({ ...h, partyId: undefined })); }}
                   search={(q) => endpoints.searchParties({ kind: partyKind === 'employee' ? undefined : partyKind, q, limit: 8 }).then((p) => p.items)} />
               </div>
             )}
             <HeaderFields keys={d.headerFields} ids={ids} header={header} setHeader={setHeader} />
           </section>
 
-          <section aria-labelledby={`${ids}-lines`} className="grid gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
-            <h2 id={`${ids}-lines`} className="text-section font-semibold">{t('lines.title')}</h2>
-            <LineGrid lines={lines} onChange={setLines} searchItems={searchItems} amounts={amounts} computing={compute.pending} />
-          </section>
+          {d.settles && (
+            <SettlementPanel descriptor={d} partyId={header.partyId} value={allocations} onChange={setAllocations} allocation={compute.last?.allocation} />
+          )}
+
+          {showLines && (
+            <section aria-labelledby={`${ids}-lines`} className="grid gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
+              <h2 id={`${ids}-lines`} className="text-section font-semibold">{t('lines.title')}</h2>
+              <LineGrid lines={lines} onChange={setLines} searchItems={searchItems} amounts={amounts} computing={compute.pending}
+                variant={amountEditor ? 'amount' : 'item'} showCategory={partyKind === 'vendor' || partyKind === 'employee'} whtTypes={withholds ? (whtTypes.data ?? []) : undefined} />
+            </section>
+          )}
 
           <div className="grid gap-6 lg:grid-cols-2">
             <MissingSummary ref={missingRef} missing={compute.last?.missing} pending={compute.pending || !!compute.error} partyChosen={!!header.partyId}
               partyLabel={partyKind ? t(`party.${partyKind}`) : undefined} onJump={jump} />
-            <TotalsPanel totals={compute.data?.totals} pending={compute.pending} error={compute.error} onRetry={compute.retry} />
+            <TotalsPanel totals={compute.data?.totals} whtLines={compute.data?.whtLines} pending={compute.pending} error={compute.error} onRetry={compute.retry} />
           </div>
         </div>
         <PreviewDrawer open={previewOpen} onOpenChange={setPreviewChoice} docked={wide} party={party} lines={lines} compute={compute.data} />

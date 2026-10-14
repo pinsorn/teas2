@@ -1,5 +1,6 @@
 import type { ActivityEntry, Actor, ChainEdge, Doc, DocLine, DocStatus, DocType, Lock, PartySummary, Revision } from '@/domain/types';
 import { CLASS } from '@/domain/doc-types';
+import { bahtText } from '../engine/bahtText';
 import { fromSatang, toSatang } from '../engine/money';
 import { SeriesAllocator } from '../engine/numbering';
 import { computeDoc } from '../engine/vat';
@@ -132,10 +133,11 @@ export function buildDocs(parties: SeedParty[], items: SeedItem[]) {
   const activity: (ActivityEntry & { docId: string })[] = [], revisions: (Revision & { docId: string })[] = [];
 
   for (const s of specs) {
-    const lines = s.type === 'RC'
-      ? [{ id: `${s.key}-l1`, description: `รับชำระตามใบกำกับภาษี ${number[s.settles!]}`, qty: '1', unit: 'ครั้ง', unitPrice: fromSatang(s.paid!), taxCode: 'EX' as const }]
-      : s.lines;
-    const totals = computeDoc(lines, false).totals;
+    // a receipt settles through allocations, not lines (D-12): its total is the allocated amount, cash = total (no WHT withheld in the seed)
+    const lines = s.type === 'RC' ? [] : s.lines;
+    const totals = s.type === 'RC'
+      ? { ...computeDoc([], false).totals, total: fromSatang(s.paid!), wht: '0.00', cash: fromSatang(s.paid!), amountInWords: bahtText(fromSatang(s.paid!)) }
+      : computeDoc(lines, false).totals;
     const outstanding = s.type !== 'TI' ? undefined : s.status === 'settled' ? '0.00' : s.status === 'partly_settled' ? fromSatang(toSatang(totals.total) - s.paid!)
       : s.status === 'issued' ? totals.total : undefined;
     const issuedAt = s.status === 'draft' ? undefined : at(s.date, '10:00:00');
@@ -144,7 +146,8 @@ export function buildDocs(parties: SeedParty[], items: SeedItem[]) {
       revision: s.revision ?? 0, version: 1,
       header: { partyId: s.party.id, documentDate: s.date, ...(s.term ? { dueDate: addDays(s.date, s.party.paymentTermDays) } : {}),
         ...(s.notes ? { notes: s.notes } : {}), priceIncludesVat: false },
-      party: strip(s.party), lines, totals, ...(outstanding ? { outstanding } : {}), locks: s.locks ?? [], createdBy: s.by,
+      party: strip(s.party), lines, totals,
+      ...(s.type === 'RC' ? { allocations: [{ targetId: s.settles!, targetType: 'TI' as const, targetNumber: number[s.settles!], amount: fromSatang(s.paid!) }] } : {}), ...(outstanding ? { outstanding } : {}), locks: s.locks ?? [], createdBy: s.by,
       ...(issuedAt ? { issuedAt } : {}),
       ...(s.status === 'replaced' ? { cancel: { reasonCode: 'WRONG_DETAIL', reasonText: 'ข้อมูลผู้ซื้อไม่ถูกต้อง ยกเลิกและออกใหม่', at: at(addDays(s.date, 2), '11:00:00') } } : {}),
       ...(s.replacedBy ? { replacedById: s.replacedBy } : {}), ...(s.replaces ? { replacesId: s.replaces } : {}),

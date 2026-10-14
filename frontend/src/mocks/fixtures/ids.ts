@@ -5,7 +5,12 @@ type D = MockState['docs'][number];
 const isTi = (d: D) => d.type === 'TI';
 
 export type FixtureKey = 'tiDraft' | 'tiDraftNoTin' | 'tiIssuedUnpaid' | 'tiPartly' | 'tiSettled' | 'tiFilingLocked'
-  | 'tiReplaced' | 'tiLong' | 'tiPeriodLocked'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
+  | 'tiReplaced' | 'tiLong' | 'tiPeriodLocked' | 'rcTargetsA' | 'rcTargetsB'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
+
+/** An issued, untouched TI of pc-01 (the multi-target receipt vector settles two of them). */
+const rcTarget = (d: D, st: MockState) => isTi(d) && d.status === 'issued' && d.party?.id === 'pc-01' && d.outstanding === d.totals.total
+  && !st.links.some((l) => l.active && l.to === d.id) && !derivedLocks(st, d).some((l) => l.kind !== 'period');
+const firstRcTarget = (st: MockState) => st.docs.filter((x) => rcTarget(x, st)).map((x) => x.id).sort()[0];
 
 /** Predicates evaluate the READ model (derivedLocks), never the stored row alone. */
 export const FIXTURE_PREDICATES: Record<FixtureKey, (d: D, st: MockState) => boolean> = {
@@ -19,6 +24,8 @@ export const FIXTURE_PREDICATES: Record<FixtureKey, (d: D, st: MockState) => boo
   tiReplaced: (d) => isTi(d) && d.status === 'replaced',
   tiLong: (d) => isTi(d) && d.id === 'spike-60',
   // issued, only the period lock, nothing linked to it: a correction (M2) has a plain reissue path
+  rcTargetsA: (d, st) => rcTarget(d, st) && d.id === firstRcTarget(st),
+  rcTargetsB: (d, st) => rcTarget(d, st) && d.id !== firstRcTarget(st), // the lowest id of the rest
   tiPeriodLocked: (d, st) => isTi(d) && d.status === 'issued' && !d.id.startsWith('spike-') && !d.replacesId
     && derivedLocks(st, d).length === 1 && derivedLocks(st, d)[0].kind === 'period' && !st.links.some((l) => l.active && l.to === d.id),
 };

@@ -8,6 +8,7 @@ import { chartOfAccounts } from './coa';
 import { buildDocs } from './documents';
 import type { SeedSpec } from './seed-runner';
 import { nonVatItems, vatItems } from './items';
+import { whtTypesFor } from './wht-types';
 import { nonVatParties, vatParties } from './parties';
 
 /** Documents later groups seed THROUGH the engine (`fixtures/specs/<group>.ts`, appended here in group order). */
@@ -31,12 +32,12 @@ export function buildSeed(role: Role): MockState {
   const items = [...vatItems(), ...nonVatItems()];
   const { docs, links, activity, revisions, series } = buildDocs(parties, items);
   return {
-    version: 3,
+    version: 4,
     companies,
     memberships: companies.map((c) => ({ userId: 'u-1', companyId: c.id, companyName: c.legalNameTh, role: c.vatRegistered ? role : 'operator' })),
     parties, items, docs, links, activity, revisions, journals: [], audit: [], series,
     accounts: companies.flatMap((c) => chartOfAccounts().map((a) => ({ ...a, companyId: c.id }))),
-    bankAccounts: bankAccounts(),
+    bankAccounts: bankAccounts(), whtTypes: companies.flatMap((c) => whtTypesFor(c.id)),
     postingRules: companies.flatMap((c) => postingRulesFor(c.id, Object.fromEntries(bankAccounts().filter((b) => b.companyId === c.id).map((b) => [b.id, b.accountCode])))),
     periods: companies.flatMap((c) => periodsFor(c.id)),
   };

@@ -129,7 +129,7 @@ describe('fix round 1: outstanding, seed validity, cancel blocks (SP0 7.4 / 7.11
   it('seed: every non-draft document passes the same validation as issue', () => {
     const s = seed();
     for (const d of s.docs.filter((x) => x.status !== 'draft')) {
-      expect({ id: d.id, missing: missingOf(s, d.companyId, d.type, { header: d.header, lines: d.lines }) }).toEqual({ id: d.id, missing: [] });
+      expect({ id: d.id, missing: missingOf(s, d.companyId, d.type, { header: d.header, lines: d.lines, allocations: d.allocations }) }).toEqual({ id: d.id, missing: [] });
     }
     const tinless = (id?: string) => s.parties.some((p) => p.id === id && p.vatRegistered && !p.taxId);
     expect(s.parties.some((p) => p.vatRegistered && !p.taxId)).toBe(true); // the TIN-less party still exists

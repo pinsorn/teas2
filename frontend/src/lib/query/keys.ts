@@ -11,4 +11,7 @@ export const qk = {
   revisions: (c: string, type: DocType, id: string) => [c, 'revisions', type, id] as const,
   paper: (c: string, type: DocType, id: string, copy: boolean) => [c, 'paper', type, id, copy] as const,
   ledger: (c: string, type: DocType, id: string) => [c, 'ledger', type, id] as const,
+  openItems: (c: string, partyId: string, types: string) => [c, 'open-items', partyId, types] as const,
+  bankAccounts: (c: string) => [c, 'bank-accounts'] as const,
+  whtTypes: (c: string) => [c, 'wht-types'] as const,
 };

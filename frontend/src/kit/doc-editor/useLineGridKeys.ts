@@ -1,14 +1,16 @@
 import type { KeyboardEvent } from 'react';
 
-export type Cell = 'description' | 'qty' | 'unitPrice';
+export type Cell = 'description' | 'qty' | 'unitPrice' | 'category';
 const ORDER: Cell[] = ['description', 'qty', 'unitPrice'];
+/** The amount editor (RC / PV): description, the optional expense category, then the amount (stored in unitPrice, qty is always 1). */
+export const AMOUNT_ORDER = (category: boolean): Cell[] => (category ? ['description', 'category', 'unitPrice'] : ['description', 'unitPrice']);
 
-export function nextCell(row: number, cell: Cell, rows: number, back = false): { row: number; cell: Cell } | 'add-row' | null {
-  const i = ORDER.indexOf(cell) + (back ? -1 : 1);
-  if (i >= 0 && i < ORDER.length) return { row, cell: ORDER[i] };
-  if (!back && row + 1 < rows) return { row: row + 1, cell: ORDER[0] };
+export function nextCell(row: number, cell: Cell, rows: number, back = false, order: Cell[] = ORDER): { row: number; cell: Cell } | 'add-row' | null {
+  const i = order.indexOf(cell) + (back ? -1 : 1);
+  if (i >= 0 && i < order.length) return { row, cell: order[i] };
+  if (!back && row + 1 < rows) return { row: row + 1, cell: order[0] };
   if (!back) return 'add-row';
-  return row > 0 ? { row: row - 1, cell: ORDER[ORDER.length - 1] } : null;
+  return row > 0 ? { row: row - 1, cell: order[order.length - 1] } : null;
 }
 
 export const isComposing = (e: KeyboardEvent) => e.nativeEvent.isComposing || e.keyCode === 229;

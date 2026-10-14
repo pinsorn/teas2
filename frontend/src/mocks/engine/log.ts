@@ -1,4 +1,4 @@
-import type { Actor, DocHeader, DocLine, FieldChange } from '@/domain/types';
+import type { Actor, Allocation, DocHeader, DocLine, FieldChange } from '@/domain/types';
 import { ANCHOR } from '../fixtures/documents';
 import type { MockState } from '../store';
 
@@ -29,7 +29,7 @@ export function logAudit(st: MockState, actor: Actor, companyId: string, command
   st.audit.push({ id: `aud-${st.audit.length + 1}`, at: stamp(), actor, companyId, command, target, before, after, result: 'ok' });
 }
 
-type Body = { header: DocHeader; lines: DocLine[] };
+type Body = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] };
 const val = (v: unknown): string | null => (v == null ? null : typeof v === 'string' ? v : JSON.stringify(v));
 const keys = (a: object, b: object) => [...new Set([...Object.keys(a), ...Object.keys(b)])];
 
@@ -44,6 +44,14 @@ export function diffBody(a: Body, b: Body): FieldChange[] {
     const lb = b.lines.find((l) => l.id === id) as unknown as Record<string, unknown> | undefined;
     if (!la || !lb) { push(`lines.${id}`, la?.description, lb?.description); continue; }
     for (const k of keys(la, lb)) push(`lines.${id}.${k}`, la[k], lb[k]);
+  }
+  // settlement allocations, one path per target (a certificate number edit shows as allocations.<target>.certNumber)
+  const aa = new Map((a.allocations ?? []).map((x) => [x.targetId, x as unknown as Record<string, unknown>]));
+  const ab = new Map((b.allocations ?? []).map((x) => [x.targetId, x as unknown as Record<string, unknown>]));
+  for (const id of new Set([...aa.keys(), ...ab.keys()])) {
+    const x = aa.get(id), y = ab.get(id);
+    if (!x || !y) { push(`allocations.${id}`, x?.amount, y?.amount); continue; }
+    for (const k of keys(x, y)) if (k !== 'targetNumber') push(`allocations.${id}.${k}`, x[k], y[k]);
   }
   return out;
 }

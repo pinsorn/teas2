@@ -52,3 +52,8 @@ Entry format — terse, greppable by symptom:
 - **Symptom:** `page.goto('/unknown')` returns 200 even though the route calls `notFound()` (also true of `/print/ZZ/1`); the not-found UI is shown.
 - **Root cause:** with `NEXT_PUBLIC_API_MOCKING=enabled`, `MockProvider` (client) renders `null` on the server until the worker starts, so the shell streams with 200 before the page's `notFound()` runs. Next only emits 404 if `notFound()` fires before streaming.
 - **Fix:** assert the not-found content (and the `noindex` meta Next adds), not `response.status()`, in mock-mode e2e. A real 404 needs a Proxy check or mocking off.
+
+## Scripted multi-line edits on Windows: heredoc abort, `/tmp` path, CRLF files (frontend)
+- **Symptom:** a Bash-tool `cat <<'EOF'` / `node` edit script aborts with `unexpected EOF while looking for matching '` (long script with Thai text, quotes and backticks); `node -e "...readFileSync('/tmp/x')"` fails with `ENOENT Y:\tmp\x`; a multi-line `replace` silently does not match one file (`TotalsPanel.tsx`).
+- **Root cause:** Git Bash cannot parse that heredoc; Git Bash translates `/tmp` only in command-line arguments (`node /tmp/x.mjs`), not inside a node string (it resolves to `Y:\tmp`); some repo files are CRLF (`file <path>` shows it), so `\n` patterns miss.
+- **Fix:** write the edit script with the Write tool (scratchpad dir) and run `node <script>`; use drive-letter paths inside scripts; for a CRLF file use the Edit/Write tools or normalise `\r\n` before matching.

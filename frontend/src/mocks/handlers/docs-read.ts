@@ -1,11 +1,13 @@
-import { DOC_TYPES, isTypeAvailable } from '@/domain/doc-types';
+import { DOC_TYPES, LIVE, isTypeAvailable } from '@/domain/doc-types';
 import { HttpResponse, http } from 'msw';
-import type { Doc, DocType, DocSummary, Lock, Page } from '@/domain/types';
+import type { Doc, DocType, DocSummary, Lock, OpenItem, Page } from '@/domain/types';
 import { ctx, forbidden, problem, screenGate } from './common';
 
 import { recomputeSettlement, unavailableTh } from '../engine/commands';
 import { today } from '../engine/log';
 import { derivedLocks } from '../engine/locks';
+import { balanceOf } from '../engine/settlement';
+import { fromSatang } from '../engine/money';
 
 const LOCKED: Lock = { kind: 'filing', reason: 'ภ.พ.30 เดือน ก.ย. 2569 ยื่นแล้ว', exits: ['ออกใบลดหนี้ / ใบเพิ่มหนี้ในงวดถัดไป'] };
 const LOCKABLE = ['issued', 'partly_settled', 'settled'];
@@ -16,6 +18,27 @@ export const toSummary = (d: Doc): DocSummary => ({
 });
 
 export const docsReadHandlers = [
+  // registered before `/docs/:type` so "open-items" is never read as a document type.
+  // Permission: doc.<T>.read for every requested type this company has (a type the company cannot use, e.g. IV for a VAT company, is skipped).
+  http.get('*/bff/v1/docs/open-items', async ({ request }) => {
+    const gate = await screenGate('item');
+    if (gate) return gate;
+    const { st, company, perms } = ctx();
+    const u = new URL(request.url);
+    const partyId = u.searchParams.get('partyId');
+    const asked = (u.searchParams.get('types') ?? '').split(',').filter(Boolean);
+    if (!partyId || !asked.length || asked.some((t) => !Object.hasOwn(DOC_TYPES, t) || !DOC_TYPES[t as DocType].outstanding)) {
+      return problem(422, 'doc.open_items_query', 'ต้องระบุคู่ค้าและประเภทเอกสารที่มียอดค้างชำระ');
+    }
+    const types = (asked as DocType[]).filter((t) => isTypeAvailable(t, company.vatRegistered));
+    for (const t of types) if (!perms.includes(`doc.${t}.read`)) return forbidden(`doc.${t}.read`);
+    const items = st.docs
+      .filter((d) => d.companyId === company.id && d.header.partyId === partyId && types.includes(d.type) && LIVE.includes(d.status) && balanceOf(st, d).out !== 0)
+      .sort((a, b) => a.header.documentDate.localeCompare(b.header.documentDate) || (a.number ?? '').localeCompare(b.number ?? ''))
+      .map((d): OpenItem => ({ id: d.id, type: d.type, number: d.number ?? '', documentDate: d.header.documentDate, ...(d.header.dueDate ? { dueDate: d.header.dueDate } : {}),
+        total: d.totals.total, outstanding: fromSatang(balanceOf(st, d).out) }));
+    return HttpResponse.json(items);
+  }),
   http.get('*/bff/v1/docs/:type', async ({ request, params }) => {
     const gate = await screenGate('list');
     if (gate) return gate;
