@@ -397,5 +397,22 @@
       "body": "A document number is assigned and the entry is posted now. To fix a mistake, cancel and reissue.",
       "back": "Back to editing"
     }
+  },
+  "taxInvoice": {
+    "columns": {
+      "number": "Number",
+      "date": "Date",
+      "customer": "Customer",
+      "total": "Total",
+      "outstanding": "Outstanding",
+      "status": "Status"
+    },
+    "views": {
+      "draft": "Drafts",
+      "outstanding": "Outstanding",
+      "overdue": "Overdue",
+      "cancelled": "Cancelled"
+    },
+    "copyFailed": "Could not copy from the source document"
   }
 }

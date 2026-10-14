@@ -98,7 +98,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
   const tabs = ['paper', 'chain', 'ledger', 'activity', 'revisions'] as const;
 
   return (
-    <div className="grid gap-4">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
       <header className="grid gap-2">
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-small text-muted-foreground">{title}</p>
@@ -120,8 +120,8 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
       {convert.error ? <Alert variant="destructive"><AlertTitle>{convert.error instanceof ApiError ? convert.error.problem.title : tc('retry')}</AlertTitle></Alert> : null}
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="h-auto flex-wrap">{tabs.map((k) => <TabsTrigger key={k} value={k}>{t(`tabs.${k}`)}</TabsTrigger>)}</TabsList>
-        <TabsContent value="paper">{doc.type === 'TI' ? <PaperView type="TI" id={doc.id} /> : <PaperStub doc={doc} />}</TabsContent>
+        <TabsList className="h-auto flex-wrap group-data-horizontal/tabs:h-auto">{tabs.map((k) => <TabsTrigger key={k} value={k} className="h-8 flex-auto">{t(`tabs.${k}`)}</TabsTrigger>)}</TabsList>
+        <TabsContent value="paper" className="overflow-x-auto">{doc.type === 'TI' ? <PaperView type="TI" id={doc.id} /> : <PaperStub doc={doc} />}</TabsContent>
         <TabsContent value="chain"><ChainPanel type={d.type} id={doc.id} /></TabsContent>
         <TabsContent value="ledger"><LedgerTab type={d.type} id={doc.id} /></TabsContent>
         <TabsContent value="activity"><ActivityTimeline type={d.type} id={doc.id} /></TabsContent>

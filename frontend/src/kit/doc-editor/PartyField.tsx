@@ -1,6 +1,6 @@
 'use client';
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { PartySummary } from '@/domain/types';
@@ -13,14 +13,18 @@ export interface PartyFieldProps {
   onPick: (p: PartySummary) => void;
   /** The user edited the text after picking, so the picked party no longer matches the box. */
   onClear: () => void;
+  /** True while a lookup is running: the host must not act on the document until the pick has landed. */
+  onPending?: (pending: boolean) => void;
 }
 
-export function PartyField({ kind, value, search, onPick, onClear }: PartyFieldProps) {
+export function PartyField({ kind, value, search, onPick, onClear, onPending }: PartyFieldProps) {
   const t = useTranslations('docEditor');
   const label = t(`party.${kind}`);
   const [text, setText] = useState(value?.name ?? '');
   const s = useSuggest(search, (p) => { setText(p.name); onPick(p); });
   const id = `${s.listId}-input`;
+  const searching = s.note === 'searching';
+  useEffect(() => { onPending?.(searching); }, [searching, onPending]);
   return (
     <div className="grid gap-1.5">
       <Label htmlFor={id}>{label}</Label>

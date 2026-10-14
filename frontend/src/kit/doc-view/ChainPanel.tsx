@@ -27,17 +27,20 @@ function flatten(g: ChainGraph): TreeNode[] {
   const byId = new Map(g.nodes.map((n) => [n.id, n]));
   const seen = new Set<string>();
   const out: TreeNode[] = [];
-  const visit = (id: string, depth: number, edge?: ChainEdge, incoming = false) => {
-    const node = byId.get(id);
-    if (!node || seen.has(id)) return;
-    seen.add(id);
-    out.push({ node, edge, incoming, depth });
+  // A document is labelled by its closest link to the root (e.g. "ออกแทนโดย" for a replacement): each node claims its direct
+  // neighbours before any of them descends, so a replacement is not reached first through a copied conversion link.
+  const expand = (id: string, depth: number) => {
+    const next: TreeNode[] = [];
     for (const e of g.edges) {
-      if (e.from === id) visit(e.to, depth + 1, e, false);
-      else if (e.to === id) visit(e.from, depth + 1, e, true);
+      const incoming = e.to === id;
+      const other = byId.get(incoming ? e.from : e.to);
+      if ((e.from === id || incoming) && other && !seen.has(other.id)) { seen.add(other.id); next.push({ node: other, edge: e, incoming, depth: depth + 1 }); }
     }
+    out.push(...next);
+    for (const n of next) expand(n.node.id, depth + 1);
   };
-  visit(g.rootId, 0);
+  const root = byId.get(g.rootId);
+  if (root) { seen.add(root.id); out.push({ node: root, incoming: false, depth: 0 }); expand(root.id, 0); }
   return out;
 }
 

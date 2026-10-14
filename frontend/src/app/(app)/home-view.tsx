@@ -2,7 +2,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { LockIcon } from 'lucide-react';
 import Link from 'next/link';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
 import { docHref } from '@/app-shell/nav';
 import { isForbidden, useMe } from '@/app-shell/useMe';
@@ -10,6 +10,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { taxInvoice } from '@/descriptors/tax-invoice';
+import { routesOf } from '@/domain/descriptors';
 import type { DocSummary, HomeInbox, IsoDate } from '@/domain/types';
 import { endpoints } from '@/lib/api/endpoints';
 import { formatDateBE, formatTHB } from '@/lib/format';
@@ -129,10 +131,17 @@ function Kpis({ home }: { home: Home }) {
 export function HomeView() {
   const t = useTranslations('home');
   const home = useHome();
+  const tl = useTranslations('docList');
+  const locale = useLocale();
+  const { me } = useMe();
+  const canCreateTi = !!me?.vatRegistered && me.permissions.includes(taxInvoice.permissions.create);
   const d: HomeInbox | undefined = home.data;
   return (
     <div className="flex max-w-5xl flex-col gap-6">
       <h1 className="text-xl font-semibold">{t('title')}</h1>
+      {canCreateTi && (
+        <div><Button asChild><Link href={routesOf(taxInvoice).create}>{tl('create', { title: locale === 'en' ? taxInvoice.titleEn : taxInvoice.titleTh })}</Link></Button></div>
+      )}
       <Kpis home={home} />
       <div className="grid gap-x-8 gap-y-6 lg:grid-cols-2">
         <Section id="h-approvals" title={t('approvals.title')} home={home} empty={d && !d.approvals.length ? t('approvals.empty') : null}>

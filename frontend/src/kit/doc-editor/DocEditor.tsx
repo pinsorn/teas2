@@ -85,6 +85,8 @@ export function DocEditor({ descriptor: d, mode, initial, onIssued, onRevisionRe
   const issuing = useRef(false);
   const pickGen = useRef(0); // newest party selection wins: older usual-item lookups are dropped
   const [stale, setStale] = useState(false);
+  const [partyBusy, setPartyBusy] = useState(false); // a party lookup / pick (with its usual-item prefill) is still landing
+  const [picking, setPicking] = useState(false);
 
   const [header, setHeader] = useState<DocHeader>(initial?.header ?? { documentDate: todayIso() });
   const [lines, setLines] = useState<DocLine[]>(initial?.lines.length ? initial.lines : [newLine()]);
@@ -116,10 +118,10 @@ export function DocEditor({ descriptor: d, mode, initial, onIssued, onRevisionRe
   const title = locale === 'en' ? d.titleEn : d.titleTh;
   const partyKind = d.partyKind;
   const missing = compute.data?.missing; // gates the actions: only a settled answer to the current input counts
-  const canAct = !!me?.permissions.includes(mode === 'revise' ? d.permissions.correct : d.permissions.issue);
+  const canAct = !!me?.permissions.includes(mode === 'revise' ? d.permissions.create : d.permissions.issue);
   const why = me && !canAct ? 'permission'
     : autosave.status === 'conflict' ? 'conflict'
-    : compute.pending || compute.error ? 'computing'
+    : compute.pending || compute.error || partyBusy || picking ? 'computing'
     : missing?.length ? 'missing' : undefined;
   const ready = canAct && !why;
   const dialogOpen = confirmOpen || (want === payloadJson && ready);
@@ -158,10 +160,12 @@ export function DocEditor({ descriptor: d, mode, initial, onIssued, onRevisionRe
 
   const onPickParty = async (p: PartySummary) => {
     const gen = ++pickGen.current;
+    setPicking(true);
     const first = p.usualItemIds?.[0];
     let item: ItemSummary | undefined;
     if (first && lines.length > 0 && isBlankLine(lines[0])) { try { item = await itemById(first); } catch { /* the prefill is a convenience */ } }
     if (gen !== pickGen.current) return;
+    setPicking(false);
     setParty(p);
     setHeader((h) => ({ ...h, partyId: p.id, dueDate: addDays(h.documentDate, p.paymentTermDays) }));
     if (item) {
@@ -203,7 +207,7 @@ export function DocEditor({ descriptor: d, mode, initial, onIssued, onRevisionRe
             {partyKind && (
               <div className="md:col-span-2">
                 <PartyField kind={partyKind} value={party} onPick={(p) => void onPickParty(p)}
-                  onClear={() => { pickGen.current++; setParty(undefined); setHeader((h) => ({ ...h, partyId: undefined })); }}
+                  onPending={setPartyBusy} onClear={() => { pickGen.current++; setPicking(false); setParty(undefined); setHeader((h) => ({ ...h, partyId: undefined })); }}
                   search={(q) => endpoints.searchParties({ kind: partyKind === 'employee' ? undefined : partyKind, q, limit: 8 }).then((p) => p.items)} />
               </div>
             )}

@@ -33,7 +33,7 @@ export function ActionBar({ descriptor: d, doc, permissions, onCancel, onConvert
   const routes = routesOf(d);
   const can = (p: string) => permissions.includes(p);
   const missing = (p: string) => (can(p) ? undefined : ts('needPermission', { permission: p }));
-  // Cancel stays blocked by filing / settlement / reconciliation locks; a period lock does not block it (SP0 7.5), and edit is never lock-blocked (7.3: the plan decides).
+  // Edit only needs the right to author this type: the correction plan lists the permissions its steps need and offers the approver path. Cancel stays blocked by filing / settlement / reconciliation locks; a period lock does not block it (SP0 7.5), and edit is never lock-blocked (7.3: the plan decides).
   const blocker = doc.locks.find((l) => l.kind !== 'period');
   const locked = blocker ? t('locked', { reason: blocker.reason }) : undefined;
   const live = LIVE.includes(doc.status);
@@ -53,7 +53,7 @@ export function ActionBar({ descriptor: d, doc, permissions, onCancel, onConvert
             {(p) => <Button {...p} asChild={!p.disabled}>{p.disabled ? <span>{t('issueDraft')}</span> : <Link href={routes.edit(doc.id)}>{t('issueDraft')}</Link>}</Button>}
           </Guarded>
         ) : (
-          <Guarded why={live ? missing(d.permissions.correct) : doc.status === 'replaced' ? t('whyReplaced') : t('whyCancelled')}>
+          <Guarded why={live ? missing(d.permissions.create) : doc.status === 'replaced' ? t('whyReplaced') : t('whyCancelled')}>
             {(p) => <Button {...p} asChild={!p.disabled}>{p.disabled ? <span>{t('edit')}</span> : <Link href={routes.edit(doc.id)}>{t('edit')}</Link>}</Button>}
           </Guarded>
         )}
