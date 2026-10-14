@@ -264,5 +264,91 @@
     "confirmWords": "(Sixty-four thousand two hundred baht only)",
     "confirmCancel": "Back to editing",
     "confirmAction": "Issue tax invoice"
+  },
+  "docEditor": {
+    "create": "New {title}",
+    "editDraft": "Edit draft {title}",
+    "revise": "Edit {title}",
+    "party": {
+      "customer": "Customer",
+      "vendor": "Vendor",
+      "employee": "Employee"
+    },
+    "partyHint": "Type a name or code, then press Enter to pick",
+    "searchFailed": "Search failed. Try typing again.",
+    "noMatch": "No match. You can keep the text you typed.",
+    "searching": "Searching…",
+    "taxIdLine": "Tax ID {tin} · Branch {branch}",
+    "noTaxId": "No tax ID",
+    "documentDate": "Document date",
+    "dueDate": "Due date",
+    "reference": "Reference",
+    "notes": "Notes",
+    "lines": {
+      "title": "Lines",
+      "description": "Item {n}",
+      "qty": "Quantity {n}",
+      "price": "Unit price {n}",
+      "colDescription": "Item",
+      "colQty": "Quantity",
+      "colPrice": "Unit price",
+      "colAmount": "Amount",
+      "amount": "Line amount {n}",
+      "remove": "Remove line {n}",
+      "add": "Add line",
+      "hint": "Enter moves to the next cell  ·  Enter in the last cell adds a line  ·  Paste from Excel (item, qty, price)"
+    },
+    "missing": {
+      "title": "What is still missing",
+      "done": "All set",
+      "pickParty": "Pick a {party}",
+      "checking": "Checking…"
+    },
+    "totals": {
+      "title": "Totals",
+      "computing": "Calculating…",
+      "net": "Net before VAT",
+      "vat": "VAT",
+      "total": "Grand total (THB)",
+      "totalLabel": "Grand total",
+      "wht": "Withholding tax",
+      "failed": "Could not calculate the totals"
+    },
+    "save": "Save draft",
+    "saveRevision": "Save changes",
+    "preview": "Document preview",
+    "journal": "View journal entry",
+    "status": {
+      "pending": "Unsaved changes",
+      "saving": "Saving draft…",
+      "saved": "Draft saved",
+      "failed": "Could not save the draft"
+    },
+    "saveFailedHint": "Your input is still on this page. Try saving again.",
+    "conflictHint": "Your input is still on this page but will not overwrite the other change. Reload the document to see the latest version.",
+    "reload": "Reload document",
+    "issueFailed": "Could not issue the document",
+    "issuing": "Issuing…",
+    "whyDisabled": {
+      "computing": "Waiting for the totals",
+      "missing": "Not complete yet, see \"What is still missing\"",
+      "conflict": "Someone changed this document first. Reload before issuing.",
+      "permission": "You do not have permission to do this",
+      "saving": "Saving the draft"
+    },
+    "shortcuts": "Ctrl+Enter issue  ·  Ctrl+S save draft",
+    "previewTitle": "Document preview",
+    "previewBody": "Preview from the calculated totals. The real paper layout shows when you open the document.",
+    "journalTitle": "Journal entry to be posted",
+    "journalBody": "A preview from the system. Nothing is posted until the document is issued.",
+    "journalEmpty": "No journal entry yet",
+    "account": "Account",
+    "debit": "Debit",
+    "credit": "Credit",
+    "confirm": {
+      "title": "Issue {title}",
+      "body": "A document number is assigned and the entry is posted now. To fix a mistake, cancel and reissue.",
+      "back": "Back to editing"
+    }
   }
 }
