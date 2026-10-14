@@ -13,7 +13,7 @@ import { testServer } from '@/mocks/test-server';
 import { CorrectionPlanDialog } from '../dialogs/CorrectionPlanDialog';
 import { endpoints } from '@/lib/api/endpoints';
 import { problem } from '@/mocks/handlers/common';
-import { formatDateBE, formatMoney, formatTHB, todayIso } from '@/lib/format';
+import { formatDateBE, formatMoney, formatTHB } from '@/lib/format';
 import { fixtureIds } from '@/mocks/fixtures/ids';
 import { useRouter } from 'next/navigation';
 import { qk } from '@/lib/query/keys';
@@ -370,14 +370,23 @@ describe('F3 debt — plan dialog, chain, ledger.read, cancel, revisions', () =>
     ui(lone().id);
     expect(await screen.findByRole('tab', { name: 'ผลต่อบัญชี' })).toBeEnabled();
   });
-  it('cancel dialog shows the document total and the reversal date before confirming (rule 3)', async () => {
+  it('cancel dialog shows the total and no client-guessed date; the actual reversal date comes from the server journal (rule 3)', async () => {
     const d = find((x) => x.id === fixtureIds(loadState()).tiIssuedUnpaid);
     ui(d.id);
     await userEvent.click(await screen.findByRole('button', { name: 'ยกเลิกเอกสาร' }));
     const dialog = await screen.findByRole('alertdialog');
     expect(within(dialog).getByText(formatTHB(d.totals.total))).toBeVisible();
-    expect(within(dialog).getByText(formatDateBE(todayIso()))).toBeVisible();
+    expect(within(dialog).getByText('วันที่ปัจจุบันของงวดบัญชีที่เปิดอยู่ (ระบบเป็นผู้กำหนด)')).toBeVisible();
+    expect(dialog.textContent).not.toMatch(/d{1,2} S+ 25dd/); // no Buddhist-era date rendered by the client
     expect(within(dialog).getByRole('button', { name: 'ยืนยันยกเลิก' })).toBeDisabled(); // still needs a reason
+    await userEvent.click(within(dialog).getByRole('combobox'));
+    await userEvent.click(await screen.findByRole('option', { name: 'ออกซ้ำ' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'ยืนยันยกเลิก' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    await userEvent.click(await screen.findByRole('tab', { name: 'ผลต่อบัญชี' }));
+    const served = (await endpoints.getLedger(d.type, d.id)).entries.find((e) => e.kind === 'reversal')!;
+    const heading = await screen.findByRole('heading', { name: /รายการกลับรายการ/ });
+    expect(heading).toHaveTextContent(formatDateBE(served.date)); // the date the server posted
   });
   it('revision diffs name the field and the line number, never the raw path', async () => {
     const d = lone();

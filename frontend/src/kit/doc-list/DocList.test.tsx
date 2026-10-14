@@ -176,19 +176,28 @@ describe('DocList — SP1ab kit debt (F3)', () => {
     expect(select).toHaveValue('issued,partly_settled');
     expect(select).toHaveDisplayValue('ค้างชำระ');
   });
-  it('retry after a failed page-1 refetch refetches page 1, not the next page (SP1ab I8 regression)', async () => {
+  it('retry after a failed REFETCH with pages on screen refetches page 1, not the next page (SP1ab I8 regression)', async () => {
     const cursors: (string | null)[] = [];
-    let fail = true;
+    let mode: 'ok' | 'fail' | 'ok2' = 'ok';
     testServer.use(http.get('*/bff/v1/docs/:type', ({ request }) => {
       cursors.push(new URL(request.url).searchParams.get('cursor'));
-      return fail ? HttpResponse.json({ status: 500, code: 'x', title: 'ล้มเหลว' }, { status: 500 }) : HttpResponse.json({ items: [row('ti-x1')], nextCursor: 'c2' });
+      if (mode === 'fail') return HttpResponse.json({ status: 500, code: 'x', title: 'ล้มเหลว' }, { status: 500 });
+      return HttpResponse.json({ items: [row(mode === 'ok' ? 'ti-x1' : 'ti-x9')], nextCursor: 'c2' }); // there IS a next page
     }));
-    ui();
-    expect(await screen.findByRole('alert')).toHaveTextContent('ล้มเหลว');
-    fail = false;
-    await userEvent.click(screen.getByRole('button', { name: 'ลองใหม่' }));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    ui([], qc);
     expect(await screen.findByText('TI-X1')).toBeVisible();
-    expect(cursors).toEqual([null, null]); // the second GET is page 1 again, with no cursor
+    mode = 'fail';
+    await act(async () => { await qc.refetchQueries({ predicate: (q) => q.queryKey.includes('docs') }).catch(() => undefined); });
+    expect(await screen.findByRole('alert')).toHaveTextContent('ล้มเหลว');
+    expect(screen.getByText('TI-X1')).toBeVisible(); // pages already loaded stay; the error sits beside them, never "no data"
+    expect(screen.queryByText(/ยังไม่มี/)).toBeNull();
+    mode = 'ok2';
+    cursors.length = 0;
+    await userEvent.click(screen.getByRole('button', { name: 'ลองใหม่' }));
+    expect(await screen.findByText('TI-X9')).toBeVisible();
+    expect(cursors[0]).toBeNull(); // the retry re-reads page 1 (an I8 regression would call fetchNextPage with cursor c2)
+    expect(cursors).not.toContain('c2');
   });
   it('from > to shows an inline error and does not query', async () => {
     const seen: string[] = [];
@@ -206,6 +215,24 @@ describe('DocList — SP1ab kit debt (F3)', () => {
     fireEvent.change(screen.getByLabelText('ถึงวันที่'), { target: { value: '2026-10-20' } });
     await waitFor(() => expect(screen.queryByText('วันที่เริ่มต้องไม่เกินวันที่สิ้นสุด')).toBeNull());
     await waitFor(() => expect(seen.some((s) => s.includes('to=2026-10-20'))).toBe(true));
+  });
+  it('a URL that already has from > to on first load sends no range and shows the error', async () => {
+    const seen: string[] = [];
+    testServer.use(http.get('*/bff/v1/docs/:type', ({ request }) => { seen.push(new URL(request.url).search); return HttpResponse.json({ items: [row('ti-x1')] }); }));
+    __setSearch('from=2026-10-10&to=2026-10-01');
+    ui();
+    expect(await screen.findByText('TI-X1')).toBeVisible();
+    expect(await screen.findByText('วันที่เริ่มต้องไม่เกินวันที่สิ้นสุด')).toBeVisible();
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((q) => !q.includes('from=') && !q.includes('to='))).toBe(true);
+  });
+  it('picking "ค้างชำระ" in the status select sets the same filter as the saved view (outstanding=positive too)', async () => {
+    ui();
+    await screen.findAllByRole('row');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'สถานะ' }), 'issued,partly_settled');
+    const url = vi.mocked(useRouter().replace).mock.lastCall![0] as string;
+    expect(decodeURIComponent(url)).toContain('status=issued,partly_settled');
+    expect(url).toContain('outstanding=positive');
   });
   it('back-forward restores the search box text from the URL', async () => {
     __setSearch('q=นาวา');

@@ -36,7 +36,7 @@ export function RevisionHistory({ type, id, renderPaper }: { type: DocType; id: 
   };
   const field = (path: string, own: Doc) => {
     if (FIELD_LABELS[path]) return t(FIELD_LABELS[path] as never);
-    const m = /^lines.([^.]+)(?:.(.+))?$/.exec(path);
+    const m = /^lines\.([^.]+)(?:\.(.+))?$/.exec(path);
     if (!m) return path;
     const n = lineNo(m[1], own);
     const line = n ? t('lineN', { n }) : m[1];

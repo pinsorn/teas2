@@ -11,7 +11,7 @@ import { routesOf, type DocDescriptor } from '@/domain/descriptors';
 import type { Doc, DocType } from '@/domain/types';
 import { ApiError } from '@/lib/api/client';
 import { endpoints } from '@/lib/api/endpoints';
-import { formatDateBE, formatTHB, todayIso } from '@/lib/format';
+import { formatDateBE, formatTHB } from '@/lib/format';
 import { qk } from '@/lib/query/keys';
 import { CancelDialog } from '../dialogs/CancelDialog';
 import { StatusChip } from '../doc-list/StatusChip';
@@ -150,7 +150,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
       </Tabs>
 
       {cancelOpen ? (
-        <CancelDialog docLabel={label} total={doc.totals.total} reversalDate={todayIso()} busy={cancel.isPending} error={cancel.error} hint={cancel.error instanceof ApiError && cancel.error.code === 'doc.version_conflict' ? t('cancel.stale') : undefined} onCancel={() => setCancelOpen(false)}
+        <CancelDialog docLabel={label} total={doc.totals.total} busy={cancel.isPending} error={cancel.error} hint={cancel.error instanceof ApiError && cancel.error.code === 'doc.version_conflict' ? t('cancel.stale') : undefined} onCancel={() => setCancelOpen(false)}
           onConfirm={(code, text) => cancel.mutate({ code, text })} />
       ) : null}
     </div>

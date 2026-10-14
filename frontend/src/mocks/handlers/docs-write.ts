@@ -149,7 +149,8 @@ export const docsWriteHandlers = [
     own(c, t, params.id);
     return HttpResponse.json(c.st.revisions.filter((r) => r.docId === params.id).map(({ docId, ...r }) => (void docId, r)).sort((a, b) => b.revision - a.revision));
   })),
-  http.get('*/bff/v1/docs/:type/:id/ledger', ({ params }) => guarded(String(params.type), 'ledger.read', (c, t) => {
+  http.get('*/bff/v1/docs/:type/:id/ledger', ({ params }) => guarded(String(params.type), P('read'), (c, t) => {
+    if (!c.perms.includes('ledger.read')) return forbidden('ledger.read'); // D-09: the document's read is checked first, then the ledger's
     own(c, t, params.id);
     return HttpResponse.json(c.st.journals.find((j) => j.docId === params.id)?.preview ?? { entries: [] });
   })),

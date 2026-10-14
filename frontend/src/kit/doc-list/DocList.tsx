@@ -88,7 +88,7 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
     overdue: filters.overdue === '1' ? ('1' as const) : undefined, agent: filters.agent === '1' ? ('1' as const) : undefined,
   };
   // An impossible date range is never sent: the last valid query stays on screen under the inline error.
-  const [lastOk, setLastOk] = useState(wanted);
+  const [lastOk, setLastOk] = useState(rangeBad ? { ...wanted, from: undefined, to: undefined } : wanted);
   if (!rangeBad && JSON.stringify(lastOk) !== JSON.stringify(wanted)) setLastOk(wanted);
   const server = rangeBad ? lastOk : wanted;
   const q = useInfiniteQuery<Page<DocSummary>, Error, InfiniteData<Page<DocSummary>, string | undefined>, ReturnType<typeof qk.docs>, string | undefined>({
@@ -154,7 +154,7 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
             debounce.current = setTimeout(() => { pushed.current = v; apply({ q: v || undefined }); }, 300);
           }} />
         <select aria-label={t('statusLabel')} className={field} value={filters.status ?? ''}
-          onChange={(e) => apply({ status: e.target.value || undefined })}>
+          onChange={(e) => apply({ status: e.target.value || undefined, outstanding: e.target.value === OUTSTANDING_STATUS ? 'positive' : undefined })}>
           <option value="">{t('statusAll')}</option>
           {STATUSES.map((s) => <option key={s} value={s}>{tStatus(s)}</option>)}
           <option value={OUTSTANDING_STATUS}>{t('views.outstanding')}</option>

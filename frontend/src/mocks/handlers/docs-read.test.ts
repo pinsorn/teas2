@@ -235,3 +235,17 @@ describe('D-09 ledger.read gates journals', () => {
     expect((await (await compute(d)).json()).journal.entries.length).toBeGreaterThan(0);
   });
 });
+
+describe('/ledger needs BOTH ledger.read and the document read permission', () => {
+  it('ledger.read alone is not enough', async () => {
+    const d = loadState().docs.find((x) => x.companyId === 'co-vat' && x.type === 'TI' && x.status === 'issued')!;
+    const saved = PERMISSIONS_BY_ROLE.accountant;
+    try {
+      PERMISSIONS_BY_ROLE.accountant = saved.filter((p) => p !== 'doc.TI.read');
+      expect(PERMISSIONS_BY_ROLE.accountant).toContain('ledger.read');
+      const r = await get(`/docs/TI/${d.id}/ledger`);
+      expect(r.status).toBe(403);
+      expect((await r.json()).detail).toContain('doc.TI.read');
+    } finally { PERMISSIONS_BY_ROLE.accountant = saved; }
+  });
+});

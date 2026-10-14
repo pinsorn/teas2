@@ -38,7 +38,7 @@
       }
     },
     "cancel": {
-      "total": "Document total", "reversalDate": "Reversal posting date",
+      "total": "Document total", "reversalDate": "Reversal posting date", "reversalDateValue": "The current date of the open accounting period (set by the system)",
       "stale": "The document changed. The latest data was loaded; check it and confirm again.", "title": "Cancel document {doc}", "body": "The ledger entries of this document are reversed and the document is cancelled. This cannot be undone.",
       "reason": "Reason", "pick": "Choose a reason", "text": "Details", "confirm": "Confirm cancellation", "back": "Back",
       "code": { "WRONG_PARTY": "Wrong customer/vendor", "WRONG_AMOUNT": "Wrong amount", "WRONG_ITEMS": "Wrong items", "DUPLICATE": "Duplicate", "OTHER": "Other" }
