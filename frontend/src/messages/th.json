@@ -22,6 +22,7 @@
     },
     "ledger": {
       "needsPermission": "ต้องมีสิทธิ์ ดูบัญชี (ledger.read)", "empty": "เอกสารนี้ยังไม่มีรายการบัญชี", "account": "บัญชี", "debit": "เดบิต", "credit": "เครดิต",
+      "late": "แก้ไขย้อนหลัง",
       "kind": { "original": "รายการบัญชีเดิม", "reversal": "รายการกลับรายการ", "correction": "รายการแก้ไข" }
     },
     "activity": {

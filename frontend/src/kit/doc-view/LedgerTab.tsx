@@ -24,6 +24,7 @@ export function LedgerTab({ type, id }: { type: DocType; id: string }) {
         <section key={`${e.number ?? i}-${e.kind}`} className="grid gap-1">
           <h3 className="text-body font-medium">
             {t(`kind.${e.kind}`)}{e.number ? ` ${e.number}` : ''} <span className="font-normal text-muted-foreground">{formatDateBE(e.date)}</span>
+            {e.late ? <span className="ml-2 rounded-sm border px-1.5 py-0.5 text-small font-normal">{t('late')}</span> : null}
           </h3>
           <table className="w-full text-body">
             <thead>

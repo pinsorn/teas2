@@ -5,7 +5,7 @@ type D = MockState['docs'][number];
 const isTi = (d: D) => d.type === 'TI';
 
 export type FixtureKey = 'tiDraft' | 'tiDraftNoTin' | 'tiIssuedUnpaid' | 'tiPartly' | 'tiSettled' | 'tiFilingLocked'
-  | 'tiReplaced' | 'tiLong'; // later tasks extend this union and FIXTURE_PREDICATES (one line each); F4 adds tiPeriodLocked
+  | 'tiReplaced' | 'tiLong' | 'tiPeriodLocked'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
 
 /** Predicates evaluate the READ model (derivedLocks), never the stored row alone. */
 export const FIXTURE_PREDICATES: Record<FixtureKey, (d: D, st: MockState) => boolean> = {
@@ -18,6 +18,9 @@ export const FIXTURE_PREDICATES: Record<FixtureKey, (d: D, st: MockState) => boo
   tiFilingLocked: (d, st) => isTi(d) && derivedLocks(st, d).some((l) => l.kind === 'filing'),
   tiReplaced: (d) => isTi(d) && d.status === 'replaced',
   tiLong: (d) => isTi(d) && d.id === 'spike-60',
+  // issued, only the period lock, nothing linked to it: a correction (M2) has a plain reissue path
+  tiPeriodLocked: (d, st) => isTi(d) && d.status === 'issued' && !d.id.startsWith('spike-') && !d.replacesId
+    && derivedLocks(st, d).length === 1 && derivedLocks(st, d)[0].kind === 'period' && !st.links.some((l) => l.active && l.to === d.id),
 };
 
 /** Lowest id (string order) matching each predicate in the active seed; throws listing every unresolved key. */

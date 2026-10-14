@@ -165,7 +165,7 @@ describe('I1: a CN / DN carries one line per tax code and the plan shows exactly
     const cn = delta(['a', 'b', 'c', 'd'].map((id) => line(id, 'S7', '0.08')), [line('z', 'S7', '0.33')], { type: 'CN', net: '-0.01', vat: '0.02', total: '0.01' }, '0.35');
     expect(cn.lines[0].vatOverride).toBe('0.02');
     const j = st.journals.find((x) => x.docId === cn.id)!.preview.entries[0].lines.map((l) => [l.accountCode, l.debit, l.credit]);
-    expect(j).toEqual(expect.arrayContaining([['4100', '0.00', '0.01'], ['2151', '0.02', '0.00'], ['1130', '0.00', '0.01']]));
+    expect(j).toEqual(expect.arrayContaining([['4110', '0.00', '0.01'], ['2151', '0.02', '0.00'], ['1130', '0.00', '0.01']]));
     expect(j).toHaveLength(3);
   });
   it('2 x S7 0.07 -> S7 0.08: CN net 0.06 VAT -0.01 total 0.05, outstanding 0.09', () => {

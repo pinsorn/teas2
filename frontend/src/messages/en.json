@@ -22,6 +22,7 @@
     },
     "ledger": {
       "needsPermission": "Requires the View ledger permission (ledger.read)", "empty": "This document has no journal entries yet", "account": "Account", "debit": "Debit", "credit": "Credit",
+      "late": "Posted late (closed period)",
       "kind": { "original": "Original entry", "reversal": "Reversal entry", "correction": "Correction entry" }
     },
     "activity": {

@@ -9,7 +9,16 @@ export class MockError extends Error {
 
 /** The mock world's "today" (the seed never reads the clock either). */
 export const today = () => ANCHOR;
-export const stamp = () => new Date().toISOString();
+let fixed: { base: number; n: number } | undefined;
+/** Server clock: the real one, or inside `withFixedClock` the pinned instant plus one second per call (seed history, D-23). */
+export const stamp = () => (fixed ? new Date(fixed.base + 1000 * fixed.n++).toISOString() : new Date().toISOString());
+/** True while history is being replayed: documents are posted "as of" their own date, so period/future checks do not apply. */
+export const isPinned = () => fixed !== undefined;
+export function withFixedClock<T>(iso: string, fn: () => T): T {
+  const prev = fixed;
+  fixed = { base: Date.parse(iso), n: 0 };
+  try { return fn(); } finally { fixed = prev; }
+}
 
 export function logActivity(st: MockState, docId: string, actor: Actor, action: string, detail?: string): void {
   const n = st.activity.filter((a) => a.docId === docId).length + 1;

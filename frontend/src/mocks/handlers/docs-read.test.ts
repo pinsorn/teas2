@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { setSettings } from '../settings';
 import { PERMISSIONS_BY_ROLE } from '../permissions';
 import { today } from '../engine/log';
+import { fixtureIds } from '../fixtures/ids';
 import { loadState, resetState, saveState } from '../store';
 import { testServer } from '../test-server';
 
@@ -113,20 +114,26 @@ describe('search hrefs come from the registry', () => {
 });
 
 describe('doc detail, locked, forbidden', () => {
-  it('a pre-wave stored session (v1 key, paid TI, locks: []) reseeds and the paid TI shows its settlement lock', async () => {
+  it('a pre-wave stored session (v2 key, paid TI, locks: []) reseeds and the paid TI shows its settlement lock', async () => {
     const state = loadState();
     const paid = state.docs.find((d) => d.type === 'TI' && d.status === 'settled')!;
     paid.locks = [];
-    localStorage.setItem('teas2.mock.state.v1', JSON.stringify({ ...state, version: 1 }));
-    localStorage.removeItem('teas2.mock.state.v2');
-    expect(loadState().version).toBe(2);
+    localStorage.setItem('teas2.mock.state.v2', JSON.stringify({ ...state, version: 2 }));
+    localStorage.removeItem('teas2.mock.state.v3');
+    expect(loadState().version).toBe(3);
     expect(loadState().docs.find((d) => d.id === paid.id)!.locks).toContainEqual(expect.objectContaining({ kind: 'settlement' }));
+  });
+  it('GET derives the period lock for a document dated in a closed month, and not for an open-month one (F4)', async () => {
+    const state = loadState();
+    const ids = fixtureIds(state);
+    expect((await json('/docs/TI/' + ids.tiPeriodLocked)).locks).toEqual([expect.objectContaining({ kind: 'period', exits: expect.arrayContaining([expect.stringContaining('แก้ไขย้อนหลัง')]) })]);
+    expect((await json('/docs/TI/' + ids.tiIssuedUnpaid)).locks).toEqual([]);
   });
   it('GET derives the settlement lock on read even when the stored doc has locks: []', async () => {
     const state = loadState();
     const paid = state.docs.find((d) => d.type === 'TI' && d.status === 'settled')!;
     paid.locks = [];
-    localStorage.setItem('teas2.mock.state.v2', JSON.stringify(state));
+    localStorage.setItem('teas2.mock.state.v3', JSON.stringify(state));
     const doc = await json(`/docs/TI/${paid.id}`);
     expect(doc.locks).toContainEqual(expect.objectContaining({ kind: 'settlement' }));
   });

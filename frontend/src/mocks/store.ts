@@ -3,11 +3,17 @@ import type {
 } from '@/domain/types';
 import { recomputeSettlement } from './engine/commands';
 import { ledgerFor } from './engine/ledger';
+import type { Period } from './engine/periods';
+import type { PostingRule } from './engine/posting';
+import type { BankAccount } from './fixtures/bank-accounts';
+import type { CompanyAccount } from './fixtures/coa';
+import { SEED_SPECS } from './fixtures';
+import { runSeed } from './fixtures/seed-runner';
 import { buildSeed } from './fixtures';
 import { getSettings } from './settings';
 
 export interface MockState {
-  version: 2;
+  version: 3;
   companies: Company[];
   memberships: (Membership & { userId: string })[];
   parties: (PartySummary & { companyId: string })[];
@@ -17,6 +23,10 @@ export interface MockState {
   activity: (ActivityEntry & { docId: string })[];
   revisions: (Revision & { docId: string })[];
   journals: { docId: string; preview: JournalPreview }[];
+  accounts: CompanyAccount[];
+  postingRules: PostingRule[];
+  periods: Period[];
+  bankAccounts: BankAccount[];
   audit: AuditEntry[];
   series: Record<string, number>;
   /** `companyId|type|Idempotency-Key` -> draft id. */
@@ -25,7 +35,7 @@ export interface MockState {
   plans?: Record<string, { docId: string; proposed: { header: DocHeader; lines: DocLine[] }; role: Role; plan: CorrectionPlan }>;
 }
 
-const KEY = 'teas2.mock.state.v2';
+const KEY = 'teas2.mock.state.v3';
 
 /** The seed for a given role (default accountant: the screen index resolves fixture ids on the server, where there is no toolbar). */
 export function buildSeedState(role: Role = 'accountant'): MockState {
@@ -36,6 +46,7 @@ export function buildSeedState(role: Role = 'accountant'): MockState {
     const preview = ledgerFor(s, d);
     if (preview.entries.length) s.journals.push({ docId: d.id, preview });
   }
+  runSeed(s, SEED_SPECS); // later groups' documents, produced through the engine (D-23)
   return s;
 }
 
@@ -44,7 +55,7 @@ export const seed = (): MockState => buildSeedState(getSettings().role);
 export function loadState(): MockState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 2) return s; }
+    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 3) return s; }
   } catch { /* fall through to a fresh seed */ }
   return seed();
 }

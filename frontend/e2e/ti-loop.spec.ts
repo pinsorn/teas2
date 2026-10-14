@@ -111,6 +111,16 @@ test('screen state locked shows the lock banner with its exit on an issued TI', 
   await axeClean(page);
 });
 
+test('F4: a TI in a closed period shows the period lock with the retroactive-correction exit, and edit is not blocked', async ({ page }) => {
+  const id = await fixtureId(page, 'tiPeriodLocked');
+  await page.goto(`/sales/tax-invoices/${id}`);
+  const banner = page.getByRole('status', { name: 'ล็อก' });
+  await expect(banner).toContainText('ปิดแล้ว');
+  await expect(banner.getByRole('button', { name: /แก้ไขย้อนหลัง/ })).toBeEnabled();
+  await expect(page.getByRole('link', { name: 'แก้ไข', exact: true })).toBeEnabled(); // SP0 7.5: a period lock never blocks a correction
+  await axeClean(page);
+});
+
 test('reload mid-edit reopens the same draft (Review Focus 4)', async ({ page }) => {
   await page.goto('/sales/tax-invoices/new');
   await expect(page.getByRole('combobox', { name: 'ลูกค้า' })).toBeVisible();

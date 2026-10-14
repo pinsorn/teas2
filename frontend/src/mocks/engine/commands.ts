@@ -1,13 +1,14 @@
 import type {
-  Actor, ComputeResult, Doc, DocHeader, DocLine, DocStatus, DocType, IsoDate, JournalPreview, Lock, MissingItem, Money, PartySummary, Qty,
+  Actor, ComputeResult, Doc, DocHeader, DocLine, DocStatus, DocType, IsoDate, JournalEntryPreview, JournalPreview, Lock, MissingItem, Money, PartySummary, Qty,
 } from '@/domain/types';
 import { CLASS, CONVERSIONS, DOC_TYPES, isTypeAvailable } from '@/domain/doc-types';
 import type { MockState } from '../store';
 import { consumed, fmtQ, q4 } from './chain';
 import { ledgerFor, reversalOf } from './ledger';
-import { MockError, diffBody, logActivity, logAudit, stamp, today } from './log';
+import { MockError, diffBody, isPinned, logActivity, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
 import { SeriesAllocator } from './numbering';
+import { firstOpenDate, isClosed, monthLabelTh } from './periods';
 import { computeDoc } from './vat';
 
 export type Body = { header: DocHeader; lines: DocLine[] };
@@ -21,8 +22,13 @@ export const unavailableTh = (t: DocType) => (DOC_TYPES[t].vat === 'vat-only' ? 
 
 /** I4: shown whenever an active receipt / settlement is applied; derived in recomputeSettlement so it follows settle / unsettle / cancel. */
 const SETTLEMENT_LOCK: Lock = { kind: 'settlement', reason: 'มีใบเสร็จ/การชำระที่ผูกอยู่ ยกเลิกเอกสารนี้ไม่ได้', exits: ['ยกเลิกหรือถอนการชำระก่อน'] };
-/** Locks that stop corrections. The settlement lock is informative: the correction plan cancels / re-issues the receipt itself. */
-export const blockingLocks = (d: { locks: Lock[] }) => d.locks.filter((l) => l.kind !== 'settlement');
+/** Locks that stop corrections. The settlement lock is informative (the correction plan cancels / re-issues the receipt itself) and a period lock
+ *  never blocks (SP0 §7.5): the reversal and the new entry post in the first open period, labelled late. */
+export const blockingLocks = (d: { locks: Lock[] }) => d.locks.filter((l) => l.kind !== 'settlement' && l.kind !== 'period');
+
+/** Reversal of `e`: dated today, or in the first open period (late) when `e` sits in a closed one. */
+const reverseEntry = (st: MockState, companyId: string, e: JournalEntryPreview): JournalEntryPreview =>
+  isClosed(st, companyId, e.date) ? { ...reversalOf(e, firstOpenDate(st, companyId)), late: true } : reversalOf(e, today());
 
 export const publicDoc = (d: Stored): Doc => { const { companyId, ...r } = d; void companyId; return structuredClone(r); };
 export function getDoc(st: MockState, id: string): Stored {
@@ -96,7 +102,7 @@ export function recomputeSettlement(st: MockState, id: string): void {
     if (l.kind === 'settles') { out -= amt; paid += amt; settled = true; }
     else if (l.kind === 'adjusts') {
       const t = st.docs.find((x) => x.id === l.from)?.type;
-      if (t === 'CN') out -= amt; else if (t === 'DN') out += amt;
+      if (t === 'CN' || t === 'PCN') out -= amt; else if (t === 'DN' || t === 'PDN') out += amt;
     }
   }
   // I5: 'settled' needs settlements; a TI credited to 0 by CNs alone stays 'issued' with outstanding 0.00
@@ -127,10 +133,11 @@ export function markReplaced(st: MockState, oldId: string, newId: string, actor:
   logActivity(st, oldId, actor, 'reissue', `แทนที่ด้วย ${nw.number}`);
 }
 
-function insertDraft(st: MockState, companyId: string, type: DocType, body: Body, actor: Actor): Stored {
+function insertDraft(st: MockState, companyId: string, type: DocType, body: Body, actor: Actor, id?: string): Stored {
   const totals = calc(body).totals;
+  if (id !== undefined && st.docs.some((x) => x.id === id)) throw new MockError(409, 'doc.id_exists', `มีเอกสารรหัส ${id} อยู่แล้ว`);
   const d: Stored = {
-    companyId, id: newId(st, type), type, status: 'draft', correctionClass: CLASS[type], revision: 0, version: 1,
+    companyId, id: id ?? newId(st, type), type, status: 'draft', correctionClass: CLASS[type], revision: 0, version: 1,
     header: body.header, party: partyOf(st, companyId, body.header.partyId), lines: body.lines, totals, locks: [], createdBy: actor,
   };
   st.docs.push(d);
@@ -143,14 +150,15 @@ export function compute(st: MockState, companyId: string, type: DocType, body: B
     id: 'preview', type, status: 'draft', correctionClass: CLASS[type], revision: 0, version: 1, header: body.header,
     party: partyOf(st, companyId, body.header.partyId), lines: body.lines, totals: c.totals, locks: [], createdBy: { kind: 'user', id: '', name: '' },
   };
-  return { lines: c.lines, totals: c.totals, missing: missingOf(st, companyId, type, body), journal: ledgerFor(st, doc) };
+  return { lines: c.lines, totals: c.totals, missing: missingOf(st, companyId, type, body), journal: ledgerFor(st, { ...doc, companyId }) };
 }
 
-export function createDraft(st: MockState, companyId: string, type: DocType, body: Body, actor: Actor, idempotencyKey: string): Doc {
+/** `opts.id` is used verbatim (seed runner only; handlers never pass it). */
+export function createDraft(st: MockState, companyId: string, type: DocType, body: Body, actor: Actor, idempotencyKey: string, opts?: { id?: string }): Doc {
   const key = `${companyId}|${type}|${idempotencyKey}`;
   const prior = st.idempotency?.[key];
   if (prior && st.docs.some((d) => d.id === prior)) return publicDoc(getDoc(st, prior));
-  const d = insertDraft(st, companyId, type, body, actor);
+  const d = insertDraft(st, companyId, type, body, actor, opts?.id);
   (st.idempotency ??= {})[key] = d.id;
   logActivity(st, d.id, actor, 'create');
   logAudit(st, actor, companyId, 'doc.create', d.id, undefined, { type, status: d.status });
@@ -178,13 +186,20 @@ export function deleteDraft(st: MockState, id: string, version: number, actor: A
   logAudit(st, actor, d.companyId, 'doc.delete', id, { status: 'draft' });
 }
 
-export function issue(st: MockState, id: string, version: number, actor: Actor): Doc {
+/** `keepDate`: a correction re-issues a document at its original date (I9), so the period / future checks do not apply. */
+export function issue(st: MockState, id: string, version: number, actor: Actor, opts?: { keepDate?: boolean }): Doc {
   const d = getDoc(st, id);
   if (d.status !== 'draft') throw new MockError(409, 'doc.not_draft', 'ออกได้เฉพาะเอกสารฉบับร่าง');
   checkVersion(d, version);
   const body = { header: d.header, lines: d.lines };
   const missing = missingOf(st, d.companyId, d.type, body);
   if (missing.length) throw incomplete(missing);
+  if (!isPinned() && !opts?.keepDate) { // D-10; seed history is posted as of its own date
+    if (d.header.documentDate > today()) throw new MockError(422, 'doc.future_date', `วันที่เอกสารอยู่ในอนาคต (วันนี้ ${today()}) ออกเอกสารไม่ได้ ให้แก้วันที่เป็นวันนี้หรือก่อนหน้า`);
+    if (isClosed(st, d.companyId, d.header.documentDate)) {
+      throw new MockError(422, 'period.closed', `งวดบัญชี ${monthLabelTh(d.header.documentDate.slice(0, 7))} ปิดแล้ว ออกเอกสารลงวันที่ในงวดนี้ไม่ได้ ให้เปลี่ยนวันที่เป็น ${firstOpenDate(st, d.companyId)} เป็นต้นไป หรือขอเปิดงวดอีกครั้ง`);
+    }
+  }
   const totals = calc(body).totals;
   const next: Stored = {
     ...d, number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', totals, party: partyOf(st, d.companyId, d.header.partyId),
@@ -202,8 +217,8 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
   const d = getDoc(st, id);
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_cancellable', 'ยกเลิกได้เฉพาะเอกสารที่ออกแล้ว');
   checkVersion(d, version);
-  // SP0 §7.5: a period lock does not block cancel (the reversal posts in the current open period); the other locks do.
-  if (blockingLocks(d).some((l) => l.kind !== 'period')) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ยกเลิกไม่ได้');
+  // SP0 §7.5: a period lock does not block cancel (blockingLocks leaves it out); the other locks do.
+  if (blockingLocks(d).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ยกเลิกไม่ได้');
   // SP0 §7.4: only an applied receipt (TI) or settlements (IV) block a cancel; N-class and CN/DN do not.
   if (st.links.some((l) => l.to === id && l.active && l.kind === 'settles')) throw new MockError(409, 'doc.has_dependents', 'มีใบเสร็จ/การชำระที่ผูกอยู่ ต้องยกเลิกหรือถอนการชำระก่อน');
   const { outstanding: _o, ...rest } = d; void _o;
@@ -214,7 +229,7 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
   for (const l of released) if (l.kind === 'settles' || l.kind === 'adjusts') recomputeSettlement(st, l.to);
   const j = st.journals.find((x) => x.docId === id);
   const last = j?.preview.entries[j.preview.entries.length - 1];
-  if (j && last && last.kind !== 'reversal') j.preview = { entries: [...j.preview.entries, reversalOf(last, today())] };
+  if (j && last && last.kind !== 'reversal') j.preview = { entries: [...j.preview.entries, reverseEntry(st, d.companyId, last)] };
   logActivity(st, id, actor, 'cancel', reasonText);
   logAudit(st, actor, d.companyId, 'doc.cancel', id, { status: d.status }, { status: 'cancelled', reasonCode });
   return publicDoc(next);
@@ -240,7 +255,8 @@ export function revise(st: MockState, id: string, body: Body, version: number, r
     const prev = st.journals.find((j) => j.docId === id)?.preview.entries ?? [];
     const live = prev[prev.length - 1];
     const fresh = ledgerFor(st, getDoc(st, id)).entries[0];
-    setJournal(st, id, { entries: [...prev, ...(live && live.kind !== 'reversal' ? [reversalOf(live, today())] : []), ...(fresh ? [{ ...fresh, kind: 'correction' as const }] : [])] });
+    setJournal(st, id, { entries: [...prev, ...(live && live.kind !== 'reversal' ? [reverseEntry(st, d.companyId, live)] : []),
+      ...(fresh ? [{ ...fresh, kind: 'correction' as const, ...(isClosed(st, d.companyId, fresh.date) ? { date: firstOpenDate(st, d.companyId), late: true } : {}) }] : [])] });
   }
   const at = stamp();
   st.revisions.push({ docId: id, revision: next.revision, at, actor, reason, snapshot: publicDoc(getDoc(st, id)), diff: diffBody(d, body) });
@@ -280,7 +296,7 @@ export function reissue(st: MockState, id: string, body: Body, actor: Actor, rea
   st.links.push({ companyId: old.companyId, from: created.id, to: old.id, kind: 'replaces', active: true });
   const oj = st.journals.find((j) => j.docId === old.id);
   const last = oj?.preview.entries[oj.preview.entries.length - 1];
-  if (oj && last && last.kind !== 'reversal') oj.preview = { entries: [...oj.preview.entries, reversalOf(last, today())] };
+  if (oj && last && last.kind !== 'reversal') oj.preview = { entries: [...oj.preview.entries, reverseEntry(st, old.companyId, last)] };
   setJournal(st, created.id, ledgerFor(st, created));
   st.revisions.push({ docId: created.id, revision: 0, at, actor, reason, snapshot: publicDoc(created), diff: [] });
   for (const l of carried) if (l.kind === 'settles' || l.kind === 'adjusts') recomputeSettlement(st, l.to);
@@ -291,7 +307,7 @@ export function reissue(st: MockState, id: string, body: Body, actor: Actor, rea
 }
 
 /** Creates a draft of `targetType` from the issued source, taking `qty` of each listed source line (remaining-quantity rule). */
-export function convert(st: MockState, id: string, targetType: DocType, lines: { sourceLineId: string; qty: Qty }[], actor: Actor): Doc {
+export function convert(st: MockState, id: string, targetType: DocType, lines: { sourceLineId: string; qty: Qty }[], actor: Actor, opts?: { id?: string }): Doc {
   const src = getDoc(st, id);
   if (!LIVE.includes(src.status)) throw new MockError(409, 'doc.not_convertible', 'แปลงได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   if (!CONVERSIONS[src.type]?.includes(targetType)) throw new MockError(422, 'doc.conversion_not_allowed', `แปลง ${src.type} เป็น ${targetType} ไม่ได้`);
@@ -311,12 +327,12 @@ export function convert(st: MockState, id: string, targetType: DocType, lines: {
     const remaining = q4(sl.qty) - consumed(st, src, sl);
     if (q > remaining) throw new MockError(422, 'doc.over_conversion', `เกินจำนวนคงเหลือ (${sl.description}: เหลือ ${fmtQ(remaining)} ${sl.unit})`);
   }
-  const draftId = newId(st, targetType);
+  const draftId = opts?.id ?? newId(st, targetType);
   const newLines: DocLine[] = [...wanted].map(([lineId, q], n) => ({ ...src.lines.find((l) => l.id === lineId)!, id: `${draftId}-l${n + 1}`, qty: fmtQ(q), sourceLineId: lineId }));
   const d = insertDraft(st, src.companyId, targetType, {
     header: { partyId: src.header.partyId, documentDate: today(), ...(src.number ? { reference: src.number } : {}), priceIncludesVat: !!src.header.priceIncludesVat },
     lines: newLines,
-  }, actor);
+  }, actor, opts?.id);
   st.links.push({ companyId: src.companyId, from: d.id, to: src.id, kind: 'converted_from', qty: fmtQ([...wanted.values()].reduce((a, b) => a + b, 0)), active: true });
   logActivity(st, d.id, actor, 'create', `แปลงจาก ${src.number}`);
   logActivity(st, src.id, actor, 'convert', `สร้าง ${targetType} ฉบับร่าง`);

@@ -53,8 +53,9 @@ export const docsReadHandlers = [
     const found = st.docs.find((d) => d.id === params.id && d.type === type && d.companyId === company.id);
     if (!found) return problem(404, 'doc.not_found', 'ไม่พบเอกสาร');
     recomputeSettlement(st, found.id);
-    const { companyId, ...doc } = st.docs.find((d) => d.id === found.id)!; void companyId;
-    const own = derivedLocks(st, doc);
+    const cur = st.docs.find((d) => d.id === found.id)!;
+    const { companyId, ...doc } = cur; void companyId;
+    const own = derivedLocks(st, cur);
     const locks = s.screenState === 'locked' && LOCKABLE.includes(doc.status) && !own.some((l) => l.kind === 'filing') ? [...own, LOCKED] : own;
     return HttpResponse.json({ ...doc, locks } satisfies Doc);
   }),

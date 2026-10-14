@@ -153,6 +153,7 @@ describe('cancel vs locks (SP0 7.5)', () => {
   it('a period-locked cancel succeeds, reverses in the current period and stays balanced', () => {
     const d = lockedTi('period');
     expect(cancel(st, d.id, d.version, 'OTHER', 'x', me).status).toBe('cancelled');
+    for (const x of st.docs) x.locks = x.locks.filter((l) => l.kind !== 'period'); // this fixture stores a period lock (the real one is derived); the invariant suite forbids that
     assertBalanced(st);
     const rv = st.journals.find((j) => j.docId === d.id)!.preview.entries.at(-1)!;
     expect(rv.kind).toBe('reversal');

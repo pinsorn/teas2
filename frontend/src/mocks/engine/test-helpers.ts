@@ -1,11 +1,12 @@
 import { expect } from 'vitest';
 import type { MockState } from '../store';
+import { checkInvariants } from './invariants';
 import { toSatang } from './money';
 
 export type { Actor, DocLine } from '@/domain/types';
 export type MockStateLike = MockState;
 
-/** Every journal entry must balance to the satang. */
+/** Every journal entry must balance to the satang, and every ledger invariant must hold (F4 suite). */
 export const assertBalanced = (s: MockState) => {
   for (const j of s.journals) for (const e of j.preview.entries) {
     for (const l of e.lines) for (const amount of [l.debit, l.credit]) {
@@ -16,4 +17,5 @@ export const assertBalanced = (s: MockState) => {
     const cr = e.lines.reduce((a, l) => a + toSatang(l.credit), 0);
     expect({ doc: j.docId, kind: e.kind, dr }).toEqual({ doc: j.docId, kind: e.kind, dr: cr });
   }
+  expect(checkInvariants(s)).toEqual([]);
 };

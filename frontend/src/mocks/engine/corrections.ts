@@ -158,7 +158,7 @@ function runStep(w: MockState, s: CorrectionStep, proposed: Body, actor: Actor, 
       : { header: { ...doc.header, partyId: target.header.partyId },
         lines: doc.lines.map((l, i) => (i === 0 ? { ...l, description: `รับชำระตามใบกำกับภาษี ${target.number}` } : l)) };
     const draft = createDraft(w, doc.companyId, 'RC', body, actor, `${c.planId}-${s.order}`);
-    const rc = issue(w, draft.id, draft.version, actor);
+    const rc = issue(w, draft.id, draft.version, actor, { keepDate: true }); // the receipt keeps its original date (I9)
     markReplaced(w, doc.id, rc.id, actor);
     addSettlement(w, rc.id, target.id, own ? rc.totals.total : old?.amount ?? rc.totals.total);
     touch(doc.id, rc.id, target.id);

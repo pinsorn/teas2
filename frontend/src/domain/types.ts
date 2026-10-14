@@ -54,6 +54,7 @@ export interface AuditEntry { id: string; at: string; actor: Actor; companyId: s
 export interface JournalLinePreview { accountCode: string; accountName: string; debit: Money; credit: Money;
   partyName?: string; dimensions?: Record<string, string>; rule: string }
 export interface JournalEntryPreview { number?: string; date: IsoDate; kind: 'original' | 'reversal' | 'correction';
+  /** Posted into the first open period because the original sits in a closed one ("แก้ไขย้อนหลัง"). */ late?: boolean;
   lines: JournalLinePreview[] }
 export interface JournalPreview { entries: JournalEntryPreview[] }
 

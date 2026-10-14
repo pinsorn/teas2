@@ -7,7 +7,8 @@ import type { CorrectionPlan } from '@/domain/types';
 import { DESCRIPTORS } from '@/descriptors';
 import { taxInvoice } from '@/descriptors/tax-invoice';
 import { setSettings } from '@/mocks/settings';
-import { loadState, resetState } from '@/mocks/store';
+import { loadState, resetState, saveState } from '@/mocks/store';
+import { cancel } from '@/mocks/engine/commands';
 import { correctionPlan } from '@/mocks/engine/corrections';
 import { testServer } from '@/mocks/test-server';
 import { CorrectionPlanDialog } from '../dialogs/CorrectionPlanDialog';
@@ -369,6 +370,16 @@ describe('F3 debt — plan dialog, chain, ledger.read, cancel, revisions', () =>
   it('ledger tab stays usable with ledger.read', async () => {
     ui(lone().id);
     expect(await screen.findByRole('tab', { name: 'ผลต่อบัญชี' })).toBeEnabled();
+  });
+  it('F4: a reversal posted late (original in a closed period) is labelled แก้ไขย้อนหลัง; an on-time entry is not', async () => {
+    const state = loadState();
+    const locked = state.docs.find((d) => d.id === fixtureIds(state).tiPeriodLocked)!;
+    cancel(state, locked.id, locked.version, 'OTHER', 'x', { kind: 'user', id: 'u-1', name: 'x' });
+    saveState(state);
+    ui(locked.id);
+    await userEvent.click(await screen.findByRole('tab', { name: 'ผลต่อบัญชี' }));
+    expect(await screen.findAllByText('แก้ไขย้อนหลัง')).toHaveLength(1); // only the reversal entry
+    expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(2);
   });
   it('cancel dialog shows the total and no client-guessed date; the actual reversal date comes from the server journal (rule 3)', async () => {
     const d = find((x) => x.id === fixtureIds(loadState()).tiIssuedUnpaid);
