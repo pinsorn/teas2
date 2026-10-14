@@ -69,7 +69,7 @@ export interface JournalEntryPreview { number?: string; date: IsoDate; kind: 'or
 export interface JournalPreview { entries: JournalEntryPreview[] }
 
 export interface MissingItem { field: string; message: string }
-export interface WhtLine { code: string; nameTh: string; form: 'PND2' | 'PND3' | 'PND53' | 'PND54'; base: Money; rate: string; tax: Money; income: Money }
+export interface WhtLine { code: string; nameTh: string; form: 'PND2' | 'PND3' | 'PND53' | 'PND54'; base: Money; rate: string; tax: Money; income: Money; /** What the payee actually receives for this type: income - tax. */ net: Money }
 export interface OpenItem { id: string; type: DocType; number: string; documentDate: IsoDate; dueDate?: IsoDate; total: Money; outstanding: Money }
 export interface ComputeResult { lines: { id: string; net: Money; vat: Money; total: Money }[]; totals: DocTotals;
   missing: MissingItem[]; /** Omitted without ledger.read (D-09). */ journal?: JournalPreview; whtLines?: WhtLine[];

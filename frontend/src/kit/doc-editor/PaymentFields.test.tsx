@@ -66,14 +66,14 @@ describe('HeaderFields payment fields', () => {
 });
 
 const totals = (p: Partial<DocTotals>): DocTotals => ({ gross: '5000.00', discount: '0.00', net: '5000.00', vat: '0.00', total: '5000.00', amountInWords: 'ห้าพันบาทถ้วน', ...p });
-const line = (p: Partial<WhtLine>): WhtLine => ({ code: 'SVC', nameTh: 'ค่าบริการ', form: 'PND53', base: '5000.00', rate: '3%', tax: '150.00', income: '5000.00', ...p });
+const line = (p: Partial<WhtLine>): WhtLine => ({ code: 'SVC', nameTh: 'ค่าบริการ', form: 'PND53', base: '5000.00', rate: '3%', tax: '150.00', income: '5000.00', net: '4850.00', ...p });
 
 describe('TotalsPanel with WhtSummary (server figures only)', () => {
   it('shows the withholding tax by type with its return and the net payment, all copied from the server', () => {
     render(<TotalsPanel totals={totals({ wht: '150.00', cash: '4850.00' })} whtLines={[line({}), line({ code: 'RENT', nameTh: 'ค่าเช่า', rate: '5%', base: '2000.00', tax: '100.00', form: 'PND3' })]} pending={false} onRetry={() => undefined} />);
     expect(screen.getByText('หัก ณ ที่จ่าย')).toBeVisible();
     const g = screen.getByRole('group', { name: 'ภาษีหัก ณ ที่จ่ายแยกตามประเภท' });
-    expect(g).toHaveTextContent('ค่าบริการ 3% · ฐาน 5,000.00 · ภ.ง.ด.53');
+    expect(g).toHaveTextContent('ค่าบริการ 3% · ฐาน 5,000.00 · ภ.ง.ด.53 · ผู้รับเงินได้รับ 4,850.00');
     expect(g).toHaveTextContent('ค่าเช่า 5% · ฐาน 2,000.00 · ภ.ง.ด.3');
     expect(screen.getByText('ยอดชำระสุทธิ').nextElementSibling).toHaveTextContent('4,850.00');
     expect(screen.getAllByText('150.00').length).toBeGreaterThan(0); // never 250.00: the browser does not sum the lines

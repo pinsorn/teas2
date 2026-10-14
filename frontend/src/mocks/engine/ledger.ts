@@ -32,7 +32,7 @@ export const POST: Partial<Record<DocType, Rows>> = {
     ['CustomerDeposit', 0, toSatang(d.header.depositAmount ?? '0.00')], ...netRows(d, 'Revenue', 'Cr'), ['OutputVat', 0, t.vat]],
   // PV: payables cleared + expense lines (+ their input VAT) + the WHT we bear (gross-up) = cash paid + WHT payable per return
   PV: (t, d, st, companyId) => {
-    const w = whtOf(st, companyId, d.header, d.lines);
+    const w = whtOf(st, companyId, d.header, d.lines); // expense = the part of the tax / gross-up we bear
     return [['AP', allocTo(d, ['PB']), 0], ['EmployeePayable', allocTo(d, ['EX']), 0], ...netRows(d, 'Expense', 'Dr'), ['InputVat', t.vat, 0],
       ['WhtExpense', w.expense, 0], ...w.lines.map((l): RolePosting[number] => ['WhtPayable', 0, toSatang(l.tax), { whtForm: l.form }]),
       ['Cash', 0, t.cash, { bankAccountId: d.header.bankAccountId }]];

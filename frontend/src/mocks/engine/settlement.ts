@@ -88,8 +88,9 @@ export function settleTotals(st: MockState, companyId: string, type: DocType, bo
     cash = total - wht;
   } else {
     total = alloc + lines;
-    wht = whtOf(st, companyId, body.header, body.lines).tax;
-    cash = (body.header.whtMode ?? 'deduct') === 'deduct' ? total - wht : total;
+    const w = whtOf(st, companyId, body.header, body.lines);
+    wht = w.tax;
+    cash = total + w.cashDelta; // deduct: -tax; gross-up always: 0; gross-up once: income - tax - B per type
   }
   return { ...lineTotals, total: fromSatang(total), wht: fromSatang(wht), cash: fromSatang(cash), amountInWords: bahtText(fromSatang(total)) };
 }

@@ -28,21 +28,26 @@ const roleSum = (e: { lines: { debit: string; credit: string; rule: string }[] }
   e.lines.filter((l) => new RegExp(`: ${role} → `).test(l.rule)).reduce((n, l) => n + toSatang(l[side]), 0);
 
 /** WHT of a PV recomputed from its lines and the fixture rate table, deliberately not through `computeWht` (D-14, [SP-R] rates). */
-function expectedWht(st: MockState, d: Stored): { tax: number; bad?: string } {
+function expectedWht(st: MockState, d: Stored): { tax: number; expense: number; cashDelta: number; bad?: string } {
   const nets = computeDoc(d.lines, !!d.header.priceIncludesVat).lines;
   const base = new Map<string, bigint>();
   d.lines.forEach((l, i) => { if (l.whtTypeCode) base.set(l.whtTypeCode, (base.get(l.whtTypeCode) ?? 0n) + BigInt(toSatang(nets[i].net))); });
   const mode = d.header.whtMode ?? 'deduct';
-  let tax = 0n;
+  let tax = 0n, expense = 0n, cashDelta = 0n;
   for (const [code, b] of base) {
     const t = st.whtTypes.filter((x) => x.companyId === d.companyId && x.code === code && x.effectiveFrom <= d.header.documentDate).sort((x, y) => y.effectiveFrom.localeCompare(x.effectiveFrom))[0];
-    if (!t) return { tax: 0, bad: `unknown WHT type ${code}` };
+    if (!t) return { tax: 0, expense: 0, cashDelta: 0, bad: `unknown WHT type ${code}` };
     if (b <= 0n) continue;
     const r = BigInt(t.rateBp);
     const income = mode === 'deduct' ? b : mode === 'grossup_always' ? divRoundHalfAway(b * 10000n, 10000n - r) : divRoundHalfAway(b * (10000n + r), 10000n);
-    tax += divRoundHalfAway(income * r, 10000n);
+    const lt = divRoundHalfAway(income * r, 10000n);
+    // what the payee receives: deduct B - tax; always B (we pay the tax on top); once income - tax (we bear income - B, RD ป.96/2543 ex. 6)
+    const paid = mode === "deduct" ? b - lt : mode === "grossup_always" ? b : income - lt;
+    // income = payee cash + tax in EVERY mode
+    if (income !== paid + lt) return { tax: 0, expense: 0, cashDelta: 0, bad: `WHT type ${code} (${mode}): income ${fromSatang(Number(income))} is not payee cash ${fromSatang(Number(paid))} + tax ${fromSatang(Number(lt))}` };
+    tax += lt; cashDelta += paid - b; expense += mode === "deduct" ? 0n : mode === "grossup_always" ? lt : income - b;
   }
-  return { tax: Number(tax) };
+  return { tax: Number(tax), expense: Number(expense), cashDelta: Number(cashDelta) };
 }
 
 /** Every violation in the state, as readable strings; [] = all hold (money invariants 1-7, numbering, derived locks). */
@@ -170,10 +175,10 @@ export function checkInvariants(st: MockState): string[] {
       if (w.bad) out.push(`${d.id}: ${w.bad}`);
       else if (wht !== w.tax) out.push(`${d.id}: PV wht ${fromSatang(wht)} but round-half-away(base x rate) per WHT type gives ${fromSatang(w.tax)}`);
       if (total !== alloc + lineTotal) out.push(`${d.id}: PV total ${fromSatang(total)} is not Σ allocations + line totals (${fromSatang(alloc + lineTotal)})`);
-      if (cash !== (mode === 'deduct' ? total - wht : total)) out.push(`${d.id}: PV cash ${fromSatang(cash)} is wrong for mode ${mode} (total ${fromSatang(total)}, wht ${fromSatang(wht)})`);
+      if (!w.bad && cash !== total + w.cashDelta) out.push(`${d.id}: PV cash ${fromSatang(cash)} is wrong for mode ${mode} (total ${fromSatang(total)}, expected ${fromSatang(total + w.cashDelta)})`);
       if (live) {
         const expense = j('WhtExpense', 'debit');
-        if (expense !== (mode === 'deduct' ? 0 : wht)) out.push(`${d.id}: WHT expense ${fromSatang(expense)} is wrong for mode ${mode} (wht ${fromSatang(wht)})`);
+        if (!w.bad && expense !== w.expense) out.push(`${d.id}: WHT expense ${fromSatang(expense)} is wrong for mode ${mode} (expected ${fromSatang(w.expense)})`);
         if (j('Cash', 'credit') !== cash) out.push(`${d.id}: journal cash ${fromSatang(j('Cash', 'credit'))} but the voucher paid ${fromSatang(cash)}`);
         if (j('WhtPayable', 'credit') !== wht) out.push(`${d.id}: journal WHT payable ${fromSatang(j('WhtPayable', 'credit'))} but the voucher withheld ${fromSatang(wht)}`);
         if (j('AP', 'debit') + j('EmployeePayable', 'debit') !== alloc) out.push(`${d.id}: journal payables ${fromSatang(j('AP', 'debit') + j('EmployeePayable', 'debit'))} but the allocations clear ${fromSatang(alloc)}`);

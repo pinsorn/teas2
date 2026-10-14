@@ -26,25 +26,29 @@ export function whtTypeOf(st: MockState, code: string, payee: PartySummary, date
 }
 
 /**
- * Per WHT type (D-14), satang, half away from zero; B = Σ net of the lines carrying that type, r = rate:
- *  deduct          income = B               tax = round(B x r)            expense 0
- *  grossup_always  income = round(B / (1-r)) tax = round(income x r)       expense = tax
- *  grossup_once    income = round(B x (1+r)) tax = round(income x r)       expense = tax
- * `expense` = the tax we bear (gross-up modes). Lines without a type carry no WHT.
+ * Per WHT type (D-14), satang, half away from zero; B = Σ net of the lines carrying that type, r = rate. [SP-R] rates / modes, not a ruled position.
+ * In every mode income = what the payee receives + tax:
+ *  deduct          income = B                tax = round(B x r)       payee receives B - tax   we bear 0
+ *  grossup_always  income = round(B / (1-r)) tax = round(income x r)  payee receives B         we bear tax
+ *  grossup_once    income = round(B x (1+r)) tax = round(income x r)  payee receives income - tax   we bear income - B
+ *                  (RD ป.96/2543 ตัวอย่างที่ 6 "ออกภาษีให้ครั้งเดียว": 10,000 at 3 % -> income 10,300, tax 309, payee 9,991)
+ * `expense` = the tax we bear (WhtExpense); `cashDelta` = Σ (payee receives - B): add it to the lines' total to get the cash we pay.
+ * Lines without a type carry no WHT.
  */
 export function computeWht(lines: { net: number; whtTypeCode?: string }[], mode: WhtMode, payee: PartySummary, date: IsoDate, st: MockState):
-  { lines: WhtLine[]; tax: number; expense: number } {
+  { lines: WhtLine[]; tax: number; expense: number; cashDelta: number } {
   const bases = new Map<string, bigint>();
   for (const l of lines) if (l.whtTypeCode) bases.set(l.whtTypeCode, (bases.get(l.whtTypeCode) ?? 0n) + BigInt(l.net));
   const out: WhtLine[] = [];
-  let tax = 0n;
+  let tax = 0n, expense = 0n, cashDelta = 0n;
   for (const [code, base] of bases) {
     if (base <= 0n) continue;
     const t = whtTypeOf(st, code, payee, date), bp = BigInt(t.rateBp);
     const income = mode === 'deduct' ? base : mode === 'grossup_always' ? divRoundHalfAway(base * BP, BP - bp) : divRoundHalfAway(base * (BP + bp), BP);
     const lineTax = divRoundHalfAway((mode === 'deduct' ? base : income) * bp, BP);
-    tax += lineTax;
-    out.push({ code, nameTh: t.nameTh, form: formFor(t, payee), base: fromSatang(Number(base)), rate: rateText(t.rateBp), tax: fromSatang(Number(lineTax)), income: fromSatang(Number(income)) });
+    const net = mode === 'grossup_always' ? base : income - lineTax; // the payee's cash
+    tax += lineTax; cashDelta += net - base; expense += mode === 'deduct' ? 0n : mode === 'grossup_always' ? lineTax : income - base;
+    out.push({ code, nameTh: t.nameTh, form: formFor(t, payee), base: fromSatang(Number(base)), rate: rateText(t.rateBp), tax: fromSatang(Number(lineTax)), income: fromSatang(Number(income)), net: fromSatang(Number(net)) });
   }
-  return { lines: out, tax: Number(tax), expense: mode === 'deduct' ? 0 : Number(tax) };
+  return { lines: out, tax: Number(tax), expense: Number(expense), cashDelta: Number(cashDelta) };
 }

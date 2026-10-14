@@ -14,7 +14,7 @@ export function WhtSummary({ totals, whtLines }: { totals: DocTotals; whtLines?:
         <div className="grid gap-1 pl-3 text-small text-muted-foreground" role="group" aria-label={t('title')}>
           {whtLines.map((l) => (
             <div key={l.code} className="flex flex-wrap justify-between gap-x-4">
-              <span>{`${l.nameTh} ${l.rate} · ${t('base')} ${formatMoney(l.base)} · ${t(`forms.${l.form}`)}`}</span>
+              <span>{`${l.nameTh} ${l.rate} · ${t('base')} ${formatMoney(l.base)} · ${t(`forms.${l.form}`)} · ${t('payee')} ${formatMoney(l.net)}`}</span>
               <span className="tabular-nums">{formatMoney(l.tax)}</span>
             </div>
           ))}

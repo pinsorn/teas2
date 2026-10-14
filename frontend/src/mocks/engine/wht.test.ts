@@ -15,17 +15,32 @@ const DATE = '2026-10-14';
 describe('computeWht: one hand-computed vector per payer mode [SP-R fixtures]', () => {
   // SVC 3 % (300 bp) on a net base of 5,000.00 = 500000 satang
   it.each([
-    // mode, base, tax, income, expense   (deduct: 500000 x 3 % = 15000; always: income = round(500000 / 0.97) = 515463.92 -> 515464, tax = round(515464 x 3 %) = 15463.92 -> 15464;
+    // mode, base, tax, income, expense, payee receives   (once follows RD ป.96/2543 example 6: income = B x (1+r), the payee gets income - tax, we bear income - B; deduct: 500000 x 3 % = 15000; always: income = round(500000 / 0.97) = 515463.92 -> 515464, tax = round(515464 x 3 %) = 15463.92 -> 15464;
     //                                      once: income = 500000 x 1.03 = 515000, tax = round(515000 x 3 %) = 15450)
-    ['deduct', 500000, 15000, 500000, 0],
-    ['grossup_always', 500000, 15464, 515464, 15464],
-    ['grossup_once', 500000, 15450, 515000, 15450],
-  ] as const)('%s: base %i -> tax %i, income %i, expense %i', (mode, base, tax, income, expense) => {
+    ['deduct', 500000, 15000, 500000, 0, 485000],
+    ['grossup_always', 500000, 15464, 515464, 15464, 500000],
+    ['grossup_once', 500000, 15450, 515000, 15000, 499550],
+  ] as const)('%s: base %i -> tax %i, income %i, expense %i, payee %i', (mode, base, tax, income, expense, payee) => {
     const r = computeWht([{ net: base, whtTypeCode: 'SVC' }], mode, party('juristic'), DATE, st);
     expect(r.lines).toHaveLength(1);
     expect(r.lines[0]).toMatchObject({ code: 'SVC', base: fromSatang(base), rate: '3%', tax: fromSatang(tax), income: fromSatang(income) });
     expect(r.tax).toBe(tax);
     expect(r.expense).toBe(expense);
+    expect(r.lines[0].net).toBe(fromSatang(payee));
+    expect(toSatang(r.lines[0].income)).toBe(payee + tax); // income = cash to the payee + tax, in every mode
+    expect(r.cashDelta).toBe(payee - base); // what the payer's cash differs from the line base by
+  });
+  it('RD example (ป.96/2543 ตัวอย่างที่ 6): 10,000.00 at 3 % once -> income 10,300.00, WHT 309.00, payee receives 9,991.00', () => {
+    const r = computeWht([{ net: 1000000, whtTypeCode: 'SVC' }], 'grossup_once', party('juristic'), DATE, st);
+    expect([r.lines[0].income, r.lines[0].tax, r.lines[0].net, r.expense]).toEqual(['10300.00', '309.00', '9991.00', 30000]);
+  });
+  it('income = payee cash + tax for every mode over many bases (always mode included: no rounding gap)', () => {
+    for (const mode of ['deduct', 'grossup_once', 'grossup_always'] as const) {
+      for (let b = 1; b <= 20000; b += 7) {
+        const l = computeWht([{ net: b, whtTypeCode: 'SVC' }], mode, party('juristic'), DATE, st).lines[0];
+        expect([mode, b, toSatang(l.income)]).toEqual([mode, b, toSatang(l.net) + toSatang(l.tax)]);
+      }
+    }
   });
   it('rounds half away from zero and keeps integer satang (16650 x 3 % = 499.5 -> 500; always: 1000 -> income 1031, tax 31)', () => {
     expect(computeWht([{ net: 16650, whtTypeCode: 'SVC' }], 'deduct', party('juristic'), DATE, st).tax).toBe(500);
@@ -94,10 +109,10 @@ describe('PV journal balances in all three modes (Dr = Cr) and posts the WHT rol
     expect(row(lines, '2132')?.credit).toBe('154.64');
     expect(row(lines, '1121')?.credit).toBe('5000.00');
   });
-  it('grossup_once: tax 154.50 borne by us; cash 5,000.00', () => {
+  it('grossup_once (ป.96/2543 ex. 6): income 5,150.00, WHT 154.50 to the RD, payee receives 4,995.50, we bear 150.00 (WhtExpense 5180)', () => {
     const { s, done, lines } = pv('grossup_once', 'pv-01');
     assertBalanced(s);
-    expect([done.totals.wht, done.totals.cash]).toEqual(['154.50', '5000.00']);
-    expect(row(lines, '5180')?.debit).toBe('154.50');
+    expect([done.totals.total, done.totals.wht, done.totals.cash]).toEqual(['5000.00', '154.50', '4995.50']);
+    expect([row(lines, '5100')?.debit, row(lines, '5180')?.debit, row(lines, '2132')?.credit, row(lines, '1121')?.credit]).toEqual(['5000.00', '150.00', '154.50', '4995.50']);
   });
 });

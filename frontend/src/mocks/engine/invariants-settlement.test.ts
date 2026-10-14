@@ -15,12 +15,12 @@ describe('receipts and vouchers: allocations, WHT and the PV balance identity (F
     const rc = createDraft(st, 'co-vat', 'RC', { header: { partyId: 'pc-01', documentDate: '2026-10-14', depositAmount: '200.00' }, lines: [], allocations: [
       { targetId: ids.rcTargetsA, targetType: 'TI', amount: '1000.00', wht: '30.00', whtTypeCode: 'SVC' }, { targetId: ids.rcTargetsB, targetType: 'TI', amount: '500.00' }] }, U, 'iw-rc');
     const pvLine = (id: string, price: string) => ({ id, description: 'ค่าถ่ายภาพ', qty: '1', unit: 'งาน', unitPrice: price, taxCode: 'EX' as const, whtTypeCode: 'SVC' });
-    const mk = (mode: 'deduct' | 'grossup_always', k: string) => createDraft(st, 'co-vat', 'PV', { header: { partyId: 'pv-01', documentDate: '2026-10-14', whtMode: mode }, lines: [pvLine('l1', '5000.00')] }, U, k);
+    const mk = (mode: 'deduct' | 'grossup_once' | 'grossup_always', k: string) => createDraft(st, 'co-vat', 'PV', { header: { partyId: 'pv-01', documentDate: '2026-10-14', whtMode: mode }, lines: [pvLine('l1', '5000.00')] }, U, k);
     const pb = createDraft(st, 'co-vat', 'PB', { header: { partyId: 'pv-01', documentDate: '2026-10-14' }, lines: [{ id: 'l1', description: 'วัสดุ', qty: '1', unit: 'ชุด', unitPrice: '1000.00', taxCode: 'S7' }] }, U, 'iw-pb');
     const pbDone = issue(st, pb.id, pb.version, U);
     const pvBill = createDraft(st, 'co-vat', 'PV', { header: { partyId: 'pv-01', documentDate: '2026-10-14' }, lines: [], allocations: [{ targetId: pbDone.id, targetType: 'PB', amount: '600.00' }] }, U, 'iw-pvb');
-    const done = [rc, mk('deduct', 'iw-d'), mk('grossup_always', 'iw-g'), pvBill].map((d) => issue(st, d.id, d.version, U));
-    return { st, rc: done[0], pvD: done[1], pvG: done[2], pvB: done[3], ids };
+    const done = [rc, mk('deduct', 'iw-d'), mk('grossup_always', 'iw-g'), pvBill, mk('grossup_once', 'iw-o')].map((d) => issue(st, d.id, d.version, U));
+    return { st, rc: done[0], pvD: done[1], pvG: done[2], pvB: done[3], pvO: done[4], ids };
   }
   const entry = (st: MockState, id: string) => st.journals.find((j) => j.docId === id)!.preview.entries[0];
   const find = (st: MockState, id: string, code: string) => entry(st, id).lines.find((l) => l.accountCode === code)!;
@@ -31,6 +31,19 @@ describe('receipts and vouchers: allocations, WHT and the PV balance identity (F
     const { st, rc, pvD, pvG } = world();
     expect(msgs(st)).toBe('');
     expect([D(st, rc.id).totals.total, D(st, pvD.id).totals.cash, D(st, pvG.id).totals.cash]).toEqual(['1700.00', '4850.00', '5000.00']);
+  });
+  it('gross-up once (RD ป.96/2543 ex. 6) holds: income 5,150.00 = payee 4,995.50 + tax 154.50, we bear 150.00; the old cash = total / expense = tax is reported (can fail)', () => {
+    const a = world();
+    expect([D(a.st, a.pvO.id).totals.cash, find(a.st, a.pvO.id, '5180').debit]).toEqual(['4995.50', '150.00']);
+    expect(msgs(a.st)).toBe('');
+    D(a.st, a.pvO.id).totals.cash = '5000.00'; // the pre-fix formula
+    expect(msgs(a.st)).toContain("PV cash 5000.00 is wrong for mode grossup_once (total 5000.00, expected 4995.50)");
+    const b = world();
+    const exp = find(b.st, b.pvO.id, '5180'), line = find(b.st, b.pvO.id, '5100');
+    exp.debit = '154.50'; line.debit = '4995.50'; // still Dr = Cr, expense booked as the whole tax
+    const out = msgs(b.st);
+    expect(out).not.toMatch(/unbalanced/);
+    expect(out).toContain("WHT expense 154.50 is wrong for mode grossup_once (expected 150.00)");
   });
   it('report an allocation that no longer has its settles link, and a link whose amount differs from its allocation (can fail)', () => {
     const a = world();

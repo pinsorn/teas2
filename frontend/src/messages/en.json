@@ -417,6 +417,7 @@
       "wht": "Withholding tax",
       "cash": "Net payment",
       "base": "Base",
+      "payee": "Payee receives",
       "form": "Form",
       "forms": { "PND2": "PND.2", "PND3": "PND.3", "PND53": "PND.53", "PND54": "PND.54" }
     },
