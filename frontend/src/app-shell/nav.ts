@@ -73,16 +73,22 @@ export function visibleNav(nav: NavGroup[], ctx: { permissions: string[]; vatReg
   return nav.map((g) => ({ ...g, items: g.items.filter(ok) })).filter((g) => g.items.length > 0);
 }
 
-/** List route per document type, for links from Home and search. */
-export const DOC_HREF: Partial<Record<DocType, string>> = {
-  ...Object.fromEntries(
-    NAV.flatMap((g) => g.items).flatMap((i) => {
-      const m = /^doc\.(\w+)\.read$/.exec(i.permission ?? '');
-      return m ? [[m[1], i.href]] : [];
-    }),
-  ),
-  IV: '/sales/invoices',
-};
+const DOC_ITEM: Partial<Record<DocType, NavItem>> = (() => {
+  const items = NAV.flatMap((g) => g.items);
+  const out: Partial<Record<DocType, NavItem>> = {};
+  for (const i of items) {
+    const m = /^doc\.(\w+)\.read$/.exec(i.permission ?? '');
+    if (m && !i.nonVatOnly) out[m[1] as DocType] = i;
+  }
+  out.IV = items.find((i) => i.key === 'invoices');
+  return out;
+})();
+
+/** List route of a document type in this company, or undefined when it has none (not built, or hidden for the company's VAT status). */
+export function docHref(type: DocType, vatRegistered: boolean): string | undefined {
+  const i = DOC_ITEM[type];
+  return i && !(i.vatOnly && !vatRegistered) && !(i.nonVatOnly && vatRegistered) ? i.href : undefined;
+}
 
 /** The nav item whose route is the longest prefix of `pathname` (document pages under a list route match their list). */
 export function matchNavItem(pathname: string, nav: NavGroup[] = NAV): { group: NavGroup; item: NavItem } | undefined {

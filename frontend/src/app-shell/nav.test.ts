@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PERMISSIONS_BY_ROLE } from '@/mocks/permissions';
-import { NAV, visibleNav } from './nav';
+import { NAV, docHref, matchNavItem, visibleNav } from './nav';
 
 const labels = (g: ReturnType<typeof visibleNav>) => g.flatMap((x) => x.items.map((i) => i.key));
 
@@ -30,5 +30,24 @@ describe('navigation', () => {
     const items = NAV.flatMap((g) => g.items);
     expect(new Set(items.map((i) => i.key)).size).toBe(items.length);
     expect(new Set(items.map((i) => i.href)).size).toBe(items.length);
+  });
+});
+
+describe('docHref / matchNavItem', () => {
+  it('routes a document type to its list, honouring VAT status', () => {
+    expect(docHref('TI', true)).toBe('/sales/tax-invoices');
+    expect(docHref('TI', false)).toBeUndefined();
+    expect(docHref('IV', false)).toBe('/sales/invoices');
+    expect(docHref('IV', true)).toBeUndefined();
+    expect(docHref('QT', true)).toBe('/sales/quotations');
+  });
+  it('has no route (so no link) for types without a nav page', () => {
+    for (const t of ['JV', 'DP', 'WT', 'FA', 'PR', 'OB'] as const) expect(docHref(t, true)).toBeUndefined();
+  });
+  it('matches the longest list route, and only on a segment boundary', () => {
+    expect(matchNavItem('/sales/tax-invoices/abc')?.item.key).toBe('taxInvoices');
+    expect(matchNavItem('/sales/tax-invoicesX')).toBeUndefined();
+    expect(matchNavItem('/')?.item.key).toBe('home');
+    expect(matchNavItem('/nope')).toBeUndefined();
   });
 });

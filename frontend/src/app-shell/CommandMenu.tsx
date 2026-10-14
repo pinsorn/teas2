@@ -45,7 +45,9 @@ export function CommandMenu({ open, onOpenChange }: { open: boolean; onOpenChang
     && (d.vat === 'both' || (d.vat === 'vat-only') === me.vatRegistered)
     && (locale === 'en' ? d.titleEn : d.titleTh).toLowerCase().includes(needle));
   const hits = (search.data?.items ?? []).filter((h) => h.kind !== 'page');
-  const showEmpty = !creates.length && !pages.length && !hits.length && !search.isFetching;
+  // "No results" only once the search for the current term succeeded: never during the debounce, while fetching, or after an error.
+  const searched = needle === '' || (debounced === q.trim() && search.isSuccess && !search.isFetching);
+  const showEmpty = !creates.length && !pages.length && !hits.length && searched;
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} title={t('command.title')} description={t('command.description')}>

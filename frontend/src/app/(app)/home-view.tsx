@@ -4,7 +4,7 @@ import { LockIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
-import { DOC_HREF } from '@/app-shell/nav';
+import { docHref } from '@/app-shell/nav';
 import { isForbidden, useMe } from '@/app-shell/useMe';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -68,8 +68,16 @@ function Section({ id, title, home, empty, children }: {
 
 const SHOWN = 5;
 
+/** A link to the document when its type has a route in this company; plain text otherwise (never a made-up URL). */
+function DocNumber({ href, id, label }: { href?: string; id: string; label: string }) {
+  return href
+    ? <Link href={`${href}/${id}`} className="font-medium underline-offset-4 hover:underline">{label}</Link>
+    : <span className="font-medium">{label}</span>;
+}
+
 function DocRows({ docs, mode }: { docs: DocSummary[]; mode: 'document' | 'overdue' }) {
   const t = useTranslations();
+  const { me } = useMe();
   return (
     <>
     <ul className="divide-y">
@@ -77,9 +85,7 @@ function DocRows({ docs, mode }: { docs: DocSummary[]; mode: 'document' | 'overd
         <li key={d.id} className="flex items-baseline justify-between gap-3 py-2">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <Link href={`${DOC_HREF[d.type] ?? '/'}/${d.id}`} className="font-medium underline-offset-4 hover:underline">
-                {d.number ?? t('common.draftNoNumber')}
-              </Link>
+              <DocNumber href={docHref(d.type, me?.vatRegistered ?? false)} id={d.id} label={d.number ?? t('common.draftNoNumber')} />
               {d.createdByAgent && <Badge variant="secondary">{t('common.agent')}</Badge>}
             </div>
             <p className="truncate text-sm text-muted-foreground">{d.partyName}</p>

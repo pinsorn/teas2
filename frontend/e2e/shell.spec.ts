@@ -33,6 +33,17 @@ test('the company switcher in the sidebar switches company', async ({ page }) =>
   await expect(page.getByRole('navigation').getByRole('link', { name: 'ใบกำกับภาษี' })).toHaveCount(0);
 });
 
+test('Home data re-keys after a company switch (non-VAT shows its own data, not the VAT company data)', async ({ page }) => {
+  const main = page.getByRole('main');
+  await expect(main.getByText('ภ.พ.30')).toBeVisible();
+  await expect(main.getByText('ภาษีขายเดือนนี้')).toBeVisible();
+  await page.getByRole('button', { name: 'โหมดตัวอย่าง' }).click();
+  await page.getByLabel('บริษัท').selectOption('nonvat');
+  await expect(main.getByText('ภ.พ.30')).toHaveCount(0);
+  await expect(main.getByText('ภาษีขายเดือนนี้')).toHaveCount(0);
+  await expect(main.getByText('ภ.ง.ด.53')).toBeVisible();
+});
+
 test('Ctrl+K opens the command menu', async ({ page }) => {
   await page.keyboard.press('Control+k');
   await expect(page.getByRole('dialog')).toBeVisible();
