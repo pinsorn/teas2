@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { assertBalanced, type Actor, type DocLine, type MockStateLike } from './test-helpers';
 import { seed } from '../store';
+import { today } from './log';
 import { cancel, compute, convert, createDraft, issue, missingOf, revise, updateDraft } from './commands';
 import { fromSatang, toSatang } from './money';
 
@@ -126,6 +127,29 @@ describe('fix round 1: outstanding, seed validity, cancel blocks (SP0 7.4 / 7.11
     expect(() => cancel(st, paid.id, paid.version, 'OTHER', 'x', me)).toThrow(/doc.has_dependents/);
     const qt = st.docs.find((d) => d.type === 'QT' && st.links.some((l) => l.to === d.id && l.active))!;
     expect(cancel(st, qt.id, qt.version, 'OTHER', 'x', me).status).toBe('cancelled');
+  });
+});
+
+describe('cancel vs locks (SP0 7.5)', () => {
+  const lockedTi = (kind: 'period' | 'filing') => {
+    const d = createDraft(st, vatCo, 'TI', { header: { partyId: vatCustomer, documentDate: '2026-08-14' }, lines: [line({ qty: '2', unitPrice: '100.00' })] }, me, `lk-${kind}`);
+    const a = issue(st, d.id, d.version, me);
+    const i = st.docs.findIndex((x) => x.id === a.id);
+    st.docs[i] = { ...st.docs[i], locks: [{ kind, reason: 'ล็อก', exits: ['ทางออก'] }] };
+    return st.docs[i];
+  };
+  it('a period-locked cancel succeeds, reverses in the current period and stays balanced', () => {
+    const d = lockedTi('period');
+    expect(cancel(st, d.id, d.version, 'OTHER', 'x', me).status).toBe('cancelled');
+    assertBalanced(st);
+    const rv = st.journals.find((j) => j.docId === d.id)!.preview.entries.at(-1)!;
+    expect(rv.kind).toBe('reversal');
+    expect(rv.date).toBe(today()); // posted in the current open period, not the locked one
+    expect(rv.date).not.toBe('2026-08-14');
+  });
+  it('a filing-locked cancel is still refused with 409 doc.locked', () => {
+    const d = lockedTi('filing');
+    expect(() => cancel(st, d.id, d.version, 'OTHER', 'x', me)).toThrow(/doc.locked/);
   });
 });
 

@@ -72,7 +72,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
   const cancel = useMutation({
     mutationFn: (v: { code: string; text: string }) => endpoints.cancelDoc(d.type, doc.id, doc.version, v.code, v.text),
     onSuccess: async () => { await refresh(); setCancelOpen(false); },
-    onError: (e) => { if (e instanceof ApiError && e.problem.status === 409) void refresh(); }, // stale version: reload so a retry sends the current one
+    onError: (e) => { if (e instanceof ApiError && e.code === 'doc.version_conflict') void refresh(); }, // stale version: reload so a retry sends the current one
   });
   const convert = useMutation({
     mutationFn: (target: DocType) => endpoints.convertDoc(d.type, doc.id, target, doc.lines.map((l) => ({ sourceLineId: l.id, qty: l.qty }))),
@@ -130,7 +130,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
       </Tabs>
 
       {cancelOpen ? (
-        <CancelDialog docLabel={label} busy={cancel.isPending} error={cancel.error} hint={cancel.error instanceof ApiError && cancel.error.problem.status === 409 ? t('cancel.stale') : undefined} onCancel={() => setCancelOpen(false)}
+        <CancelDialog docLabel={label} busy={cancel.isPending} error={cancel.error} hint={cancel.error instanceof ApiError && cancel.error.code === 'doc.version_conflict' ? t('cancel.stale') : undefined} onCancel={() => setCancelOpen(false)}
           onConfirm={(code, text) => cancel.mutate({ code, text })} />
       ) : null}
     </div>

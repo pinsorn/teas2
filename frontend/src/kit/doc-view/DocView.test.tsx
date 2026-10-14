@@ -101,12 +101,29 @@ describe('DocView locks and actions (fix round 1)', () => {
     expect(exit).toBeDisabled();
     expect(exit).toHaveAccessibleDescription(/doc\.TI\.correct/);
   });
-  it('a period lock does not block cancel', async () => {
+  it('a period lock does not block cancel, end to end', async () => {
     const d = lone();
     withLock(d.id, 'period', 'งวด ก.ย. ปิดแล้ว', 'แก้ไขในงวดปัจจุบัน');
-    ui(d.id);
+    const { container } = ui(d.id);
     expect(await screen.findByRole('status', { name: 'ล็อก' })).toHaveTextContent('งวด ก.ย. ปิดแล้ว');
-    expect(screen.getByRole('button', { name: 'ยกเลิกเอกสาร' })).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: 'ยกเลิกเอกสาร' }));
+    const dialog = screen.getByRole('alertdialog');
+    await userEvent.click(within(dialog).getByRole('combobox'));
+    await userEvent.click(await screen.findByRole('option', { name: 'ออกซ้ำ' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'ยืนยันยกเลิก' }));
+    await waitFor(() => expect(container.querySelector('[data-status="cancelled"]')).not.toBeNull());
+  });
+  it.each([['doc.locked', 'เอกสารถูกล็อก ยกเลิกไม่ได้'], ['doc.has_dependents', 'มีใบเสร็จผูกอยู่']])('a %s refusal shows its own message, not the stale-data hint', async (code, title) => {
+    const d = lone();
+    testServer.use(http.post('*/bff/v1/docs/TI/:id/cancel', () => problem(409, code, title)));
+    ui(d.id);
+    await userEvent.click(await screen.findByRole('button', { name: 'ยกเลิกเอกสาร' }));
+    const dialog = screen.getByRole('alertdialog');
+    await userEvent.click(within(dialog).getByRole('combobox'));
+    await userEvent.click(await screen.findByRole('option', { name: 'ออกซ้ำ' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'ยืนยันยกเลิก' }));
+    expect(await within(dialog).findByText(title)).toBeVisible();
+    expect(within(dialog).queryByText(/โหลดข้อมูลล่าสุดให้แล้ว/)).toBeNull();
   });
   it('a settlement lock keeps cancel blocked', async () => {
     const d = lone();
