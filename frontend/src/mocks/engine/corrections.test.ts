@@ -164,6 +164,9 @@ describe('I1: a CN / DN carries one line per tax code and the plan shows exactly
   it('4 x S7 0.08 -> S7 0.33: CN net -0.01 VAT 0.02 total 0.01 (net up, VAT down), outstanding 0.35', () => {
     const cn = delta(['a', 'b', 'c', 'd'].map((id) => line(id, 'S7', '0.08')), [line('z', 'S7', '0.33')], { type: 'CN', net: '-0.01', vat: '0.02', total: '0.01' }, '0.35');
     expect(cn.lines[0].vatOverride).toBe('0.02');
+    const j = st.journals.find((x) => x.docId === cn.id)!.preview.entries[0].lines.map((l) => [l.accountCode, l.debit, l.credit]);
+    expect(j).toEqual(expect.arrayContaining([['4100', '0.00', '0.01'], ['2151', '0.02', '0.00'], ['1130', '0.00', '0.01']]));
+    expect(j).toHaveLength(3);
   });
   it('2 x S7 0.07 -> S7 0.08: CN net 0.06 VAT -0.01 total 0.05, outstanding 0.09', () => {
     delta([line('a', 'S7', '0.07'), line('b', 'S7', '0.07')], [line('z', 'S7', '0.08')], { type: 'CN', net: '0.06', vat: '-0.01', total: '0.05' }, '0.09');
@@ -184,6 +187,19 @@ describe('I1: a CN / DN carries one line per tax code and the plan shows exactly
     const snapshot = structuredClone(st);
     expect(() => executePlan(st, plan.planId, plan.planHash, me)).toThrow(expect.objectContaining({ status: 409, code: 'correction.plan_stale' }));
     expect(st).toEqual(snapshot);
+  });
+  it('engine.invariant never fires: note total == |delta| across a sweep of satang prices', () => {
+    for (const [a, b] of [['100.10', '100.60'], ['12.34', '24.68'], ['0.08', '0.33'], ['0.07', '0.08'], ['33.33', '33.34'], ['1.15', '0.99'], ['99.99', '100.01']]) {
+      const ti = mkTi([line('a', 'S7', a)]);
+      expect(() => correctionPlan(st, ti.id, { header: ti.header, lines: [line('a', 'S7', b)] }, 'accountant')).not.toThrow();
+    }
+  });
+  it('a malformed body is not a TypeError in stripOverrides: it reaches the engine 422', async () => {
+    const { stripOverrides } = await import('../handlers/docs-write');
+    for (const bad of [{ header: {} }, { header: {}, lines: [null] }, { header: {}, lines: 'x' }]) {
+      expect(() => stripOverrides(bad as never)).not.toThrow();
+      expect(() => calc(bad as never)).toThrow(expect.objectContaining({ status: 422 }));
+    }
   });
   it('a body arriving over HTTP cannot carry a vatOverride (stripped at the boundary)', async () => {
     const { stripOverrides } = await import('../handlers/docs-write');

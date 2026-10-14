@@ -15,8 +15,8 @@ function fnv(s: string): string {
 }
 
 type Stored = MockState['docs'][number];
-/** The CN / DN a correction would issue, built by the engine: ONE line per tax code carrying that code's net difference
- *  between the original and the proposed lines (VAT is the engine's per line). `full` = credit the whole document instead.
+/** The CN / DN a correction would issue, built by the engine: ONE line per tax code carrying that code's net AND VAT change
+ *  between the original and the proposed document (rule B: VAT is fixed per line via `vatOverride`, not recomputed on the difference). `full` = credit the whole document instead.
  *  A pure shift between codes yields a signed (negative) line. Null = nothing to adjust. */
 function noteFor(d: Stored, p: Body, full: boolean): CorrectionNote | null {
   const orig: Body = { header: d.header, lines: d.lines };
@@ -45,10 +45,12 @@ function noteFor(d: Stored, p: Body, full: boolean): CorrectionNote | null {
   const incl = full && !!d.header.priceIncludesVat;
   const computed = calc({ header: { ...d.header, priceIncludesVat: incl }, lines });
   const total = toSatang(computed.totals.total);
-  const original = toSatang(d.totals.total), proposed = toSatang(calc(p).totals.total);
-  const expected = full ? original : type === 'CN' ? original - proposed : proposed - original;
-  if (total <= 0 || total !== expected) {
-    throw new MockError(422, 'correction.unrepresentable', 'ยอดภาษีที่ปัดเศษไม่ตรงกับส่วนต่าง กรุณาปรับรายการแล้วลองใหม่');
+  // a difference note's total is |proposed - original| by construction (rule B); only a note that adjusts nothing is refused
+  if (!full && total > 0 && total !== Math.abs(toSatang(calc(p).totals.total) - toSatang(d.totals.total))) {
+    throw new MockError(500, 'engine.invariant', 'note total differs from |original - proposed| (rule B violated)'); // defence in depth, never expected
+  }
+  if (total <= 0 || (full && total !== toSatang(d.totals.total))) {
+    throw new MockError(422, 'correction.unrepresentable', 'ไม่สามารถออกใบลดหนี้/ใบเพิ่มหนี้ที่ยอดไม่เป็นบวกได้');
   }
   const codes = [...new Set(lines.map((l) => l.taxCode))];
   const taxLines = codes.map((taxCode) => {

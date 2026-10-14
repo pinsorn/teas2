@@ -14,7 +14,8 @@ const ACTOR: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญ
 const VAT_ONLY = ['TI'];
 
 /** vatOverride is engine-set (correction notes) only: never accepted from an API caller. */
-export const stripOverrides = <T extends Body>(b: T): T => ({ ...b, lines: b.lines.map(({ vatOverride, ...l }) => { void vatOverride; return l; }) });
+export const stripOverrides = <T extends Body>(b: T): T => (Array.isArray(b?.lines)
+  ? { ...b, lines: b.lines.map((l) => { if (!l || typeof l !== 'object') return l; const { vatOverride, ...r } = l; void vatOverride; return r; }) } : b);
 
 type Ctx = ReturnType<typeof ctx>;
 type Out = Response | Promise<Response>;
