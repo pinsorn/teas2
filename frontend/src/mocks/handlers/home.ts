@@ -3,7 +3,7 @@ import type { HomeInbox } from '@/domain/types';
 import { fromSatang, toSatang } from '../engine/money';
 import { ANCHOR } from '../fixtures/documents';
 import { toSummary } from './docs-read';
-import { ctx, screenGate } from './index';
+import { ctx, screenGate } from './common';
 
 export const homeHandlers = [
   http.get('*/bff/v1/home', async () => {

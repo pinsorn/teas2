@@ -1,6 +1,6 @@
 import { HttpResponse, http } from 'msw';
 import type { SearchHit } from '@/domain/types';
-import { ctx, screenGate } from './index';
+import { ctx, screenGate } from './common';
 
 const BASE: Record<string, string> = {
   QT: '/sales/quotations', SO: '/sales/orders', DO: '/sales/delivery-notes', TI: '/sales/tax-invoices', RC: '/sales/receipts', CN: '/sales/credit-notes',

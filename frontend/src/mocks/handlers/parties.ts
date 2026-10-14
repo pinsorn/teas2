@@ -1,6 +1,6 @@
 import { HttpResponse, http } from 'msw';
 import type { Page, PartySummary } from '@/domain/types';
-import { ctx, forbidden, screenGate } from './index';
+import { ctx, forbidden, screenGate } from './common';
 
 export const partiesHandlers = [
   http.get('*/bff/v1/parties', async ({ request }) => {

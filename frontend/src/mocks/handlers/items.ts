@@ -1,6 +1,6 @@
 import { HttpResponse, http } from 'msw';
 import type { ItemSummary, Page } from '@/domain/types';
-import { ctx, forbidden, screenGate } from './index';
+import { ctx, forbidden, screenGate } from './common';
 
 export const itemsHandlers = [
   http.get('*/bff/v1/items', async ({ request }) => {

@@ -1,6 +1,6 @@
 import { HttpResponse, http } from 'msw';
 import type { Doc, DocSummary, Lock, Page } from '@/domain/types';
-import { ctx, forbidden, problem, screenGate } from './index';
+import { ctx, forbidden, problem, screenGate } from './common';
 
 const VAT_ONLY = ['TI'];
 const LOCKED: Lock = { kind: 'filing', reason: 'ภ.พ.30 เดือน ก.ย. 2569 ยื่นแล้ว', exits: ['ออกใบลดหนี้ / ใบเพิ่มหนี้ในงวดถัดไป'] };
