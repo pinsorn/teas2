@@ -1,0 +1,44 @@
+/* TEAS 2 design tokens: direction B "Continuity" (SP1a). Single source for colour, density and focus.
+   Contrast ratios are in docs/specs/SP1-design-system.md. Light only (SP0 D-13). Fonts: --font-ui / --font-paper come from next/font in layout.tsx. */
+:root {
+  /* palette */
+  --color-bg: #faf8f5;
+  --color-surface: #ffffff;
+  --color-ink: #1a1816;
+  --color-ink-muted: #5f5a54;
+  --color-subtle: #f4f1ec;
+  --color-rule: #d7d1c7;
+  --color-rule-soft: #ece7df;
+  --color-control-border: #8a847a;
+  --color-brand: #9e5c34;
+  --color-brand-contrast: #ffffff;
+  --color-brand-soft: #f8e3d0;
+  --color-brand-ink: #86492a;
+  --color-danger: #9b3f38;
+  --color-danger-soft: #fbe4e1;
+
+  /* status chips (text on tint, always with a text label) */
+  --color-status-draft-fg: #4d4943;     --color-status-draft-bg: #ece7df;
+  --color-status-pending-fg: #80580f;   --color-status-pending-bg: #fbefd7;
+  --color-status-approved-fg: #86492a;  --color-status-approved-bg: #f8e3d0;
+  --color-status-issued-fg: #3e5f80;    --color-status-issued-bg: #e5ecf2;
+  --color-status-partly-fg: #5e4b7e;    --color-status-partly-bg: #eee9f4;
+  --color-status-settled-fg: #3a6347;   --color-status-settled-bg: #e6efe7;
+  --color-status-cancelled-fg: #5f5a54; --color-status-cancelled-bg: #e4dfd6;
+  --color-status-overdue-fg: #9b3f38;   --color-status-overdue-bg: #fbe4e1;
+
+  /* shape and density */
+  --radius: 10px;
+  --row-h: 40px;
+  --ctl-h: 40px;
+  --focus-ring: 3px solid var(--color-brand);
+  --focus-offset: 2px;
+  --shadow-panel: 0 1px 2px rgb(26 24 22 / 0.06);
+
+  /* type scale (px) */
+  --fs-title: 24px;
+  --fs-section: 17px;
+  --fs-body: 15px;
+  --fs-small: 13px;
+  --lh-body: 1.6;
+}

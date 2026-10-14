@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans_Thai, Sarabun } from "next/font/google";
+import { Noto_Sans_Thai, Sarabun } from "next/font/google";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getTranslations } from "next-intl/server";
 import { Toaster } from "@/components/ui/sonner";
@@ -8,11 +8,10 @@ import { MockProvider } from "@/mocks/MockProvider";
 import { MockToolbarGate } from "@/mocks/MockToolbar";
 import "./globals.css";
 
-// UI font. The chosen visual direction replaces it in the design-system spec (Task 9).
-const uiFont = IBM_Plex_Sans_Thai({
+// UI font (direction B, SP1a). Variable font: all weights.
+const uiFont = Noto_Sans_Thai({
   variable: "--font-ui",
   subsets: ["thai", "latin"],
-  weight: ["400", "500", "600", "700"],
 });
 
 // Paper font for printed documents (screen = paper).
