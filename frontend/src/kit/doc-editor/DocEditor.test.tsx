@@ -1,12 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http } from 'msw';
+import { HttpResponse, delay, http } from 'msw';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { taxInvoice } from '@/descriptors/tax-invoice';
 import { setSettings } from '@/mocks/settings';
 import { resetState } from '@/mocks/store';
 import { testServer } from '@/mocks/test-server';
+import { vatItems } from '@/mocks/fixtures/items';
 import { endpoints } from '@/lib/api/endpoints';
 import { DocEditor } from './DocEditor';
 
@@ -32,7 +33,7 @@ describe('DocEditor', () => {
     await userEvent.type(screen.getByRole('combobox', { name: 'ลูกค้า' }), 'นาวา');
     await userEvent.keyboard('{Enter}');
     expect(await screen.findByText(/0105568024684/)).toBeVisible();
-    expect(screen.getByRole('textbox', { name: 'รายการ 1' })).toHaveValue('ออกแบบอัตลักษณ์องค์กร');
+    expect(screen.getByRole('combobox', { name: 'รายการ 1' })).toHaveValue('ออกแบบอัตลักษณ์องค์กร');
   });
   it('Enter while composing text does nothing', async () => {
     ui();
@@ -74,6 +75,7 @@ describe('DocEditor', () => {
     testServer.use(http.put('*/bff/v1/docs/TI/:id', () => new Response(JSON.stringify({ title: 'มีคนแก้เอกสารนี้ก่อนคุณ', code: 'doc.version_conflict', status: 409 }), { status: 409, headers: { 'content-type': 'application/problem+json' } })));
     ui();
     await userEvent.type(screen.getByRole('combobox', { name: 'ลูกค้า' }), 'นาวา{Enter}');
+    await waitFor(() => expect(calls).toContain('POST /bff/v1/docs/TI'), { timeout: 4000 }); // the first save is a POST after 2 s idle
     await userEvent.type(screen.getByRole('textbox', { name: 'หมายเหตุ' }), 'x');
     expect(await screen.findByText('มีคนแก้เอกสารนี้ก่อนคุณ', {}, { timeout: 4000 })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'หมายเหตุ' })).toHaveValue('x');
@@ -97,5 +99,74 @@ describe('DocEditor', () => {
     await userEvent.click(save);
     expect(onRevisionRequested).toHaveBeenCalledWith(expect.objectContaining({ header: expect.objectContaining({ partyId: doc.header.partyId }), lines: expect.any(Array) }));
     expect(calls.filter((c) => c.startsWith('POST /bff/v1/docs/TI/') && c.endsWith('/issue') || c.startsWith('PUT'))).toHaveLength(0);
+  });
+});
+
+describe('DocEditor fix round 1', () => {
+  it('a create retried after a failed response re-sends the same body and key, then PUTs the newer edits', async () => {
+    const posts: { key: string | null; body: string }[] = [];
+    testServer.use(http.post('*/bff/v1/docs/TI', async ({ request }) => {
+      posts.push({ key: request.headers.get('Idempotency-Key'), body: await request.clone().text() });
+      if (posts.length === 1) return new HttpResponse(null, { status: 503 }); // response lost: the client cannot know
+    }));
+    ui();
+    await userEvent.type(screen.getByRole('textbox', { name: 'หมายเหตุ' }), 'a');
+    await waitFor(() => expect(posts).toHaveLength(1), { timeout: 4000 });
+    await userEvent.type(screen.getByRole('textbox', { name: 'หมายเหตุ' }), 'b');
+    await waitFor(() => expect(posts).toHaveLength(2), { timeout: 4000 });
+    expect(posts[1]).toEqual(posts[0]);
+    await waitFor(() => expect(calls.some((c) => c.startsWith('PUT /bff/v1/docs/TI/'))).toBe(true), { timeout: 4000 });
+    expect(screen.getByRole('textbox', { name: 'หมายเหตุ' })).toHaveValue('ab');
+  }, 20000);
+
+  it('the form is frozen while a confirmed document is being saved and issued', async () => {
+    testServer.use(http.post('*/bff/v1/docs/TI/:id/issue', async () => { await delay(500); }));
+    const onIssued = ui();
+    await userEvent.type(screen.getByRole('combobox', { name: 'ลูกค้า' }), 'นาวา{Enter}');
+    await waitFor(() => expect(screen.getByRole('region', { name: 'ยังขาดอะไร' })).toHaveTextContent('ครบแล้ว'));
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+    await screen.findByRole('alertdialog');
+    await userEvent.keyboard('{Enter}');
+    expect(screen.getByRole('textbox', { name: 'หมายเหตุ' })).toBeDisabled();
+    await waitFor(() => expect(onIssued).toHaveBeenCalled(), { timeout: 4000 });
+  });
+
+  it('an older party selection cannot overwrite a newer one after its usual-item lookup', async () => {
+    testServer.use(http.get('*/bff/v1/items', async ({ request }) => {
+      const q = new URL(request.url).searchParams.get('q') ?? '';
+      if (q === 'SV-01') await delay(700);
+      return HttpResponse.json({ items: vatItems().filter((i) => !q || i.id === q).map((i) => { const { companyId, ...rest } = i; void companyId; return rest; }) });
+    }));
+    ui();
+    const box = screen.getByRole('combobox', { name: 'ลูกค้า' });
+    await userEvent.type(box, 'นาวา{Enter}');
+    await waitFor(() => expect(calls).toContain('GET /bff/v1/items')); // A's slow lookup is in flight
+    await userEvent.clear(box);
+    await userEvent.type(box, 'ปิ่นทอง{Enter}');
+    expect(await screen.findByText(/0105565077124/)).toBeVisible();
+    await new Promise((r) => setTimeout(r, 1000));
+    expect(screen.queryByText(/0105568024684/)).toBeNull();
+    expect(box).toHaveValue('บริษัท ปิ่นทองการพิมพ์ จำกัด');
+  });
+
+  it('the item field is a real combobox with a listbox, active option and a results announcement', async () => {
+    ui();
+    const box = screen.getByRole('combobox', { name: 'รายการ 1' });
+    await userEvent.type(box, 'ออกแบบ');
+    const list = await screen.findByRole('listbox');
+    expect(box).toHaveAttribute('aria-expanded', 'true');
+    expect(box).toHaveAttribute('aria-controls', list.id);
+    expect(box).toHaveAttribute('aria-activedescendant', screen.getAllByRole('option')[0].id);
+    expect(screen.getByText(/^พบ \d+ รายการ$/)).toBeInTheDocument();
+  });
+
+  it('a failed compute shows an error with retry in the journal drawer, not "no journal entry"', async () => {
+    testServer.use(http.post('*/bff/v1/docs/TI/compute', () => HttpResponse.json({ title: 'คำนวณไม่ได้', code: 'http.500' }, { status: 500 })));
+    ui();
+    await userEvent.click(screen.getByRole('button', { name: 'ดูรายการบัญชี' }));
+    const dlg = await screen.findByRole('dialog');
+    expect(await within(dlg).findByRole('alert')).toHaveTextContent('คำนวณไม่ได้');
+    expect(within(dlg).getByRole('button', { name: 'ลองใหม่' })).toBeVisible();
+    expect(within(dlg).queryByText('ยังไม่มีรายการบัญชี')).toBeNull();
   });
 });

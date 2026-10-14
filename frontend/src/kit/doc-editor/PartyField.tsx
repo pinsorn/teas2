@@ -25,8 +25,8 @@ export function PartyField({ kind, value, search, onPick, onClear }: PartyFieldP
     <div className="grid gap-1.5">
       <Label htmlFor={id}>{label}</Label>
       <div className="relative">
-        <Input id={id} type="text" role="combobox" autoComplete="off" aria-autocomplete="list" aria-expanded={s.open}
-          aria-controls={s.open ? s.listId : undefined} aria-activedescendant={s.open && s.items.length ? s.optionId(s.active) : undefined}
+        <Input id={id} type="text" role="combobox" autoComplete="off" aria-autocomplete="list" aria-expanded={s.expanded}
+          aria-controls={s.expanded ? s.listId : undefined} aria-activedescendant={s.expanded ? s.optionId(s.active) : undefined}
           aria-describedby={`${id}-hint`} value={text} data-field="party"
           onChange={(e) => { setText(e.target.value); if (value && e.target.value !== value.name) onClear(); s.query(e.target.value); }}
           onKeyDown={(e) => { s.onKeyDown(e); }} onBlur={s.blur} />

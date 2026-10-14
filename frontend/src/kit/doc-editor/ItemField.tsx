@@ -20,6 +20,7 @@ export function useSuggest<T>(search: (q: string) => Promise<T[]>, onPick: (item
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const [failed, setFailed] = useState(false);
+  const [note, setNote] = useState<'searching' | 'done'>();
   const seq = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const busy = useRef(false);
@@ -29,7 +30,7 @@ export function useSuggest<T>(search: (q: string) => Promise<T[]>, onPick: (item
   useEffect(() => { cb.current = { search, onPick }; });
   useEffect(() => () => clearTimeout(timer.current), []);
 
-  const cancel = () => { clearTimeout(timer.current); seq.current++; busy.current = false; enterWaiting.current = false; };
+  const cancel = () => { clearTimeout(timer.current); seq.current++; busy.current = false; enterWaiting.current = false; setNote(undefined); };
   const close = () => { cancel(); setOpen(false); };
   /** Leaving the box hides the list but keeps a pending Enter alive: the user already asked for the first match. */
   const blur = () => { blurred.current = true; setOpen(false); };
@@ -41,13 +42,14 @@ export function useSuggest<T>(search: (q: string) => Promise<T[]>, onPick: (item
     const id = ++seq.current;
     blurred.current = false;
     busy.current = true;
+    setNote('searching');
     timer.current = setTimeout(async () => {
       let r: T[] = [];
       let bad = false;
       try { r = await cb.current.search(q); } catch { bad = true; }
       if (id !== seq.current) return;
       busy.current = false;
-      setItems(r); setActive(0); setFailed(bad);
+      setItems(r); setActive(0); setFailed(bad); setNote('done');
       if (enterWaiting.current) {
         enterWaiting.current = false;
         if (r[0]) { choose(r[0]); return; }
@@ -77,34 +79,40 @@ export function useSuggest<T>(search: (q: string) => Promise<T[]>, onPick: (item
   };
 
   return {
-    items, open, active, failed, listId, optionId: (i: number) => `${listId}-${i}`,
+    items, open, active, failed, note, expanded: open && items.length > 0, listId, optionId: (i: number) => `${listId}-${i}`,
     query, blur, choose, setActive, onKeyDown,
   };
 }
 export type Suggest<T> = ReturnType<typeof useSuggest<T>>;
 
-/** The list under the input. Options are picked on mouse-down so the input never loses focus. */
+/** The list under the input, plus a polite live region: searching / N results / no results / failed. */
 export function SuggestList<T>({ s, label, render }: { s: Suggest<T>; label: string; render: (item: T) => ReactNode }) {
   const t = useTranslations('docEditor');
-  if (!s.open) return null;
+  const say = s.note === 'searching' ? t('searching') : s.note === 'done'
+    ? (s.failed ? t('searchFailed') : s.items.length ? t('results', { count: s.items.length }) : t('noMatch')) : '';
   return (
-    <div className="absolute inset-x-0 top-full z-30 mt-1 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
-      {s.items.length > 0 ? (
-        <ul id={s.listId} role="listbox" aria-label={label} className="max-h-64 overflow-y-auto">
-          {s.items.map((item, i) => (
-            <li key={s.optionId(i)} id={s.optionId(i)} role="option" aria-selected={i === s.active}
-              onMouseDown={(e) => { e.preventDefault(); s.choose(item); }} onMouseEnter={() => s.setActive(i)}
-              className={cn('cursor-default rounded-md px-2.5 py-2 text-body', i === s.active && 'bg-muted')}>
-              {render(item)}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p role="status" className={cn('px-2.5 py-2 text-small', s.failed ? 'text-destructive' : 'text-muted-foreground')}>
-          {s.failed ? t('searchFailed') : t('noMatch')}
-        </p>
+    <>
+      <span role="status" className="sr-only">{say}</span>
+      {s.open && (
+        <div className="absolute inset-x-0 top-full z-30 mt-1 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
+          {s.items.length > 0 ? (
+            <ul id={s.listId} role="listbox" aria-label={label} className="max-h-64 overflow-y-auto">
+              {s.items.map((item, i) => (
+                <li key={s.optionId(i)} id={s.optionId(i)} role="option" aria-selected={i === s.active}
+                  onMouseDown={(e) => { e.preventDefault(); s.choose(item); }} onMouseEnter={() => s.setActive(i)}
+                  className={cn('cursor-default rounded-md px-2.5 py-2 text-body', i === s.active && 'bg-muted')}>
+                  {render(item)}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p aria-hidden className={cn('px-2.5 py-2 text-small', s.failed ? 'text-destructive' : 'text-muted-foreground')}>
+              {s.failed ? t('searchFailed') : t('noMatch')}
+            </p>
+          )}
+        </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -120,13 +128,13 @@ export interface ItemFieldProps {
   onPaste: (e: ClipboardEvent<HTMLInputElement>) => void;
 }
 
-/** Description cell with an item type-ahead. Stays a plain text box: free text is always allowed. */
+/** Description cell: an editable combobox over the item list. Free text is always allowed. */
 export function ItemField({ value, label, cell, search, onText, onPick, onKey, onPaste }: ItemFieldProps) {
   const s = useSuggest(search, onPick);
   return (
     <div className="relative">
-      <Input type="text" autoComplete="off" aria-label={label} data-cell={cell} value={value}
-        aria-controls={s.open ? s.listId : undefined} aria-activedescendant={s.open && s.items.length ? s.optionId(s.active) : undefined}
+      <Input type="text" role="combobox" autoComplete="off" aria-autocomplete="list" aria-label={label} data-cell={cell} value={value}
+        aria-expanded={s.expanded} aria-controls={s.expanded ? s.listId : undefined} aria-activedescendant={s.expanded ? s.optionId(s.active) : undefined}
         onChange={(e) => { onText(e.target.value); s.query(e.target.value); }}
         onKeyDown={(e) => { if (!s.onKeyDown(e)) onKey(e); }}
         onBlur={s.blur} onPaste={onPaste} />

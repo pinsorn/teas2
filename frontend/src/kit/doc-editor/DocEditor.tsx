@@ -83,6 +83,8 @@ export function DocEditor({ descriptor: d, mode, initial, onIssued, onRevisionRe
   const root = useRef<HTMLDivElement>(null);
   const missingRef = useRef<HTMLElement>(null);
   const issuing = useRef(false);
+  const pickGen = useRef(0); // newest party selection wins: older usual-item lookups are dropped
+  const [stale, setStale] = useState(false);
 
   const [header, setHeader] = useState<DocHeader>(initial?.header ?? { documentDate: todayIso() });
   const [lines, setLines] = useState<DocLine[]>(initial?.lines.length ? initial.lines : [newLine()]);
@@ -138,10 +140,12 @@ export function DocEditor({ descriptor: d, mode, initial, onIssued, onRevisionRe
   const confirmIssue = async () => {
     if (issuing.current) return;
     issuing.current = true;
-    setConfirmOpen(false); setWant(undefined); setIssuingNow(true); setIssueError(undefined);
+    const confirmed = payloadJson;
+    setConfirmOpen(false); setWant(undefined); setIssuingNow(true); setIssueError(undefined); setStale(false);
     try {
       const saved = await autosave.flush(); // the draft must hold exactly what was confirmed
       if (!saved) return; // the save failure is already on screen
+      if (saved.json !== confirmed) { setStale(true); return; } // never issue content the user did not confirm
       const doc = await endpoints.issueDoc(d.type, saved.id, saved.version);
       invalidate();
       onIssued(doc);
@@ -153,9 +157,11 @@ export function DocEditor({ descriptor: d, mode, initial, onIssued, onRevisionRe
   };
 
   const onPickParty = async (p: PartySummary) => {
+    const gen = ++pickGen.current;
     const first = p.usualItemIds?.[0];
     let item: ItemSummary | undefined;
     if (first && lines.length > 0 && isBlankLine(lines[0])) { try { item = await itemById(first); } catch { /* the prefill is a convenience */ } }
+    if (gen !== pickGen.current) return;
     setParty(p);
     setHeader((h) => ({ ...h, partyId: p.id, dueDate: addDays(h.documentDate, p.paymentTermDays) }));
     if (item) {
@@ -173,7 +179,7 @@ export function DocEditor({ descriptor: d, mode, initial, onIssued, onRevisionRe
 
   const amounts = useMemo(() => Object.fromEntries((compute.data?.lines ?? []).map((l) => [l.id, l.net])), [compute.data]);
   const heading = mode === 'create' ? t('create', { title }) : mode === 'edit-draft' ? t('editDraft', { title }) : t('revise', { title });
-  const primaryLabel = mode === 'revise' ? t('saveRevision') : d.issueLabelTh;
+  const primaryLabel = mode === 'revise' ? t('saveRevision') : t('issueAction', { title });
   const conflict = autosave.status === 'conflict' || (issueError instanceof ApiError && issueError.problem.status === 409);
   const reload = <Button size="sm" variant="outline" onClick={() => window.location.reload()}>{t('reload')}</Button>;
 
@@ -188,15 +194,16 @@ export function DocEditor({ descriptor: d, mode, initial, onIssued, onRevisionRe
       {conflict && <ProblemBanner error={autosave.status === 'conflict' ? autosave.problem : issueError} hint={t('conflictHint')} action={reload} />}
       {autosave.status === 'error' && <ProblemBanner error={autosave.problem} hint={t('saveFailedHint')}
         action={<Button size="sm" variant="outline" onClick={() => void autosave.flush()}>{t('save')}</Button>} />}
+      {stale && <Alert variant="destructive"><AlertDescription className="text-foreground!">{t('staleConfirm')}</AlertDescription></Alert>}
       {!!issueError && !conflict && <ProblemBanner error={issueError} hint={t('issueFailed')} />}
 
-      <div className={cn('grid gap-6', wide && previewOpen && 'grid-cols-[minmax(0,1fr)_minmax(0,28rem)]')}>
+      <fieldset disabled={issuingNow} className={cn('m-0 grid min-w-0 gap-6 border-0 p-0', wide && previewOpen && 'grid-cols-[minmax(0,1fr)_minmax(0,28rem)]')}>
         <div className="grid min-w-0 gap-6">
           <section className="grid gap-4 rounded-xl bg-card p-4 ring-1 ring-foreground/10 md:grid-cols-2">
             {partyKind && (
               <div className="md:col-span-2">
                 <PartyField kind={partyKind} value={party} onPick={(p) => void onPickParty(p)}
-                  onClear={() => { setParty(undefined); setHeader((h) => ({ ...h, partyId: undefined })); }}
+                  onClear={() => { pickGen.current++; setParty(undefined); setHeader((h) => ({ ...h, partyId: undefined })); }}
                   search={(q) => endpoints.searchParties({ kind: partyKind === 'employee' ? undefined : partyKind, q, limit: 8 }).then((p) => p.items)} />
               </div>
             )}
@@ -232,7 +239,7 @@ export function DocEditor({ descriptor: d, mode, initial, onIssued, onRevisionRe
           </div>
         </div>
         <PreviewDrawer open={previewOpen} onOpenChange={setPreviewChoice} docked={wide} party={party} lines={lines} compute={compute.data} />
-      </div>
+      </fieldset>
 
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-card px-4 py-3">
         <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center justify-between gap-3">
@@ -254,7 +261,7 @@ export function DocEditor({ descriptor: d, mode, initial, onIssued, onRevisionRe
         </div>
       </div>
 
-      <JournalDrawer open={journalOpen} onOpenChange={setJournalOpen} journal={compute.data?.journal} />
+      <JournalDrawer open={journalOpen} onOpenChange={setJournalOpen} journal={compute.data?.journal} pending={compute.pending} error={compute.error} onRetry={compute.retry} />
       {compute.data && (
         <ConfirmIssueDialog open={dialogOpen} title={t('confirm.title', { title })} totals={compute.data.totals}
           onConfirm={() => void confirmIssue()} onCancel={() => { setConfirmOpen(false); setWant(undefined); }} />

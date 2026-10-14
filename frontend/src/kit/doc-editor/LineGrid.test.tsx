@@ -10,7 +10,7 @@ describe('LineGrid keyboard', () => {
   it('Tab walks description → qty → price; Enter on the last cell adds a row', async () => {
     const onChange = vi.fn();
     render(<LineGrid lines={[empty]} onChange={onChange} searchItems={async () => []} />);
-    await userEvent.click(screen.getByRole('textbox', { name: 'รายการ 1' }));
+    await userEvent.click(screen.getByRole('combobox', { name: 'รายการ 1' }));
     await userEvent.tab();
     expect(screen.getByRole('textbox', { name: 'จำนวน 1' })).toHaveFocus();
     await userEvent.tab();
@@ -22,7 +22,7 @@ describe('LineGrid keyboard', () => {
   it('pasting rows from a spreadsheet creates lines', () => {
     const onChange = vi.fn();
     render(<LineGrid lines={[empty]} onChange={onChange} searchItems={async () => []} />);
-    fireEvent.paste(screen.getByRole('textbox', { name: 'รายการ 1' }), {
+    fireEvent.paste(screen.getByRole('combobox', { name: 'รายการ 1' }), {
       clipboardData: { getData: () => 'ค่าออกแบบ\t2\t1500\nค่าพิมพ์\t100\t8.50' },
     });
     expect(onChange).toHaveBeenLastCalledWith([

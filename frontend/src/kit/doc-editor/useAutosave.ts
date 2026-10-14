@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import type { DocType } from '@/domain/types';
+import type { Doc, DocType } from '@/domain/types';
 import { ApiError } from '@/lib/api/client';
 import { endpoints, type DocInput } from '@/lib/api/endpoints';
 
@@ -34,29 +34,38 @@ export function useAutosave({ type, payload, enabled, initial, onCreated }: Auto
   useEffect(() => { latest.current = { payload, json, enabled, onCreated }; });
   const saved = useRef(json); // last JSON the server has
   const doc = useRef<Saved | undefined>(initial);
-  const started = useRef(!!initial);
   const blocked = useRef(false);
   const chain = useRef<Promise<unknown>>(Promise.resolve());
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
+  // A create whose outcome we may not know (lost response, timeout): retries re-send THIS body with the same key, so the
+  // server's idempotent replay and our "saved" bookkeeping describe the same content. Newer edits go out as a PUT after.
+  const pendingCreate = useRef<{ body: DocInput; json: string }>(undefined);
+
   const run = (): Promise<void> => {
     const next = chain.current.then(async () => {
       const { payload: body, json: sent, enabled: on } = latest.current;
-      if (!on || blocked.current || sent === saved.current) return;
-      started.current = true;
+      if (!on || blocked.current || (doc.current && sent === saved.current)) return;
+      if (!doc.current && !pendingCreate.current && sent === saved.current) return;
       setPhase('saving');
       try {
+        let d: Doc;
+        let persisted = sent;
         const first = !doc.current;
-        const d = doc.current
-          ? await endpoints.updateDoc(type, doc.current.id, body, doc.current.version)
-          : await endpoints.createDoc(type, body, key);
+        if (doc.current) d = await endpoints.updateDoc(type, doc.current.id, body, doc.current.version);
+        else {
+          pendingCreate.current ??= { body, json: sent };
+          persisted = pendingCreate.current.json;
+          d = await endpoints.createDoc(type, pendingCreate.current.body, key);
+        }
         doc.current = { id: d.id, version: d.version };
-        saved.current = sent;
-        setSavedJson(sent);
+        pendingCreate.current = undefined;
+        saved.current = persisted;
+        setSavedJson(persisted);
         setHasDoc(true);
         setPhase('idle');
         if (first) latest.current.onCreated?.(d.id);
-        if (latest.current.json !== sent) schedule(); // typed while saving
+        if (latest.current.json !== persisted) schedule(); // edits the server has not seen yet
       } catch (e) {
         setProblem(e);
         if (e instanceof ApiError && e.problem.status === 409) { blocked.current = true; setPhase('conflict'); } else setPhase('error');
@@ -67,7 +76,7 @@ export function useAutosave({ type, payload, enabled, initial, onCreated }: Auto
   };
   function schedule() {
     clearTimeout(timer.current);
-    timer.current = setTimeout(run, started.current ? IDLE_MS : 0);
+    timer.current = setTimeout(run, IDLE_MS);
   }
   const scheduleRef = useRef(schedule);
   useEffect(() => { scheduleRef.current = schedule; });
@@ -77,11 +86,12 @@ export function useAutosave({ type, payload, enabled, initial, onCreated }: Auto
     return () => clearTimeout(timer.current);
   }, [json, enabled]);
 
-  /** Save now. Resolves with the draft only if everything typed so far is on the server. */
-  const flush = async (): Promise<Saved | undefined> => {
+  /** Save now. Resolves with the draft (and the exact JSON it holds) only if everything typed so far is on the server. */
+  const flush = async (): Promise<(Saved & { json: string }) | undefined> => {
     clearTimeout(timer.current);
     await run();
-    return latest.current.json === saved.current && doc.current ? doc.current : undefined;
+    if (doc.current && latest.current.json !== saved.current) await run(); // a create lands first, then the newer edits
+    return latest.current.json === saved.current && doc.current ? { ...doc.current, json: saved.current } : undefined;
   };
 
   const flushRef = useRef(flush);
