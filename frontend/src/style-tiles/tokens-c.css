@@ -1,0 +1,55 @@
+/* C: Studio. Cool graphite + indigo, mono figures, floating panels, airy 48px rows. */
+[data-tile="c"] {
+  --tile-font: var(--tile-font-c), ui-sans-serif, system-ui, sans-serif;
+  --num-font: var(--tile-mono-c), ui-monospace, Menlo, Consolas, monospace;
+  --background: #f3f4f8;
+  --foreground: #151a2c;
+  --card: #ffffff;
+  --card-foreground: #151a2c;
+  --popover: #ffffff;
+  --popover-foreground: #151a2c;
+  --primary: #4338ca;
+  --primary-foreground: #ffffff;
+  --secondary: #e9ebf3;
+  --secondary-foreground: #151a2c;
+  --muted: #e9ebf3;
+  --muted-foreground: #4c5470;
+  --accent: #e6e7fb;
+  --accent-foreground: #4338ca;
+  --destructive: #a11b2e;
+  --border: #d5d9e6;
+  --input: #7c86a6;
+  --ring: #4338ca;
+  --radius: 12px;
+
+  --row-h: 48px;
+  --ctl-h: 44px;
+  --fs-h1: 26px;
+  --fs-h2: 18px;
+  --fs-body: 15px;
+  --fs-small: 13px;
+  --page-bg: #f3f4f8;
+  --panel-bg: #ffffff;
+  --panel-border: 1px solid transparent;
+  --panel-shadow: 0 1px 2px rgba(21, 26, 44, 0.06), 0 8px 24px -8px rgba(21, 26, 44, 0.14);
+  --panel-radius: 18px;
+  --thead-bg: #ffffff;
+  --thead-fg: #4c5470;
+  --zebra: #f7f8fc;
+  --row-rule: 0 solid transparent;
+  --band-bg: #151a2c;
+  --band-fg: #ffffff;
+  --band-border: 0 solid transparent;
+  --total-rule: 2px solid #4338ca;
+  --chip-radius: 999px;
+  --chip-dot: inline-block;
+  --focus-w: 2px;
+  --focus-halo: 0 0 0 5px rgba(67, 56, 202, 0.2);
+
+  --st-draft-fg: #454c66; --st-draft-bg: #e9ebf3;
+  --st-issued-fg: #1d4e9e; --st-issued-bg: #e0eafb;
+  --st-partly-fg: #7a4b00; --st-partly-bg: #fbebcb;
+  --st-settled-fg: #0d6140; --st-settled-bg: #daf1e5;
+  --st-overdue-fg: #a11b2e; --st-overdue-bg: #fce3e6;
+  --st-cancelled-fg: #4b4b55; --st-cancelled-bg: #e7e7ec;
+}

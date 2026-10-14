@@ -1,0 +1,55 @@
+/* B: Continuity. TEAS 1 peach + ink, peach darkened to #9e5c34 so white text passes AA (5.21:1). */
+[data-tile="b"] {
+  --tile-font: var(--tile-font-b), ui-sans-serif, system-ui, sans-serif;
+  --num-font: var(--tile-font);
+  --background: #faf8f5;
+  --foreground: #1a1816;
+  --card: #ffffff;
+  --card-foreground: #1a1816;
+  --popover: #ffffff;
+  --popover-foreground: #1a1816;
+  --primary: #9e5c34;
+  --primary-foreground: #ffffff;
+  --secondary: #f4f1ec;
+  --secondary-foreground: #1a1816;
+  --muted: #f4f1ec;
+  --muted-foreground: #5f5a54;
+  --accent: #f8e3d0;
+  --accent-foreground: #86492a;
+  --destructive: #9b3f38;
+  --border: #d7d1c7;
+  --input: #8a847a;
+  --ring: #9e5c34;
+  --radius: 10px;
+
+  --row-h: 40px;
+  --ctl-h: 40px;
+  --fs-h1: 24px;
+  --fs-h2: 17px;
+  --fs-body: 15px;
+  --fs-small: 13px;
+  --page-bg: #faf8f5;
+  --panel-bg: #ffffff;
+  --panel-border: 1px solid #d7d1c7;
+  --panel-shadow: 0 1px 2px rgba(26, 24, 22, 0.06);
+  --panel-radius: 14px;
+  --thead-bg: #f4f1ec;
+  --thead-fg: #5f5a54;
+  --zebra: transparent;
+  --row-rule: 1px solid #ece7df;
+  --band-bg: #f8e3d0;
+  --band-fg: #1a1816;
+  --band-border: 0 solid transparent;
+  --total-rule: 1px solid #1a1816;
+  --chip-radius: 6px;
+  --chip-dot: none;
+  --focus-w: 3px;
+  --focus-halo: 0 0 0 0 transparent;
+
+  --st-draft-fg: #4d4943; --st-draft-bg: #ece7df;
+  --st-issued-fg: #3e5f80; --st-issued-bg: #e5ecf2;
+  --st-partly-fg: #80580f; --st-partly-bg: #fbefd7;
+  --st-settled-fg: #3a6347; --st-settled-bg: #e6efe7;
+  --st-overdue-fg: #9b3f38; --st-overdue-bg: #fbe4e1;
+  --st-cancelled-fg: #5f5a54; --st-cancelled-bg: #e4dfd6;
+}
