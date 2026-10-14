@@ -1,6 +1,7 @@
 import type {
-  ActivityEntry, AuditEntry, ChainEdge, Company, Doc, ItemSummary, JournalPreview, Membership, PartySummary, Revision,
+  ActivityEntry, AuditEntry, ChainEdge, Company, Doc, DocHeader, DocLine, ItemSummary, JournalPreview, Membership, PartySummary, Revision, Role,
 } from '@/domain/types';
+import { ledgerFor } from './engine/ledger';
 import { buildSeed } from './fixtures';
 import { getSettings } from './settings';
 
@@ -17,11 +18,23 @@ export interface MockState {
   journals: { docId: string; preview: JournalPreview }[];
   audit: AuditEntry[];
   series: Record<string, number>;
+  /** `companyId|type|Idempotency-Key` -> draft id. */
+  idempotency?: Record<string, string>;
+  /** Correction plans awaiting execution (single use). */
+  plans?: Record<string, { docId: string; proposed: { header: DocHeader; lines: DocLine[] }; role: Role }>;
 }
 
 const KEY = 'teas2.mock.state.v1';
 
-export const seed = (): MockState => buildSeed(getSettings().role);
+export function seed(): MockState {
+  const s = buildSeed(getSettings().role);
+  for (const d of s.docs) {
+    if (d.status === 'draft') continue;
+    const preview = ledgerFor(s, d);
+    if (preview.entries.length) s.journals.push({ docId: d.id, preview });
+  }
+  return s;
+}
 
 export function loadState(): MockState {
   try {
