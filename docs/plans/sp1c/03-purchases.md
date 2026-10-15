@@ -149,9 +149,9 @@ e2e: `screenContract` PB list (`both`), PB view (`pbMixedVat`, states incl. `loc
   approval signatures (ผู้จัดทำ / ผู้ตรวจ / ผู้อนุมัติ / ผู้รับเงิน).
 
 **Fixtures:** parties: `pv-09` "คุณอนันต์ ภาพดี (ช่างภาพอิสระ)" individual, not VAT-registered, TIN `tin('310060011122')`,
-`usualItemIds ['EXP-05']`, `defaultWhtTypeCode 'SVC'`; `pv-10` foreign (M1). PVs: `pv-pay1` settles `pb-1` fully
+`usualItemIds ['EXP-05']`, `defaultWhtTypeCode 'SVC'`; `pv-12` foreign (M1). PVs: `pv-pay1` settles `pb-1` fully
 (WHT RENT 5 % deduct); `pv-multi` settles `pb-2` + part of `pb-po` (two WHT types → two WTs); `pv-gross` to pv-09
-grossup_always; `pv-foreign` to pv-10 FOR-SVC grossup_always, `pnd36` line; `pv-can` cancelled (its WT cancelled).
+grossup_always; `pv-foreign` to pv-12 FOR-SVC grossup_always, `pnd36` line; `pv-can` cancelled (its WT cancelled).
 Non-VAT: `npv-1` settles `npb-1`. Keys `pvMultiWt`, `pvGrossUp`, `pvForeign`, `pvCancelled`, `wtIssued`, `wtCancelled`.
 
 **Money invariants:** per PV `Σ alloc + line total + expense = cash + Σ tax` (Dr = Cr); `Σ WT tax (active, issues

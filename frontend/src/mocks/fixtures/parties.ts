@@ -71,13 +71,13 @@ const extras = (): SeedParty[] => [
     address: ADDR[0], paymentTermDays: 30, entityKind: 'juristic', partyGroup: 'general', active: false, version: 1 },
   { companyId: 'co-nonvat', id: 'nc-09', kind: 'customer', code: 'C09', name: 'ร้านปิดตัวชั่วคราว', vatRegistered: false, address: ADDR[2], paymentTermDays: 7,
     entityKind: 'juristic', partyGroup: 'general', active: false, version: 1 },
-  { companyId: 'co-vat', id: 'pv-11', kind: 'vendor', code: 'V11', name: 'Cloudberry Software Ltd. (ไอร์แลนด์)', vatRegistered: false, vatDRegistered: false,
+  { companyId: 'co-vat', id: 'pv-12', kind: 'vendor', code: 'V12', name: 'Cloudberry Software Ltd. (ไอร์แลนด์)', vatRegistered: false, vatDRegistered: false,
     address: '1 Grand Canal Quay, Dublin, Ireland', paymentTermDays: 30, entityKind: 'foreign', partyGroup: 'foreign', defaultWhtTypeCode: 'FOR-SVC',
     contact: { email: 'billing@cloudberry.example.test' }, bankAccount: { bankName: 'Example Bank Ireland', accountNo: 'IE00 EXMP 9900 1234 5678 90', accountName: 'Cloudberry Software Ltd.' }, version: 1 },
 ];
 
-/** Party fixtures the master-data screens and tests name. `vendorForeign` is pv-11: pv-10 already exists in the seed. */
-export const PARTY_FIXTURES = { customerVat: 'pc-01', customerIndividual: 'pc-09', customerInactive: 'pc-13', customerInactiveNonVat: 'nc-09', vendorForeign: 'pv-11' } as const;
+/** Party fixtures the master-data screens and tests name. `vendorForeign` is pv-12: pv-10 exists in the seed and pv-11 is reserved by plan 04 (netting). */
+export const PARTY_FIXTURES = { customerVat: 'pc-01', customerIndividual: 'pc-09', customerInactive: 'pc-13', customerInactiveNonVat: 'nc-09', vendorForeign: 'pv-12' } as const;
 
 export const vatParties = (): SeedParty[] => [
   ...build('co-vat', 'pc', 'customer', VAT_CUSTOMERS, (i) =>

@@ -12,7 +12,7 @@ import { RecordView } from './RecordView';
 
 vi.mock('next/navigation', () => import('@/test/next-navigation'));
 beforeAll(() => testServer.listen({ onUnhandledFrame: 'error' }));
-afterEach(() => { cleanup(); testServer.resetHandlers(); });
+afterEach(() => { cleanup(); testServer.resetHandlers(); testServer.events.removeAllListeners(); });
 afterAll(() => testServer.close());
 beforeEach(() => { localStorage.clear(); resetState(); setSettings({ companyKey: 'vat', role: 'accountant', screenState: 'normal' }); });
 
@@ -76,12 +76,23 @@ describe('RecordView', () => {
   it('a refused deactivation shows the server reason; success flips the chip and the button', async () => {
     testServer.use(http.post('*/bff/v1/records/customer/pc-01/active', () => HttpResponse.json(
       { type: 'about:blank', status: 409, code: 'record.in_use', title: 'ปิดใช้งานไม่ได้', detail: 'ผังบัญชีผูกกับกฎการลงบัญชี', traceId: 't' }, { status: 409, headers: { 'content-type': 'application/problem+json' } })));
+    const calls: string[] = [];
+    testServer.events.on('request:start', ({ request }) => { if (request.url.endsWith('/active')) calls.push(request.method); });
     mount();
+    // deactivation asks first and says what it does to existing documents; Cancel changes nothing
     await userEvent.click(await screen.findByRole('button', { name: 'ปิดใช้งาน' }));
+    const confirm = await screen.findByRole('alertdialog');
+    expect(confirm).toHaveTextContent('เอกสารเดิมไม่เปลี่ยน');
+    await userEvent.click(within(confirm).getByRole('button', { name: 'ยกเลิก' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(calls).toEqual([]);
+    await userEvent.click(screen.getByRole('button', { name: 'ปิดใช้งาน' }));
+    await userEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'ปิดใช้งาน' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('ผังบัญชีผูกกับกฎการลงบัญชี');
     expect(screen.getByRole('button', { name: 'ปิดใช้งาน' })).toBeVisible(); // still active
     testServer.resetHandlers();
     await userEvent.click(screen.getByRole('button', { name: 'ปิดใช้งาน' }));
+    await userEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'ปิดใช้งาน' }));
     expect(await screen.findByRole('button', { name: 'เปิดใช้งาน' })).toBeVisible();
     expect(screen.getByText('ปิดใช้งาน', { selector: '[data-slot="badge"]' })).toBeVisible();
   });

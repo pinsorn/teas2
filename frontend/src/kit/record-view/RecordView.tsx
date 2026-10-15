@@ -4,6 +4,9 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useId, useState, type ReactNode } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -54,6 +57,7 @@ function Loaded({ d, row, permissions, companyId }: { d: RecordDescriptor; row: 
   const tc = useTranslations('records.common');
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
+  const [confirmOff, setConfirmOff] = useState(false);
   const hintId = useId();
   const canManage = permissions.includes(d.permissions.manage);
   const toggle = useMutation({
@@ -80,7 +84,7 @@ function Loaded({ d, row, permissions, companyId }: { d: RecordDescriptor; row: 
             <Button disabled={!canManage} aria-describedby={need ? hintId : undefined} onClick={() => setEditing(true)}>{tc('edit')}</Button>
             {need ? <span id={hintId} className="text-small text-muted-foreground">{need}</span> : null}
           </span>
-          <Button variant="outline" disabled={!canManage || toggle.isPending} onClick={() => toggle.mutate()}>{row.active ? tc('deactivate') : tc('activate')}</Button>
+          <Button variant="outline" disabled={!canManage || toggle.isPending} onClick={() => (row.active ? setConfirmOff(true) : toggle.mutate())}>{row.active ? tc('deactivate') : tc('activate')}</Button>
         </div>
         {toggle.error ? (
           <Alert variant="destructive" role="alert">
@@ -99,6 +103,20 @@ function Loaded({ d, row, permissions, companyId }: { d: RecordDescriptor; row: 
         <TabsContent value="open"><OpenItems d={d} row={row} companyId={companyId} /></TabsContent>
       </Tabs>
 
+      {confirmOff ? (
+        <AlertDialog open onOpenChange={(o) => { if (!o) setConfirmOff(false); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{tc('deactivateTitle', { name: String(row.name ?? row.code) })}</AlertDialogTitle>
+              <AlertDialogDescription>{tc('deactivateBody')}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{tc('cancel')}</AlertDialogCancel>
+              <AlertDialogAction onClick={() => toggle.mutate()}>{tc('deactivate')}</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      ) : null}
       {editing ? <RecordFormDialog descriptor={d} row={row} onSaved={() => setEditing(false)} onClose={() => setEditing(false)} /> : null}
     </div>
   );

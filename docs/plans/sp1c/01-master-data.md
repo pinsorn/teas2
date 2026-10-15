@@ -77,7 +77,7 @@ refusal; a refusal is only when a rule demands it, e.g. an account mapped by a p
 **Customer / vendor descriptors (exact):**
 - customer: `basePath '/master/customers'`, `titleKey 'records.customer.title'` ("ลูกค้า"), perms `party.read` / `party.manage`,
   columns code, name, taxId, branch, vatRegistered (bool), paymentTermDays, active; fields: `entityKind` (select:
-  individual / juristic / foreign, required), `code` (text, required, unique per company, `readOnlyAfterUse`), `name`
+  individual / juristic / foreign, required), `code` (text, required, unique per kind within a company, `readOnlyAfterUse`), `name`
   (required), `nameEn`, `taxId` (tin; required when `vatRegistered` or juristic; checksum), `branchCode` (branch,
   5 digits, required with taxId; default 00000), `vatRegistered` (bool), `address` (textarea, required when
   `vatRegistered` — I3), `phone`, `email`, `paymentTermDays` (int ≥ 0), `partyGroup` (select from `party-groups`
@@ -97,8 +97,8 @@ Validation messages (mock, Thai): "เลขประจำตัวผู้เ
 
 **Fixtures:** existing parties gain `entityKind` (F5), `partyGroup`, `email`, vendor bank details for the 8 VAT
 vendors and 5 non-VAT vendors (fictional banks/numbers), one inactive customer per company (`pc-13` "บริษัท เลิกกิจการ
-ตัวอย่าง จำกัด", `nc-08` "ร้านปิดตัวชั่วคราว"). Fixture keys: `customerVat` = `pc-01`, `customerIndividual` = `pc-09`,
-`customerInactive` = `pc-13`, `vendorForeign` = (new) `pv-10` "Cloudberry Software Ltd. (ไอร์แลนด์)" entityKind foreign,
+ตัวอย่าง จำกัด", `nc-09` "ร้านปิดตัวชั่วคราว" — nc-08 already exists in the seed). Fixture keys: `customerVat` = `pc-01`, `customerIndividual` = `pc-09`,
+`customerInactive` = `pc-13`, `vendorForeign` = (new) `pv-12` (pv-10 exists; pv-11 is reserved by plan 04) "Cloudberry Software Ltd. (ไอร์แลนด์)" entityKind foreign,
 `vatDRegistered: false`.
 
 **Permissions (mock roles):** operator + `party.manage`; accountant + `party.manage`; admin keeps `party.read`.
@@ -140,7 +140,7 @@ describe('record registry', () => {
 ```ts
 it('customer: bad TIN checksum → fieldErrors.taxId', () => {});
 it('customer: VAT-registered without address → fieldErrors.address (I3)', () => {});
-it('customer: code is unique per company, and the same code is allowed in the other company', () => {});
+it('customer: code is unique per kind within a company, and the same code is allowed in the other company', () => {});
 it('customer: code is read-only once the party is used on a document', () => {});
 it('update with a stale version → 409 record.version_conflict', () => {});
 it('every write appends an audit entry with before/after', () => {});

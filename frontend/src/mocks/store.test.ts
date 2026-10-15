@@ -41,11 +41,18 @@ describe('mock store', () => {
     expect(by('replaced')).toBeGreaterThanOrEqual(1);
     expect(tis.some((d) => d.createdBy.kind === 'agent')).toBe(true);
   });
+  it('a browser holding the previous (v4) persisted state is reseeded and picks up the master-data parties', () => {
+    const old = { ...seed(), version: 4, parties: [] as unknown[] };
+    localStorage.setItem('teas2.mock.state.v4', JSON.stringify(old));
+    const s = loadState();
+    expect(s.version).toBe(5);
+    expect(s.parties.some((p) => p.id === 'pv-12')).toBe(true);
+  });
   it('seeds the fixtures later tasks depend on', () => {
     const s = seed();
     const vat = s.parties.filter((p) => p.companyId === 'co-vat');
     expect(vat.filter((p) => p.kind === 'customer')).toHaveLength(13); // + pc-13 (inactive, M1)
-    expect(vat.filter((p) => p.kind === 'vendor')).toHaveLength(11); // + pv-11 (foreign, M1)
+    expect(vat.filter((p) => p.kind === 'vendor')).toHaveLength(11); // + pv-12 (foreign, M1)
     expect(s.items.filter((i) => i.companyId === 'co-vat')).toHaveLength(20);
     const nonvat = s.parties.filter((p) => p.companyId === 'co-nonvat');
     expect([nonvat.filter((p) => p.kind === 'customer').length, nonvat.filter((p) => p.kind === 'vendor').length]).toEqual([9, 6]); // + nc-09 (inactive, M1)

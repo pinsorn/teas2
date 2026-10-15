@@ -530,7 +530,7 @@
       "selectPlaceholder": "— Select —", "required": "Required", "tinInvalid": "The tax ID is not valid (check the last digit)",
       "branchInvalid": "The branch must be 5 digits", "intInvalid": "Must be a whole number, 0 or more",
       "conflictTitle": "Someone else has changed this record", "conflictBody": "Your typed values are kept. Load the latest data, then save again",
-      "reload": "Reload", "formError": "Could not save", "deactivate": "Deactivate", "activate": "Activate",
+      "reload": "Reload", "formError": "Could not save", "deactivate": "Deactivate", "deactivateTitle": "Deactivate {name}?", "deactivateBody": "Existing documents do not change, but it will no longer be offered on new documents. You can activate it again later.", "activate": "Activate",
       "lockedAfterUse": "Cannot be changed once used on a document", "pickItems": "Pick items", "none": "None"
     },
     "customer": { "title": "Customers", "search": "Search code, name or tax ID", "empty": "No customers yet" },

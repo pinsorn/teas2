@@ -28,12 +28,15 @@ export function RecordForm(props: RecordFormProps) {
   return <RecordFormInner key={useCompanyEpoch()} {...props} />;
 }
 
-function RecordFormInner({ descriptor: d, row, onSaved, onCancel }: RecordFormProps) {
+function RecordFormInner({ descriptor: d, row: given, onSaved, onCancel }: RecordFormProps) {
   const tc = useTranslations('records.common');
   const qc = useQueryClient();
   const { me } = useMe();
   const idempotencyKey = useRef(crypto.randomUUID());
   const [conflict, setConflict] = useState(false);
+  // After a conflict the reload fetches the record itself: the caller's row may be a stale list snapshot, the version must come from the server.
+  const [fresh, setFresh] = useState<RecordRow>();
+  const row = fresh ?? given;
   const [formError, setFormError] = useState<string>();
 
   const msg = useMemo(() => ({ required: tc('required'), tin: tc('tinInvalid'), branch: tc('branchInvalid'), int: tc('intInvalid') }), [tc]);
@@ -71,7 +74,11 @@ function RecordFormInner({ descriptor: d, row, onSaved, onCancel }: RecordFormPr
     },
   });
 
-  const reload = () => { void qc.invalidateQueries({ queryKey: [me?.activeCompanyId] }); setConflict(false); };
+  const reload = async () => {
+    if (!given) return;
+    try { setFresh(await endpoints.getRecord(d.kind, given.id)); setConflict(false); } catch (e) { setConflict(false); setFormError(e instanceof ApiError ? e.problem.title : tc('formError')); }
+    void qc.invalidateQueries({ queryKey: [me?.activeCompanyId] });
+  };
   const submit = handleSubmit((v) => { setConflict(false); setFormError(undefined); save.mutate(payloadOf(d.fields, v)); });
 
   return (
@@ -80,7 +87,7 @@ function RecordFormInner({ descriptor: d, row, onSaved, onCancel }: RecordFormPr
         <Alert variant="destructive" role="alert">
           <AlertTitle>{tc('conflictTitle')}</AlertTitle>
           <AlertDescription className="text-foreground!">{tc('conflictBody')}</AlertDescription>
-          <AlertAction><Button type="button" size="sm" variant="outline" onClick={reload}>{tc('reload')}</Button></AlertAction>
+          <AlertAction><Button type="button" size="sm" variant="outline" onClick={() => void reload()}>{tc('reload')}</Button></AlertAction>
         </Alert>
       ) : null}
       {formError ? <Alert variant="destructive" role="alert"><AlertTitle>{formError}</AlertTitle></Alert> : null}

@@ -67,11 +67,14 @@ test('customer detail shows documents and open items from the server', async ({ 
 test('a used party can be deactivated and moves behind the "ปิดใช้งาน" filter; the foreign vendor shows the VAT-D field', async ({ page }) => {
   await page.goto('/master/customers/pc-01');
   await page.getByRole('button', { name: 'ปิดใช้งาน' }).click();
+  const confirm = page.getByRole('alertdialog');
+  await expect(confirm).toContainText('เอกสารเดิมไม่เปลี่ยน');
+  await confirm.getByRole('button', { name: 'ปิดใช้งาน' }).click();
   await expect(page.getByRole('button', { name: 'เปิดใช้งาน' })).toBeVisible();
   await page.goto('/master/customers?active=false');
   await expect(page.getByRole('link', { name: 'C01' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'C13' })).toBeVisible();
-  await page.goto('/master/vendors/pv-11');
+  await page.goto('/master/vendors/pv-12');
   await page.getByRole('button', { name: 'แก้ไข' }).click();
   await expect(page.getByRole('dialog', { name: 'แก้ไขผู้ขาย' }).getByLabel('จดทะเบียน VAT-D (ภ.พ.36 ไม่ต้องนำส่ง)')).toBeVisible();
 });

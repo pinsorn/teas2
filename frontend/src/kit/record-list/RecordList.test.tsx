@@ -121,6 +121,33 @@ describe('RecordList', () => {
     expect(await screen.findByRole('link', { name: 'C99' })).toBeVisible();
   });
 
+  it('a 409 in the row edit dialog: reload fetches the record, keeps the typed values, and the next save carries the fresh version', async () => {
+    const noDetail = { ...RECORDS.customer!, detail: false };
+    const putVersions: unknown[] = [];
+    testServer.use(http.put('*/bff/v1/records/customer/:id', async ({ request }) => {
+      putVersions.push(((await request.clone().json()) as { version: number }).version);
+      return undefined; // fall through to the mock handler
+    }));
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><RecordList descriptor={noDetail} /></QueryClientProvider>);
+    await userEvent.click(await screen.findByRole('button', { name: 'C01' }));
+    const dialog = await screen.findByRole('dialog', { name: 'แก้ไขลูกค้า' });
+    // someone else saves first: the server record moves to version 2
+    const cur = (await (await fetch('http://localhost/bff/v1/records/customer/pc-01')).json()) as Record<string, unknown>;
+    expect((await fetch('http://localhost/bff/v1/records/customer/pc-01', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...cur, nameEn: 'Other user' }) })).status).toBe(200);
+    putVersions.length = 0;
+    const name = within(dialog).getByLabelText('ชื่อ', { exact: true });
+    await userEvent.clear(name);
+    await userEvent.type(name, 'ชื่อที่ฉันพิมพ์');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'บันทึก' }));
+    await userEvent.click(await within(dialog).findByRole('button', { name: 'โหลดข้อมูลใหม่' }));
+    await waitFor(() => expect(within(dialog).queryByRole('button', { name: 'โหลดข้อมูลใหม่' })).toBeNull());
+    expect(name).toHaveValue('ชื่อที่ฉันพิมพ์'); // typed value survives the reload
+    await userEvent.click(within(dialog).getByRole('button', { name: 'บันทึก' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(putVersions).toEqual([1, 2]); // stale first, fresh after the reload
+    expect(((await (await fetch('http://localhost/bff/v1/records/customer/pc-01')).json()) as { name: string }).name).toBe('ชื่อที่ฉันพิมพ์');
+  });
+
   it('remounts on company switch: the typed search and the other company rows never carry over', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={qc}><RecordList descriptor={RECORDS.customer!} /></QueryClientProvider>);

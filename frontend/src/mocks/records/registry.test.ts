@@ -41,7 +41,7 @@ describe('party record impls (mock validation, Thai)', () => {
     expect(customer.validate({ ...valid, taxId: undefined }, st, 'co-vat').taxId).toHaveLength(1); // juristic
     expect(customer.validate({ ...valid, entityKind: 'individual', taxId: undefined, branchCode: undefined }, st, 'co-vat')).toEqual({});
   });
-  it('customer: code is unique per company, and the same code is allowed in the other company', () => {
+  it('customer: code is unique per kind within a company; the same code is allowed in the other company and for a vendor', () => {
     const st = loadState();
     const existing = st.parties.find((p) => p.id === PARTY_FIXTURES.customerVat)!; // co-vat C01
     expect(customer.validate({ ...valid, code: existing.code }, st, 'co-vat').code).toEqual(['รหัสนี้ใช้แล้ว']);
@@ -49,6 +49,7 @@ describe('party record impls (mock validation, Thai)', () => {
     expect(customer.validate({ ...valid }, st, 'co-vat').code).toEqual(['รหัสนี้ใช้แล้ว']);
     expect(customer.validate({ ...valid }, st, 'co-vat', made.id)).not.toHaveProperty('code'); // a record never collides with itself
     expect(customer.validate({ ...valid }, st, 'co-nonvat')).toEqual({});
+    expect(vendor.validate({ ...valid }, st, 'co-vat')).not.toHaveProperty('code'); // customers and vendors are separate lists: a vendor may reuse C99
   });
   it('customer: code is read-only once the party is used on a document', async () => {
     const used = await row(PARTY_FIXTURES.customerVat);
@@ -110,6 +111,31 @@ describe('/records handlers', () => {
     expect(audit[1].after).toMatchObject({ name: 'ชื่อแก้ไข' });
     expect([(audit[2].before as RecordRow).active, (audit[2].after as RecordRow).active]).toEqual([true, false]);
     expect(audit.every((a) => a.actor.kind === 'user' && a.companyId === 'co-vat')).toBe(true);
+  });
+  it('writes on the other company id are 404 and change nothing', async () => {
+    setSettings({ companyKey: 'nonvat' });
+    const before = JSON.stringify(loadState().parties);
+    const put = await call('PUT', '/records/customer/pc-01', { ...valid, version: 1 });
+    const act = await call('POST', '/records/customer/pc-01/active', { active: false, version: 1 });
+    expect([put.status, act.status]).toEqual([404, 404]);
+    expect((await put.json()).code).toBe('record.not_found');
+    expect(JSON.stringify(loadState().parties)).toBe(before);
+    expect(loadState().audit.some((a) => a.target === 'pc-01')).toBe(false);
+  });
+  it('client-supplied active, id, companyId, kind and version are not mass-assigned (create ignores them; update keeps its own)', async () => {
+    const evil = { active: false, id: 'pc-01', companyId: 'co-nonvat', kind: 'vendor', version: 99, inUse: true };
+    const made = (await (await call('POST', '/records/customer', { ...valid, ...evil })).json()) as RecordRow;
+    expect(made).toMatchObject({ active: true, version: 1, inUse: false });
+    expect(made.id).not.toBe('pc-01');
+    const mine = loadState().parties.find((p) => p.id === made.id)!;
+    expect([mine.companyId, mine.kind, mine.active]).toEqual(['co-vat', 'customer', undefined]);
+    expect(loadState().parties.filter((p) => p.id === 'pc-01')).toHaveLength(1);
+    const before = await row('pc-01');
+    const upd = await call('PUT', '/records/customer/pc-01', { ...before, active: false, id: made.id, companyId: 'co-nonvat', kind: 'vendor', version: before.version });
+    expect(upd.status).toBe(200);
+    const after = loadState().parties.find((p) => p.id === 'pc-01')!;
+    expect([after.companyId, after.kind, after.active !== false, after.version]).toEqual(['co-vat', 'customer', true, before.version + 1]);
+    expect(loadState().parties.find((p) => p.id === made.id)!.name).toBe(valid.name); // the other record was not touched
   });
   it('a rejected write leaves no party and no audit entry; the same Idempotency-Key creates once', async () => {
     const a0 = loadState().audit.length;
