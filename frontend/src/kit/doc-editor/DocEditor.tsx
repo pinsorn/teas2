@@ -7,6 +7,8 @@ import { useCompanyEpoch } from '@/app-shell/useCompanyEpoch';
 import { useMe } from '@/app-shell/useMe';
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { routesOf, type DocDescriptor } from '@/domain/descriptors';
 import type { Allocation, Doc, DocHeader, DocLine, ItemSummary, Me, PartySummary } from '@/domain/types';
 import { ApiError } from '@/lib/api/client';
@@ -26,7 +28,7 @@ import { SettlementPanel } from './SettlementPanel';
 import { TotalsPanel } from './TotalsPanel';
 import { useAutosave } from './useAutosave';
 import { useCompute } from './useCompute';
-import { isComposing, moneyText, qtyText } from './useLineGridKeys';
+import { cleanDecimal, isComposing, moneyText, qtyText } from './useLineGridKeys';
 
 export interface DocEditorProps {
   descriptor: DocDescriptor;
@@ -77,6 +79,7 @@ export function DocEditor(props: DocEditorProps) {
 
 function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequested }: DocEditorProps) {
   const t = useTranslations('docEditor');
+  const ts = useTranslations('docEditor.settlement');
   const td = useTranslations(`docTypes.${d.type}`);
   const locale = useLocale();
   const qc = useQueryClient();
@@ -243,6 +246,17 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
 
           {d.settles && (
             <SettlementPanel descriptor={d} partyId={header.partyId} value={allocations} onChange={setAllocations} allocation={compute.last?.allocation} />
+          )}
+
+          {d.type === 'RC' && ( // the part of the money no document takes: the server keeps it as a customer deposit
+            <section className="grid gap-1.5 rounded-xl bg-card p-4 ring-1 ring-foreground/10 md:max-w-md">
+              <Label htmlFor={`${ids}-deposit`}>{ts('deposit')}</Label>
+              <Input id={`${ids}-deposit`} type="text" inputMode="decimal" autoComplete="off" className="text-right tabular-nums" value={header.depositAmount ?? ''}
+                onChange={(e) => setHeader((h) => ({ ...h, depositAmount: cleanDecimal(e.target.value, 2) || undefined }))}
+                onBlur={() => setHeader((h) => (h.depositAmount && moneyText(h.depositAmount) !== h.depositAmount ? { ...h, depositAmount: moneyText(h.depositAmount) } : h))}
+                onFocus={(e) => e.target.select()} />
+              <p className="text-small text-muted-foreground">{ts('depositHint')}</p>
+            </section>
           )}
 
           {d.groups && (

@@ -17,7 +17,7 @@ afterEach(async () => { cleanup(); await new Promise((r) => setTimeout(r, 150));
 afterAll(() => testServer.close());
 beforeEach(() => { localStorage.clear(); resetState(); setSettings({ companyKey: 'vat', role: 'accountant', screenState: 'normal' }); });
 
-// The receipt / voucher descriptors arrive in S4 / P3: these stubs carry exactly the fields the editor reads.
+// The voucher descriptor arrives in P3 (stub below); the receipt is a stub too, carrying exactly the fields the editor reads (same as descriptors/receipt.ts).
 const perm = (t: string) => ({ read: `doc.${t}.read`, create: `doc.${t}.create`, issue: `doc.${t}.issue`, cancel: `doc.${t}.cancel`, correct: `doc.${t}.correct` });
 const receipt = { ...taxInvoice, type: 'RC', titleTh: 'ใบเสร็จรับเงิน', titleEn: 'Receipt', correctionClass: 'T', vat: 'both', basePath: '/sales/receipts',
   lineEditor: 'amount', linesWhen: 'non-vat', settles: ['TI', 'IV'], permissions: perm('RC'), headerFields: ['documentDate', 'bankAccount', 'paymentMethod', 'cheque', 'reference', 'notes'] } as DocDescriptor;
@@ -38,7 +38,7 @@ describe('DocEditor: receipt in a VAT company (D-12)', () => {
     expect(screen.queryByRole('heading', { name: 'รายการ' })).toBeNull();
     await userEvent.click(box);
     await waitFor(() => expect(totals()).toHaveTextContent('ยอดชำระสุทธิ'), { timeout: 4000 });
-    const amount = within(box.closest('tr')!).getByRole('textbox', { name: /^จำนวนที่ชำระ/ });
+    const amount = within(box.closest('tr')!).getByRole('textbox', { name: /^จำนวนรับชำระ/ });
     await waitFor(() => expect(totals()).toHaveTextContent(String((amount as HTMLInputElement).value).replace(/\B(?=(\d{3})+(?!\d))/g, ',')));
     await waitFor(() => expect(screen.getByRole('region', { name: 'ยังขาดอะไร' })).toHaveTextContent('ครบแล้ว'), { timeout: 4000 });
     await userEvent.keyboard('{Control>}{Enter}{/Control}');
@@ -58,6 +58,25 @@ describe('DocEditor: receipt in a VAT company (D-12)', () => {
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'ลูกค้า' })).toHaveValue('บริษัท ปิ่นทองการพิมพ์ จำกัด'));
     await waitFor(() => expect(screen.queryAllByRole('checkbox', { checked: true })).toHaveLength(0));
   });
+});
+
+describe('DocEditor: receipt deposit (the unallocated remainder)', () => {
+  it('a deposit alone completes a VAT-company receipt: the server total and words, header.depositAmount normalised, issued with no allocation', async () => {
+    const onIssued = ui(receipt);
+    await userEvent.type(screen.getByRole('combobox', { name: 'ลูกค้า' }), 'ไทยพัฒนา{Enter}');
+    expect(await screen.findByText(/ต้องเลือกใบกำกับภาษีที่ชำระ หรือระบุเงินรับล่วงหน้า/)).toBeVisible();
+    const dep = screen.getByRole('textbox', { name: /^เงินรับล่วงหน้า/ });
+    await userEvent.type(dep, '5000');
+    await userEvent.tab();
+    expect(dep).toHaveValue('5000.00');
+    await waitFor(() => expect(totals()).toHaveTextContent('5,000.00'), { timeout: 4000 });
+    expect(totals()).toHaveTextContent('ห้าพันบาทถ้วน');
+    await waitFor(() => expect(screen.getByRole('region', { name: 'ยังขาดอะไร' })).toHaveTextContent('ครบแล้ว'), { timeout: 4000 });
+    await userEvent.click(screen.getByRole('button', { name: 'บันทึกและออกใบเสร็จรับเงิน' }));
+    await screen.findByRole('alertdialog');
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() => expect(onIssued).toHaveBeenCalledWith(expect.objectContaining({ status: 'issued', header: expect.objectContaining({ depositAmount: '5000.00' }), totals: expect.objectContaining({ total: '5000.00', cash: '5000.00' }) })), { timeout: 6000 });
+  }, 15000);
 });
 
 describe('DocEditor: receipt in a non-VAT company (cash bill)', () => {

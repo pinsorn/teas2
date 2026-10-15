@@ -8,7 +8,8 @@ export type FixtureKey = 'tiDraft' | 'tiDraftNoTin' | 'tiIssuedUnpaid' | 'tiPart
   | 'tiReplaced' | 'tiLong' | 'tiPeriodLocked' | 'rcTargetsA' | 'rcTargetsB'
   | 'qtDraft' | 'qtIssued' | 'qtRejected' | 'qtCancelled' | 'qtRevised' | 'nqtIssued'
   | 'soPartlyDelivered' | 'soClosed' | 'doDelivered' | 'nsoIssued' | 'ndoDelivered'
-  | 'ivDraft' | 'ivIssuedUnpaid' | 'ivPartly' | 'ivSettled' | 'blVat' | 'blNonVat'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
+  | 'ivDraft' | 'ivIssuedUnpaid' | 'ivPartly' | 'ivSettled' | 'blVat' | 'blNonVat'
+  | 'rcMulti' | 'rcNoCert' | 'rcDeposit' | 'nrcCashBill'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
 
 /** An issued, untouched TI of pc-01 (the multi-target receipt vector settles two of them). */
 const rcTarget = (d: D, st: MockState) => isTi(d) && d.status === 'issued' && d.party?.id === 'pc-01' && d.outstanding === d.totals.total
@@ -54,6 +55,11 @@ export const FIXTURE_PREDICATES: Record<FixtureKey, (d: D, st: MockState) => boo
   ivSettled: byId('iv-s1', (d) => d.status === 'settled'),
   blVat: byId('bl-1', (d) => d.status === 'issued'),
   blNonVat: byId('nbl-1', (d) => d.status === 'issued'),
+  // S4 receipts
+  rcMulti: byId('rc-multi', (d) => d.status === 'issued'),
+  rcNoCert: byId('rc-nocert', (d) => d.status === 'issued' && !!d.allocations?.some((a) => a.wht && !a.certNumber)),
+  rcDeposit: byId('rc-dep', (d) => d.status === 'issued'),
+  nrcCashBill: byId('nrc-cash', (d) => d.status === 'issued'),
 };
 
 /** Lowest id (string order) matching each predicate in the active seed; throws listing every unresolved key. */

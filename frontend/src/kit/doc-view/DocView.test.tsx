@@ -35,8 +35,8 @@ Element.prototype.scrollIntoView ??= () => {};
 const client = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
 const ui = (id: string) => render(<QueryClientProvider client={client()}><DocView descriptor={taxInvoice} id={id} /></QueryClientProvider>);
 /** Types whose own task has not landed yet: register a stand-in so link/route resolution through the registry is still exercised. */
-const stub = (type: 'RC' | 'CN', basePath: string) => { DESCRIPTORS[type] = { ...taxInvoice, type, basePath } as never; };
-afterEach(() => { delete DESCRIPTORS.RC; delete DESCRIPTORS.CN; });
+const stub = (type: 'CN', basePath: string) => { DESCRIPTORS[type] = { ...taxInvoice, type, basePath } as never; };
+afterEach(() => { delete DESCRIPTORS.CN; });
 const find = (pred: (d: ReturnType<typeof loadState>['docs'][number]) => boolean) => loadState().docs.find(pred)!;
 
 describe('DocView', () => {
@@ -209,7 +209,7 @@ describe('DocView cancel and tabs (fix round 1)', () => {
     spy.mockRestore();
   });
   it('ledger, activity and chain tabs render server data', async () => {
-    stub('RC', '/sales/receipts');
+    // RC is a real descriptor since S4 (basePath /sales/receipts)
     const ti = find((d) => d.type === taxInvoice.type && loadState().links.some((l) => l.kind === 'settles' && l.to === d.id && l.active));
     const rc = find((d) => d.id === loadState().links.find((l) => l.kind === 'settles' && l.to === ti.id && l.active)!.from);
     const line = loadState().journals.find((j) => j.docId === ti.id)!.preview.entries[0].lines.find((l) => l.debit !== '0.00')!;

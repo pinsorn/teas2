@@ -107,7 +107,7 @@ export function missingOf(st: MockState, companyId: string, type: DocType, body:
   const dep = SETTLES[type] === undefined || type !== 'RC' ? 0 : (() => { try { return toSatang(body.header.depositAmount ?? '0.00'); } catch { return 0; } })();
   if (SETTLES[type]) { // RC / PV: an allocation, a line, or (RC) a deposit is the content
     if (!body.lines.length && !body.allocations?.length && dep <= 0) {
-      out.push({ field: 'allocations', message: type === 'RC' ? 'ต้องเลือกใบกำกับภาษีที่ชำระ หรือระบุเงินรับล่วงหน้า' : 'ต้องเลือกรายการที่จ่ายชำระ หรือเพิ่มรายการค่าใช้จ่าย' });
+      out.push({ field: 'allocations', message: type === 'RC' ? (company?.vatRegistered ? 'ต้องเลือกใบกำกับภาษีที่ชำระ หรือระบุเงินรับล่วงหน้า' : 'ต้องเลือกใบแจ้งหนี้ที่ชำระ เพิ่มรายการขาย หรือระบุเงินรับล่วงหน้า') : 'ต้องเลือกรายการที่จ่ายชำระ หรือเพิ่มรายการค่าใช้จ่าย' });
     }
   } else if (GROUPS[type]) { // BL: the grouped invoices are the content
     if (!body.allocations?.length) out.push({ field: 'allocations', message: 'ต้องเลือกใบแจ้งหนี้หรือใบกำกับภาษีที่ต้องการวางบิล' });
@@ -159,6 +159,8 @@ export function markReplaced(st: MockState, oldId: string, newId: string, actor:
 
 /** The body as stored: engine header defaults (RC / PV) and the cleaned allocation list. Refuses a malformed allocation, nothing semantic (that is issue's job). */
 function stored(st: MockState, companyId: string, type: DocType, body: Body, keep?: Allocation[]): Body {
+  // D-12: a VAT company's receipt settles tax invoices, it never sells (a cash bill is the non-VAT company's). Shape of the request, so it is refused where the body enters.
+  if (type === 'RC' && body.lines.length && vatOf(st, companyId)) throw new MockError(422, 'rc.lines_need_invoice', 'บริษัทที่จดทะเบียน VAT ต้องออกใบกำกับภาษีก่อนรับชำระ');
   const allocations = cleanAllocations(st, companyId, type, body.allocations, keep);
   return { header: payDefaults(st, companyId, type, body.header), lines: GROUPS[type] ? [] : body.lines, ...(allocations ? { allocations } : {}) };
 }
@@ -326,6 +328,13 @@ export function refuseBelowSettled(st: MockState, d: Stored, body: Body): void {
   }
 }
 
+/** A receipt revised only to record a withholding certificate (50 tawi, possibly late): the activity says which number. */
+function certNote(d: Stored, body: Body): string | undefined {
+  if (d.type !== 'RC') return undefined;
+  const added = (body.allocations ?? []).filter((a) => a.certNumber && a.certNumber !== d.allocations?.find((o) => o.targetId === a.targetId)?.certNumber).map((a) => a.certNumber);
+  return added.length ? `บันทึกเลขที่หนังสือรับรองหัก ณ ที่จ่าย ${added.join(', ')}` : undefined;
+}
+
 /** Revise in place (classes N and L). A T-class document only accepts non-fiscal changes here; fiscal ones go through a correction plan. */
 export function revise(st: MockState, id: string, raw: Body, version: number, reason: string, actor: Actor): Doc {
   const d = getDoc(st, id);
@@ -378,7 +387,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   }
   const at = stamp();
   st.revisions.push({ docId: id, revision: next.revision, at, actor, reason, snapshot: publicDoc(getDoc(st, id)), diff: diffBody(d, body) });
-  logActivity(st, id, actor, 'revise', reason);
+  logActivity(st, id, actor, 'revise', certNote(d, body) ?? reason);
   logAudit(st, actor, d.companyId, 'doc.revise', id, { revision: d.revision }, { revision: next.revision, reason });
   return publicDoc(getDoc(st, id));
 }

@@ -14,6 +14,7 @@ export const SO_BASE = '/sales/sales-orders';
 export const DO_BASE = '/sales/delivery-orders';
 export const IV_BASE = '/sales/invoices';
 export const BL_BASE = '/sales/billing-statements';
+export const RC_BASE = '/sales/receipts';
 // names are keys of messages `screens.name.*`; fixture keys live in src/mocks/fixtures/ids.ts (later tasks append their screens here)
 export const SCREENS: Screen[] = [
   { name: 'home', route: '/', company: 'both', states: true },
@@ -60,6 +61,14 @@ export const SCREENS: Screen[] = [
   { name: 'blVat', route: { fixture: 'blVat', base: BL_BASE }, company: 'vat', states: true },
   { name: 'blNonVat', route: { fixture: 'blNonVat', base: BL_BASE }, company: 'nonvat', states: true },
   { name: 'blPrint', route: { fixture: 'blVat', base: '/print/BL' }, company: 'vat', states: false },
+  { name: 'rcList', route: RC_BASE, company: 'both', states: true },
+  { name: 'rcNew', route: `${RC_BASE}/new`, company: 'both', states: true },
+  { name: 'rcMulti', route: { fixture: 'rcMulti', base: RC_BASE }, company: 'vat', states: true },
+  { name: 'rcNoCert', route: { fixture: 'rcNoCert', base: RC_BASE }, company: 'vat', states: true },
+  { name: 'rcDeposit', route: { fixture: 'rcDeposit', base: RC_BASE }, company: 'vat', states: true },
+  { name: 'nrcCashBill', route: { fixture: 'nrcCashBill', base: RC_BASE }, company: 'nonvat', states: true },
+  { name: 'rcPrint', route: { fixture: 'rcMulti', base: '/print/RC' }, company: 'vat', states: false },
+  { name: 'nrcPrint', route: { fixture: 'nrcCashBill', base: '/print/RC' }, company: 'nonvat', states: false },
   { name: 'trialBalance', route: '/reports/financial-statements', company: 'both', states: true },
   { name: 'customers', route: '/master/customers', company: 'both', states: true },
   { name: 'customerView', route: '/master/customers/pc-01', company: 'vat', states: true },

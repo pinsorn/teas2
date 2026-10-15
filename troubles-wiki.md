@@ -22,6 +22,22 @@ Entry format — terse, greppable by symptom:
 
 <!-- entries below — newest on top -->
 
+## e2e: after confirming a correction plan the page sometimes shows the ORIGINAL (replaced) document, sometimes the new one
+- **Root cause:** `useCorrectionFlow.confirm` does `await invalidateQueries` then `router.push(new doc)`; the edit page's effect `router.replace(view(old doc))` (the old document is no longer editable) races with that push, and either can win.
+- **Fix:** do not assert where the plan lands. Wait for the API outcome (`expect.poll` on the original's status, then read `replacedById`) as `e2e/sales-rc.spec.ts` does. (The flow itself is not changed here; the TI loop test only looks at the chain tab, which exists on both.)
+- **Seen:** 2026-10-15, SP1c S4
+
+## e2e: "ยังขาดอะไร" still says เลือกลูกค้า / a panel has 0 checkboxes after `fill()` + `Enter` on the customer combobox
+- **Root cause:** the party search is asynchronous; `Enter` pressed before the option list renders picks nothing (flaked `sales-iv-bl` once, bit two S4 tests).
+- **Fix:** `await page.getByRole('option').first().waitFor()` between `fill()` and `Enter`.
+- **Seen:** 2026-10-15, SP1c S4
+
+## Fixture predicates (rcTargetsA / rcTargetsB) stop resolving after a seeded receipt touches them
+- **Symptom:** `fixture ids unresolved: rcTargetsA, rcTargetsB` (every e2e and screens test fails).
+- **Root cause:** the predicates pick pc-01's untouched invoices (no active link); a seed spec that settles or groups them removes them from the pool.
+- **Fix:** seed receipts settle the OTHER open invoices (rc-multi pays ti-057 / spike-60, which a billing statement already groups), leaving spike-1 / spike-25 untouched.
+- **Seen:** 2026-10-15, SP1c S4
+
 ## Playwright axe "color-contrast" fails ~50% of runs right after a dialog opens
 - **Symptom:** `axeClean(page)` right after opening a Radix dialog / alertdialog reports a serious `color-contrast` on text inside it; re-running passes (`ti-loop` "non-fiscal edit" flaked 2/4 on the pre-fix baseline).
 - **Root cause:** axe reads the colours mid fade-in animation (partial opacity blends).

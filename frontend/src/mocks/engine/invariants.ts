@@ -166,6 +166,7 @@ export function checkInvariants(st: MockState): string[] {
     const d = doc(j.docId);
     if (!d) continue;
     for (const e of j.preview.entries) {
+      if (!e.postedAt) out.push(`${d.id} ${e.kind} entry ${e.date}: no postedAt (every written entry carries when it was posted)`);
       const p = st.periods.find((x) => x.companyId === d.companyId && x.month === e.date.slice(0, 7));
       if (p?.status !== 'closed') continue;
       if (!e.postedAt || !p.closedAt || !(Date.parse(e.postedAt) <= Date.parse(p.closedAt))) {
@@ -220,6 +221,12 @@ export function checkInvariants(st: MockState): string[] {
     }
   }
   // (No "settled <= total" check: a credit note or a cancelled debit note after payment legitimately leaves a negative outstanding = customer credit, Ham ruling; over-allocation is refused at issue.)
+
+  // 8b. the customer-withheld tax: GL(1180) of a company = the WHT of its live receipts (a posting to 1180 from anywhere else, or a reversal left behind, shows here)
+  for (const c of st.companies) {
+    const want = st.docs.filter((d) => d.companyId === c.id && d.type === 'RC' && LIVE.includes(d.status)).reduce((n, d) => n + sat(d.totals.wht ?? '0.00', d.id), 0);
+    if ((gl.get(`${c.id}|1180`) ?? 0) !== want) out.push(`${c.id}: GL 1180 ${fromSatang(gl.get(`${c.id}|1180`) ?? 0)} but the live receipts withheld ${fromSatang(want)}`);
+  }
 
   // 9. a billing statement (BL): total = the sum of its amounts, its active groups links are its list, every target is a groupable document of the same company and customer, and it posts nothing
   for (const d of st.docs) {

@@ -25,7 +25,7 @@ beforeEach(() => {
   testServer.events.on('request:start', ({ request }) => calls.push(`${request.method} ${new URL(request.url).pathname}${new URL(request.url).search}`));
 });
 
-/** RC stub: the receipt descriptor itself arrives in S4; the panel only reads `type` and `settles`. */
+/** RC stub: the panel only reads `type` and `settles`. */
 const receipt = { ...taxInvoice, type: 'RC', settles: ['TI', 'IV'] } as DocDescriptor;
 const rc = (id = fixtureIds(loadState()).rcTargetsA) => loadState().docs.find((d) => d.id === id)!;
 
@@ -49,7 +49,7 @@ describe('SettlementPanel', () => {
     expect(calls).toContain('GET /bff/v1/docs/open-items?partyId=pc-01&types=TI%2CIV');
     await userEvent.click(box);
     expect(spy).toHaveBeenLastCalledWith([{ targetId: a.id, targetType: 'TI', targetNumber: a.number, amount: a.outstanding }]);
-    expect(within(row).getByRole('textbox', { name: `จำนวนที่ชำระ ${a.number}` })).toHaveValue(a.outstanding);
+    expect(within(row).getByRole('textbox', { name: `จำนวนรับชำระ ${a.number}` })).toHaveValue(a.outstanding);
     await userEvent.click(box);
     expect(spy).toHaveBeenLastCalledWith([]);
   });
@@ -113,7 +113,7 @@ describe('SettlementPanel', () => {
     await screen.findByRole('checkbox', { name: `เลือก ${a.number}` });
     await userEvent.click(screen.getByRole('button', { name: 'ใช้ยอดที่ระบบแนะนำ 30.00' }));
     expect(spy).toHaveBeenLastCalledWith([expect.objectContaining({ wht: '30.00', whtTypeCode: 'SVC' })]);
-    const wht = screen.getByRole('textbox', { name: `ภาษีหัก ณ ที่จ่ายของ ${a.number}` });
+    const wht = screen.getByRole('textbox', { name: `ภาษีถูกหัก ณ ที่จ่ายของ ${a.number}` });
     expect(wht).toHaveValue('30.00');
     await userEvent.clear(wht);
     await userEvent.type(wht, '28.5');

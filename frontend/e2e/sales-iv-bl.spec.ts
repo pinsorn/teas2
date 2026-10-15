@@ -55,7 +55,7 @@ test('a non-VAT paper carries no VAT row even for a line coded S7 (I1)', async (
 });
 
 test('billing statement: pick the customer, tick two invoices, the total is the server\'s, issue; the chain shows what it bills', async ({ page }) => {
-  await asNonVat(page);
+  await asNonVat(page); await fixtureId(page, 'ivDraft'); // the company switch has landed before the customer is searched (S4: flaked once without)
   await page.goto('/sales/billing-statements/new');
   await page.getByRole('combobox', { name: 'ลูกค้า' }).fill('ครัวริมคลอง');
   await page.keyboard.press('Enter');

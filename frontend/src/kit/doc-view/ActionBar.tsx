@@ -5,8 +5,9 @@ import { useId, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { routesOf, type DocDescriptor } from '@/domain/descriptors';
-import { CLOSEABLE, convertTargets, LIVE, MARKS } from '@/domain/doc-types';
+import { CLOSEABLE, convertTargets, LIVE, MARKS, SETTLES } from '@/domain/doc-types';
 import type { Doc, DocType, MarkKey } from '@/domain/types';
+import { settleable } from '../doc-editor/SettlementPanel';
 
 /** A descriptor may list the conversions it allows; the "convert to…" button (and its dialog) exists only for those. */
 export type ConvertibleDescriptor = DocDescriptor & { convertsTo?: DocType[] };
@@ -41,6 +42,9 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCa
   const locked = blocker ? t('locked', { reason: blocker.reason }) : undefined;
   const live = LIVE.includes(doc.status);
   const targets = convertTargets(d.convertsTo, vatRegistered, permissions);
+  // A receipt is made from open items, never by conversion: a TI / IV with something owed opens it on ?settle=, a billing statement on ?fromBl= (the editor reads the server's outstanding)
+  const receiveHref = d.groups && live ? `/sales/receipts/new?fromBl=${doc.id}`
+    : SETTLES.RC?.includes(d.type) && live && doc.outstanding !== undefined && settleable(doc.outstanding) ? `/sales/receipts/new?settle=${doc.id}` : undefined;
   const marks = (MARKS[d.type] ?? []).filter((m) => MARK_BUTTONS.includes(m) && !doc.marks?.[m]);
 
   return (
@@ -74,9 +78,9 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCa
             {(p) => <Button {...p} variant="outline" onClick={onConvert}>{t('convert')}</Button>}
           </Guarded>
         ) : null}
-        {d.groups && live ? ( // a billing statement is collected by a receipt that opens on its grouped documents (the receipt task reads fromBl)
+        {receiveHref ? (
           <Guarded why={missing('doc.RC.create')}>
-            {(p) => <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t('receive')}</span> : <Link href={`/sales/receipts/new?fromBl=${doc.id}`}>{t('receive')}</Link>}</Button>}
+            {(p) => <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t('receive')}</span> : <Link href={receiveHref}>{t('receive')}</Link>}</Button>}
           </Guarded>
         ) : null}
         {live && CLOSEABLE.includes(d.type) && !doc.marks?.closed ? (

@@ -3,6 +3,7 @@ import { formatDateBE } from '@/lib/format';
 import type { ctx } from '../handlers/common';
 import { compute } from './commands';
 import { fromSatang, toSatang } from './money';
+import { cashBankId } from './settlement';
 type Ctx = ReturnType<typeof ctx>;
 
 const branchLabel = (code?: string) => (!code ? undefined : code === '00000' ? 'สำนักงานใหญ่ (00000)' : `สาขา ${code}`);
@@ -14,6 +15,7 @@ const LOOK: Partial<Record<DocType, Look>> = {
   DO: { titleTh: 'ใบส่งของ', titleEn: 'DELIVERY ORDER', signatures: ['ผู้ส่งของ', 'ผู้รับของ', 'ผู้อนุมัติ'] },
   IV: { titleTh: 'ใบแจ้งหนี้', titleEn: 'INVOICE', signatures: ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'] },
   BL: { titleTh: 'ใบวางบิล', titleEn: 'BILLING STATEMENT', signatures: ['ผู้วางบิล', 'ผู้รับวางบิล', 'ผู้มีอำนาจลงนาม'], dueLabel: 'นัดชำระเงิน' },
+  RC: { titleTh: 'ใบเสร็จรับเงิน', titleEn: 'RECEIPT', signatures: ['ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'] },
   QT: { titleTh: 'ใบเสนอราคา', titleEn: 'QUOTATION', signatures: ['ผู้เสนอราคา', 'ผู้อนุมัติ', 'ลูกค้ายืนยันสั่งซื้อ'], dueLabel: 'ยืนราคาถึง' },
 };
 
@@ -60,4 +62,24 @@ function billingPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
   return { ...m, lines };
 }
 
-export const PAPER_BUILDERS: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf, QT: paperOf, SO: paperOf, DO: paperOf, IV: paperOf, BL: billingPaper };
+/** How the money came in, as the server words it: method + the account (or the cheque). */
+function paymentLine(c: Ctx, d: Doc): string {
+  const h = d.header, bank = c.st.bankAccounts.find((b) => b.id === cashBankId(c.st, c.company.id, h));
+  const acct = bank ? `${bank.nameTh}${bank.accountNo ? ` ${bank.accountNo}` : ''}` : '';
+  if (h.paymentMethod === 'cheque' && h.cheque) return `เช็ค ${h.cheque.number} ลงวันที่ ${formatDateBE(h.cheque.date)} ${h.cheque.bank}`.trim();
+  return `${h.paymentMethod === 'cash' ? 'เงินสด' : h.paymentMethod === 'cheque' ? 'เช็ค' : 'โอนเงิน'}${acct ? ` · ${acct}` : ''}`;
+}
+/** RC: one row per settled document (number, date, amount, the tax the customer withheld on it), the deposit remainder, then a non-VAT cash bill's own lines. A receipt is not a tax document: no VAT rows. */
+function receiptPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
+  const { vatLines, ...m } = paperOf(c, d, copy); void vatLines;
+  const settled = (d.allocations ?? []).map((a) => {
+    const t = c.st.docs.find((x) => x.id === a.targetId);
+    return { description: `${TYPE_TH[a.targetType] ?? a.targetType} ${a.targetNumber ?? a.targetId}${t ? ` ลงวันที่ ${formatDateBE(t.header.documentDate)}` : ''}`,
+      qty: '', unit: '', unitPrice: '', amount: a.amount, taxCode: 'EX' as const, ...(a.wht ? { wht: a.wht } : {}) };
+  });
+  const deposit = toSatang(d.header.depositAmount ?? '0.00') > 0
+    ? [{ description: 'เงินรับล่วงหน้า', qty: '', unit: '', unitPrice: '', amount: d.header.depositAmount!, taxCode: 'EX' as const }] : [];
+  return { ...m, payment: paymentLine(c, d), lines: [...settled, ...deposit, ...m.lines].map((l, i) => ({ ...l, no: i + 1 })) };
+}
+
+export const PAPER_BUILDERS: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf, QT: paperOf, SO: paperOf, DO: paperOf, IV: paperOf, BL: billingPaper, RC: receiptPaper };

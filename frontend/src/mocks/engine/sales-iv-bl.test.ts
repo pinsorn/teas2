@@ -137,8 +137,10 @@ describe('BL: groups open TI / IV of one party, no ledger, total = Σ outstandin
       const d = get(id);
       expect(d).toMatchObject({ type: 'BL', status: 'issued', lines: [] });
       expect(d.allocations!.map((a) => a.targetId)).toEqual(targets);
-      expect(sat(d.totals.total)).toBe(targets.reduce((a, t) => a + sat(get(t).outstanding!), 0));
-      expect(d.allocations!.map((a) => a.amount)).toEqual(targets.map((t) => get(t).outstanding));
+      // the amounts are what each target owed when the statement was issued; bl-1 (2026-10-10) predates rc-multi (2026-10-12, 1,000.00 + 500.00), so it is stale by 1,500.00 (S4 prefills from the CURRENT outstanding)
+      const paidSince = id === 'bl-1' ? 150000 : 0;
+      expect(sat(d.totals.total)).toBe(targets.reduce((a, t) => a + sat(get(t).outstanding!), 0) + paidSince);
+      expect(d.allocations!.map((a) => sat(a.amount))).toEqual(targets.map((t) => sat(get(t).outstanding!) + (t === 'spike-60' ? 50000 : t === 'ti-057' ? 100000 : 0)));
       expect(st.links.filter((l) => l.active && l.kind === 'groups' && l.from === id).map((l) => l.to)).toEqual(targets);
       expect(st.journals.some((j) => j.docId === id)).toBe(false);
       expect(d.outstanding).toBeUndefined();

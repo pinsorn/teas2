@@ -118,10 +118,12 @@ export interface PaperModel {
   /** Label of the due date on this paper (QT: 'ยืนราคาถึง'); default 'ครบกำหนดชำระ'. */ dueLabel?: string;
   /** N-class revision of a quotation / order: 'ฉบับแก้ไขครั้งที่ n', printed on every page. */ revisionLabel?: string;
   seller: PaperParty; buyer: PaperParty;
-  lines: { no: number; description: string; qty: Qty; unit: string; unitPrice: Money; amount: Money; taxCode: TaxCode; discountPct?: string }[];
+  lines: { no: number; description: string; qty: Qty; unit: string; unitPrice: Money; amount: Money; taxCode: TaxCode; discountPct?: string;
+    /** Receipt only: the tax the customer withheld on this settled document. */ wht?: Money }[];
   totals: DocTotals; notes?: string;
   /** VAT presentation supplied by the server, printed in order after the net row: zero-rated / exempt sales bases, then the VAT line. */
   vatLines?: { label: string; amount: Money }[]; // omitted for a non-VAT company: no VAT row, no net-before-tax row
+  /** Receipt only: how the money came in (method, bank account or cheque), one line printed by the server. */ payment?: string;
   replacementNote?: string;                    // 'ยกเลิกและออกแทนฉบับเดิม เลขที่ … ลงวันที่ …' (on the NEW document)
   voidMark?: { label: string; note?: string }; // cancelled / replaced originals: diagonal stamp on every page
   signatures: string[];                        // ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม']

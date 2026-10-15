@@ -145,7 +145,9 @@ export function buildDocs(parties: SeedParty[], items: SeedItem[]) {
       companyId, id: s.key, type: s.type, number: number[s.key], status: s.status, correctionClass: CLASS[s.type],
       revision: s.revision ?? 0, version: 1,
       header: { partyId: s.party.id, documentDate: s.date, ...(s.term ? { dueDate: addDays(s.date, s.party.paymentTermDays) } : {}),
-        ...(s.notes ? { notes: s.notes } : {}), priceIncludesVat: false },
+        ...(s.notes ? { notes: s.notes } : {}), priceIncludesVat: false,
+        // a receipt names the account it posts to (a reissue keeps it); the seed's receipts all went into the company's main account
+        ...(s.type === 'RC' ? { paymentMethod: 'transfer' as const, bankAccountId: 'ba-kbank' } : {}) },
       party: strip(s.party), lines, totals,
       ...(s.type === 'RC' ? { allocations: [{ targetId: s.settles!, targetType: 'TI' as const, targetNumber: number[s.settles!], amount: fromSatang(s.paid!) }] } : {}), ...(outstanding ? { outstanding } : {}), locks: s.locks ?? [], createdBy: s.by,
       ...(issuedAt ? { issuedAt } : {}),

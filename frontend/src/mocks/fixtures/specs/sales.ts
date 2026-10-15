@@ -1,4 +1,4 @@
-import type { Allocation, DocLine, MarkKey } from '@/domain/types';
+import type { Allocation, DocHeader, DocLine, MarkKey } from '@/domain/types';
 import { cancel } from '../../engine/commands';
 import { closeRemainder, setMark } from '../../engine/marks';
 import type { MockState } from '../../store';
@@ -13,9 +13,14 @@ const mark = (id: string, key: MarkKey, reason?: string) => (st: MockState) => {
   setMark(st, id, key, st.docs.find((d) => d.id === id)!.version, USER, reason);
 };
 const due = (date: string) => ({ dueDate: date }); // QT: "ยืนราคาถึง"
-/** A receipt of the non-VAT company settling part / all of one invoice (RC in this file until S4 owns receipts). */
+/** A receipt of the non-VAT company settling part / all of one invoice. Every seeded receipt names the account it posts to (a correction's reissue keeps it). */
+const BANK = { VAT: 'ba-kbank', NV: 'nba-kbank' };
 const pay = (id: string, party: string, date: string, iv: string, amount: string): SeedSpec =>
-  ({ id, type: 'RC', companyId: NV, date, partyId: party, status: 'issued', lines: [], allocations: [{ targetId: iv, targetType: 'IV', amount }] as Allocation[] });
+  ({ id, type: 'RC', companyId: NV, date, partyId: party, status: 'issued', lines: [], header: { paymentMethod: 'transfer', bankAccountId: BANK.NV },
+    allocations: [{ targetId: iv, targetType: 'IV', amount }] as Allocation[] });
+/** S4 receipt of the VAT company: transfer into the main account. */
+const rc = (id: string, party: string, date: string, allocations: Allocation[], header: Partial<DocHeader> = {}): SeedSpec =>
+  ({ id, type: 'RC', companyId: VAT, date, partyId: party, status: 'issued', lines: [], header: { paymentMethod: 'transfer', bankAccountId: BANK.VAT, ...header }, allocations });
 
 export const SALES_SPECS: SeedSpec[] = [
   // ---- quotations, VAT company ----
@@ -88,4 +93,14 @@ export const SALES_SPECS: SeedSpec[] = [
     allocations: [{ targetId: 'iv-1', targetType: 'IV', amount: '0.00' }, { targetId: 'iv-4', targetType: 'IV', amount: '0.00' }] },
   { id: 'bl-1', type: 'BL', companyId: VAT, date: '2026-10-10', partyId: 'pc-01', status: 'issued', header: due('2026-10-31'), lines: [],
     allocations: [{ targetId: 'spike-60', targetType: 'TI', amount: '0.00' }, { targetId: 'ti-057', targetType: 'TI', amount: '0.00' }] },
+
+  // ---- S4: receipts. The VAT company settles invoices only; the non-VAT company may also sell over the counter (cash bill) ----
+  // rc-multi settles pc-01's two OTHER open invoices (the BL-grouped ti-057 / spike-60): rcTargetsA / rcTargetsB stay untouched for the e2e that settles them.
+  rc('rc-multi', 'pc-01', '2026-10-12', [
+    { targetId: 'ti-057', targetType: 'TI', amount: '1000.00', wht: '30.00', whtTypeCode: 'SVC', certNumber: 'ท.2569/0451' }, // [SP-R] mock WHT type, not a ruled rate
+    { targetId: 'spike-60', targetType: 'TI', amount: '500.00' }]),
+  rc('rc-nocert', 'pc-06', '2026-10-13', [{ targetId: 'ti-037', targetType: 'TI', amount: '10000.00', wht: '300.00', whtTypeCode: 'SVC' }]), // withheld, no certificate yet (TX2 chase list)
+  rc('rc-dep', 'pc-08', '2026-10-13', [], { depositAmount: '5000.00' }), // paid in advance: nothing to allocate
+  { id: 'nrc-cash', type: 'RC', companyId: NV, date: '2026-10-13', partyId: 'nc-04', status: 'issued', header: { paymentMethod: 'transfer', bankAccountId: BANK.NV },
+    lines: [line('nrc-cash', 1, 'ค่าเช่าแผงชั่วคราวรายวัน', '2', 'วัน', '350.00', 'EX'), line('nrc-cash', 2, 'ค่าไฟฟ้าแผง', '1', 'งาน', '150.00', 'EX')] },
 ];
