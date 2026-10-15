@@ -144,6 +144,22 @@ describe('periods (D-10)', () => {
     expect(es.map((e) => [e.kind, e.date, e.late ?? false])).toEqual([['original', '2025-06-10', false], ['reversal', '2026-10-01', true], ['correction', '2026-10-01', true]]);
     assertBalanced(st);
   });
+  it('revise (open Sept) -> close Sept -> revise again: every entry stamped, invariants clean (Opus vector 1)', () => {
+    const nv = 'co-nonvat';
+    const party = st.parties.find((p) => p.companyId === nv && p.kind === 'customer')!.id;
+    const d = withFixedClock('2026-09-10T10:00:00+07:00', () => {
+      const dr = createDraft(st, nv, 'IV', { header: { partyId: party, documentDate: '2026-09-10' }, lines: [line()] }, me, 'iv-sep');
+      return issue(st, dr.id, dr.version, me);
+    });
+    const r1 = withFixedClock('2026-09-15T10:00:00+07:00', () => revise(st, d.id, { header: d.header, lines: [line({ unitPrice: '1200.00' })] }, d.version, 'แก้ครั้งที่ 1', me));
+    const sep = st.periods.find((x) => x.companyId === nv && x.month === '2026-09')!;
+    sep.status = 'closed'; sep.closedAt = '2026-10-05T09:00:00+07:00';
+    revise(st, d.id, { header: d.header, lines: [line({ unitPrice: '1500.00' })] }, r1.version, 'แก้ครั้งที่ 2', me);
+    const es = st.journals.find((j) => j.docId === d.id)!.preview.entries;
+    expect(es.every((e) => !!e.postedAt)).toBe(true);
+    expect(es.filter((e) => e.date.startsWith('2026-09')).every((e) => e.postedAt! <= sep.closedAt!)).toBe(true);
+    expect(checkInvariants(st)).toEqual([]);
+  });
   it('issue under a pinned clock still refuses a future date', () => {
     const dr = draftOn('2026-10-15', 'p9');
     expect(() => withFixedClock('2026-10-14T10:00:00+07:00', () => issue(st, dr.id, dr.version, me))).toThrow(/doc\.future_date/);

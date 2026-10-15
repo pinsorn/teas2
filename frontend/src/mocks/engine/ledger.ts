@@ -46,8 +46,8 @@ export const POST: Partial<Record<DocType, Rows>> = {
 };
 
 /** Exact mirror of an entry: debit and credit swapped on every line. */
-export const reversalOf = (e: JournalEntryPreview, date: string): JournalEntryPreview => ({
-  date, kind: 'reversal',
+export const reversalOf = (e: JournalEntryPreview, date: string, postedAt?: string): JournalEntryPreview => ({
+  date, kind: 'reversal', ...(postedAt ? { postedAt } : {}),
   lines: e.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit, rule: `${l.rule} (กลับรายการ)` })),
 });
 
@@ -76,8 +76,8 @@ export function ledgerFor(st: MockState, doc: Doc & { companyId?: string }): Jou
     ...(x.party ? { partyName: x.party } : {}), ...(x.dims ? { dimensions: x.dims } : {}),
   }));
   if (!lines.length) return { entries: [] };
-  const original: JournalEntryPreview = { date: doc.header.documentDate, kind: 'original', lines };
+  const original: JournalEntryPreview = { date: doc.header.documentDate, kind: 'original', lines, ...(doc.issuedAt ? { postedAt: doc.issuedAt } : {}) };
   const entries = [original];
-  if (doc.status === 'cancelled' || doc.status === 'replaced') entries.push(reversalOf(original, doc.cancel?.at.slice(0, 10) ?? doc.header.documentDate));
+  if (doc.status === 'cancelled' || doc.status === 'replaced') entries.push(reversalOf(original, doc.cancel?.at.slice(0, 10) ?? doc.header.documentDate, doc.cancel?.at));
   return { entries };
 }

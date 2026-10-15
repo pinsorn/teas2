@@ -4,7 +4,6 @@ import type { Doc } from '@/domain/types';
 import type { MockState } from '../store';
 import { consumed, q4 } from './chain';
 import { divRoundHalfAway, fromSatang, toSatang } from './money';
-import { firstOpenDate, isClosed } from './periods';
 import { whtOf } from './settlement';
 import { computeDoc, vatOf } from './vat';
 
@@ -162,22 +161,16 @@ export function checkInvariants(st: MockState): string[] {
     if ((d.status === 'cancelled' || d.status === 'replaced') && entries[entries.length - 1].kind !== 'reversal') out.push(`${d.id}: ${d.status} but its journal ends without a reversal`);
   }
 
-  // 7. an entry dated in a closed period was posted before the close (issuedAt / cancel / revision <= closedAt), or is late and in the first open period
+  // 7. an entry dated in a closed period was posted (postedAt, set once when written) before that period closed
   for (const j of st.journals) {
     const d = doc(j.docId);
     if (!d) continue;
     for (const e of j.preview.entries) {
       const p = st.periods.find((x) => x.companyId === d.companyId && x.month === e.date.slice(0, 7));
       if (p?.status !== 'closed') continue;
-      let ok: boolean;
-      if (e.kind === 'original' && !e.late) ok = !!d.issuedAt && !!p.closedAt && Date.parse(d.issuedAt) <= Date.parse(p.closedAt); // an original in a closed month was issued before the close
-      else if (e.late) ok = e.date >= firstOpenDate(st, d.companyId) && !isClosed(st, d.companyId, e.date);
-      else {
-        const revs = st.revisions.filter((r) => r.docId === d.id && r.revision > 0).map((r) => r.at).sort();
-        const stamps = e.kind === 'reversal' ? [d.cancel?.at, ...revs] : [st.revisions.filter((r) => r.docId === d.id).map((r) => r.at).sort().pop()]; // a reversal is a cancel's or a revision's (correction)
-        ok = !!p.closedAt && stamps.some((at) => !!at && Date.parse(at) <= Date.parse(p.closedAt!));
+      if (!e.postedAt || !p.closedAt || !(Date.parse(e.postedAt) <= Date.parse(p.closedAt))) {
+        out.push(`${d.id} ${e.kind} entry ${e.date}: dated in closed period ${p.month} but was posted after it closed (or has no posted-at)`);
       }
-      if (!ok) out.push(`${d.id} ${e.kind} entry ${e.date}: dated in closed period ${p.month} but was posted after it closed and is not a late entry in the first open period`);
     }
   }
 
