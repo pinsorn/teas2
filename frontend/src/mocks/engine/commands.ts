@@ -8,7 +8,7 @@ import { ledgerFor, reversalOf } from './ledger';
 import { afterRevision, refuseClosed, refuseRejected, withAcceptedStamp } from './marks';
 import { MockError, diffBody, isPinned, logActivity, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
-import { isNote, noteHeader, noteMissing, noteProblem, withNoteVat } from './notes';
+import { adjustSnapshot, isNote, noteHeader, noteMissing, noteProblem, withNoteVat } from './notes';
 import { SeriesAllocator } from './numbering';
 import { firstOpenDate, isClosed, monthLabelTh } from './periods';
 import { balanceOf, certError, cleanAllocations, fiscalAllocations, groupTotals, payDefaults, settleExtras, settleProblem, settleTotals } from './settlement';
@@ -126,7 +126,10 @@ const rcHeaderKey = ({ notes: _n, reference: _r, depositAmount, paymentMethod, .
 /** Fiscal = changes who/when/how much is taxed; only those need a chain-aware correction on a T-class document.
  *  A receipt takes ONLY certificate numbers, notes and reference in place: any other change is a correction (M1). */
 /** Lines as the client knows them: the engine-set VAT of a CN / DN line is not part of what a caller can send back. */
-const sameLines = (a: DocLine[], b: DocLine[]) => JSON.stringify(a.map(({ vatOverride, ...l }) => (void vatOverride, l))) === JSON.stringify(b.map(({ vatOverride, ...l }) => (void vatOverride, l)));
+export const sameLines = (a: DocLine[], b: DocLine[]) => JSON.stringify(a.map(({ vatOverride, ...l }) => (void vatOverride, l))) === JSON.stringify(b.map(({ vatOverride, ...l }) => (void vatOverride, l)));
+/** A note whose lines are unchanged keeps its issued lines (and their VAT) and its price basis: an API caller cannot send the engine-set VAT back, and the VAT is never recomputed from today's siblings (F4). */
+export const keepNoteLines = (d: Doc, body: Body): Body =>
+  isNote(d.type) && sameLines(body.lines, d.lines) ? { ...body, header: { ...body.header, ...(d.header.priceIncludesVat ? { priceIncludesVat: true } : {}) }, lines: d.lines } : body;
 export function isFiscalChange(d: Doc, b: Body): boolean {
   return (d.type === 'RC' && rcHeaderKey(b.header) !== rcHeaderKey(d.header)) || b.header.partyId !== d.header.partyId || b.header.documentDate !== d.header.documentDate
     || !!b.header.priceIncludesVat !== !!d.header.priceIncludesVat || !sameLines(b.lines, d.lines)
@@ -167,7 +170,7 @@ function stored(st: MockState, companyId: string, type: DocType, body: Body, kee
   // D-12: a VAT company's receipt settles tax invoices, it never sells (a cash bill is the non-VAT company's). Shape of the request, so it is refused where the body enters.
   if (type === 'RC' && body.lines.length && vatOf(st, companyId)) throw new MockError(422, 'rc.lines_need_invoice', 'บริษัทที่จดทะเบียน VAT ต้องออกใบกำกับภาษีก่อนรับชำระ');
   const allocations = cleanAllocations(st, companyId, type, body.allocations, keep);
-  return { header: noteHeader(st, companyId, type, payDefaults(st, companyId, type, body.header)), lines: GROUPS[type] ? [] : body.lines, ...(allocations ? { allocations } : {}) };
+  return { header: noteHeader(st, companyId, type, payDefaults(st, companyId, type, body.header), body.lines), lines: GROUPS[type] ? [] : body.lines, ...(allocations ? { allocations } : {}) };
 }
 
 function insertDraft(st: MockState, companyId: string, type: DocType, raw: Body, actor: Actor, id?: string): Stored {
@@ -297,6 +300,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
     ...d, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', totals, party: partyOf(st, d.companyId, d.header.partyId),
     version: d.version + 1, issuedAt: stamp(), ...(hasOut(d.type) ? { outstanding: totals.total } : {}),
   };
+  if (isNote(d.type)) next.adjustSnapshot = adjustSnapshot(st, getDoc(st, d.header.refDocId!), next); // the ม.86/10 values as of now: the paper reads them, never recomputes
   put(st, next);
   settleTargets(st, next, body.allocations);
   if (isNote(d.type)) adjustTarget(st, next, totals.total);
@@ -367,7 +371,7 @@ function certNote(d: Stored, body: Body): string | undefined {
 export function revise(st: MockState, id: string, raw: Body, version: number, reason: string, actor: Actor): Doc {
   const d = getDoc(st, id);
   const sent = stored(st, d.companyId, d.type, { ...raw, allocations: raw.allocations ?? d.allocations }, d.allocations);
-  const body = isNote(d.type) && sameLines(sent.lines, d.lines) ? { ...sent, lines: d.lines } : sent; // an API caller cannot send the engine-set VAT back: the issued lines stand
+  const body = keepNoteLines(d, sent); // an API caller cannot send the engine-set VAT back: the issued lines stand
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_revisable', 'แก้ไขได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   checkVersion(d, version);
   if (d.correctionClass === 'T' && isFiscalChange(d, body)) {
@@ -434,6 +438,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   }
   const dated = old.type === 'TI' || old.type === 'RC' || isNote(old.type); // I9 / T5: a reissue keeps the date and the total
   if (dated) body = { ...body, header: { ...body.header, documentDate: old.header.documentDate, ...(isNote(old.type) ? { refDocId: old.header.refDocId } : {}) } }; // a note stays on its invoice
+  body = keepNoteLines(old, body); // a reason-only change keeps the note's VAT even after a sibling was cancelled
   const missing = missingOf(st, old.companyId, old.type, body);
   if (missing.length) throw incomplete(missing);
   if (isNote(old.type)) { const np = noteProblem(st, old.companyId, old.type, body, old.id); if (np) throw np; }
@@ -452,6 +457,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   const { outstanding: _o, ...oldRest } = old; void _o;
   put(st, { ...oldRest, status: 'replaced', replacedById: created.id, version: old.version + 1, cancel: { reasonCode: 'CORRECTION', reasonText: reason, at } });
   st.docs.push(created);
+  if (isNote(created.type)) created.adjustSnapshot = adjustSnapshot(st, getDoc(st, created.header.refDocId!), created); // anew: the old note is no longer live
   const carried = st.links.filter((l) => l.from === old.id && l.active);
   st.links = st.links.map((l) => (l.from === old.id && l.active ? { ...l, active: false } : l));
   for (const l of carried) {

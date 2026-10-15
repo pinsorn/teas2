@@ -2,7 +2,7 @@ import { LIVE, REASON_CODES } from '@/domain/doc-types';
 import type { DocHeader, DocLine, DocType, MissingItem } from '@/domain/types';
 import type { MockState } from '../store';
 import { MockError } from './log';
-import { divRoundHalfAway, fromSatang } from './money';
+import { divRoundHalfAway, fromSatang, toSatang } from './money';
 import { RATE_BP, computeLine, vatOf } from './vat';
 
 type Stored = MockState['docs'][number];
@@ -19,15 +19,20 @@ const others = (st: MockState, ti: Stored, selfId?: string) => st.docs.filter((d
 const netsOf = (st: MockState, ti: Stored) => new Map(ti.lines.map((l) => [l.id, netOf(l, !!ti.header.priceIncludesVat)] as const));
 
 /** Server-owned header of a note: its customer is the invoice's customer and its reference is the invoice number, whatever the client sent. */
-export function noteHeader(st: MockState, companyId: string, type: DocType, header: DocHeader): DocHeader {
+export function noteHeader(st: MockState, companyId: string, type: DocType, header: DocHeader, lines: DocLine[] = []): DocHeader {
   const ti = isNote(type) ? tiOf(st, companyId, header) : undefined;
-  return ti ? { ...header, partyId: ti.header.partyId, ...(ti.number ? { reference: ti.number } : {}) } : header;
+  if (!ti) return header;
+  // a user note is priced ex-VAT (rule B needs it): only the engine's own note - every line carries its `vatOverride` (the HTTP boundary strips a client's) - may be inclusive
+  const engine = lines.length > 0 && lines.every((l) => l.vatOverride !== undefined);
+  return { ...header, partyId: ti.header.partyId, ...(ti.number ? { reference: ti.number } : {}), ...(engine || !header.priceIncludesVat ? {} : { priceIncludesVat: false }) };
 }
 
 /** Rule B for line-based notes (Ham, 2026-10-14): a note line's VAT is the change of its OWN invoice line's VAT. The line's VAT still to be credited is tracked from what the
  *  other live notes actually carry (their stored VAT, not a recomputation), so a credit gives back `VAT left - VAT(rest after)` (a debit the mirror) and the notes on a line add up
  *  to the line's VAT to the satang whatever the split or the order of cancels. A correction plan's note is built the same way. Fills `vatOverride` only where the engine has set
- *  none already (a plan's note carries its own); an inclusive-price invoice is only adjusted by a plan (`noteProblem`). */
+ *  none already (a plan's note carries its own); an inclusive-price invoice is only adjusted by a plan (`noteProblem`).
+ *  Exact once the line is fully credited. Between notes it may be 0.01 off after a mid-sequence cancel (the stored VAT of a surviving note is immutable, so the line's remaining VAT
+ *  is the invoice's less what the survivors carry, while a fresh rate x net differs by a satang); the next note on the line absorbs it, so the final sum is always the line's VAT. */
 export function withNoteVat<B extends Part>(st: MockState, companyId: string, type: DocType, body: B, selfId?: string): B {
   if (!isNote(type) || body.header.priceIncludesVat || !vatOf(st, companyId)) return body;
   const ti = tiOf(st, companyId, body.header);
@@ -78,6 +83,9 @@ export function noteProblem(st: MockState, companyId: string, type: DocType, bod
     return new MockError(422, 'doc.inclusive_invoice', 'ใบกำกับภาษีที่ราคารวมภาษีแล้วปรับได้ผ่านแผนการแก้ไขของใบกำกับภาษีเท่านั้น');
   }
   for (const l of body.lines) {
+    if (l.vatOverride === undefined && netOf(l, incl) <= 0) { // a user note's every line is a positive amount: a credit cannot hide in a debit (or the reverse); the engine's plan lines (vatOverride set) may be signed
+      return new MockError(422, 'note.line_not_positive', `รายการ “${l.description}” ต้องมียอดมากกว่า 0.00 บาท`);
+    }
     if (!l.sourceLineId) {
       if (type === 'CN' && netOf(l, incl) > 0) return new MockError(422, 'cn.line_not_referenced', `รายการ “${l.description}” ต้องอ้างอิงรายการของใบกำกับภาษีเดิม`);
       continue;
@@ -101,6 +109,14 @@ export function noteProblem(st: MockState, companyId: string, type: DocType, bod
     }
   }
   return undefined;
+}
+
+/** The ม.86/10 values of a note at the moment it is issued (the paper prints these and never recomputes): the invoice's net, the correct value after this note (the net of the
+ *  invoice less the other live credits plus the other live debits, then this note), the difference (this note's net) and the VAT on it. */
+export function adjustSnapshot(st: MockState, ti: Stored, n: Stored): NonNullable<Stored['adjustSnapshot']> {
+  const signed = (x: Stored) => (x.type === 'CN' ? -1 : 1) * toSatang(x.totals.net);
+  const correct = toSatang(ti.totals.net) + others(st, ti, n.id).reduce((a, x) => a + signed(x), 0) + signed(n);
+  return { originalNet: ti.totals.net, correctNet: fromSatang(correct), diffNet: n.totals.net, vat: n.totals.vat };
 }
 
 /** Credit notes of one invoice, oldest first, for the paper's running "correct value": the notes issued up to and including `self`. */

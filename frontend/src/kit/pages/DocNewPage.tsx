@@ -61,15 +61,29 @@ async function receiptPrefill(d: DocDescriptor, me: Me, settle: string | null, f
   return { doc, skipped };
 }
 
-/** A CN / DN opened from its invoice ("ออกใบลดหนี้" on a TI): the customer, the reference and the lines come from the SERVER's invoice; every line keeps the id of the invoice line it credits (the per-line cap reads it). */
+const sat = (m: string) => Math.round(Number(m) * 100);
+/** A CN / DN opened from its invoice ("ออกใบลดหนี้" on a TI): the customer, the reference and the lines come from the SERVER's invoice; every line keeps the id of the invoice line it credits (the per-line cap reads it).
+ *  A CN starts at what is still creditable of each line (a line credited in full is left out; one credited in part becomes 1 x what is left); a DN starts every line at quantity 0, so saving it unedited adds nothing. */
 async function adjustPrefill(d: DocDescriptor, me: Me, tiId: string): Promise<Doc> {
   const ti = await endpoints.getDoc(d.adjusts!, tiId);
+  let lines = ti.lines.map((l) => ({ ...l, id: crypto.randomUUID(), sourceLineId: l.id, vatOverride: undefined }));
+  if (d.type === 'DN') lines = lines.map((l) => ({ ...l, qty: '0' }));
+  else {
+    const chain = await endpoints.getChain(d.adjusts!, tiId);
+    const ids = chain.edges.filter((e) => e.kind === 'adjusts' && e.active && e.to === tiId && chain.nodes.find((n) => n.id === e.from)?.type === 'CN').map((e) => e.from);
+    const credits = await Promise.all(ids.map((id) => endpoints.getDoc('CN', id)));
+    if (credits.length) { // the server's own nets (one compute): the invoice's lines, then every live credit's lines
+      const all = [...ti.lines.map((l, i) => ({ ...l, id: `t${i}` })), ...credits.flatMap((c, j) => c.lines.map((l, i) => ({ ...l, id: `c${j}-${i}`, vatOverride: undefined })))];
+      const net = new Map((await endpoints.computeDocument(d.adjusts!, { header: ti.header, lines: all })).lines.map((r) => [r.id, sat(r.net)] as const));
+      const left = ti.lines.map((l, i) => net.get(`t${i}`)! - credits.reduce((a, c, j) => a + c.lines.reduce((b, cl, k) => b + (cl.sourceLineId === l.id ? net.get(`c${j}-${k}`)! : 0), 0), 0));
+      lines = lines.flatMap((l, i) => (left[i] <= 0 ? [] : left[i] === net.get(`t${i}`) ? [l] : [{ ...l, qty: '1', unitPrice: (left[i] / 100).toFixed(2), discountPct: undefined }]));
+    }
+  }
   return {
     id: '', type: d.type, status: 'draft', correctionClass: d.correctionClass, revision: 0, version: 0,
     header: { documentDate: me.businessDate, ...(ti.header.partyId ? { partyId: ti.header.partyId } : {}), refDocId: ti.id, ...(ti.number ? { reference: ti.number } : {}), priceIncludesVat: false },
     ...(ti.party ? { party: ti.party } : {}), totals: { gross: '0.00', discount: '0.00', net: '0.00', vat: '0.00', total: '0.00', amountInWords: '' }, locks: [],
-    createdBy: { kind: 'user', id: me.userId, name: me.displayName },
-    lines: ti.lines.map((l) => ({ ...l, id: crypto.randomUUID(), sourceLineId: l.id, vatOverride: undefined })),
+    createdBy: { kind: 'user', id: me.userId, name: me.displayName }, lines,
   };
 }
 

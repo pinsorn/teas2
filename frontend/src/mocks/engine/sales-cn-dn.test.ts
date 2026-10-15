@@ -163,10 +163,10 @@ describe('G3: the per-line cap counts every active credit note, user or plan', (
     expect(note('CN', t, [nl('a', 'l1', 'S7', '1000.00')]).totals.total).toBe('1070.00');
     assertBalanced(st);
   });
-  it('a correction plan whose CN would break the cap is refused before it is shown', () => {
+  it('a correction plan on an invoice with a live CN is refused before it is shown (F1; it used to be the cap, now the earlier guard)', () => {
     const t = ti([L('l1', 'S7', '1000.00')]);
     note('CN', t, [nl('a', 'l1', 'S7', '900.00')]);
-    expect(err(() => correctionPlan(st, t.id, { header: t.header, lines: [L('l1', 'S7', '500.00')] }, 'accountant')).code).toBe('cn.exceeds_original');
+    expect(err(() => correctionPlan(st, t.id, { header: t.header, lines: [L('l1', 'S7', '500.00')] }, 'accountant')).code).toBe('correction.notes_exist');
   });
   it('a debit note is not capped', () => {
     const t = ti([L('l1', 'S7', '100.00')]);

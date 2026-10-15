@@ -23,8 +23,8 @@ Entry format — terse, greppable by symptom:
 <!-- entries below — newest on top -->
 
 ## Unit: `DocEditor.settle.test.tsx` "a deposit alone completes a VAT-company receipt" fails at 5180 ms in the FULL `vitest run` only
-- **Root cause:** the test needs ~1.2 s alone but crosses vitest's 5 s default under whole-suite parallel load (79 files at once). Pre-existing: the same failure reproduces on the S4 base commit b514b87 (2 of 3 full runs there).
-- **Fix:** none needed for a change that does not touch it - run the file alone (`corepack pnpm vitest run src/kit/doc-editor/DocEditor.settle.test.tsx`, 6/6) and say so in the report. Do not weaken the assertions; a longer `timeout` on that test is the right fix when someone owns it.
+- **Root cause:** NOT vitest's 5 s default (the `it` has an explicit 15 s timeout). The failure is `expect(element).toHaveTextContent()` from an inner `waitFor({ timeout: 4000 })` (the server total, or "ครบแล้ว") expiring while 79 test files run in parallel; alone the test takes ~1.2 s. A second cause showed under load once the timeouts were raised: the test moved focus to the deposit field while the customer pick (`{Enter}` on the combobox) was still pending, and a blur drops a pending Enter, so "เลือกลูกค้า" stayed missing. Pre-existing: it reproduces on the S4 base commit b514b87.
+- **Fix:** done in S5 fix round 1 - the two inner `waitFor` timeouts are 12 s, the `it` timeout 30 s, and the test waits for the customer field to show the picked name before it continues. If another async test flakes only in the full run, look for a short inner `waitFor` timeout first. Never weaken the assertions.
 - **Seen:** 2026-10-16, SP1c S5
 
 ## A credit / debit note without `refDocId` + a reason is `doc.incomplete`; a CN line without `sourceLineId` is `cn.line_not_referenced`

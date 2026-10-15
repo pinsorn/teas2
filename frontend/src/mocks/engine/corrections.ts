@@ -2,7 +2,7 @@ import type { Actor, Allocation, ChainEdge, CorrectionNote, CorrectionPlan, Corr
 import { PERMISSIONS_BY_ROLE } from '../permissions';
 import type { MockState } from '../store';
 import {
-  type Body, LIVE, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, markReplaced, refuseBelowSettled, refuseNonPositive, refusePartyChange, refuseUnissuableReceipt, reissue, revise, totalsOf,
+  type Body, LIVE, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, keepNoteLines, markReplaced, refuseBelowSettled, refuseNonPositive, refusePartyChange, refuseUnissuableReceipt, reissue, revise, totalsOf,
 } from './commands';
 import { MockError, today } from './log';
 import { fromSatang, toSatang } from './money';
@@ -94,7 +94,10 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
     add('revise', d, `แก้ไข ${label} (เลขที่เดิม เพิ่มรุ่นแก้ไข)`, `doc.${d.type}.correct`);
     explanation = 'การแก้ไขนี้ไม่กระทบภาษี แก้ไขในเอกสารเดิมและเก็บประวัติการแก้ไข';
   } else {
-    const newTotal = toSatang(totalsOf(st, d.companyId, d.type, proposed, d.id).total); // a note's own earlier VAT is not its predecessor
+    if (d.type === 'TI' && st.links.some((l) => l.to === d.id && l.active && l.kind === 'adjusts')) { // F1: a plan is built from the invoice's original body and cannot account for notes already issued (ledger 184)
+      throw new MockError(422, 'correction.notes_exist', `${blockingLocks(d).length ? 'เอกสารถูกล็อก ออกใบลดหนี้เต็มจำนวนไม่ได้ ' : 'แก้ไขเอกสารนี้ไม่ได้ '}เพราะมีใบลดหนี้/ใบเพิ่มหนี้อ้างถึงอยู่ ยกเลิกใบลดหนี้/ใบเพิ่มหนี้ที่อ้างถึงก่อน หรือออกใบลดหนี้/เพิ่มหนี้เพิ่มเติม`);
+    }
+    const newTotal = toSatang(totalsOf(st, d.companyId, d.type, keepNoteLines(d, proposed), d.id).total); // a note's own earlier VAT is not its predecessor; unchanged lines keep it (F4) // a note's own earlier VAT is not its predecessor
     const delta = newTotal - toSatang(d.totals.total);
     const partyChanged = proposed.header.partyId !== d.header.partyId;
     const contentChanged = JSON.stringify(proposed.lines) !== JSON.stringify(d.lines) || !!proposed.header.priceIncludesVat !== !!d.header.priceIncludesVat;

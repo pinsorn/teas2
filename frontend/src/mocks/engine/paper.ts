@@ -92,6 +92,7 @@ function adjustmentPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
   const m = paperOf(c, d, copy);
   const ti = c.st.docs.find((x) => x.id === d.header.refDocId);
   if (!ti) return m;
+  if (d.adjustSnapshot) return { ...m, adjusts: { number: ti.number ?? '-', date: ti.header.documentDate, originalNet: d.adjustSnapshot.originalNet, correctNet: d.adjustSnapshot.correctNet, diffNet: d.adjustSnapshot.diffNet, reason: reasonTh(d.header) } }; // taken at issue
   const signed = (n: { type: DocType; totals: { net: string } }) => (n.type === 'CN' ? -1 : 1) * toSatang(n.totals.net);
   const before = notesUpTo(c.st, ti, d.id).filter((n) => n.id !== d.id);
   const correct = toSatang(ti.totals.net) + before.reduce((a, n) => a + signed(n), 0) + signed(d);

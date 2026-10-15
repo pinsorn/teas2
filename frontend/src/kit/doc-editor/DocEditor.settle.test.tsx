@@ -40,7 +40,7 @@ describe('DocEditor: receipt in a VAT company (D-12)', () => {
     await waitFor(() => expect(totals()).toHaveTextContent('ยอดชำระสุทธิ'), { timeout: 4000 });
     const amount = within(box.closest('tr')!).getByRole('textbox', { name: /^จำนวนรับชำระ/ });
     await waitFor(() => expect(totals()).toHaveTextContent(String((amount as HTMLInputElement).value).replace(/\B(?=(\d{3})+(?!\d))/g, ',')));
-    await waitFor(() => expect(screen.getByRole('region', { name: 'ยังขาดอะไร' })).toHaveTextContent('ครบแล้ว'), { timeout: 4000 });
+    await waitFor(() => expect(screen.getByRole('region', { name: 'ยังขาดอะไร' })).toHaveTextContent('ครบแล้ว'), { timeout: 12000 });
     await userEvent.keyboard('{Control>}{Enter}{/Control}');
     await screen.findByRole('alertdialog');
     await userEvent.keyboard('{Enter}');
@@ -64,19 +64,20 @@ describe('DocEditor: receipt deposit (the unallocated remainder)', () => {
   it('a deposit alone completes a VAT-company receipt: the server total and words, header.depositAmount normalised, issued with no allocation', async () => {
     const onIssued = ui(receipt);
     await userEvent.type(screen.getByRole('combobox', { name: 'ลูกค้า' }), 'ไทยพัฒนา{Enter}');
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'ลูกค้า' })).toHaveValue('บริษัท ไทยพัฒนาก่อสร้าง จำกัด'), { timeout: 12000 }); // the pick must land before focus moves on (a blur drops a pending Enter)
     expect(await screen.findByText(/ต้องเลือกใบกำกับภาษีที่ชำระ หรือระบุเงินรับล่วงหน้า/)).toBeVisible();
     const dep = screen.getByRole('textbox', { name: /^เงินรับล่วงหน้า/ });
     await userEvent.type(dep, '5000');
     await userEvent.tab();
     expect(dep).toHaveValue('5000.00');
-    await waitFor(() => expect(totals()).toHaveTextContent('5,000.00'), { timeout: 4000 });
+    await waitFor(() => expect(totals()).toHaveTextContent('5,000.00'), { timeout: 12000 });
     expect(totals()).toHaveTextContent('ห้าพันบาทถ้วน');
-    await waitFor(() => expect(screen.getByRole('region', { name: 'ยังขาดอะไร' })).toHaveTextContent('ครบแล้ว'), { timeout: 4000 });
+    await waitFor(() => expect(screen.getByRole('region', { name: 'ยังขาดอะไร' })).toHaveTextContent('ครบแล้ว'), { timeout: 12000 });
     await userEvent.click(screen.getByRole('button', { name: 'บันทึกและออกใบเสร็จรับเงิน' }));
     await screen.findByRole('alertdialog');
     await userEvent.keyboard('{Enter}');
     await waitFor(() => expect(onIssued).toHaveBeenCalledWith(expect.objectContaining({ status: 'issued', header: expect.objectContaining({ depositAmount: '5000.00' }), totals: expect.objectContaining({ total: '5000.00', cash: '5000.00' }) })), { timeout: 6000 });
-  }, 15000);
+  }, 30000);
 });
 
 describe('DocEditor: receipt in a non-VAT company (cash bill)', () => {
@@ -93,7 +94,7 @@ describe('DocEditor: receipt in a non-VAT company (cash bill)', () => {
     await userEvent.tab();
     expect(screen.getByRole('textbox', { name: 'จำนวนเงินรายการ 1' })).toHaveValue('1500.00');
     await waitFor(() => expect(totals()).toHaveTextContent('1,500.00'), { timeout: 4000 });
-    await waitFor(() => expect(screen.getByRole('region', { name: 'ยังขาดอะไร' })).toHaveTextContent('ครบแล้ว'), { timeout: 4000 });
+    await waitFor(() => expect(screen.getByRole('region', { name: 'ยังขาดอะไร' })).toHaveTextContent('ครบแล้ว'), { timeout: 12000 });
     await userEvent.keyboard('{Control>}{Enter}{/Control}');
     await screen.findByRole('alertdialog');
     await userEvent.keyboard('{Enter}');
@@ -123,7 +124,7 @@ describe('DocEditor: payment voucher with withholding', () => {
     expect(totals()).toHaveTextContent('150.00');
     expect(screen.getByRole('group', { name: 'ภาษีหัก ณ ที่จ่ายแยกตามประเภท' })).toHaveTextContent('ค่าบริการ 3% · ฐาน 5,000.00 · ภ.ง.ด.53');
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'ผู้รับภาระภาษีหัก ณ ที่จ่าย' }), 'grossup_always');
-    await waitFor(() => expect(screen.getByText('ยอดชำระสุทธิ').nextElementSibling).toHaveTextContent('5,000.00'), { timeout: 4000 });
+    await waitFor(() => expect(screen.getByText('ยอดชำระสุทธิ').nextElementSibling).toHaveTextContent('5,000.00'), { timeout: 12000 });
     expect(totals()).toHaveTextContent('154.64');
   }, 15000);
 
