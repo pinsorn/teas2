@@ -30,9 +30,9 @@ export const DOC_TYPES: Record<DocType, DocTypeInfo> = {
 export const CLASS = Object.fromEntries(Object.entries(DOC_TYPES).map(([t, i]) => [t, i.class])) as Record<DocType, CorrectionClass>;
 export const isTypeAvailable = (t: DocType, vatRegistered: boolean) =>
   DOC_TYPES[t].vat === 'both' || (DOC_TYPES[t].vat === 'vat-only') === vatRegistered;
-/** SP0 §7.7. The engine refuses any pair not listed; a type's task enables its row's UI. */
+/** SP0 §7.7 (no RC: receipts are built from open items - settlement allocations - never by conversion). The engine refuses any pair not listed; a type's task enables its row's UI. */
 export const CONVERSIONS: Partial<Record<DocType, DocType[]>> = {
-  QT: ['SO', 'TI', 'IV'], SO: ['DO', 'TI', 'IV'], DO: ['TI', 'IV'], TI: ['BL', 'RC', 'CN', 'DN'], IV: ['BL'],
+  QT: ['SO', 'TI', 'IV'], SO: ['DO', 'TI', 'IV'], DO: ['TI', 'IV'], TI: ['BL', 'CN', 'DN'], IV: ['BL'],
   PO: ['PB', 'PV'], PB: ['PCN', 'PDN', 'PV'], EX: ['PV'],
 };
 

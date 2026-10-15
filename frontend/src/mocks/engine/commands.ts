@@ -293,7 +293,8 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   return publicDoc(next);
 }
 
-export function cancel(st: MockState, id: string, version: number, reasonCode: string, reasonText: string, actor: Actor): Doc {
+/** `opts.correction`: the cancel is a step of a correction plan, so its reversal follows the correction rule (original date while open) instead of today. */
+export function cancel(st: MockState, id: string, version: number, reasonCode: string, reasonText: string, actor: Actor, opts?: { correction?: boolean }): Doc {
   const d = getDoc(st, id);
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_cancellable', 'ยกเลิกได้เฉพาะเอกสารที่ออกแล้ว');
   checkVersion(d, version);
@@ -309,7 +310,7 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
   for (const l of released) if (l.kind === 'settles' || l.kind === 'adjusts') recomputeSettlement(st, l.to);
   const j = st.journals.find((x) => x.docId === id);
   const last = j?.preview.entries[j.preview.entries.length - 1];
-  if (j && last && last.kind !== 'reversal') j.preview = { entries: [...j.preview.entries, reverseEntry(st, d.companyId, last)] };
+  if (j && last && last.kind !== 'reversal') j.preview = { entries: [...j.preview.entries, (opts?.correction ? correctionReversal : reverseEntry)(st, d.companyId, last)] };
   logActivity(st, id, actor, 'cancel', reasonText);
   logAudit(st, actor, d.companyId, 'doc.cancel', id, { status: d.status }, { status: 'cancelled', reasonCode });
   return publicDoc(next);

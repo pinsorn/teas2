@@ -173,8 +173,9 @@ export function checkInvariants(st: MockState): string[] {
       if (e.kind === 'original' && !e.late) ok = !!d.issuedAt && !!p.closedAt && Date.parse(d.issuedAt) <= Date.parse(p.closedAt); // an original in a closed month was issued before the close
       else if (e.late) ok = e.date >= firstOpenDate(st, d.companyId) && !isClosed(st, d.companyId, e.date);
       else {
-        const at = e.kind === 'reversal' ? d.cancel?.at : st.revisions.filter((r) => r.docId === d.id).map((r) => r.at).sort().pop();
-        ok = !!at && !!p.closedAt && Date.parse(at) <= Date.parse(p.closedAt);
+        const revs = st.revisions.filter((r) => r.docId === d.id && r.revision > 0).map((r) => r.at).sort();
+        const stamps = e.kind === 'reversal' ? [d.cancel?.at, ...revs] : [st.revisions.filter((r) => r.docId === d.id).map((r) => r.at).sort().pop()]; // a reversal is a cancel's or a revision's (correction)
+        ok = !!p.closedAt && stamps.some((at) => !!at && Date.parse(at) <= Date.parse(p.closedAt!));
       }
       if (!ok) out.push(`${d.id} ${e.kind} entry ${e.date}: dated in closed period ${p.month} but was posted after it closed and is not a late entry in the first open period`);
     }

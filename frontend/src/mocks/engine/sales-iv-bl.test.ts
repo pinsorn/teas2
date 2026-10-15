@@ -6,7 +6,7 @@ import { seed, type MockState } from '../store';
 import { buildChain } from './chain';
 import { CONVERSIONS } from '@/domain/doc-types';
 import { calc, cancel, compute, convert, createDraft, issue, publicDoc, reissue, revise, updateDraft } from './commands';
-import { buildPlan } from './corrections';
+import { buildPlan, correctionPlan, executePlan } from './corrections';
 import { checkInvariants } from './invariants';
 import { toSatang } from './money';
 import { PAPER_BUILDERS } from './paper';
@@ -300,5 +300,37 @@ describe('S3 fix round 1 (Opus review)', () => {
       expect(code(() => issue(st, draft.id, draft.version, me))).toBe('doc.total_not_positive');
     }
     expect(() => revise(st, d.id, ivBody(d, { price: '0.00' }), d.version, 'x', me)).toThrow('ยกเลิก');
+  });
+
+  it('R1: after a revise in an open month, closing that month later is not a violation (the reversal is judged by its revision stamp)', () => {
+    const d = get('iv-p1');
+    revise(st, d.id, ivBody(d, { price: '9000.00' }), d.version, 'เพิ่มยอด', me);
+    const p = st.periods.find((x) => x.companyId === NV && x.month === '2026-09')!;
+    p.status = 'closed'; p.closedAt = '2099-12-31T09:00:00+07:00'; // closed after the posting
+    expect(checkInvariants(st)).toEqual([]);
+    p.closedAt = '2000-01-01T09:00:00+07:00'; // closed BEFORE the posting: the reversal is a real violation
+    expect(checkInvariants(st).join(' | ')).toMatch(/iv-p1 reversal entry 2026-09-20: dated in closed period/);
+  });
+
+  it('R2: the cancel step of a correction plan reverses on the receipt own date: September bank nets once', () => {
+    const ti = st.docs.find((x) => x.type === 'TI' && x.status === 'settled' && !x.locks.some((l) => l.kind === 'filing') && x.header.documentDate.startsWith('2026-09'))!;
+    const rcLink = st.links.find((l) => l.kind === 'settles' && l.to === ti.id && l.active)!;
+    const other = st.parties.find((q) => q.companyId === VAT && q.kind === 'customer' && q.id !== ti.header.partyId && q.vatRegistered && q.taxId)!;
+    const plan = correctionPlan(st, ti.id, { header: { ...ti.header, partyId: other.id }, lines: ti.lines }, 'accountant');
+    executePlan(st, plan.planId, plan.planHash, me, 'accountant');
+    const oldRc0 = get(rcLink.from), m = oldRc0.header.documentDate.slice(0, 7);
+    const sep = (docId: string) => st.journals.find((j) => j.docId === docId)!.preview.entries.filter((e) => e.date.startsWith(m)).flatMap((e) => e.lines)
+      .filter((l) => l.accountCode.startsWith('112')).reduce((a, l) => a + sat(l.debit) - sat(l.credit), 0);
+    const oldRc = get(rcLink.from);
+    const rcs = st.docs.filter((x) => x.type === 'RC' && x.replacesId === oldRc.id);
+    expect(oldRc.status).toBe('replaced');
+    expect(st.journals.find((j) => j.docId === oldRc.id)!.preview.entries.map((e) => e.date)).toEqual([oldRc.header.documentDate, oldRc.header.documentDate]);
+    expect(rcs).toHaveLength(1);
+    expect(sep(oldRc.id) + sep(rcs[0].id)).toBe(sat(rcs[0].totals.total)); // old nets to 0, the replacement counts once
+    assertBalanced(st);
+  });
+
+  it('R3: no receipt is created by conversion from a TI either', () => {
+    expect(CONVERSIONS.TI).toEqual(['BL', 'CN', 'DN']);
   });
 });

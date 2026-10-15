@@ -152,7 +152,7 @@ function runStep(w: MockState, s: CorrectionStep, proposed: Body, actor: Actor, 
     revise(w, doc.id, proposed, doc.version, 'แก้ไขตามแผนการแก้ไข', actor);
     touch(doc.id);
   } else if (s.action === 'cancel') {
-    cancel(w, doc.id, doc.version, 'CORRECTION', 'ยกเลิกเพื่อแก้ไขเอกสารต้นทาง', actor);
+    cancel(w, doc.id, doc.version, 'CORRECTION', 'ยกเลิกเพื่อแก้ไขเอกสารต้นทาง', actor, { correction: true });
     touch(doc.id);
   } else if (s.action === 'reissue' && doc.type === 'RC') {
     // the receipt was cancelled by the previous step: issue its replacement (original date) with ONE settlement per link it had, then mark the old one replaced
