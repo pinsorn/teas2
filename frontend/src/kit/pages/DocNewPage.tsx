@@ -70,12 +70,16 @@ async function adjustPrefill(d: DocDescriptor, me: Me, tiId: string): Promise<Do
   if (d.type === 'DN') lines = lines.map((l) => ({ ...l, qty: '0' }));
   else {
     const chain = await endpoints.getChain(d.adjusts!, tiId);
-    const ids = chain.edges.filter((e) => e.kind === 'adjusts' && e.active && e.to === tiId && chain.nodes.find((n) => n.id === e.from)?.type === 'CN').map((e) => e.from);
-    const credits = await Promise.all(ids.map((id) => endpoints.getDoc('CN', id)));
-    if (credits.length) { // the server's own nets (one compute): the invoice's lines, then every live credit's lines
-      const all = [...ti.lines.map((l, i) => ({ ...l, id: `t${i}` })), ...credits.flatMap((c, j) => c.lines.map((l, i) => ({ ...l, id: `c${j}-${i}`, vatOverride: undefined })))];
+    const ids = chain.edges.filter((e) => e.kind === 'adjusts' && e.active && e.to === tiId).map((e) => e.from); // live CNs, and DNs (a stored negative DN line is a credit too)
+    const notes = await Promise.all(ids.map((id) => endpoints.getDoc(chain.nodes.find((n) => n.id === id)!.type, id)));
+    if (notes.length) { // the server's own nets (one compute): the invoice's lines, then every live note's lines
+      const all = [...ti.lines.map((l, i) => ({ ...l, id: `t${i}` })), ...notes.flatMap((c, j) => c.lines.map((l, i) => ({ ...l, id: `c${j}-${i}`, vatOverride: undefined })))];
       const net = new Map((await endpoints.computeDocument(d.adjusts!, { header: ti.header, lines: all })).lines.map((r) => [r.id, sat(r.net)] as const));
-      const left = ti.lines.map((l, i) => net.get(`t${i}`)! - credits.reduce((a, c, j) => a + c.lines.reduce((b, cl, k) => b + (cl.sourceLineId === l.id ? net.get(`c${j}-${k}`)! : 0), 0), 0));
+      const credit = (c: Doc, j: number, l: Doc['lines'][number], k: number) => { // a CN line credits its net; a DN line only when negative
+        const x = net.get(`c${j}-${k}`)!;
+        return l.sourceLineId && (c.type === 'CN' ? x : x < 0 ? -x : 0);
+      };
+      const left = ti.lines.map((l, i) => net.get(`t${i}`)! - notes.reduce((a, c, j) => a + c.lines.reduce((b, cl, k) => b + (cl.sourceLineId === l.id ? credit(c, j, cl, k) || 0 : 0), 0), 0));
       lines = lines.flatMap((l, i) => (left[i] <= 0 ? [] : left[i] === net.get(`t${i}`) ? [l] : [{ ...l, qty: '1', unitPrice: (left[i] / 100).toFixed(2), discountPct: undefined }]));
     }
   }

@@ -113,12 +113,12 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   const wide = useWide();
   const previewOpen = previewChoice ?? wide;
 
-  // Blank rows are never sent; money/quantity text is normalised to the wire format.
+  // Blank rows are never sent (nor, on a debit note opened from an invoice, a line left at quantity 0 - the prefill starts them there); money/quantity text is normalised to the wire format.
   const payload = useMemo<DocInput>(() => ({
     header,
-    lines: lines.filter((l) => !isBlankLine(l)).map((l) => ({ ...l, qty: qtyText(l.qty), unitPrice: moneyText(l.unitPrice) })),
+    lines: lines.filter((l) => !isBlankLine(l) && !(d.type === 'DN' && d.adjusts && Number(qtyText(l.qty)) === 0)).map((l) => ({ ...l, qty: qtyText(l.qty), unitPrice: moneyText(l.unitPrice) })),
     ...(d.settles || d.groups ? { allocations } : {}),
-  }), [header, lines, allocations, d.settles, d.groups]);
+  }), [header, lines, allocations, d.settles, d.groups, d.type, d.adjusts]);
   const payloadJson = JSON.stringify(payload);
 
   const invalidate = () => {

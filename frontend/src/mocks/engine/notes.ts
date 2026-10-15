@@ -97,8 +97,10 @@ export function noteProblem(st: MockState, companyId: string, type: DocType, bod
   if (type !== 'CN') return undefined; // a debit note has no cap
   const left = netsOf(st, ti);
   for (const n of others(st, ti, selfId)) {
-    if (n.type !== 'CN') continue;
-    for (const l of n.lines) if (l.sourceLineId && left.has(l.sourceLineId)) left.set(l.sourceLineId, left.get(l.sourceLineId)! - netOf(l, !!n.header.priceIncludesVat));
+    for (const l of n.lines) { // a credit is a CN line; a negative referenced DN line (stored data - the engine no longer builds one) is a credit as well, a positive one never raises the cap
+      const x = netOf(l, !!n.header.priceIncludesVat);
+      if (l.sourceLineId && left.has(l.sourceLineId) && (n.type === 'CN' || x < 0)) left.set(l.sourceLineId, left.get(l.sourceLineId)! - (n.type === 'CN' ? x : -x));
+    }
   }
   const taken = new Map<string, number>();
   for (const l of body.lines) if (l.sourceLineId && left.has(l.sourceLineId)) taken.set(l.sourceLineId, (taken.get(l.sourceLineId) ?? 0) + netOf(l, incl));

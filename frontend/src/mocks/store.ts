@@ -1,9 +1,10 @@
 import type {
   ActivityEntry, Allocation, AuditEntry, ChainEdge, Company, CorrectionPlan, Doc, DocHeader, DocLine, ItemSummary, JournalPreview, Membership, PartySummary, Revision, Role,
 } from '@/domain/types';
-import { DOC_TYPES } from '@/domain/doc-types';
+import { DOC_TYPES, LIVE } from '@/domain/doc-types';
 import { recomputeSettlement } from './engine/commands';
 import { ledgerFor } from './engine/ledger';
+import { adjustSnapshot, isNote } from './engine/notes';
 import type { Period } from './engine/periods';
 import type { PostingRule } from './engine/posting';
 import type { BankAccount } from './fixtures/bank-accounts';
@@ -51,6 +52,10 @@ export function buildSeedState(role: Role = 'accountant'): MockState {
     if (d.status === 'draft') continue;
     const preview = ledgerFor(s, d);
     if (preview.entries.length) s.journals.push({ docId: d.id, preview });
+  }
+  for (const d of s.docs) { // seeded notes enter directly: give them the ม.86/10 snapshot an issued note has, so the paper never recomputes them
+    const ti = isNote(d.type) && LIVE.includes(d.status) && d.header.refDocId ? s.docs.find((x) => x.id === d.header.refDocId) : undefined;
+    if (ti && !d.adjustSnapshot) d.adjustSnapshot = adjustSnapshot(s, ti, d);
   }
   runSeed(s, SEED_SPECS); // later groups' documents, produced through the engine (D-23)
   return s;

@@ -268,7 +268,10 @@ export function checkInvariants(st: MockState): string[] {
     d.lines.forEach((l, i) => {
       if (!l.sourceLineId) return;
       const k = `${ti.id}|${l.sourceLineId}`, c = credited.get(k) ?? { net: 0, vat: 0, debit: false };
-      if (d.type === 'CN') credited.set(k, { ...c, net: c.net + sat(rows.lines[i].net, d.id), vat: c.vat + sat(rows.lines[i].vat, d.id) }); else credited.set(k, { ...c, debit: true });
+      const net = sat(rows.lines[i].net, d.id), vat = sat(rows.lines[i].vat, d.id);
+      if (d.type === 'CN') credited.set(k, { ...c, net: c.net + net, vat: c.vat + vat });
+      else if (net < 0) credited.set(k, { ...c, net: c.net - net, vat: c.vat - vat }); // a negative referenced debit line is a credit as well
+      else credited.set(k, { ...c, debit: true });
     });
   }
   for (const [k, c] of credited) {

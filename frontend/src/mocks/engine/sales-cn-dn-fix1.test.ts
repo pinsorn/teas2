@@ -135,7 +135,7 @@ describe('F4: unchanged lines keep their stored VAT (plan and reissue), as revis
 });
 
 describe('F5: the printed ม.86/10 values are a snapshot taken at issue', () => {
-  it('A 100, B 200 on 1,000: reissuing A leaves B printing 700.00; A prints 700 after its reissue; cancelling A later does not move B', () => {
+  it('A 100, B 200 on 1,000: reissuing A leaves B printing 700.00 and A\' still 900.00 (it keeps A\'s values, R2); cancelling A\' later does not move B', () => {
     const t = ti([L('l1', 'S7', '1000.00')]);
     const a = note('CN', t, [nl('a', 'l1', 'S7', '100.00')]);
     const b = note('CN', t, [nl('a', 'l1', 'S7', '200.00')]);
@@ -144,8 +144,8 @@ describe('F5: the printed ม.86/10 values are a snapshot taken at issue', () =>
     expect(get(b.id).adjustSnapshot).toEqual({ originalNet: '1000.00', correctNet: '700.00', diffNet: '200.00', vat: '14.00' });
     const re = reissue(st, a.id, { header: { ...a.header, reasonCode: 'DISCOUNT' }, lines: strip(a.lines) }, me, 'เหตุผล');
     expect(paper(b.id).adjusts).toMatchObject({ correctNet: '700.00' }); // before: 800.00
-    expect(paper(re.id).adjusts).toMatchObject({ correctNet: '700.00', diffNet: '100.00' });
-    expect(re.adjustSnapshot).toEqual({ originalNet: '1000.00', correctNet: '700.00', diffNet: '100.00', vat: '7.00' });
+    expect(paper(re.id).adjusts).toMatchObject({ correctNet: '900.00', diffNet: '100.00' });
+    expect(re.adjustSnapshot).toEqual({ originalNet: '1000.00', correctNet: '900.00', diffNet: '100.00', vat: '7.00' });
     cancel(st, re.id, get(re.id).version, 'OTHER', 'x', me);
     expect(paper(b.id).adjusts).toMatchObject({ correctNet: '700.00' });
   });
@@ -154,5 +154,70 @@ describe('F5: the printed ม.86/10 values are a snapshot taken at issue', () =>
     const a = note('CN', t, [nl('a', 'l1', 'S7', '100.00')]);
     delete get(a.id).adjustSnapshot;
     expect(paper(a.id).adjusts).toMatchObject({ correctNet: '900.00' });
+  });
+});
+
+// ---- S5 fix round 2 (Opus re-review R1-R3) ----
+describe('R1: a plan whose lines move in both directions issues a CN (decreases) and a DN (increases), never a signed note', () => {
+  const mixedTi = () => ti([L('l1', 'S7', '100.00'), L('l2', 'Z0', '100.00')]);
+  const toMixed = (t: Doc) => ({ header: t.header, lines: [L('l1', 'S7', '70.00'), L('l2', 'Z0', '200.00')] });
+  it('l1 100 -> 70 (S7), l2 100 -> 200 (Z0): plan = [CN l1 30.00 VAT 2.10, DN l2 100.00]; no negative line on either', () => {
+    const t = mixedTi();
+    const plan = correctionPlan(st, t.id, toMixed(t), 'accountant');
+    expect(plan.steps.map((s) => s.action)).toEqual(['issue_cn', 'issue_dn']);
+    const [cn, dn] = plan.steps.map((s) => s.note!);
+    expect(cn.lines.map((l) => [l.sourceLineId, l.unitPrice, l.vatOverride])).toEqual([['l1', '30.00', '2.10']]);
+    expect(cn.total).toBe('32.10');
+    expect(dn.lines.map((l) => [l.sourceLineId, l.unitPrice, l.vatOverride])).toEqual([['l2', '100.00', '0.00']]);
+    expect(dn.total).toBe('100.00');
+    const r = executePlan(st, plan.planId, plan.planHash, me);
+    expect(r.affected.map((a) => a.type)).toEqual(['CN', 'DN']);
+    expect(checkInvariants(st)).toEqual([]);
+    expect(get(t.id).outstanding).toBe('274.90'); // 207.00 - 32.10 + 100.00
+  });
+  it('the plan CN counts against the cap: a later user CN on l1 is capped at 70.00 (70.01 refused), and then l1 is whole to the satang', () => {
+    const t = mixedTi();
+    const plan = correctionPlan(st, t.id, toMixed(t), 'accountant');
+    executePlan(st, plan.planId, plan.planHash, me);
+    expect(err(() => note('CN', t, [nl('a', 'l1', 'S7', '70.01')])).code).toBe('cn.exceeds_original');
+    const c = note('CN', t, [nl('a', 'l1', 'S7', '70.00')]);
+    expect(c.totals.vat).toBe('4.90'); // 7.00 - 2.10
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('belt and braces: a stored DN with a negative referenced line is a credit for the cap, and for invariant 10', () => {
+    const t = mixedTi();
+    const d = createDraft(st, VAT, 'DN', { header: { documentDate: '2026-10-14', refDocId: t.id, reasonCode: 'PRICE_INCREASE' }, lines: [nl('a', 'l1', 'S7', '-30.00', { vatOverride: '-2.10' }), nl('b', 'l2', 'Z0', '100.00', { vatOverride: '0.00' })] }, me, 'neg-dn');
+    issue(st, d.id, d.version, me); // the engine path (lines carry their VAT)
+    expect(err(() => note('CN', t, [nl('a', 'l1', 'S7', '70.01')])).code).toBe('cn.exceeds_original');
+    note('CN', t, [nl('a', 'l1', 'S7', '70.00')]);
+    expect(checkInvariants(st)).toEqual([]);
+    const s2 = structuredClone(st);
+    const cn = s2.docs.filter((x) => x.type === 'CN' && x.header.refDocId === t.id).pop()!;
+    cn.lines[0].unitPrice = '100.00'; cn.lines[0].vatOverride = '7.00';
+    expect(checkInvariants(s2).join(' | ')).toMatch(/exceeds the line's net/);
+  });
+  it('a plan whose deltas all go one way is unchanged: one note', () => {
+    const t = mixedTi();
+    const plan = correctionPlan(st, t.id, { header: t.header, lines: [L('l1', 'S7', '70.00'), L('l2', 'Z0', '90.00')] }, 'accountant');
+    expect(plan.steps.map((s) => s.action)).toEqual(['issue_cn']);
+    expect(plan.steps[0].note!.lines.map((l) => l.unitPrice)).toEqual(['30.00', '10.00']);
+  });
+});
+
+describe('R2 / R3: the snapshot is carried by a reissue and exists on every seeded note', () => {
+  it('a reason-only reissue of A carries A\'s snapshot unchanged, whatever was issued after A', () => {
+    const t = ti([L('l1', 'S7', '1000.00')]);
+    const a = note('CN', t, [nl('a', 'l1', 'S7', '100.00')]);
+    note('CN', t, [nl('a', 'l1', 'S7', '200.00')]);
+    note('DN', t, [nl('a', 'l1', 'S7', '50.00')]);
+    const re = reissue(st, a.id, { header: { ...a.header, reasonCode: 'DISCOUNT' }, lines: strip(a.lines) }, me, 'เหตุผล');
+    expect(re.adjustSnapshot).toEqual(get(a.id).adjustSnapshot);
+    expect(re.adjustSnapshot!.correctNet).toBe('900.00');
+    expect(paper(re.id).adjusts).toMatchObject({ correctNet: '900.00' });
+  });
+  it('every seeded CN / DN has a snapshot (the paper fallback is never used for them)', () => {
+    const notes = st.docs.filter((d) => (d.type === 'CN' || d.type === 'DN') && d.status !== 'draft');
+    expect(notes.length).toBeGreaterThan(2);
+    for (const d of notes.filter((x) => x.header.refDocId && x.issuedAt)) expect(d.adjustSnapshot, d.id).toBeDefined();
   });
 });

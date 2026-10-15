@@ -19,57 +19,61 @@ function fnv(s: string): string {
 type Stored = MockState['docs'][number];
 /** The CN / DN a correction would issue, built by the engine: one line per invoice line that changed (it references that line, so the per-line credit cap sees it),
  *  carrying that line's net AND VAT change between the original and the proposed document (rule B: VAT is fixed per line via `vatOverride`, not recomputed on the difference);
- *  what has no invoice line to reference (a line the proposal adds, the new side of a code shift) is ONE signed line per tax code. `full` = credit the whole document instead.
- *  Per tax code the sums are the code's actual net and VAT change. Null = nothing to adjust. */
-function noteFor(d: Stored, p: Body, full: boolean, vat: boolean): CorrectionNote | null {
+ *  what has no invoice line to reference (a line the proposal adds, the new side of a code shift) is ONE line per tax code. A change that goes both ways is TWO notes
+ *  (carry 4: no combined note): a CN with the decreasing lines, then a DN with the increasing ones, so no line is ever negative and every credit lands in a CN.
+ *  `full` = credit the whole document instead (one CN). Per tax code the sums are the code's actual net and VAT change. [] = nothing to adjust. */
+function noteFor(d: Stored, p: Body, full: boolean, vat: boolean): CorrectionNote[] {
   const orig: Body = { header: d.header, lines: d.lines };
-  let lines: DocLine[];
-  let type: 'CN' | 'DN';
-  if (full) { // mirror the original lines so the credit clears the balance to the satang
-    type = 'CN';
-    const own = calc(orig, vat).lines;
-    lines = d.lines.map((l, i) => ({ ...l, id: `l${i + 1}`, itemId: undefined, sourceLineId: l.id, vatOverride: own[i].vat }));
-  } else {
-    // rule B: each changed line carries the ACTUAL change of the engine's own net and VAT (both with per-line rounding); the sums per tax code are then exact
-    const was = calc(orig, vat).lines, will = calc(p, vat).lines;
-    type = toSatang(calc(p, vat).totals.total) < toSatang(d.totals.total) ? 'CN' : 'DN';
-    const sign = type === 'CN' ? -1 : 1;
-    type Entry = { code: TaxCode; net: number; vat: number; src?: DocLine };
-    const entries: Entry[] = [];
-    d.lines.forEach((o, i) => {
-      const j = p.lines.findIndex((x) => x.id === o.id), P = j < 0 ? undefined : p.lines[j];
-      const on = toSatang(was[i].net), ov = toSatang(was[i].vat), pn = j < 0 ? 0 : toSatang(will[j].net), pv = j < 0 ? 0 : toSatang(will[j].vat);
-      if (P && P.taxCode !== o.taxCode) { // a code shift: the old code's side references the invoice line, the new code's side is a line of its own
-        entries.push({ code: o.taxCode, net: sign * -on, vat: sign * -ov, src: o }, { code: P.taxCode, net: sign * pn, vat: sign * pv });
-      } else entries.push({ code: o.taxCode, net: sign * (pn - on), vat: sign * (pv - ov), src: o });
+  /** One note from its lines; refused when it adjusts nothing. */
+  const build = (type: 'CN' | 'DN', lines: DocLine[], whole: boolean): CorrectionNote => {
+    const incl = whole && !!d.header.priceIncludesVat;
+    const computed = calc({ header: { ...d.header, priceIncludesVat: incl }, lines }, vat);
+    const total = toSatang(computed.totals.total);
+    if (total <= 0 || (whole && total !== toSatang(d.totals.total))) {
+      throw new MockError(422, 'correction.unrepresentable', 'ไม่สามารถออกใบลดหนี้/ใบเพิ่มหนี้ที่ยอดไม่เป็นบวกได้');
+    }
+    const taxLines = [...new Set(lines.map((l) => l.taxCode))].map((taxCode) => {
+      const rows = computed.lines.filter((_, i) => lines[i].taxCode === taxCode);
+      const sum = (key: 'net' | 'vat' | 'total') => fromSatang(rows.reduce((n, r) => n + toSatang(r[key]), 0));
+      return { taxCode, net: sum('net'), vat: sum('vat'), total: sum('total') };
     });
-    p.lines.forEach((P, j) => { if (!d.lines.some((o) => o.id === P.id)) entries.push({ code: P.taxCode, net: sign * toSatang(will[j].net), vat: sign * toSatang(will[j].vat) }); });
-    const kept = entries.filter((x) => x.net !== 0 || x.vat !== 0);
-    const own = kept.filter((x) => x.src);
-    const free = [...new Set(kept.filter((x) => !x.src).map((x) => x.code))].map((code) => ({ code, net: kept.filter((x) => !x.src && x.code === code).reduce((a, x) => a + x.net, 0), vat: kept.filter((x) => !x.src && x.code === code).reduce((a, x) => a + x.vat, 0) }));
-    lines = [
-      ...own.map((x, i): DocLine => ({ id: `l${i + 1}`, description: x.src!.description, qty: '1', unit: 'งาน', unitPrice: fromSatang(x.net), taxCode: x.code, vatOverride: fromSatang(x.vat), sourceLineId: x.src!.id })),
-      ...free.filter((x) => x.net !== 0 || x.vat !== 0).map((x, i): DocLine => ({ id: `l${own.length + i + 1}`, description: `ปรับปรุงใบกำกับภาษี ${d.number} (${x.code})`, qty: '1', unit: 'งาน', unitPrice: fromSatang(x.net), taxCode: x.code, vatOverride: fromSatang(x.vat) })),
-    ];
+    return { type, lines, total: computed.totals.total, priceIncludesVat: incl, fullCredit: whole, taxLines };
+  };
+  if (full) { // mirror the original lines so the credit clears the balance to the satang
+    const own = calc(orig, vat).lines;
+    return [build('CN', d.lines.map((l, i) => ({ ...l, id: `l${i + 1}`, itemId: undefined, sourceLineId: l.id, vatOverride: own[i].vat })), true)];
   }
-  if (!lines.length && calc(p, vat).totals.total === d.totals.total && !full) return null;
-  const incl = full && !!d.header.priceIncludesVat;
-  const computed = calc({ header: { ...d.header, priceIncludesVat: incl }, lines }, vat);
-  const total = toSatang(computed.totals.total);
-  // a difference note's total is |proposed - original| by construction (rule B); only a note that adjusts nothing is refused
-  if (!full && total > 0 && total !== Math.abs(toSatang(calc(p, vat).totals.total) - toSatang(d.totals.total))) {
-    throw new MockError(500, 'engine.invariant', 'note total differs from |original - proposed| (rule B violated)'); // defence in depth, never expected
-  }
-  if (total <= 0 || (full && total !== toSatang(d.totals.total))) {
-    throw new MockError(422, 'correction.unrepresentable', 'ไม่สามารถออกใบลดหนี้/ใบเพิ่มหนี้ที่ยอดไม่เป็นบวกได้');
-  }
-  const codes = [...new Set(lines.map((l) => l.taxCode))];
-  const taxLines = codes.map((taxCode) => {
-    const rows = computed.lines.filter((_, i) => lines[i].taxCode === taxCode);
-    const sum = (key: 'net' | 'vat' | 'total') => fromSatang(rows.reduce((n, r) => n + toSatang(r[key]), 0));
-    return { taxCode, net: sum('net'), vat: sum('vat'), total: sum('total') };
+  // rule B: each changed line carries the ACTUAL change of the engine's own net and VAT (both with per-line rounding); the sums per tax code are then exact
+  const was = calc(orig, vat).lines, will = calc(p, vat).lines;
+  type Entry = { code: TaxCode; net: number; vat: number; src?: DocLine }; // the change, proposed - original
+  const entries: Entry[] = [];
+  d.lines.forEach((o, i) => {
+    const j = p.lines.findIndex((x) => x.id === o.id), P = j < 0 ? undefined : p.lines[j];
+    const on = toSatang(was[i].net), ov = toSatang(was[i].vat), pn = j < 0 ? 0 : toSatang(will[j].net), pv = j < 0 ? 0 : toSatang(will[j].vat);
+    if (P && P.taxCode !== o.taxCode) { // a code shift: the old code's side references the invoice line, the new code's side is a line of its own
+      entries.push({ code: o.taxCode, net: -on, vat: -ov, src: o }, { code: P.taxCode, net: pn, vat: pv });
+    } else entries.push({ code: o.taxCode, net: pn - on, vat: pv - ov, src: o });
   });
-  return { type, lines, total: computed.totals.total, priceIncludesVat: incl, fullCredit: full, taxLines };
+  p.lines.forEach((P, j) => { if (!d.lines.some((o) => o.id === P.id)) entries.push({ code: P.taxCode, net: toSatang(will[j].net), vat: toSatang(will[j].vat) }); });
+  const kept = entries.filter((x) => x.net !== 0 || x.vat !== 0);
+  const notes = (['CN', 'DN'] as const).flatMap((type) => {
+    const k = type === 'CN' ? -1 : 1;
+    const mine = kept.filter((x) => (x.net < 0 || (x.net === 0 && x.vat < 0)) === (type === 'CN'));
+    const own = mine.filter((x) => x.src);
+    const free = [...new Set(mine.filter((x) => !x.src).map((x) => x.code))].map((code) => ({ code, net: mine.filter((x) => !x.src && x.code === code).reduce((a, x) => a + x.net, 0), vat: mine.filter((x) => !x.src && x.code === code).reduce((a, x) => a + x.vat, 0) }));
+    if (!own.length && !free.length) return [];
+    const lines: DocLine[] = [
+      ...own.map((x, i): DocLine => ({ id: `l${i + 1}`, description: x.src!.description, qty: '1', unit: 'งาน', unitPrice: fromSatang(k * x.net), taxCode: x.code, vatOverride: fromSatang(k * x.vat), sourceLineId: x.src!.id })),
+      ...free.map((x, i): DocLine => ({ id: `l${own.length + i + 1}`, description: `ปรับปรุงใบกำกับภาษี ${d.number} (${x.code})`, qty: '1', unit: 'งาน', unitPrice: fromSatang(k * x.net), taxCode: x.code, vatOverride: fromSatang(k * x.vat) })),
+    ];
+    return [build(type, lines, false)];
+  });
+  // the notes together are exactly the change of the document's total (rule B); defence in depth, never expected
+  const net = notes.reduce((a, n) => a + (n.type === 'DN' ? 1 : -1) * toSatang(n.total), 0);
+  if (net !== toSatang(calc(p, vat).totals.total) - toSatang(d.totals.total)) {
+    throw new MockError(500, 'engine.invariant', 'notes differ from the change of the total (rule B violated)');
+  }
+  return notes;
 }
 
 /** Pure: what a correction would do, from the current state. */
@@ -103,13 +107,14 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
     const contentChanged = JSON.stringify(proposed.lines) !== JSON.stringify(d.lines) || !!proposed.header.priceIncludesVat !== !!d.header.priceIncludesVat;
     /** Adds the CN / DN step with the amount the engine will post; false = nothing to adjust (no step shown). */
     const note = (full: boolean) => {
-      const n = noteFor(d, proposed, full, vatOf(st, d.companyId));
-      if (!n) return false;
-      const np = noteProblem(st, d.companyId, n.type, { header: { documentDate: today(), refDocId: d.id, priceIncludesVat: n.priceIncludesVat }, lines: n.lines }); // a plan whose note could not be issued (the per-line cap) is never shown
-      if (np) throw np;
-      add(n.type === 'CN' ? 'issue_cn' : 'issue_dn', d,
-        `${n.type === 'CN' ? 'ออกใบลดหนี้' : 'ออกใบเพิ่มหนี้'} ${n.total} บาท ${full ? 'เต็มจำนวน ' : ''}อ้างอิง ${label}`, n.type === 'CN' ? 'doc.CN.issue' : 'doc.DN.issue', n);
-      return true;
+      const ns = noteFor(d, proposed, full, vatOf(st, d.companyId));
+      for (const n of ns) {
+        const np = noteProblem(st, d.companyId, n.type, { header: { documentDate: today(), refDocId: d.id, priceIncludesVat: n.priceIncludesVat }, lines: n.lines }); // a plan whose note could not be issued (the per-line cap) is never shown
+        if (np) throw np;
+        add(n.type === 'CN' ? 'issue_cn' : 'issue_dn', d,
+          `${n.type === 'CN' ? 'ออกใบลดหนี้' : 'ออกใบเพิ่มหนี้'} ${n.total} บาท ${full ? 'เต็มจำนวน ' : ''}อ้างอิง ${label}`, n.type === 'CN' ? 'doc.CN.issue' : 'doc.DN.issue', n);
+      }
+      return ns.length > 0;
     };
     if (isNote(d.type) && delta !== 0) { // I9: a note keeps its total; a different amount is a new note (cancel this one, issue the right one)
       throw new MockError(422, 'doc.reissue_total_changed', 'ออกใหม่ต้องใช้ยอดเดิม ถ้าต้องการเปลี่ยนยอดให้ยกเลิกเอกสารนี้แล้วออกใหม่');

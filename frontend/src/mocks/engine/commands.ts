@@ -457,7 +457,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   const { outstanding: _o, ...oldRest } = old; void _o;
   put(st, { ...oldRest, status: 'replaced', replacedById: created.id, version: old.version + 1, cancel: { reasonCode: 'CORRECTION', reasonText: reason, at } });
   st.docs.push(created);
-  if (isNote(created.type)) created.adjustSnapshot = adjustSnapshot(st, getDoc(st, created.header.refDocId!), created); // anew: the old note is no longer live
+  if (isNote(created.type)) created.adjustSnapshot = old.adjustSnapshot ?? adjustSnapshot(st, getDoc(st, created.header.refDocId!), created); // a reissue keeps date and total (I9), so it keeps the values the customer holds
   const carried = st.links.filter((l) => l.from === old.id && l.active);
   st.links = st.links.map((l) => (l.from === old.id && l.active ? { ...l, active: false } : l));
   for (const l of carried) {
