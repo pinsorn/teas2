@@ -122,10 +122,18 @@ messages, `screens.ts`.
 - Templates (`/settings/templates`): per printable type: show logo / stamp / signature lines on / off, signature role
   labels (from a fixed list), default notes link to ST1; `TemplatePreview` renders the type's paper with a fixture
   document. Print options are read by `PAPER_BUILDERS`.
+- Images on the paper (every printable type, via the shared paper header / signature block — added 2026-10-15 at
+  Ham's question): the company logo (ST1 upload) replaces the text mark in the header; the issuer's signature image
+  (ST1 user signature) sits on the line of the role that issued the document, with the issuer's name and position
+  under it; the company stamp sits beside the authorised-signatory line. **Invariant: the paper shows the images as
+  they were at issue** — issuing snapshots logo / stamp / signature references onto the document (a later upload or a
+  deleted user never changes an issued paper; revisions re-snapshot). Drafts print without signature and stamp. A
+  template toggle off hides the image; a missing image keeps the empty line (never a broken image).
 
 - [ ] **Step 1: Failing tests** — rate change creates a new effective row and the PV on a date before it keeps the old
   rate; numbering format without `{MM}` on a monthly series refused; a change to an in-use series applies next period;
-  approval rule change alters `submit` behaviour; template toggles change the paper model. e2e: `screenContract` for the
+  approval rule change alters `submit` behaviour; template toggles change the paper model; an issued TI keeps the old
+  logo / signature after a new upload while a new TI shows the new one; a draft prints no signature or stamp. e2e: `screenContract` for the
   four pages (`both`; forbiddenRole operator for tax, accountant for numbering / approvals / templates).
 - [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
 - [ ] **Step 6: Controller commits** — `feat(settings): tax settings, numbering series, approval policy and templates`.
