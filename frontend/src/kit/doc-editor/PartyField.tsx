@@ -51,7 +51,7 @@ export function PartyField({ kind, value, search, onPick, onClear, onPending, ca
           aria-describedby={`${id}-hint`} value={text} data-field="party"
           onChange={(e) => { setText(e.target.value); if (e.target.value !== value?.name) onClear(); /* also cancels a pick whose lookup is still pending */ s.query(e.target.value); }}
           onKeyDown={(e) => { s.onKeyDown(e); }} onBlur={s.blur} />
-        <SuggestList s={s} label={label} noMatch={quick === false ? t('noMatchNeedManage', { permission: 'party.manage', party: label }) : undefined}
+        <SuggestList s={s} label={label} announce={(os) => (os.length === 1 && isCreate(os[0]) ? t('quickCreate', { party: label, name: os[0].create }) : undefined)} noMatch={quick === false ? t('noMatchNeedManage', { permission: 'party.manage', party: label }) : undefined}
           render={(p) => isCreate(p) ? <span>{t('quickCreate', { party: label, name: p.create })}</span> : (
             <span className="flex items-baseline justify-between gap-3">
               <span>{p.name}</span><span className="shrink-0 text-small text-muted-foreground tabular-nums">{p.code}</span>

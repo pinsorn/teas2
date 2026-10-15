@@ -33,8 +33,8 @@ export function useSuggest<T>(search: (q: string) => Promise<T[]>, onPick: (item
 
   const cancel = () => { clearTimeout(timer.current); seq.current++; busy.current = false; enterWaiting.current = false; setNote(undefined); };
   const close = () => { cancel(); setOpen(false); };
-  /** Leaving the box hides the list but keeps a pending Enter alive: the user already asked for the first match. */
-  const blur = () => { blurred.current = true; setOpen(false); };
+  /** Leaving the box hides the list and drops a pending Enter (as any text change does): an Enter queued before the user moved on must not act later, e.g. open a form. */
+  const blur = () => { blurred.current = true; enterWaiting.current = false; setOpen(false); };
   const choose = (item: T) => { close(); cb.current.onPick(item); };
 
   const query = (q: string) => {
@@ -88,11 +88,11 @@ export function useSuggest<T>(search: (q: string) => Promise<T[]>, onPick: (item
 export type Suggest<T> = ReturnType<typeof useSuggest<T>>;
 
 /** The list under the input, plus a polite live region: searching / N results / no results / failed. */
-export function SuggestList<T>({ s, label, render, noMatch }: { s: Suggest<T>; label: string; render: (item: T) => ReactNode; /** Replaces the "no match" text (e.g. to say what the user lacks to add one). */ noMatch?: string }) {
+export function SuggestList<T>({ s, label, render, announce, noMatch }: { s: Suggest<T>; label: string; render: (item: T) => ReactNode; /** Live-region text for a result set that is not a plain "N results" (e.g. only an add option); undefined = the default. */ announce?: (items: T[]) => string | undefined; /** Replaces the "no match" text (e.g. to say what the user lacks to add one). */ noMatch?: string }) {
   const t = useTranslations('docEditor');
   const none = noMatch ?? t('noMatch');
   const say = s.note === 'searching' ? t('searching') : s.note === 'done'
-    ? (s.failed ? t('searchFailed') : s.items.length ? t('results', { count: s.items.length }) : none) : '';
+    ? (s.failed ? t('searchFailed') : s.items.length ? (announce ? announce(s.items) ?? t('results', { count: s.items.length }) : t('results', { count: s.items.length })) : none) : '';
   return (
     <>
       <span role="status" className="sr-only">{say}</span>

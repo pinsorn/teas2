@@ -78,6 +78,10 @@ describe('DocEditor', () => {
     await userEvent.type(screen.getByRole('combobox', { name: 'ลูกค้า' }), 'ไม่มีชื่อนี้');
     expect((await screen.findAllByText(/ต้องมีสิทธิ์ party.manage/)).length).toBeGreaterThan(0);
     expect(screen.queryByRole('option')).toBeNull();
+    await userEvent.keyboard('{Enter}'); // Enter on no match, without the permission, is the old behaviour: the text stays, no form
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('combobox', { name: 'ลูกค้า' })).toHaveValue('ไม่มีชื่อนี้');
+    expect(await screen.findByRole('region', { name: 'ยังขาดอะไร' })).toHaveTextContent('เลือกลูกค้า');
   });
   it('a customer document offers sales items only: a purchase item with a similar name is not suggested', async () => {
     ui();

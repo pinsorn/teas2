@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { HttpResponse, http } from 'msw';
 import { useState } from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tinCheckDigit } from '@/domain/tin';
@@ -116,6 +117,39 @@ describe('quick-create a party from the document editor', () => {
     expect(screen.queryByRole('option')).toBeNull();
     await userEvent.keyboard('{Enter}');
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('the picked party is the saved record, resolved by id: it does not depend on a second search', async () => {
+    testServer.use(http.get('*/bff/v1/parties', ({ request }) => (new URL(request.url).searchParams.get('q') === 'V13'
+      ? HttpResponse.json({ items: [] }) : undefined)));
+    mount({ canCreate: true });
+    await userEvent.type(screen.getByRole('combobox', { name: 'ผู้ขาย' }), NAME);
+    await userEvent.click(await screen.findByRole('option', { name: /เพิ่มผู้ขาย/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'เพิ่มผู้ขาย' });
+    await waitFor(() => expect(within(dialog).getByLabelText('รหัส')).toHaveValue('V13'));
+    await userEvent.type(within(dialog).getByLabelText('เลขประจำตัวผู้เสียภาษี'), TIN);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'บันทึก' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByLabelText('picked')).toHaveTextContent(loadState().parties.find((p) => p.name === NAME)!.id);
+  });
+
+  it('an Enter queued before the user leaves the box is dropped: no form pops up afterwards', async () => {
+    mount({ canCreate: true });
+    const box = screen.getByRole('combobox', { name: 'ผู้ขาย' });
+    await userEvent.type(box, NAME + '{Enter}'); // inside the debounce window, so the Enter waits for the results
+    await userEvent.tab();
+    await new Promise((r) => setTimeout(r, 400));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(box).toHaveValue(NAME);
+  });
+
+  it('the live region announces the add option, not "1 results"', async () => {
+    mount({ canCreate: true });
+    await userEvent.type(screen.getByRole('combobox', { name: 'ผู้ขาย' }), NAME);
+    await screen.findByRole('option', { name: /เพิ่มผู้ขาย/ });
+    const status = screen.getAllByRole('status').find((s) => s.textContent)!;
+    expect(status).toHaveTextContent(`+ เพิ่มผู้ขาย “${NAME}”`);
+    expect(status).not.toHaveTextContent(/พบ d+ รายการ/);
   });
 
   it('a host that does not opt in (canCreate unset) behaves as before: plain "no match", no option', async () => {
