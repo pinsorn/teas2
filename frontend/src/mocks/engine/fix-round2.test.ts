@@ -3,7 +3,7 @@ import type { DocHeader, DocLine } from '@/domain/types';
 import { USER as U } from '../fixtures/documents';
 import { fixtureIds } from '../fixtures/ids';
 import { buildSeedState, type MockState } from '../store';
-import { addAdjustment, cancel, compute, createDraft, issue, revise } from './commands';
+import { cancel, compute, createDraft, issue, revise } from './commands';
 import { correctionPlan, executePlan } from './corrections';
 import { checkInvariants } from './invariants';
 import { toSatang } from './money';
@@ -60,9 +60,8 @@ describe('finding 4 residual: compute / revise of an existing mixed-party or cre
     const st = buildSeedState();
     const a = get(st, fixtureIds(st).rcTargetsA);
     rcOf(st, [{ targetId: a.id, targetType: 'TI', amount: a.outstanding! }], hdr('pc-01'), 'p1');
-    const dn = createDraft(st, 'co-vat', 'DN', { header: hdr('pc-01'), lines: [ln({ taxCode: 'S7' })] }, U, 'dn');
-    const dnDone = issue(st, dn.id, dn.version, U);
-    addAdjustment(st, dnDone.id, a.id, dnDone.totals.total);
+    const dn = createDraft(st, 'co-vat', 'DN', { header: hdr('pc-01', { refDocId: a.id, reasonCode: 'PRICE_INCREASE' }), lines: [ln({ taxCode: 'S7' })] }, U, 'dn');
+    const dnDone = issue(st, dn.id, dn.version, U); // issue links the note to its invoice
     const rc2 = rcOf(st, [{ targetId: a.id, targetType: 'TI', amount: '1070.00', wht: '10.00' }], hdr('pc-01'), 'p2'); // a certificate needs withheld tax (M3)
     cancel(st, dnDone.id, dnDone.version, 'OTHER', 'x', U);
     expect(out(st, a.id)).toBe(-107000);

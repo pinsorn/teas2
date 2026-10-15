@@ -83,6 +83,11 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCa
             {(p) => <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t('receive')}</span> : <Link href={receiveHref}>{t('receive')}</Link>}</Button>}
           </Guarded>
         ) : null}
+        {d.type === 'TI' && live ? (['CN', 'DN'] as const).map((n) => ( // a note is made from the invoice it adjusts (the lines come from the server on ?adjust=)
+          <Guarded key={n} why={missing(`doc.${n}.create`)}>
+            {(p) => <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t(n === 'CN' ? 'issueCn' : 'issueDn')}</span> : <Link href={`${n === 'CN' ? '/sales/credit-notes' : '/sales/debit-notes'}/new?adjust=${doc.id}`}>{t(n === 'CN' ? 'issueCn' : 'issueDn')}</Link>}</Button>}
+          </Guarded>
+        )) : null}
         {live && CLOSEABLE.includes(d.type) && !doc.marks?.closed ? (
           <Guarded why={missing(d.permissions.issue) ?? (nothingRemaining ? t('whyNothingRemaining') : undefined)}>
             {(p) => <Button {...p} variant="outline" onClick={onCloseRemainder}>{t('closeRemainder')}</Button>}

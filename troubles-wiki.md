@@ -22,6 +22,17 @@ Entry format — terse, greppable by symptom:
 
 <!-- entries below — newest on top -->
 
+## Unit: `DocEditor.settle.test.tsx` "a deposit alone completes a VAT-company receipt" fails at 5180 ms in the FULL `vitest run` only
+- **Root cause:** the test needs ~1.2 s alone but crosses vitest's 5 s default under whole-suite parallel load (79 files at once). Pre-existing: the same failure reproduces on the S4 base commit b514b87 (2 of 3 full runs there).
+- **Fix:** none needed for a change that does not touch it - run the file alone (`corepack pnpm vitest run src/kit/doc-editor/DocEditor.settle.test.tsx`, 6/6) and say so in the report. Do not weaken the assertions; a longer `timeout` on that test is the right fix when someone owns it.
+- **Seen:** 2026-10-16, SP1c S5
+
+## A credit / debit note without `refDocId` + a reason is `doc.incomplete`; a CN line without `sourceLineId` is `cn.line_not_referenced`
+- **Symptom:** an older test (or a script) that creates a CN / DN with only a party and lines fails at `issue`, or its `addAdjustment(...)` import is gone.
+- **Root cause:** S5 made the engine own the note's reference, customer, VAT and link: `issue` writes the one `adjusts` link itself (there is no `addAdjustment` any more).
+- **Fix:** header `{ documentDate, refDocId: <TI id>, reasonCode: 'RETURN' | ... }`, each CN line `sourceLineId: <TI line id>`; drop the manual link call. A seeded fixture note goes through `SALES_SPECS` (runSeed), never straight into `st.docs`.
+- **Seen:** 2026-10-16, SP1c S5
+
 ## e2e: after confirming a correction plan the page sometimes shows the ORIGINAL (replaced) document, sometimes the new one
 - **Root cause:** `useCorrectionFlow.confirm` does `await invalidateQueries` then `router.push(new doc)`; the edit page's effect `router.replace(view(old doc))` (the old document is no longer editable) races with that push, and either can win.
 - **Fix:** do not assert where the plan lands. Wait for the API outcome (`expect.poll` on the original's status, then read `replacedById`) as `e2e/sales-rc.spec.ts` does. (The flow itself is not changed here; the TI loop test only looks at the chain tab, which exists on both.)

@@ -234,7 +234,12 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
       <fieldset disabled={issuingNow} className={cn('m-0 grid min-w-0 gap-6 border-0 p-0', wide && previewOpen && 'grid-cols-[minmax(0,1fr)_minmax(0,28rem)]')}>
         <div className="grid min-w-0 gap-6">
           <section className="grid gap-4 rounded-xl bg-card p-4 ring-1 ring-foreground/10 md:grid-cols-2">
-            {partyKind && (
+            {d.adjusts ? ( // a note's customer is its invoice's: the server fills it, the editor only shows it
+              <div className="grid gap-1 md:col-span-2">
+                <p className="text-small text-muted-foreground">{t('adjust.partyFixed')}</p>
+                <p className="text-body font-medium" data-field="party-fixed">{party?.name ?? '-'}</p>
+              </div>
+            ) : partyKind && (
               <div className="md:col-span-2">
                 <PartyField kind={partyKind} value={party} onPick={(p) => void onPickParty(p)} canCreate={me ? me.permissions.includes('party.manage') : undefined}
                   onPending={setPartyBusy} onClear={() => { pickGen.current++; setPicking(false); setParty(undefined); setAllocations([]); setHeader((h) => ({ ...h, partyId: undefined })); }}

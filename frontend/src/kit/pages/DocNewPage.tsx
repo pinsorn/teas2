@@ -13,6 +13,7 @@ import { isTypeAvailable, LIVE } from '@/domain/doc-types';
 import { DocEditor } from '@/kit/doc-editor/DocEditor';
 import { settleable } from '@/kit/doc-editor/SettlementPanel';
 import { ErrorState } from '@/kit/states/ErrorState';
+import { AdjustPicker } from './AdjustPicker';
 import { LoadingState } from '@/kit/states/LoadingState';
 import { endpoints } from '@/lib/api/endpoints';
 import { qk } from '@/lib/query/keys';
@@ -60,6 +61,18 @@ async function receiptPrefill(d: DocDescriptor, me: Me, settle: string | null, f
   return { doc, skipped };
 }
 
+/** A CN / DN opened from its invoice ("ออกใบลดหนี้" on a TI): the customer, the reference and the lines come from the SERVER's invoice; every line keeps the id of the invoice line it credits (the per-line cap reads it). */
+async function adjustPrefill(d: DocDescriptor, me: Me, tiId: string): Promise<Doc> {
+  const ti = await endpoints.getDoc(d.adjusts!, tiId);
+  return {
+    id: '', type: d.type, status: 'draft', correctionClass: d.correctionClass, revision: 0, version: 0,
+    header: { documentDate: me.businessDate, ...(ti.header.partyId ? { partyId: ti.header.partyId } : {}), refDocId: ti.id, ...(ti.number ? { reference: ti.number } : {}), priceIncludesVat: false },
+    ...(ti.party ? { party: ti.party } : {}), totals: { gross: '0.00', discount: '0.00', net: '0.00', vat: '0.00', total: '0.00', amountInWords: '' }, locks: [],
+    createdBy: { kind: 'user', id: me.userId, name: me.displayName },
+    lines: ti.lines.map((l) => ({ ...l, id: crypto.randomUUID(), sourceLineId: l.id, vatOverride: undefined })),
+  };
+}
+
 function SkippedNotice({ skipped }: { skipped: Skipped[] }) {
   const t = useTranslations('docEditor.settlement');
   if (!skipped.length) return null;
@@ -81,7 +94,13 @@ function NewDocument({ d }: { d: DocDescriptor }) {
   // a receipt opened from a document ("รับชำระ" on a TI / IV / BL), read once for the same reason
   const [settle] = useState(() => (d.settles ? sp.get('settle') : null));
   const [fromBl] = useState(() => (d.settles ? sp.get('fromBl') : null));
+  const [adjust] = useState(() => (d.adjusts ? sp.get('adjust') : null)); // a CN / DN opened from its invoice
   const { me } = useMe();
+  const adj = useQuery({
+    queryKey: [me?.activeCompanyId ?? '', 'docs', d.type, 'adjust', adjust ?? ''],
+    queryFn: () => adjustPrefill(d, me!, adjust!),
+    enabled: !!adjust && !!me, staleTime: Infinity, gcTime: 0, retry: false,
+  });
   const src = useQuery({
     queryKey: qk.doc(me?.activeCompanyId ?? '', d.type, copyFrom ?? ''),
     queryFn: () => endpoints.getDoc(d.type, copyFrom!),
@@ -93,15 +112,18 @@ function NewDocument({ d }: { d: DocDescriptor }) {
     queryFn: () => receiptPrefill(d, me!, settle, fromBl),
     enabled: wantPrefill && !!me, staleTime: Infinity, gcTime: 0, retry: false,
   });
+  if (d.adjusts && !adjust) return <AdjustPicker descriptor={d} />; // no invoice chosen yet: pick the invoice first
+  if (adjust && adj.isError) return <ErrorState error={adj.error} onRetry={() => void adj.refetch()} />;
+  if (adjust && !adj.data) return <LoadingState />;
   if (copyFrom && src.isError) return <ErrorState error={src.error} onRetry={() => void src.refetch()} />;
   if (copyFrom && !src.data) return <LoadingState />;
   if (wantPrefill && pre.isError) return <ErrorState error={pre.error} onRetry={() => void pre.refetch()} />;
   if (wantPrefill && !pre.data) return <LoadingState />;
-  const initial = pre.data?.doc ?? (src.data && me ? asNewDraft(src.data, me.businessDate) : undefined);
+  const initial = adj.data ?? pre.data?.doc ?? (src.data && me ? asNewDraft(src.data, me.businessDate) : undefined);
   return (
     <>
       {pre.data ? <SkippedNotice skipped={pre.data.skipped} /> : null}
-      <DocEditor key={copyFrom ?? settle ?? fromBl ?? 'blank'} descriptor={d} mode="create" initial={initial}
+      <DocEditor key={copyFrom ?? settle ?? fromBl ?? adjust ?? 'blank'} descriptor={d} mode="create" initial={initial}
         onIssued={(doc) => router.replace(routesOf(d).view(doc.id))} />
     </>
   );

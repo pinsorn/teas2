@@ -69,6 +69,7 @@
 .paper-docbox dt { color: var(--paper-muted); }
 .paper-docbox dd { text-align: right; font-weight: 600; }
 .paper-docbox dd.paper-docno { font-size: 11pt; font-weight: 700; color: var(--paper-accent-text); }
+.paper-adjust { margin-top: 3mm; }
 .paper-root .paper-replace { margin-top: 3mm; font-size: 8.8pt; font-weight: 600; border: 0.75pt solid var(--paper-ink); border-radius: 2mm; padding: 1.6mm 3.5mm; }
 
 /* ---------- 2. ITEMS ---------- */

@@ -23,7 +23,7 @@
     },
     "actions": {
       "label": "Actions", "issueDraft": "Save and issue…", "edit": "Edit", "print": "Print", "copy": "Copy as new",
-      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "receive": "Receive payment", "markDelivered": "Delivered", "markSent": "Sent to vendor", "whyNothingRemaining": "Every line is already converted in full; there is nothing to close", "whyClosed": "The remainder is closed, so it cannot be converted; revise the document to reopen it"
+      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "receive": "Receive payment", "issueCn": "Issue credit note", "issueDn": "Issue debit note", "markDelivered": "Delivered", "markSent": "Sent to vendor", "whyNothingRemaining": "Every line is already converted in full; there is nothing to close", "whyClosed": "The remainder is closed, so it cannot be converted; revise the document to reopen it"
     },
     "paper": { "notPrintable": "No paper form is available for this document type", "notIssued": "This document has not been issued, so it cannot be printed as a tax invoice. Issue it first.", "stub": "The document paper preview appears here", "snapshot": "Revision {n}" },
     "chain": {
@@ -51,7 +51,7 @@
       "noChange": "No data changes", "blank": "(empty)", "reason": "Reason: {reason}",
       "lineN": "Line {n}", "lineField": "{line} · {field}",
       "fields": {
-        "header": { "notes": "Notes", "reference": "Reference", "dueDate": "Due date", "documentDate": "Document date", "partyId": "Counterparty", "dimensions": "Dimensions", "priceIncludesVat": "Prices include VAT" },
+        "header": { "notes": "Notes", "reference": "Reference", "dueDate": "Due date", "documentDate": "Document date", "partyId": "Counterparty", "refDocId": "Tax invoice adjusted", "reasonCode": "Reason", "reasonText": "Reason details", "dimensions": "Dimensions", "priceIncludesVat": "Prices include VAT" },
         "line": { "description": "Description", "itemId": "Item", "qty": "Quantity", "unit": "Unit", "unitPrice": "Unit price", "discountPct": "Discount (%)", "taxCode": "Tax code", "dimensions": "Dimensions", "sourceLineId": "Source line", "vatOverride": "VAT" }
       }
     },
@@ -332,6 +332,14 @@
       "nrcCashBill": "Receipt: cash bill (non-VAT)",
       "rcPrint": "Print receipt",
       "nrcPrint": "Print receipt: cash bill (non-VAT)",
+      "cnList": "Credit notes: list",
+      "cnNew": "Credit note: pick the tax invoice to credit",
+      "cnIssued": "Credit note: goods returned, 2 lines, references a tax invoice",
+      "cnPrint": "Print credit note (Sec. 86/10)",
+      "dnList": "Debit notes: list",
+      "dnIssued": "Debit note: price increase, references a tax invoice",
+      "dnPrint": "Print debit note (Sec. 86/10)",
+      "tiCreditedToZero": "Tax invoice: credited in full, outstanding 0.00, still issued",
       "nqtPrint": "Print quotation (non-VAT, no tax rows)",
       "trialBalance": "Trial balance",
       "customers": "Customers list",
@@ -442,6 +450,13 @@
     "dueDate": "Due date",
     "dueDateByType": { "QT": "Valid until", "SO": "Delivery due" },
     "reference": "Reference",
+    "refDoc": "Tax invoice adjusted",
+    "refDocNone": "No tax invoice chosen yet",
+    "reason": "Reason",
+    "reasonPick": "Choose a reason",
+    "reasonText": "Describe the reason",
+    "reasons": { "RETURN": "Goods returned / defective", "PRICE_REDUCTION": "Price reduction", "DISCOUNT": "Discount granted afterwards", "SERVICE_SHORT": "Service not fully delivered", "OTHER": "Other (specify)", "PRICE_INCREASE": "Price increase", "QTY_EXCESS": "Quantity over-delivered" },
+    "adjust": { "title": "Choose the tax invoice to {kind}", "hint": "A credit or debit note must reference an issued tax invoice; its lines come from that invoice", "empty": "No issued tax invoice yet", "loadFailed": "Could not load the tax invoices", "pick": "Choose {number}", "kindCn": "credit", "kindDn": "debit", "partyFixed": "Customer of the tax invoice adjusted" },
     "notes": "Notes",
     "lines": {
       "title": "Lines",
@@ -593,6 +608,8 @@
     "IV": {"title": "Invoice", "issue": "Save and issue invoice", "create": "Create invoice", "empty": "No invoices yet"},
     "TI": {"title": "Tax invoice", "issue": "Save and issue tax invoice", "create": "Create tax invoice", "empty": "No tax invoices yet"},
     "RC": {"title": "Receipt", "issue": "Save and issue receipt", "create": "Create receipt", "empty": "No receipts yet"},
+    "CN": {"title": "Credit note", "issue": "Save and issue credit note", "create": "Create credit note", "empty": "No credit notes yet"},
+    "DN": {"title": "Debit note", "issue": "Save and issue debit note", "create": "Create debit note", "empty": "No debit notes yet"},
     "PV": {"title": "Payment voucher", "issue": "Save and issue payment voucher", "create": "Create payment voucher", "empty": "No payment vouchers yet"}
   },
   "reports": {

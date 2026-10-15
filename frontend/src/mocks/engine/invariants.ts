@@ -249,6 +249,36 @@ export function checkInvariants(st: MockState): string[] {
     if (st.journals.some((j) => j.docId === d.id)) out.push(`${d.id}: BL has a journal (a billing statement posts nothing)`);
   }
 
+  // 10. credit / debit notes: each live note adjusts one live TI of its company and customer through exactly one active link of its own total; its total is its lines' net + VAT;
+  //     per invoice line the live credits never exceed the line's net (G3) and a fully credited line gives back exactly its VAT (rule B), to the satang
+  const credited = new Map<string, { net: number; vat: number; debit: boolean }>(); // `${ti}|${line}`
+  for (const d of st.docs) {
+    if ((d.type !== 'CN' && d.type !== 'DN') || !LIVE.includes(d.status)) continue;
+    const ti = d.header.refDocId ? doc(d.header.refDocId) : undefined;
+    if (!ti || ti.type !== 'TI' || ti.companyId !== d.companyId || !LIVE.includes(ti.status)) { out.push(`${d.id}: ${d.type} has no live tax invoice of its company to adjust (refDocId ${d.header.refDocId ?? 'missing'})`); continue; }
+    if (d.header.partyId !== ti.header.partyId) out.push(`${d.id}: ${d.type} party ${d.header.partyId} is not the customer of ${ti.id}`);
+    const links = st.links.filter((l) => l.active && l.kind === 'adjusts' && l.from === d.id);
+    if (links.length !== 1 || links[0].to !== ti.id || sat(links[0].amount ?? '0.00', d.id) !== sat(d.totals.total, d.id)) {
+      out.push(`${d.id}: ${d.type} needs exactly one active adjusts link to ${ti.id} of its total ${d.totals.total} (has [${links.map((l) => `${l.to} ${l.amount}`).join(', ')}])`);
+    }
+    const rows = computeDoc(d.lines, !!d.header.priceIncludesVat, true);
+    if (sat(rows.totals.total, d.id) !== sat(d.totals.total, d.id) || sat(d.totals.net, d.id) + sat(d.totals.vat, d.id) !== sat(d.totals.total, d.id)) {
+      out.push(`${d.id}: ${d.type} total ${d.totals.total} is not its lines' net + VAT (${rows.totals.total})`);
+    }
+    d.lines.forEach((l, i) => {
+      if (!l.sourceLineId) return;
+      const k = `${ti.id}|${l.sourceLineId}`, c = credited.get(k) ?? { net: 0, vat: 0, debit: false };
+      if (d.type === 'CN') credited.set(k, { ...c, net: c.net + sat(rows.lines[i].net, d.id), vat: c.vat + sat(rows.lines[i].vat, d.id) }); else credited.set(k, { ...c, debit: true });
+    });
+  }
+  for (const [k, c] of credited) {
+    const [tiId, lineId] = k.split('|'), ti = doc(tiId)!, line = ti.lines.find((l) => l.id === lineId);
+    if (!line) { out.push(`${tiId}: a note references line ${lineId}, which the invoice does not have`); continue; }
+    const own = computeDoc([line], !!ti.header.priceIncludesVat, true).lines[0];
+    if (c.net > sat(own.net, tiId)) out.push(`${tiId} line ${lineId}: credit notes take net ${fromSatang(c.net)}, which exceeds the line's net ${own.net} (cap)`);
+    else if (c.net === sat(own.net, tiId) && !c.debit && c.vat !== sat(own.vat, tiId)) out.push(`${tiId} line ${lineId}: fully credited but the credit notes' VAT is ${fromSatang(c.vat)} and the line's VAT is ${own.vat} (rule B)`);
+  }
+
   // numbering: gap-free per company x type x month, and the series counter agrees
   const groups = new Map<string, number[]>();
   for (const d of st.docs) {

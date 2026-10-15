@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { PAPER_BUILDERS } from '../engine/paper';
 import { setSettings } from '../settings';
 import { PERMISSIONS_BY_ROLE } from '../permissions';
 import { loadState, resetState } from '../store';
@@ -203,9 +204,13 @@ describe('paper endpoint', () => {
   });
   it('a type without a paper builder is 404 doc.paper_not_available (registry, not a TI literal)', async () => {
     const so = loadState().docs.find((x) => x.type === 'CN' && x.status === 'issued' && x.companyId === 'co-vat')!;
-    const r = await call('GET', `/docs/CN/${so.id}/paper`);
-    expect(r.status).toBe(404);
-    expect((await r.json()).code).toBe('doc.paper_not_available');
+    const builder = PAPER_BUILDERS.CN;
+    delete PAPER_BUILDERS.CN; // the registry decides, not a type literal
+    try {
+      const r = await call('GET', `/docs/CN/${so.id}/paper`);
+      expect(r.status).toBe(404);
+      expect((await r.json()).code).toBe('doc.paper_not_available');
+    } finally { PAPER_BUILDERS.CN = builder; }
   });
   it('a document of another company is 404', async () => {
     const id = issuedTi().id;
@@ -249,5 +254,45 @@ describe('ledger 186: the confirm endpoint reports a vanished plan as plan_stale
     const r = await call('POST', '/corrections', { planId: plan.planId, planHash: plan.planHash });
     expect(r.status).toBe(409);
     expect((await r.json()).code).toBe('correction.plan_stale');
+  });
+});
+
+describe('credit and debit notes over HTTP (S5): the reference, the customer and the VAT belong to the server', () => {
+  const issuedTi = async () => {
+    const d = await (await call('POST', '/docs/TI', body())).json();
+    return (await call('POST', `/docs/TI/${d.id}/issue`, { version: d.version })).json() as Promise<{ id: string; version: number; lines: { id: string }[] }>;
+  };
+  const cn = (ti: { id: string; lines: { id: string }[] }, price: string, extra: Record<string, unknown> = {}) => ({
+    header: { documentDate: '2026-10-14', refDocId: ti.id, reasonCode: 'RETURN', ...extra },
+    lines: [{ id: 'n1', description: 'คืนสินค้า', qty: '1', unit: 'งาน', unitPrice: price, taxCode: 'S7', sourceLineId: ti.lines[0].id, vatOverride: '9.99' }],
+  });
+  it("a client's customer and VAT are ignored; the issued CN names the invoice's customer and carries rule B VAT; the TI follows", async () => {
+    const ti = await issuedTi();
+    const other = loadState().parties.find((p) => p.companyId === 'co-vat' && p.kind === 'customer' && p.id !== partyId())!.id;
+    const d = await (await call('POST', '/docs/CN', cn(ti, '400.00', { partyId: other }))).json();
+    const issued = await (await call('POST', `/docs/CN/${d.id}/issue`, { version: d.version })).json();
+    expect(issued.header.partyId).toBe(partyId());
+    expect(issued.lines[0].vatOverride).toBe('28.00'); // 7% of 400.00 off the 1,000.00 line, not the 9.99 the client sent
+    expect(issued.totals.total).toBe('428.00');
+    expect((await (await call('GET', `/docs/TI/${ti.id}`)).json()).outstanding).toBe('642.00');
+    expect((await (await call('GET', `/docs/CN/${d.id}/paper`)).json()).adjusts).toMatchObject({ originalNet: '1000.00', correctNet: '600.00', diffNet: '400.00', reason: 'รับคืนสินค้า / สินค้าชำรุด' });
+  });
+  it('more than the line holds -> 422 cn.exceeds_original; no invoice -> 422 doc.incomplete', async () => {
+    const ti = await issuedTi();
+    const d = await (await call('POST', '/docs/CN', cn(ti, '1000.01'))).json();
+    const r = await call('POST', `/docs/CN/${d.id}/issue`, { version: d.version });
+    expect(r.status).toBe(422);
+    expect((await r.json()).code).toBe('cn.exceeds_original');
+    const bare = await (await call('POST', '/docs/CN', { ...cn(ti, '1.00'), header: { documentDate: '2026-10-14', partyId: partyId(), reasonCode: 'RETURN' } })).json();
+    expect((await (await call('POST', `/docs/CN/${bare.id}/issue`, { version: bare.version })).json()).code).toBe('doc.incomplete');
+  });
+  it('the non-VAT company has no credit notes (404) and an operator cannot create one (403)', async () => {
+    const ti = await issuedTi();
+    setSettings({ role: 'operator' });
+    expect((await call('POST', '/docs/CN', cn(ti, '1.00'))).status).toBe(403);
+    setSettings({ role: 'accountant', companyKey: 'nonvat' });
+    const r = await call('POST', '/docs/CN', cn(ti, '1.00'));
+    expect(r.status).toBe(404);
+    expect((await r.json()).code).toBe('doc.type_not_available');
   });
 });

@@ -3,7 +3,7 @@ import type { Allocation, DocHeader, DocLine } from '@/domain/types';
 import { USER as U } from '../fixtures/documents';
 import { fixtureIds } from '../fixtures/ids';
 import { buildSeedState, type MockState } from '../store';
-import { addAdjustment, cancel, compute, createDraft, issue, revise } from './commands';
+import { cancel, compute, createDraft, issue, revise } from './commands';
 import { correctionPlan, executePlan } from './corrections';
 import { checkInvariants, whtLineProblems } from './invariants';
 import { toSatang } from './money';
@@ -94,9 +94,8 @@ describe('5: a debit note cancelled after payment leaves a negative outstanding 
     const st = buildSeedState();
     const a = st.docs.find((d) => d.id === fixtureIds(st).rcTargetsA)!;
     rcOf(st, [{ targetId: a.id, targetType: 'TI', amount: a.outstanding! }], hdr('pc-01'), 'p1');
-    const dn = createDraft(st, 'co-vat', 'DN', { header: hdr('pc-01'), lines: [ln({ taxCode: 'S7' })] }, U, 'dn');
-    const dnDone = issue(st, dn.id, dn.version, U);
-    addAdjustment(st, dnDone.id, a.id, dnDone.totals.total);
+    const dn = createDraft(st, 'co-vat', 'DN', { header: hdr('pc-01', { refDocId: a.id, reasonCode: 'PRICE_INCREASE' }), lines: [ln({ taxCode: 'S7' })] }, U, 'dn');
+    const dnDone = issue(st, dn.id, dn.version, U); // issue links the note to its invoice
     expect(out(st, a.id)).toBe(107000);
     rcOf(st, [{ targetId: a.id, targetType: 'TI', amount: '1070.00' }], hdr('pc-01'), 'p2');
     expect(out(st, a.id)).toBe(0);

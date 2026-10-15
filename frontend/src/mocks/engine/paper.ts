@@ -1,8 +1,10 @@
 import type { Company, Doc, DocType, PaperModel } from '@/domain/types';
 import { formatDateBE } from '@/lib/format';
 import type { ctx } from '../handlers/common';
+import { reasonTh } from '../fixtures/reason-codes';
 import { compute } from './commands';
 import { fromSatang, toSatang } from './money';
+import { notesUpTo } from './notes';
 import { cashBankId } from './settlement';
 type Ctx = ReturnType<typeof ctx>;
 
@@ -16,6 +18,8 @@ const LOOK: Partial<Record<DocType, Look>> = {
   IV: { titleTh: 'ใบแจ้งหนี้', titleEn: 'INVOICE', signatures: ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'] },
   BL: { titleTh: 'ใบวางบิล', titleEn: 'BILLING STATEMENT', signatures: ['ผู้วางบิล', 'ผู้รับวางบิล', 'ผู้มีอำนาจลงนาม'], dueLabel: 'นัดชำระเงิน' },
   RC: { titleTh: 'ใบเสร็จรับเงิน', titleEn: 'RECEIPT', signatures: ['ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'] },
+  CN: { titleTh: 'ใบลดหนี้', titleEn: 'CREDIT NOTE', signatures: ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'] },
+  DN: { titleTh: 'ใบเพิ่มหนี้', titleEn: 'DEBIT NOTE', signatures: ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'] },
   QT: { titleTh: 'ใบเสนอราคา', titleEn: 'QUOTATION', signatures: ['ผู้เสนอราคา', 'ผู้อนุมัติ', 'ลูกค้ายืนยันสั่งซื้อ'], dueLabel: 'ยืนราคาถึง' },
 };
 
@@ -82,4 +86,16 @@ function receiptPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
   return { ...m, payment: paymentLine(c, d), lines: [...settled, ...deposit, ...m.lines].map((l, i) => ({ ...l, no: i + 1 })) };
 }
 
-export const PAPER_BUILDERS: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf, QT: paperOf, SO: paperOf, DO: paperOf, IV: paperOf, BL: billingPaper, RC: receiptPaper };
+/** CN / DN (ม.86/10): the invoice adjusted (number, date), its value, the correct value after this note and the difference - this note's own net; its VAT and total are the document's.
+ *  The correct value runs through the notes issued up to this one; the reason is the Thai wording, never the code. */
+function adjustmentPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
+  const m = paperOf(c, d, copy);
+  const ti = c.st.docs.find((x) => x.id === d.header.refDocId);
+  if (!ti) return m;
+  const signed = (n: { type: DocType; totals: { net: string } }) => (n.type === 'CN' ? -1 : 1) * toSatang(n.totals.net);
+  const before = notesUpTo(c.st, ti, d.id).filter((n) => n.id !== d.id);
+  const correct = toSatang(ti.totals.net) + before.reduce((a, n) => a + signed(n), 0) + signed(d);
+  return { ...m, adjusts: { number: ti.number ?? '-', date: ti.header.documentDate, originalNet: ti.totals.net, correctNet: fromSatang(correct), diffNet: d.totals.net, reason: reasonTh(d.header) } };
+}
+
+export const PAPER_BUILDERS: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf, QT: paperOf, SO: paperOf, DO: paperOf, IV: paperOf, BL: billingPaper, RC: receiptPaper, CN: adjustmentPaper, DN: adjustmentPaper };

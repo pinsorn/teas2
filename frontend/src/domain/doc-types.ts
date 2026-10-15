@@ -51,3 +51,9 @@ export const convertTargets = (offered: DocType[] | undefined, vatRegistered: bo
 
 /** Types whose unconverted remainder can be closed (a mark, SP1c S2): the N-class documents that are converted onward line by line. */
 export const CLOSEABLE: DocType[] = ['SO', 'DO', 'PO'];
+
+/** CN / DN reason codes `[SP-R]` (reference data, wording awaits SP-R): the codes a note of each type accepts. The Thai wording the paper prints is `mocks/fixtures/reason-codes.ts`. */
+export const REASON_CODES: Partial<Record<DocType, string[]>> = {
+  CN: ['RETURN', 'PRICE_REDUCTION', 'DISCOUNT', 'SERVICE_SHORT', 'OTHER'],
+  DN: ['PRICE_INCREASE', 'QTY_EXCESS', 'OTHER'],
+};

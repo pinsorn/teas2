@@ -42,7 +42,7 @@ export function useCorrectionFlow(d: DocDescriptor, doc: Doc) {
       if (me) await qc.invalidateQueries({ queryKey: [me.activeCompanyId] });
       const next = [...affected].reverse().find((a) => a.type === d.type) ?? affected[affected.length - 1];
       setPlan(undefined);
-      // each affected document opens on its own type's route; a type without a built screen yet (docViewHref undefined, e.g. CN until its task) falls back to the source document's view
+      // each affected document opens on its own type's route (a CN-only plan lands on the credit note); a type without a built screen falls back to the source document's view
       router.push((next && docViewHref(next.type, next.docId)) ?? docViewHref(d.type, doc.id) ?? d.basePath);
     } catch (e) {
       setError(e);

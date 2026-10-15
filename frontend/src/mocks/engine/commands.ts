@@ -8,6 +8,7 @@ import { ledgerFor, reversalOf } from './ledger';
 import { afterRevision, refuseClosed, refuseRejected, withAcceptedStamp } from './marks';
 import { MockError, diffBody, isPinned, logActivity, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
+import { isNote, noteHeader, noteMissing, noteProblem, withNoteVat } from './notes';
 import { SeriesAllocator } from './numbering';
 import { firstOpenDate, isClosed, monthLabelTh } from './periods';
 import { balanceOf, certError, cleanAllocations, fiscalAllocations, groupTotals, payDefaults, settleExtras, settleProblem, settleTotals } from './settlement';
@@ -64,8 +65,8 @@ export function calc(body: Body, vatRegistered: boolean) {
   }
 }
 /** Document totals: the lines' totals, plus for an RC / PV the settlement money (total, WHT, cash). One seam for create / update / issue / revise / compute. */
-export function totalsOf(st: MockState, companyId: string, type: DocType, body: Body): DocTotals {
-  const t = calc(body, vatOf(st, companyId)).totals;
+export function totalsOf(st: MockState, companyId: string, type: DocType, body: Body, selfId?: string): DocTotals {
+  const t = calc(withNoteVat(st, companyId, type, body, selfId), vatOf(st, companyId)).totals; // a CN / DN: each line's VAT is its invoice line's VAT change (rule B)
   return SETTLES[type] ? settleTotals(st, companyId, type, body, t) : GROUPS[type] ? groupTotals(body, t) : t;
 }
 function partyOf(st: MockState, companyId: string, id?: string): PartySummary | undefined {
@@ -96,7 +97,8 @@ export function missingOf(st: MockState, companyId: string, type: DocType, body:
   const company = st.companies.find((c) => c.id === companyId);
   if (!isTypeAvailable(type, !!company?.vatRegistered)) out.push({ field: 'type', message: unavailableTh(type) });
   if (!body.header.documentDate) out.push({ field: 'header.documentDate', message: 'ต้องระบุวันที่เอกสาร' });
-  if (!body.header.partyId) out.push({ field: 'header.partyId', message: 'ต้องเลือกคู่ค้า' });
+  if (isNote(type)) out.push(...noteMissing(type, body.header)); // a note's customer is its invoice's: the server fills it (stored)
+  if (!body.header.partyId) { if (!isNote(type)) out.push({ field: 'header.partyId', message: 'ต้องเลือกคู่ค้า' }); }
   else {
     const p = partyOf(st, companyId, body.header.partyId);
     if (!p) out.push({ field: 'header.partyId', message: 'ไม่พบคู่ค้า' });
@@ -123,9 +125,13 @@ const rcHeaderKey = ({ notes: _n, reference: _r, depositAmount, paymentMethod, .
 
 /** Fiscal = changes who/when/how much is taxed; only those need a chain-aware correction on a T-class document.
  *  A receipt takes ONLY certificate numbers, notes and reference in place: any other change is a correction (M1). */
+/** Lines as the client knows them: the engine-set VAT of a CN / DN line is not part of what a caller can send back. */
+const sameLines = (a: DocLine[], b: DocLine[]) => JSON.stringify(a.map(({ vatOverride, ...l }) => (void vatOverride, l))) === JSON.stringify(b.map(({ vatOverride, ...l }) => (void vatOverride, l)));
 export function isFiscalChange(d: Doc, b: Body): boolean {
   return (d.type === 'RC' && rcHeaderKey(b.header) !== rcHeaderKey(d.header)) || b.header.partyId !== d.header.partyId || b.header.documentDate !== d.header.documentDate
-    || !!b.header.priceIncludesVat !== !!d.header.priceIncludesVat || JSON.stringify(b.lines) !== JSON.stringify(d.lines)
+    || !!b.header.priceIncludesVat !== !!d.header.priceIncludesVat || !sameLines(b.lines, d.lines)
+    // a note's invoice and reason are fiscal (ม.86/10): changing them is a correction, never an in-place edit
+    || b.header.refDocId !== d.header.refDocId || b.header.reasonCode !== d.header.reasonCode || (b.header.reasonText ?? '') !== (d.header.reasonText ?? '')
     // settlement: who is paid how much and into which account changes the books (a certificate number does not)
     || (b.allocations !== undefined && fiscalAllocations(b.allocations) !== fiscalAllocations(d.allocations))
     || b.header.bankAccountId !== d.header.bankAccountId || (b.header.paymentMethod ?? 'transfer') !== (d.header.paymentMethod ?? 'transfer') || b.header.whtMode !== d.header.whtMode || satOf(b.header.depositAmount) !== satOf(d.header.depositAmount);
@@ -141,11 +147,10 @@ export function recomputeSettlement(st: MockState, id: string): void {
   put(st, { ...d, locks, outstanding: fromSatang(out), status: settled && out <= 0 ? 'settled' : paid > 0 ? 'partly_settled' : 'issued' });
 }
 
-/** Links a CN / DN to the TI it adjusts and refreshes that TI's balance. */
-export function addAdjustment(st: MockState, noteId: string, targetId: string, amount: Money): void {
-  const n = getDoc(st, noteId);
-  st.links.push({ companyId: n.companyId, from: noteId, to: targetId, kind: 'adjusts', amount, active: true });
-  recomputeSettlement(st, targetId);
+/** Links an issued CN / DN to the TI it adjusts (the one link-writer: `issue`) and refreshes that TI's balance. */
+function adjustTarget(st: MockState, n: Stored, amount: Money): void {
+  st.links.push({ companyId: n.companyId, from: n.id, to: n.header.refDocId!, kind: 'adjusts', amount, active: true });
+  recomputeSettlement(st, n.header.refDocId!);
 }
 
 /** A receipt cancelled earlier in a plan ends as `replaced` by its re-issue (same as a TI). */
@@ -162,7 +167,7 @@ function stored(st: MockState, companyId: string, type: DocType, body: Body, kee
   // D-12: a VAT company's receipt settles tax invoices, it never sells (a cash bill is the non-VAT company's). Shape of the request, so it is refused where the body enters.
   if (type === 'RC' && body.lines.length && vatOf(st, companyId)) throw new MockError(422, 'rc.lines_need_invoice', 'บริษัทที่จดทะเบียน VAT ต้องออกใบกำกับภาษีก่อนรับชำระ');
   const allocations = cleanAllocations(st, companyId, type, body.allocations, keep);
-  return { header: payDefaults(st, companyId, type, body.header), lines: GROUPS[type] ? [] : body.lines, ...(allocations ? { allocations } : {}) };
+  return { header: noteHeader(st, companyId, type, payDefaults(st, companyId, type, body.header)), lines: GROUPS[type] ? [] : body.lines, ...(allocations ? { allocations } : {}) };
 }
 
 function insertDraft(st: MockState, companyId: string, type: DocType, raw: Body, actor: Actor, id?: string): Stored {
@@ -183,9 +188,9 @@ const outstandingNow = (st: MockState) => (id: string): number => balanceOf(st, 
 
 /** `opts.docId`: the issued document being revised - its own active settlements are given back before the allocations are checked (same as `revise`). */
 export function compute(st: MockState, companyId: string, type: DocType, raw: Body, opts?: { docId?: string }): ComputeResult {
-  const body = stored(st, companyId, type, raw, opts?.docId ? st.docs.find((x) => x.id === opts.docId)?.allocations : undefined);
+  const body = withNoteVat(st, companyId, type, stored(st, companyId, type, raw, opts?.docId ? st.docs.find((x) => x.id === opts.docId)?.allocations : undefined), opts?.docId);
   const c = calc(body, vatOf(st, companyId));
-  const totals = totalsOf(st, companyId, type, body);
+  const totals = totalsOf(st, companyId, type, body, opts?.docId);
   const doc: Doc = {
     id: 'preview', type, status: 'draft', correctionClass: CLASS[type], revision: 0, version: 1, header: body.header,
     party: partyOf(st, companyId, body.header.partyId), lines: body.lines, totals, locks: [], createdBy: { kind: 'user', id: '', name: '' },
@@ -195,6 +200,8 @@ export function compute(st: MockState, companyId: string, type: DocType, raw: Bo
   const own = opts?.docId ? st.docs.find((x) => x.id === opts.docId) : undefined;
   const bad = settleProblem(st, companyId, type, body, ownBack(st, outstandingNow(st), opts?.docId), { prior: own?.allocations, priorParty: own?.header.partyId });
   if (bad) missing.push({ field: 'allocations', message: bad.title });
+  const np = noteProblem(st, companyId, type, body, opts?.docId);
+  if (np) missing.push({ field: 'lines', message: np.title }); // the cap, the invoice's lines: shown before issue
   return { lines: c.lines, totals, missing, journal: ledgerFor(st, { ...doc, companyId }), ...settleExtras(st, companyId, type, body) };
 }
 
@@ -252,11 +259,11 @@ function dateGuards(st: MockState, companyId: string, date: IsoDate): void {
   }
 }
 
-/** An invoice of 0.00 or less is not a document: cancel it instead. */
-export function refuseNonPositive(st: MockState, companyId: string, type: DocType, body: Body): void {
-  if (type !== 'IV') return;
-  if (toSatang(totalsOf(st, companyId, type, body).total) <= 0) {
-    throw new MockError(422, 'doc.total_not_positive', 'ยอดรวมใบแจ้งหนี้ต้องมากกว่า 0.00 บาท ถ้าไม่ต้องการเอกสารนี้ให้ยกเลิกเอกสาร');
+/** An invoice or a note of 0.00 or less is not a document: cancel it instead. */
+export function refuseNonPositive(st: MockState, companyId: string, type: DocType, body: Body, selfId?: string): void {
+  if (type !== 'IV' && !isNote(type)) return;
+  if (toSatang(totalsOf(st, companyId, type, body, selfId).total) <= 0) {
+    throw new MockError(422, 'doc.total_not_positive', `ยอดรวม${type === 'IV' ? 'ใบแจ้งหนี้' : type === 'CN' ? 'ใบลดหนี้' : 'ใบเพิ่มหนี้'}ต้องมากกว่า 0.00 บาท ถ้าไม่ต้องการเอกสารนี้ให้ยกเลิกเอกสาร`);
   }
 }
 
@@ -279,16 +286,20 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   if (missing.length) throw incomplete(missing);
   if (!opts?.keepDate) dateGuards(st, d.companyId, d.header.documentDate); // D-10
   refuseNonPositive(st, d.companyId, d.type, body);
+  const np = noteProblem(st, d.companyId, d.type, body); // the invoice, its lines and the per-line cap, judged before anything is written
+  if (np) throw np;
   const bad = settleProblem(st, d.companyId, d.type, body, outstandingNow(st), { partyExempt: opts?.partyExempt, prior: opts?.prior, priorParty: opts?.priorParty });
   if (bad) throw bad; // nothing has been written yet: a refused issue leaves no number, link or journal behind
   if (GROUPS[d.type]) body = { ...body, allocations: cleanAllocations(st, d.companyId, d.type, body.allocations) }; // BL: each target's outstanding AS OF ISSUE, server-read
+  body = withNoteVat(st, d.companyId, d.type, body); // a CN / DN keeps the VAT its lines carry at issue
   const totals = totalsOf(st, d.companyId, d.type, body);
   const next: Stored = {
-    ...d, ...(body.allocations ? { allocations: body.allocations } : {}), number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', totals, party: partyOf(st, d.companyId, d.header.partyId),
+    ...d, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', totals, party: partyOf(st, d.companyId, d.header.partyId),
     version: d.version + 1, issuedAt: stamp(), ...(hasOut(d.type) ? { outstanding: totals.total } : {}),
   };
   put(st, next);
   settleTargets(st, next, body.allocations);
+  if (isNote(d.type)) adjustTarget(st, next, totals.total);
   setJournal(st, id, postedNow(st, d.companyId, ledgerFor(st, next)));
   st.revisions.push({ docId: id, revision: 0, at: next.issuedAt!, actor, snapshot: publicDoc(next), diff: [] });
   logActivity(st, id, actor, 'issue', next.number);
@@ -303,8 +314,10 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
   checkVersion(d, version);
   // SP0 §7.5: a period lock does not block cancel (blockingLocks leaves it out); the other locks do.
   if (blockingLocks(d).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ยกเลิกไม่ได้');
-  // SP0 §7.4: only an applied receipt (TI) or settlements (IV) block a cancel; N-class and CN/DN do not.
+  // SP0 §7.4: an applied receipt (TI) or settlements (IV) block a cancel; N-class documents and a CN / DN being cancelled do not. S5 adds: a TI with a live CN / DN against it (below).
   if (st.links.some((l) => l.to === id && l.active && l.kind === 'settles')) throw new MockError(409, 'doc.has_dependents', 'มีใบเสร็จ/การชำระที่ผูกอยู่ ต้องยกเลิกหรือถอนการชำระก่อน');
+  // invariant 10: every live note adjusts a live TI, and a cancelled invoice with a live note would reverse its receivable twice (AR 1130 vs the subledger): cancel the notes first
+  if (st.links.some((l) => l.to === id && l.active && l.kind === 'adjusts')) throw new MockError(409, 'doc.has_dependents', 'มีใบลดหนี้/ใบเพิ่มหนี้อ้างอิงอยู่ ต้องยกเลิกใบลดหนี้/ใบเพิ่มหนี้ก่อน');
   const { outstanding: _o, ...rest } = d; void _o;
   const next: Stored = { ...rest, status: 'cancelled', version: d.version + 1, cancel: { reasonCode, reasonText, at: stamp() } };
   put(st, next);
@@ -353,7 +366,8 @@ function certNote(d: Stored, body: Body): string | undefined {
 /** Revise in place (classes N and L). A T-class document only accepts non-fiscal changes here; fiscal ones go through a correction plan. */
 export function revise(st: MockState, id: string, raw: Body, version: number, reason: string, actor: Actor): Doc {
   const d = getDoc(st, id);
-  const body = stored(st, d.companyId, d.type, { ...raw, allocations: raw.allocations ?? d.allocations }, d.allocations);
+  const sent = stored(st, d.companyId, d.type, { ...raw, allocations: raw.allocations ?? d.allocations }, d.allocations);
+  const body = isNote(d.type) && sameLines(sent.lines, d.lines) ? { ...sent, lines: d.lines } : sent; // an API caller cannot send the engine-set VAT back: the issued lines stand
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_revisable', 'แก้ไขได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   checkVersion(d, version);
   if (d.correctionClass === 'T' && isFiscalChange(d, body)) {
@@ -418,11 +432,14 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   if (SETTLES[old.type] && fiscalAllocations(body.allocations) !== fiscalAllocations(old.allocations)) { // the links are carried as they are
     throw new MockError(422, 'doc.reissue_allocations_changed', 'ออกใหม่ต้องใช้การจัดสรรชำระเดิม ถ้าต้องการเปลี่ยนให้ยกเลิกแล้วออกใหม่');
   }
-  if (old.type === 'TI' || old.type === 'RC') body = { ...body, header: { ...body.header, documentDate: old.header.documentDate } }; // I9: original date
+  const dated = old.type === 'TI' || old.type === 'RC' || isNote(old.type); // I9 / T5: a reissue keeps the date and the total
+  if (dated) body = { ...body, header: { ...body.header, documentDate: old.header.documentDate, ...(isNote(old.type) ? { refDocId: old.header.refDocId } : {}) } }; // a note stays on its invoice
   const missing = missingOf(st, old.companyId, old.type, body);
   if (missing.length) throw incomplete(missing);
-  const totals = totalsOf(st, old.companyId, old.type, body);
-  if ((old.type === 'TI' || old.type === 'RC') && totals.total !== old.totals.total) {
+  if (isNote(old.type)) { const np = noteProblem(st, old.companyId, old.type, body, old.id); if (np) throw np; }
+  body = withNoteVat(st, old.companyId, old.type, body, old.id);
+  const totals = totalsOf(st, old.companyId, old.type, body, old.id);
+  if (dated && totals.total !== old.totals.total) {
     throw new MockError(422, 'doc.reissue_total_changed', 'ออกใหม่ต้องใช้ยอดเดิม ยอดต่างต้องใช้ใบลดหนี้/ใบเพิ่มหนี้');
   }
   const at = stamp();

@@ -64,7 +64,7 @@ describe('DocView', () => {
     const issued = find((d) => d.type === taxInvoice.type && d.status === 'issued');
     ui(issued.id);
     expect(await screen.findByRole('status', { name: 'ล็อก' })).toHaveTextContent('ภ.พ.30');
-    expect(screen.getByText(/ออกใบลดหนี้/)).toBeVisible();
+    expect(screen.getByText(/ใบเพิ่มหนี้ในงวดถัดไป/)).toBeVisible();
   });
   it('shows the document number with the doc-number test id', async () => {
     const issued = find((d) => d.type === taxInvoice.type && d.status === 'issued' && !d.locks.length);
@@ -126,14 +126,14 @@ describe('DocView locks and actions (fix round 1)', () => {
     expect(await screen.findByRole('link', { name: 'แก้ไข' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'ยกเลิกเอกสาร' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'ยกเลิกเอกสาร' })).toHaveAccessibleDescription(/ภ\.พ\.30/);
-    await userEvent.click(screen.getByRole('button', { name: /ออกใบลดหนี้/ }));
+    await userEvent.click(screen.getByRole('button', { name: /ใบเพิ่มหนี้ในงวดถัดไป/ }));
     expect(vi.mocked(useRouter().push).mock.lastCall![0]).toBe(`/sales/tax-invoices/${issued.id}/edit`);
   });
   it('filing lock exit is enabled for an operator: proposing a correction needs create, the plan lists the rest', async () => {
     setSettings({ screenState: 'locked', role: 'operator' });
     const issued = find((d) => d.type === taxInvoice.type && d.status === 'issued');
     ui(issued.id);
-    const exit = await screen.findByRole('button', { name: /ออกใบลดหนี้/ });
+    const exit = await screen.findByRole('button', { name: /ใบเพิ่มหนี้ในงวดถัดไป/ });
     expect(exit).toBeEnabled();
     await userEvent.click(exit);
     expect(vi.mocked(useRouter().push).mock.lastCall![0]).toBe(`/sales/tax-invoices/${issued.id}/edit`);

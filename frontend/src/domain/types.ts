@@ -43,7 +43,9 @@ export interface DocHeader { partyId?: string; documentDate: IsoDate; dueDate?: 
   notes?: string; dimensions?: Record<string, string>; priceIncludesVat?: boolean;
   whtMode?: WhtMode; bankAccountId?: string; paymentMethod?: 'transfer' | 'cash' | 'cheque';
   cheque?: { number: string; date: IsoDate; bank: string };
-  /** RC: the unallocated remainder kept as a customer deposit (Cr CustomerDeposit); S4 owns the editor field. */ depositAmount?: Money }
+  /** RC: the unallocated remainder kept as a customer deposit (Cr CustomerDeposit); S4 owns the editor field. */ depositAmount?: Money;
+  /** CN / DN: the tax invoice this note adjusts. Server-owned: the note's customer and reference follow it. */ refDocId?: string;
+  /** CN / DN: a code from REASON_CODES (reference data [SP-R]); OTHER needs reasonText. The paper prints the Thai wording, never the code. */ reasonCode?: string; reasonText?: string }
 /** `cash` = money that moves: received (RC) / paid (PV). `wht` = withholding tax of the document. */
 export interface DocTotals { gross: Money; discount: Money; net: Money; vat: Money; total: Money; wht?: Money; cash?: Money;
   amountInWords: string }
@@ -124,6 +126,8 @@ export interface PaperModel {
   /** VAT presentation supplied by the server, printed in order after the net row: zero-rated / exempt sales bases, then the VAT line. */
   vatLines?: { label: string; amount: Money }[]; // omitted for a non-VAT company: no VAT row, no net-before-tax row
   /** Receipt only: how the money came in (method, bank account or cheque), one line printed by the server. */ payment?: string;
+  /** CN / DN (ม.86/10): the tax invoice adjusted, its value, the correct value and the difference (this note's net; its VAT is totals.vat), all server-computed. */
+  adjusts?: { number: string; date: IsoDate; originalNet: Money; correctNet: Money; diffNet: Money; reason: string };
   replacementNote?: string;                    // 'ยกเลิกและออกแทนฉบับเดิม เลขที่ … ลงวันที่ …' (on the NEW document)
   voidMark?: { label: string; note?: string }; // cancelled / replaced originals: diagonal stamp on every page
   signatures: string[];                        // ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม']

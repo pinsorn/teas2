@@ -163,7 +163,7 @@ describe('I1: a CN / DN carries one line per tax code and the plan shows exactly
   });
   it('4 x S7 0.08 -> S7 0.33: CN net -0.01 VAT 0.02 total 0.01 (net up, VAT down), outstanding 0.35', () => {
     const cn = delta(['a', 'b', 'c', 'd'].map((id) => line(id, 'S7', '0.08')), [line('z', 'S7', '0.33')], { type: 'CN', net: '-0.01', vat: '0.02', total: '0.01' }, '0.35');
-    expect(cn.lines[0].vatOverride).toBe('0.02');
+    expect(cn.lines.map((l) => [l.sourceLineId, l.vatOverride])).toEqual([['a', '0.01'], ['b', '0.01'], ['c', '0.01'], ['d', '0.01'], [undefined, '-0.02']]); // the four removed lines reference the invoice; the added one is a signed line of its own
     const j = st.journals.find((x) => x.docId === cn.id)!.preview.entries[0].lines.map((l) => [l.accountCode, l.debit, l.credit]);
     expect(j).toEqual(expect.arrayContaining([['4110', '0.00', '0.01'], ['2151', '0.02', '0.00'], ['1130', '0.00', '0.01']]));
     expect(j).toHaveLength(3);
@@ -315,4 +315,9 @@ describe('I1: ledger never posts a negative amount', () => {
     expect(entry.lines.every((x) => !x.debit.startsWith('-') && !x.credit.startsWith('-'))).toBe(true);
     assertBalanced(st);
   });
+});
+
+describe('SP2 vectors (ledger 184), kept visible', () => {
+  it.todo('SP2 vector: settlement lock vs CN — a CN on a paid TI may not take outstanding below −(…) [ledger 184]');
+  it.todo('SP2 vector: second correction must account for existing CN/DN [ledger 184]');
 });

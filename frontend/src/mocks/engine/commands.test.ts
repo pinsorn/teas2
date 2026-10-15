@@ -200,15 +200,13 @@ describe('I4 settlement lock follows the active settles links', () => {
 
 describe('I5 only settlements make a document settled', () => {
   const mkCn = (ti: MockStateLike['docs'][number]) => {
-    const d = createDraft(st, vatCo, 'CN', { header: { partyId: ti.header.partyId, documentDate: '2026-10-14', priceIncludesVat: ti.header.priceIncludesVat }, lines: ti.lines }, me, `cn-${ti.id}`);
+    const d = createDraft(st, vatCo, 'CN', { header: { documentDate: '2026-10-14', refDocId: ti.id, reasonCode: 'RETURN' }, lines: ti.lines.map((l) => ({ ...l, sourceLineId: l.id })) }, me, `cn-${ti.id}`);
     return issue(st, d.id, d.version, me);
   };
-  it('an unpaid TI credited to 0 by a CN stays issued with outstanding 0.00', async () => {
-    const { addAdjustment } = await import('./commands');
+  it('an unpaid TI credited to 0 by a CN stays issued with outstanding 0.00', () => {
     const d = createDraft(st, vatCo, 'TI', { header: { partyId: vatCustomer, documentDate: '2026-10-14' }, lines: [line()] }, me, 'i5');
     const ti = issue(st, d.id, d.version, me);
-    const cn = mkCn(st.docs.find((x) => x.id === ti.id)!);
-    addAdjustment(st, cn.id, ti.id, cn.totals.total);
+    mkCn(st.docs.find((x) => x.id === ti.id)!); // issue links the note to its invoice
     const after = st.docs.find((x) => x.id === ti.id)!;
     expect([after.status, after.outstanding]).toEqual(['issued', '0.00']);
   });

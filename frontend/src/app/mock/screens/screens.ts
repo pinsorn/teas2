@@ -15,6 +15,8 @@ export const DO_BASE = '/sales/delivery-orders';
 export const IV_BASE = '/sales/invoices';
 export const BL_BASE = '/sales/billing-statements';
 export const RC_BASE = '/sales/receipts';
+export const CN_BASE = '/sales/credit-notes';
+export const DN_BASE = '/sales/debit-notes';
 // names are keys of messages `screens.name.*`; fixture keys live in src/mocks/fixtures/ids.ts (later tasks append their screens here)
 export const SCREENS: Screen[] = [
   { name: 'home', route: '/', company: 'both', states: true },
@@ -69,6 +71,14 @@ export const SCREENS: Screen[] = [
   { name: 'nrcCashBill', route: { fixture: 'nrcCashBill', base: RC_BASE }, company: 'nonvat', states: true },
   { name: 'rcPrint', route: { fixture: 'rcMulti', base: '/print/RC' }, company: 'vat', states: false },
   { name: 'nrcPrint', route: { fixture: 'nrcCashBill', base: '/print/RC' }, company: 'nonvat', states: false },
+  { name: 'cnList', route: CN_BASE, company: 'vat', states: true },
+  { name: 'cnNew', route: `${CN_BASE}/new`, company: 'vat', states: true },
+  { name: 'cnIssued', route: { fixture: 'cnIssued', base: CN_BASE }, company: 'vat', states: true },
+  { name: 'cnPrint', route: { fixture: 'cnIssued', base: '/print/CN' }, company: 'vat', states: false },
+  { name: 'dnList', route: DN_BASE, company: 'vat', states: true },
+  { name: 'dnIssued', route: { fixture: 'dnIssued', base: DN_BASE }, company: 'vat', states: true },
+  { name: 'dnPrint', route: { fixture: 'dnIssued', base: '/print/DN' }, company: 'vat', states: false },
+  { name: 'tiCreditedToZero', route: { fixture: 'tiCreditedToZero' }, company: 'vat', states: true },
   { name: 'trialBalance', route: '/reports/financial-statements', company: 'both', states: true },
   { name: 'customers', route: '/master/customers', company: 'both', states: true },
   { name: 'customerView', route: '/master/customers/pc-01', company: 'vat', states: true },

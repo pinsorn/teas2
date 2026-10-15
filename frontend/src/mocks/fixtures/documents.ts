@@ -146,6 +146,8 @@ export function buildDocs(parties: SeedParty[], items: SeedItem[]) {
       revision: s.revision ?? 0, version: 1,
       header: { partyId: s.party.id, documentDate: s.date, ...(s.term ? { dueDate: addDays(s.date, s.party.paymentTermDays) } : {}),
         ...(s.notes ? { notes: s.notes } : {}), priceIncludesVat: false,
+        // a seeded credit note names the invoice it adjusts and why (S5)
+        ...(s.adjusts ? { refDocId: s.adjusts, reasonCode: 'DISCOUNT' } : {}),
         // a receipt names the account it posts to (a reissue keeps it); the seed's receipts all went into the company's main account
         ...(s.type === 'RC' ? { paymentMethod: 'transfer' as const, bankAccountId: 'ba-kbank' } : {}) },
       party: strip(s.party), lines, totals,

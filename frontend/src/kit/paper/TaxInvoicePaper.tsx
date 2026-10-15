@@ -11,6 +11,7 @@ const L = {
   seq: 'ลำดับ', desc: 'รายการ', qty: 'จำนวน', unit: 'หน่วย', price: 'ราคา/หน่วย', amount: 'จำนวนเงิน',
   words: 'จำนวนเงินรวมทั้งสิ้น (ตัวอักษร)', notes: 'หมายเหตุ', gross: 'รวมเป็นเงิน', discount: 'ส่วนลด', net: 'มูลค่าก่อนภาษี',
   total: 'จำนวนเงินรวมทั้งสิ้น', baht: 'บาท', discountOn: 'ส่วนลด', z0: 'อัตราภาษีร้อยละ 0', ex: 'ได้รับยกเว้นภาษี',
+  adjRef: 'อ้างอิงใบกำกับภาษีเดิม', adjNo: 'เลขที่', adjReason: 'เหตุผล', adjOriginal: 'มูลค่าตามใบกำกับภาษีเดิม', adjCorrect: 'มูลค่าที่ถูกต้อง', adjDiff: 'ผลต่าง',
   wht: 'ภาษีถูกหัก ณ ที่จ่าย', cash: 'รับเงินสุทธิ', paid: 'รวมรับชำระ', payment: 'วิธีรับชำระ',
 };
 
@@ -62,6 +63,17 @@ function Head({ m }: { m: PaperModel }) {
           </dl>
         </section>
       </div>
+      {m.adjusts ? ( // CN / DN (ม.86/10): the invoice adjusted, why, and the three values, as the server computed them
+        <section className="paper-box paper-docbox paper-adjust" aria-label={L.adjRef}>
+          <dl>
+            <dt>{L.adjRef}</dt><dd>{L.adjNo} {m.adjusts.number} · {formatDateBE(m.adjusts.date)}</dd>
+            <dt>{L.adjReason}</dt><dd>{m.adjusts.reason}</dd>
+            <dt>{L.adjOriginal}</dt><dd>{formatMoney(m.adjusts.originalNet)}</dd>
+            <dt>{L.adjCorrect}</dt><dd>{formatMoney(m.adjusts.correctNet)}</dd>
+            <dt>{L.adjDiff}</dt><dd>{formatMoney(m.adjusts.diffNet)}</dd>
+          </dl>
+        </section>
+      ) : null}
       {m.replacementNote ? <p className="paper-replace">{m.replacementNote}</p> : null}
     </header>
   );

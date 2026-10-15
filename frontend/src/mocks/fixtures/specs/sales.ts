@@ -101,6 +101,15 @@ export const SALES_SPECS: SeedSpec[] = [
     { targetId: 'spike-60', targetType: 'TI', amount: '500.00' }]),
   rc('rc-nocert', 'pc-06', '2026-10-13', [{ targetId: 'ti-037', targetType: 'TI', amount: '10000.00', wht: '300.00', whtTypeCode: 'SVC' }]), // withheld, no certificate yet (TX2 chase list)
   rc('rc-dep', 'pc-08', '2026-10-13', [], { depositAmount: '5000.00' }), // paid in advance: nothing to allocate
+  // ---- S5: credit and debit notes, through the engine. Each names the seeded invoice it adjusts (a TI nothing else touches: not the fixture invoices of S1-S4) ----
+  { id: 'cn-ret', type: 'CN', companyId: VAT, date: '2026-10-09', partyId: 'pc-06', status: 'issued', header: { refDocId: 'ti-056', reasonCode: 'RETURN' }, // 8,000.00 off line 1, 4 of line 2's 10 units back
+    lines: [{ ...line('cn-ret', 1, 'ลดราคาค่าบริการตามใบกำกับภาษีเดิม', '1', 'งาน', '8000.00'), sourceLineId: 'ti-056-l1' },
+      { ...line('cn-ret', 2, 'รับคืนสินค้า 4 หน่วย', '4', 'หน่วย', '95.00'), sourceLineId: 'ti-056-l2' }] },
+  { id: 'dn-1', type: 'DN', companyId: VAT, date: '2026-10-10', partyId: 'pc-12', status: 'issued', header: { refDocId: 'ti-047', reasonCode: 'PRICE_INCREASE' },
+    lines: [{ ...line('dn-1', 1, 'ปรับราคาค่าบริการเพิ่มตามสัญญา', '1', 'งาน', '500.00'), sourceLineId: 'ti-047-l1' }] },
+  { id: 'cn-full', type: 'CN', companyId: VAT, date: '2026-10-11', partyId: 'pc-07', status: 'issued', header: { refDocId: 'ti-046', reasonCode: 'OTHER', reasonText: 'ลูกค้ายกเลิกสัญญา ลดหนี้เต็มจำนวน' }, // an unpaid invoice credited to 0.00: it stays issued
+    lines: [{ ...line('cn-full', 1, 'ลดหนี้เต็มจำนวน รายการที่ 1', '1', 'งาน', '6500.00'), discountPct: '10', sourceLineId: 'ti-046-l1' },
+      { ...line('cn-full', 2, 'ลดหนี้เต็มจำนวน รายการที่ 2', '10', 'หน่วย', '48.00'), discountPct: '10', sourceLineId: 'ti-046-l2' }] },
   { id: 'nrc-cash', type: 'RC', companyId: NV, date: '2026-10-13', partyId: 'nc-04', status: 'issued', header: { paymentMethod: 'transfer', bankAccountId: BANK.NV },
     lines: [line('nrc-cash', 1, 'ค่าเช่าแผงชั่วคราวรายวัน', '2', 'วัน', '350.00', 'EX'), line('nrc-cash', 2, 'ค่าไฟฟ้าแผง', '1', 'งาน', '150.00', 'EX')] },
 ];
