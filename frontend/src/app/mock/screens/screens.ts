@@ -23,5 +23,9 @@ export const SCREENS: Screen[] = [
   { name: 'print', route: { fixture: 'tiIssuedUnpaid', base: '/print/TI' }, company: 'vat', states: false },
   { name: 'printLong', route: { fixture: 'tiLong', base: '/print/TI' }, company: 'vat', states: false },
   { name: 'trialBalance', route: '/reports/financial-statements', company: 'both', states: true },
+  { name: 'customers', route: '/master/customers', company: 'both', states: true },
+  { name: 'customerView', route: '/master/customers/pc-01', company: 'vat', states: true },
+  { name: 'vendors', route: '/master/vendors', company: 'both', states: true },
+  { name: 'items', route: '/master/items', company: 'both', states: true },
   { name: 'styleGuide', route: '/style-guide', company: 'both', states: false },
 ];

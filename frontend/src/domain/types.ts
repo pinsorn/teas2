@@ -18,9 +18,15 @@ export interface Actor { kind: 'user' | 'agent'; id: string; name: string; owner
 
 export interface PartySummary { id: string; kind: 'customer' | 'vendor'; code: string; name: string; taxId?: string;
   branchCode?: string; vatRegistered: boolean; address?: string; paymentTermDays: number; defaultWhtTypeCode?: string;
-  usualItemIds?: string[]; entityKind: 'individual' | 'juristic' | 'foreign' }
+  usualItemIds?: string[]; entityKind: 'individual' | 'juristic' | 'foreign';
+  nameEn?: string; notes?: string; partyGroup?: string; contact?: { phone?: string; email?: string };
+  /** Vendor remittance details. */ bankAccount?: { bankName?: string; accountNo?: string; accountName?: string };
+  /** Foreign vendor registered under VAT-D (PP.36 not filed). */ vatDRegistered?: boolean }
 export interface ItemSummary { id: string; code: string; name: string; kind: 'good' | 'service'; unit: string;
-  unitPrice: Money; taxCode: TaxCode; whtTypeCode?: string }
+  unitPrice: Money; taxCode: TaxCode; whtTypeCode?: string;
+  /** Where the item is offered: sales documents, purchase documents, or both. */ usage: { sales: boolean; purchase: boolean };
+  /** Purchase items: the expense category (fixture `expense-categories`) that picks the account. */ expenseCategory?: string;
+  /** Default true; an inactive item is not offered in type-ahead (documents keep their line). */ active?: boolean }
 
 export interface DocLine { id: string; itemId?: string; description: string; qty: Qty; unit: string; unitPrice: Money;
   discountPct?: string; taxCode: TaxCode; dimensions?: Record<string, string>; sourceLineId?: string;

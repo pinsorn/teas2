@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
 import { NAV } from "@/app-shell/nav";
 import { descriptorByPath } from "@/descriptors";
+import { recordByPath } from "@/records";
 import { fixtureIds } from "@/mocks/fixtures/ids";
 import { buildSeedState } from "@/mocks/store";
 import { SCREENS, TI_BASE, type Screen } from "./screens";
@@ -27,7 +28,7 @@ export default async function ScreenIndexPage() {
   const resolve = (r: Screen["route"]) => typeof r === "string" ? r : `${r.base ?? TI_BASE}/${ids[r.fixture]}${r.suffix ?? ""}`;
   const built = SCREENS.map((s) => ({ ...s, path: resolve(s.route) }));
   // pending = a nav entry with no descriptor, no screen-index entry (record descriptors join here when they exist)
-  const pending = NAV.flatMap((g) => g.items).filter((i) => !descriptorByPath(i.href) && !SCREENS.some((s) => s.route === i.href));
+  const pending = NAV.flatMap((g) => g.items).filter((i) => !descriptorByPath(i.href) && !recordByPath(i.href) && !SCREENS.some((s) => s.route === i.href));
   return (
     <main className="mx-auto max-w-5xl space-y-8 p-4 md:p-6">
       <header>

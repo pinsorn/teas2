@@ -77,7 +77,7 @@ refusal; a refusal is only when a rule demands it, e.g. an account mapped by a p
 **Customer / vendor descriptors (exact):**
 - customer: `basePath '/master/customers'`, `titleKey 'records.customer.title'` ("ลูกค้า"), perms `party.read` / `party.manage`,
   columns code, name, taxId, branch, vatRegistered (bool), paymentTermDays, active; fields: `entityKind` (select:
-  individual / juristic / foreign, required), `code` (text, required, unique per company, `readOnlyAfterUse`), `name`
+  individual / juristic / foreign, required), `code` (text, required, unique per kind within a company, `readOnlyAfterUse`), `name`
   (required), `nameEn`, `taxId` (tin; required when `vatRegistered` or juristic; checksum), `branchCode` (branch,
   5 digits, required with taxId; default 00000), `vatRegistered` (bool), `address` (textarea, required when
   `vatRegistered` — I3), `phone`, `email`, `paymentTermDays` (int ≥ 0), `partyGroup` (select from `party-groups`
@@ -97,13 +97,13 @@ Validation messages (mock, Thai): "เลขประจำตัวผู้เ
 
 **Fixtures:** existing parties gain `entityKind` (F5), `partyGroup`, `email`, vendor bank details for the 8 VAT
 vendors and 5 non-VAT vendors (fictional banks/numbers), one inactive customer per company (`pc-13` "บริษัท เลิกกิจการ
-ตัวอย่าง จำกัด", `nc-08` "ร้านปิดตัวชั่วคราว"). Fixture keys: `customerVat` = `pc-01`, `customerIndividual` = `pc-09`,
-`customerInactive` = `pc-13`, `vendorForeign` = (new) `pv-10` "Cloudberry Software Ltd. (ไอร์แลนด์)" entityKind foreign,
+ตัวอย่าง จำกัด", `nc-09` "ร้านปิดตัวชั่วคราว" — nc-08 already exists in the seed). Fixture keys: `customerVat` = `pc-01`, `customerIndividual` = `pc-09`,
+`customerInactive` = `pc-13`, `vendorForeign` = (new) `pv-12` (pv-10 exists; pv-11 is reserved by plan 04) "Cloudberry Software Ltd. (ไอร์แลนด์)" entityKind foreign,
 `vatDRegistered: false`.
 
 **Permissions (mock roles):** operator + `party.manage`; accountant + `party.manage`; admin keeps `party.read`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `src/domain/records.contract.test.ts`
 ```ts
@@ -140,7 +140,7 @@ describe('record registry', () => {
 ```ts
 it('customer: bad TIN checksum → fieldErrors.taxId', () => {});
 it('customer: VAT-registered without address → fieldErrors.address (I3)', () => {});
-it('customer: code is unique per company, and the same code is allowed in the other company', () => {});
+it('customer: code is unique per kind within a company, and the same code is allowed in the other company', () => {});
 it('customer: code is read-only once the party is used on a document', () => {});
 it('update with a stale version → 409 record.version_conflict', () => {});
 it('every write appends an audit entry with before/after', () => {});
@@ -187,15 +187,15 @@ test('customer detail shows documents and open items from the server', async ({ 
 });
 ```
 
-- [ ] **Step 2: Run → FAIL** (`corepack pnpm test src/domain/records.contract.test.ts src/mocks/records src/kit/record-form src/kit/record-list`; `corepack pnpm e2e e2e/master-parties.spec.ts`).
-- [ ] **Step 3: Implement** — `RecordList` mirrors `DocList` states, search (server, debounced 300 ms, URL `?q=`),
+- [x] **Step 2: Run → FAIL** (`corepack pnpm test src/domain/records.contract.test.ts src/mocks/records src/kit/record-form src/kit/record-list`; `corepack pnpm e2e e2e/master-parties.spec.ts`).
+- [x] **Step 3: Implement** — `RecordList` mirrors `DocList` states, search (server, debounced 300 ms, URL `?q=`),
   active filter (ใช้งาน / ปิดใช้งาน / ทั้งหมด), create button "เพิ่ม<title>" opening `RecordForm` in a Radix `Dialog`;
   rows link to `/<basePath>/<id>` when `detail`, else open the form. `RecordForm`: React Hook Form; Zod schema built
   from `FieldSpec` only for shape (required, digits, TIN checksum via `domain/tin.ts`); server `fieldErrors` mapped by
   key. `RecordView` for `detail: true` (tabs as above). Generic routes resolve `recordByPath` after
   `descriptorByPath`; `[id]` resolves `RecordViewPage`. All three remount on company switch.
-- [ ] **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(frontend): record kit; customers and vendors`.
+- [x] **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(frontend): record kit; customers and vendors`.
 
 ---
 
@@ -237,7 +237,7 @@ F4 COA, `entertainment` (`recoverableVat: false`)→5150, `capex-equipment` (`ca
 
 **Permissions:** operator `item.read`; accountant `item.read`, `item.manage`; admin `item.read`, `item.manage`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 // mocks/records/items test
@@ -255,16 +255,16 @@ screenContract({ name: 'items', path: '/master/items', heading: 'สินค้
 plus one e2e: on `/sales/tax-invoices/new`, type an unknown customer "บริษัท ลูกค้าใหม่ จำกัด", choose the add option,
 fill a valid TIN + branch + address, save → the editor's party field shows the new name and "ยังขาดอะไร" no longer
 lists the customer.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(frontend): items and services; quick-create parties from editors`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(frontend): items and services; quick-create parties from editors`.
 
 ---
 
 ### Task GM: Ham gate — master data
 
-- [ ] Controller: consolidated gate green; production build (`corepack pnpm build`, `corepack pnpm start -p 3100`)
+- [x] Controller: consolidated gate green; production build (`corepack pnpm build`, `corepack pnpm start -p 3100`)
   or the staging URL; screen index lists customers, vendors, items, party detail with every state link.
-- [ ] Send Ham: the URLs, the record-kit pattern (list + dialog form + detail), the validation messages, the quick-
+- [x] Send Ham: the URLs, the record-kit pattern (list + dialog form + detail), the validation messages, the quick-
   create flow, decisions D-27 and the role matrix for master data. AskUserQuestion "Master data approve?" — approve /
   approve with changes (notes) / rework.
-- [ ] Record the answer in `STATUS.md`; each requested change becomes a task appended to this file (same structure).
+- [x] Record the answer in `STATUS.md`; each requested change becomes a task appended to this file (same structure).

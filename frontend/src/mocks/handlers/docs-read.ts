@@ -32,12 +32,25 @@ export const docsReadHandlers = [
     }
     const types = (asked as DocType[]).filter((t) => isTypeAvailable(t, company.vatRegistered));
     for (const t of types) if (!perms.includes(`doc.${t}.read`)) return forbidden(`doc.${t}.read`);
-    const items = st.docs
+    const rows = st.docs
       .filter((d) => d.companyId === company.id && d.header.partyId === partyId && types.includes(d.type) && LIVE.includes(d.status) && balanceOf(st, d).out !== 0)
-      .sort((a, b) => a.header.documentDate.localeCompare(b.header.documentDate) || (a.number ?? '').localeCompare(b.number ?? ''))
-      .map((d): OpenItem => ({ id: d.id, type: d.type, number: d.number ?? '', documentDate: d.header.documentDate, ...(d.header.dueDate ? { dueDate: d.header.dueDate } : {}),
+      .sort((a, b) => a.header.documentDate.localeCompare(b.header.documentDate) || (a.number ?? '').localeCompare(b.number ?? ''));
+    const items = rows.map((d): OpenItem => ({ id: d.id, type: d.type, number: d.number ?? '', documentDate: d.header.documentDate, ...(d.header.dueDate ? { dueDate: d.header.dueDate } : {}),
         total: d.totals.total, outstanding: fromSatang(balanceOf(st, d).out) }));
-    return HttpResponse.json(items);
+    const total = fromSatang(rows.reduce((a, d) => a + balanceOf(st, d).out, 0)); // the server's sum: the browser never adds money
+    return HttpResponse.json({ items, total });
+  }),
+  // a party's documents across every type the role can read (registered before  like open-items)
+  http.get('*/bff/v1/docs/by-party/:partyId', async ({ params }) => {
+    const gate = await screenGate('list');
+    if (gate) return gate;
+    const { st, company, perms } = ctx();
+    if (!st.parties.some((p) => p.id === params.partyId && p.companyId === company.id)) return problem(404, 'record.not_found', 'ไม่พบข้อมูลนี้');
+    // a type the company cannot use or the role cannot read is skipped, not a failure: the tab shows what the role may see
+    const rows = st.docs
+      .filter((d) => d.companyId === company.id && d.header.partyId === params.partyId && isTypeAvailable(d.type, company.vatRegistered) && perms.includes(`doc.${d.type}.read`))
+      .sort((a, b) => b.header.documentDate.localeCompare(a.header.documentDate) || (a.number ?? '').localeCompare(b.number ?? ''));
+    return HttpResponse.json({ items: rows.map(toSummary), total: rows.length } satisfies Page<DocSummary>);
   }),
   http.get('*/bff/v1/docs/:type', async ({ request, params }) => {
     const gate = await screenGate('list');

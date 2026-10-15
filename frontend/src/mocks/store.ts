@@ -15,11 +15,13 @@ import { buildSeed } from './fixtures';
 import { getSettings } from './settings';
 
 export interface MockState {
-  version: 4;
+  version: 6;
   companies: Company[];
   memberships: (Membership & { userId: string })[];
-  parties: (PartySummary & { companyId: string })[];
-  items: (ItemSummary & { companyId: string })[];
+  /** `active` (default true) and `version` (default 1) are the master record's; documents keep their own party snapshot. */
+  parties: (PartySummary & { companyId: string; active?: boolean; version?: number })[];
+  /** `version` (default 1) is the master record's. */
+  items: (ItemSummary & { companyId: string; version?: number })[];
   docs: (Doc & { companyId: string })[];
   links: (ChainEdge & { companyId: string })[];
   activity: (ActivityEntry & { docId: string })[];
@@ -39,7 +41,7 @@ export interface MockState {
   plans?: Record<string, { docId: string; proposed: { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] }; role: Role; plan: CorrectionPlan }>;
 }
 
-const KEY = 'teas2.mock.state.v4';
+const KEY = 'teas2.mock.state.v6';
 
 /** The seed for a given role (default accountant: the screen index resolves fixture ids on the server, where there is no toolbar). */
 export function buildSeedState(role: Role = 'accountant'): MockState {
@@ -59,7 +61,7 @@ export const seed = (): MockState => buildSeedState(getSettings().role);
 export function loadState(): MockState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 4) return s; }
+    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 6) return s; }
   } catch { /* fall through to a fresh seed */ }
   return seed();
 }

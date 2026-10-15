@@ -1,7 +1,8 @@
 import type { PartySummary } from '@/domain/types';
 import { tinCheckDigit } from '@/domain/tin';
 
-export type SeedParty = PartySummary & { companyId: string };
+/** `active` (default true) and `version` (default 1) belong to the master record, not to the snapshot a document keeps. */
+export type SeedParty = PartySummary & { companyId: string; active?: boolean; version?: number };
 
 /** Fictional TIN with a correct check digit. */
 const tin = (first12: string) => first12 + tinCheckDigit(first12);
@@ -46,21 +47,46 @@ const NONVAT_VENDORS: Raw[] = [
 /** Individuals carry the title คุณ; Northwind Studio is the foreign payee; everyone else is a juristic person. */
 const entityKindOf = (name: string): PartySummary['entityKind'] => (name.startsWith('คุณ') ? 'individual' : name.startsWith('Northwind') ? 'foreign' : 'juristic');
 
-function build(companyId: string, prefix: string, kind: 'customer' | 'vendor', raws: Raw[], usual?: (i: number) => string[]): SeedParty[] {
+const BANKS = ['ธนาคารกรุงเทพ', 'ธนาคารกสิกรไทย', 'ธนาคารไทยพาณิชย์', 'ธนาคารกรุงไทย', 'ธนาคารกรุงศรีอยุธยา'];
+const groupOf = (kind: 'customer' | 'vendor', name: string, i: number): string =>
+  name.startsWith('Northwind') ? 'foreign' : name.includes('หน่วยงานรัฐ') ? 'government' : kind === 'customer' && i < 3 ? 'major' : 'general';
+
+/** Vendors carry remittance details (fictional banks and numbers) for the first `withBank` of them. */
+function build(companyId: string, prefix: string, kind: 'customer' | 'vendor', raws: Raw[], usual?: (i: number) => string[], withBank = 0): SeedParty[] {
   return raws.map(([name, taxId, vatRegistered, paymentTermDays], i) => ({
     companyId, id: `${prefix}-${pad(i + 1)}`, kind, code: `${kind === 'customer' ? 'C' : 'V'}${pad(i + 1)}`, name, taxId,
     entityKind: entityKindOf(name), ...(taxId ? { branchCode: '00000' } : {}), vatRegistered, address: ADDR[i % ADDR.length], paymentTermDays,
     ...(kind === 'vendor' && vatRegistered ? { defaultWhtTypeCode: 'SVC' } : {}),
     ...(usual ? { usualItemIds: usual(i) } : {}),
+    partyGroup: groupOf(kind, name, i),
+    contact: { email: `${kind === 'customer' ? 'ar' : 'ap'}${pad(i + 1)}@${companyId === 'co-vat' ? 'example.test' : 'example.invalid'}` },
+    ...(kind === 'vendor' && i < withBank
+      ? { bankAccount: { bankName: BANKS[i % BANKS.length], accountNo: `${100 + i}-${i % 9}-${String(40000 + i * 137).padStart(5, '0')}-${i % 7}`, accountName: name } } : {}),
   }));
 }
+
+/** Parties for the master-data screens, appended after the document seed's pools (documents never pick them: inactive, or a vendor). */
+const extras = (): SeedParty[] => [
+  { companyId: 'co-vat', id: 'pc-13', kind: 'customer', code: 'C13', name: 'บริษัท เลิกกิจการ ตัวอย่าง จำกัด', taxId: corpTin(13), branchCode: '00000', vatRegistered: true,
+    address: ADDR[0], paymentTermDays: 30, entityKind: 'juristic', partyGroup: 'general', active: false, version: 1 },
+  { companyId: 'co-nonvat', id: 'nc-09', kind: 'customer', code: 'C09', name: 'ร้านปิดตัวชั่วคราว', vatRegistered: false, address: ADDR[2], paymentTermDays: 7,
+    entityKind: 'juristic', partyGroup: 'general', active: false, version: 1 },
+  { companyId: 'co-vat', id: 'pv-12', kind: 'vendor', code: 'V12', name: 'Cloudberry Software Ltd. (ไอร์แลนด์)', vatRegistered: false, vatDRegistered: false,
+    address: '1 Grand Canal Quay, Dublin, Ireland', paymentTermDays: 30, entityKind: 'foreign', partyGroup: 'foreign', defaultWhtTypeCode: 'FOR-SVC',
+    contact: { email: 'billing@cloudberry.example.test' }, bankAccount: { bankName: 'Example Bank Ireland', accountNo: 'IE00 EXMP 9900 1234 5678 90', accountName: 'Cloudberry Software Ltd.' }, version: 1 },
+];
+
+/** Party fixtures the master-data screens and tests name. `vendorForeign` is pv-12: pv-10 exists in the seed and pv-11 is reserved by plan 04 (netting). */
+export const PARTY_FIXTURES = { customerVat: 'pc-01', customerIndividual: 'pc-09', customerInactive: 'pc-13', customerInactiveNonVat: 'nc-09', vendorForeign: 'pv-12' } as const;
 
 export const vatParties = (): SeedParty[] => [
   ...build('co-vat', 'pc', 'customer', VAT_CUSTOMERS, (i) =>
     i === 0 ? ['SV-01'] : [`SV-${pad((i % 9) + 2)}`, `GD-${pad((i % 10) + 1)}`]),
-  ...build('co-vat', 'pv', 'vendor', VAT_VENDORS),
+  ...build('co-vat', 'pv', 'vendor', VAT_VENDORS, undefined, 8),
+  ...extras().filter((p) => p.companyId === 'co-vat'),
 ];
 export const nonVatParties = (): SeedParty[] => [
   ...build('co-nonvat', 'nc', 'customer', NONVAT_CUSTOMERS, (i) => [`nv-GD-${pad((i % 8) + 1)}`]),
-  ...build('co-nonvat', 'nv', 'vendor', NONVAT_VENDORS),
+  ...build('co-nonvat', 'nv', 'vendor', NONVAT_VENDORS, undefined, 5),
+  ...extras().filter((p) => p.companyId === 'co-nonvat'),
 ];

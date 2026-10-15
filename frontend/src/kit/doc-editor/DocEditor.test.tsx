@@ -48,9 +48,46 @@ describe('DocEditor', () => {
   });
   it('no match keeps the typed text and lists the gap in "ยังขาดอะไร"', async () => {
     ui();
-    await userEvent.type(screen.getByRole('combobox', { name: 'ลูกค้า' }), 'ไม่มีชื่อนี้{Enter}');
+    await userEvent.type(screen.getByRole('combobox', { name: 'ลูกค้า' }), 'ไม่มีชื่อนี้');
+    await screen.findByRole('option', { name: /เพิ่มลูกค้า/ }); // the user may add it (party.manage), so Enter would open the form: leave the list instead
+    await userEvent.keyboard('{Escape}');
     expect(screen.getByRole('combobox', { name: 'ลูกค้า' })).toHaveValue('ไม่มีชื่อนี้');
     expect(await screen.findByRole('region', { name: 'ยังขาดอะไร' })).toHaveTextContent('เลือกลูกค้า');
+  });
+  it('quick-create: an unknown customer is added from the editor, picked, and no longer listed as missing', async () => {
+    ui();
+    const name = 'บริษัท ลูกค้าใหม่ จำกัด';
+    await userEvent.type(screen.getByRole('combobox', { name: 'ลูกค้า' }), name);
+    await userEvent.click(await screen.findByRole('option', { name: `+ เพิ่มลูกค้า “${name}”` }));
+    const dialog = await screen.findByRole('dialog', { name: 'เพิ่มลูกค้า' });
+    await waitFor(() => expect(within(dialog).getByLabelText('รหัส')).toHaveValue('C14'));
+    await userEvent.type(within(dialog).getByLabelText('เลขประจำตัวผู้เสียภาษี'), '0105500000003');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'บันทึก' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByRole('combobox', { name: 'ลูกค้า' })).toHaveValue(name);
+    expect(await screen.findByText(/0105500000003/)).toBeVisible();
+    await waitFor(() => expect(screen.getByRole('region', { name: 'ยังขาดอะไร' })).not.toHaveTextContent('เลือกลูกค้า'));
+    await waitFor(() => expect(calls).toContain('POST /bff/v1/docs/TI/compute'));
+  });
+  it('quick-create needs party.manage: without it the option is gone and the hint names the permission', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={qc}><DocEditor descriptor={taxInvoice} mode="create" onIssued={vi.fn()} /></QueryClientProvider>);
+    await waitFor(() => expect(qc.getQueryData(qk.me())).toBeTruthy());
+    const me = qc.getQueryData<Me>(qk.me())!;
+    act(() => { qc.setQueryData(qk.me(), { ...me, permissions: me.permissions.filter((p) => p !== 'party.manage') }); });
+    await userEvent.type(screen.getByRole('combobox', { name: 'ลูกค้า' }), 'ไม่มีชื่อนี้');
+    expect((await screen.findAllByText(/ต้องมีสิทธิ์ party.manage/)).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('option')).toBeNull();
+    await userEvent.keyboard('{Enter}'); // Enter on no match, without the permission, is the old behaviour: the text stays, no form
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('combobox', { name: 'ลูกค้า' })).toHaveValue('ไม่มีชื่อนี้');
+    expect(await screen.findByRole('region', { name: 'ยังขาดอะไร' })).toHaveTextContent('เลือกลูกค้า');
+  });
+  it('a customer document offers sales items only: a purchase item with a similar name is not suggested', async () => {
+    ui();
+    await userEvent.type(screen.getByRole('combobox', { name: 'รายการ 1' }), 'ถ่ายภาพ');
+    const opts = await screen.findAllByRole('option');
+    expect(opts.map((o) => o.textContent)).toEqual([expect.stringContaining('SV-04')]); // not EXP-05 "ค่าถ่ายภาพสินค้า"
   });
   it('totals come from the compute endpoint, not the browser', async () => {
     ui();

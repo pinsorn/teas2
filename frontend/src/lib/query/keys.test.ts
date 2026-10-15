@@ -11,6 +11,10 @@ describe('query keys', () => {
     expect(qk.openItems('a', 'p', 't')).not.toEqual(qk.openItems('b', 'p', 't'));
     expect(qk.bankAccounts('co-vat')[0]).toBe('co-vat');
     expect(qk.whtTypes('co-vat')[0]).toBe('co-vat');
+    expect(qk.records('co-vat', 'customer', { q: 'a' })).toEqual(['co-vat', 'records', 'customer', { q: 'a' }]);
+    expect(qk.record('co-vat', 'customer', 'pc-01')[0]).toBe('co-vat');
+    expect(qk.docsByParty('co-vat', 'pc-01')[0]).toBe('co-vat');
+    expect(qk.records('a', 'customer', {})).not.toEqual(qk.records('b', 'customer', {}));
     for (const k of [qk.chain, qk.activity, qk.revisions, qk.ledger]) {
       expect(k('co-vat', 'TI', 'd1')).toEqual(['co-vat', expect.any(String), 'TI', 'd1']);
       expect(k('co-vat', 'TI', 'd1')).not.toEqual(k('co-vat', 'RC', 'd1'));
