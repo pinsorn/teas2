@@ -18,11 +18,12 @@
       "title": "Convert {doc}", "body": "Pick the target document and the quantity of each line. Enter 0 to leave a line out.", "target": "Target document",
       "colItem": "Item", "colUnit": "Unit", "colOrdered": "Total", "colConverted": "Converted", "colRemaining": "Remaining", "colQty": "Quantity to convert",
       "qty": "Quantity to convert, line {n}", "create": "Create {target}", "creating": "Creating…", "close": "Close",
-      "noTarget": "No target document is available to this company and permitted to you", "badQty": "Invalid quantity: enter a number from 0 up (0 = leave this line out)", "loadFailed": "Could not load the remaining quantities"
+      "noTarget": "No target document is available to this company and permitted to you", "badQty": "Invalid quantity: enter a number from 0 up (0 = leave this line out)", "loadFailed": "Could not load the remaining quantities",
+      "groupBody": "The whole document is added to a new billing statement (draft). Nothing is posted; choose more documents of this customer in the editor."
     },
     "actions": {
       "label": "Actions", "issueDraft": "Save and issue…", "edit": "Edit", "print": "Print", "copy": "Copy as new",
-      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "markDelivered": "Delivered", "markSent": "Sent to vendor", "whyNothingRemaining": "Every line is already converted in full; there is nothing to close", "whyClosed": "The remainder is closed, so it cannot be converted; revise the document to reopen it"
+      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "receive": "Receive payment", "markDelivered": "Delivered", "markSent": "Sent to vendor", "whyNothingRemaining": "Every line is already converted in full; there is nothing to close", "whyClosed": "The remainder is closed, so it cannot be converted; revise the document to reopen it"
     },
     "paper": { "notPrintable": "No paper form is available for this document type", "notIssued": "This document has not been issued, so it cannot be printed as a tax invoice. Issue it first.", "stub": "The document paper preview appears here", "snapshot": "Revision {n}" },
     "chain": {
@@ -310,6 +311,19 @@
       "doPrint": "Print delivery order",
       "nsoIssued": "Sales order (non-VAT)",
       "ndoDelivered": "Delivery order: delivered (non-VAT)",
+      "ivList": "Invoices: list (non-VAT)",
+      "ivNew": "Invoice: new (non-VAT)",
+      "ivDraft": "Invoice: draft (non-VAT)",
+      "ivEdit": "Invoice: edit draft (non-VAT)",
+      "ivIssued": "Invoice: issued, unpaid (non-VAT)",
+      "ivPartly": "Invoice: partly received (non-VAT)",
+      "ivSettled": "Invoice: settled (non-VAT)",
+      "ivPrint": "Print invoice (non-VAT, no tax rows)",
+      "blList": "Billing statements: list",
+      "blNew": "Billing statement: new",
+      "blVat": "Billing statement: two tax invoices",
+      "blNonVat": "Billing statement: two invoices (non-VAT)",
+      "blPrint": "Print billing statement",
       "nqtPrint": "Print quotation (non-VAT, no tax rows)",
       "trialBalance": "Trial balance",
       "customers": "Customers list",
@@ -466,6 +480,17 @@
       "form": "Form",
       "forms": { "PND2": "PND.2", "PND3": "PND.3", "PND53": "PND.53", "PND54": "PND.54" }
     },
+    "group": {
+      "title": "Documents billed",
+      "pickParty": "Pick the customer to see the documents that can be billed",
+      "empty": "No outstanding documents to bill",
+      "number": "Number",
+      "due": "Due",
+      "docTotal": "Document total",
+      "outstanding": "Outstanding (billed)",
+      "pick": "Select {number}",
+      "total": "Billing statement total"
+    },
     "settlement": {
       "title": "Documents settled",
       "pickParty": "Pick the party to see their open items",
@@ -545,6 +570,7 @@
     "QT": {"title": "Quotation", "issue": "Save and issue quotation", "create": "Create quotation", "empty": "No quotations yet"},
     "SO": {"title": "Sales order", "issue": "Save and issue sales order", "create": "Create sales order", "empty": "No sales orders yet"},
     "DO": {"title": "Delivery order", "issue": "Save and issue delivery order", "create": "Create delivery order", "empty": "No delivery orders yet"},
+    "BL": {"title": "Billing statement", "issue": "Save and issue billing statement", "create": "Create billing statement", "empty": "No billing statements yet"},
     "IV": {"title": "Invoice", "issue": "Save and issue invoice", "create": "Create invoice", "empty": "No invoices yet"},
     "TI": {"title": "Tax invoice", "issue": "Save and issue tax invoice", "create": "Create tax invoice", "empty": "No tax invoices yet"},
     "RC": {"title": "Receipt", "issue": "Save and issue receipt", "create": "Create receipt", "empty": "No receipts yet"},

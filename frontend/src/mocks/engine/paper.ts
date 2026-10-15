@@ -12,6 +12,8 @@ const LOOK: Partial<Record<DocType, Look>> = {
   TI: { titleTh: 'ใบกำกับภาษี', titleEn: 'TAX INVOICE', signatures: ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'] },
   SO: { titleTh: 'ใบสั่งขาย', titleEn: 'SALES ORDER', signatures: ['ผู้สั่งซื้อ', 'ผู้อนุมัติ', 'ผู้รับคำสั่งซื้อ'], dueLabel: 'กำหนดส่ง' },
   DO: { titleTh: 'ใบส่งของ', titleEn: 'DELIVERY ORDER', signatures: ['ผู้ส่งของ', 'ผู้รับของ', 'ผู้อนุมัติ'] },
+  IV: { titleTh: 'ใบแจ้งหนี้', titleEn: 'INVOICE', signatures: ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'] },
+  BL: { titleTh: 'ใบวางบิล', titleEn: 'BILLING STATEMENT', signatures: ['ผู้วางบิล', 'ผู้รับวางบิล', 'ผู้มีอำนาจลงนาม'], dueLabel: 'นัดชำระเงิน' },
   QT: { titleTh: 'ใบเสนอราคา', titleEn: 'QUOTATION', signatures: ['ผู้เสนอราคา', 'ผู้อนุมัติ', 'ลูกค้ายืนยันสั่งซื้อ'], dueLabel: 'ยืนราคาถึง' },
 };
 
@@ -46,4 +48,16 @@ function paperOf(c: Ctx, d: Doc, copy: boolean): PaperModel {
   };
 }
 
-export const PAPER_BUILDERS: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf, QT: paperOf, SO: paperOf, DO: paperOf };
+const TYPE_TH: Partial<Record<DocType, string>> = { TI: 'ใบกำกับภาษี', IV: 'ใบแจ้งหนี้' };
+/** BL: one row per grouped document with the amount the server recorded at issue; a statement is not a tax document, so no VAT rows. */
+function billingPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
+  const { vatLines, ...m } = paperOf(c, d, copy); void vatLines;
+  const lines = (d.allocations ?? []).map((a, i) => {
+    const t = c.st.docs.find((x) => x.id === a.targetId);
+    return { no: i + 1, description: `${TYPE_TH[a.targetType] ?? a.targetType} ${a.targetNumber ?? a.targetId}${t ? ` ลงวันที่ ${formatDateBE(t.header.documentDate)}` : ''}`,
+      qty: '1', unit: 'ฉบับ', unitPrice: a.amount, amount: a.amount, taxCode: 'EX' as const };
+  });
+  return { ...m, lines };
+}
+
+export const PAPER_BUILDERS: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf, QT: paperOf, SO: paperOf, DO: paperOf, IV: paperOf, BL: billingPaper };

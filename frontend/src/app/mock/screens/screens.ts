@@ -12,6 +12,8 @@ export const TI_BASE = '/sales/tax-invoices';
 export const QT_BASE = '/sales/quotations';
 export const SO_BASE = '/sales/sales-orders';
 export const DO_BASE = '/sales/delivery-orders';
+export const IV_BASE = '/sales/invoices';
+export const BL_BASE = '/sales/billing-statements';
 // names are keys of messages `screens.name.*`; fixture keys live in src/mocks/fixtures/ids.ts (later tasks append their screens here)
 export const SCREENS: Screen[] = [
   { name: 'home', route: '/', company: 'both', states: true },
@@ -45,6 +47,19 @@ export const SCREENS: Screen[] = [
   { name: 'doPrint', route: { fixture: 'doDelivered', base: '/print/DO' }, company: 'vat', states: false },
   { name: 'nsoIssued', route: { fixture: 'nsoIssued', base: SO_BASE }, company: 'nonvat', states: true },
   { name: 'ndoDelivered', route: { fixture: 'ndoDelivered', base: DO_BASE }, company: 'nonvat', states: true },
+  { name: 'ivList', route: IV_BASE, company: 'nonvat', states: true },
+  { name: 'ivNew', route: `${IV_BASE}/new`, company: 'nonvat', states: true },
+  { name: 'ivDraft', route: { fixture: 'ivDraft', base: IV_BASE }, company: 'nonvat', states: true },
+  { name: 'ivEdit', route: { fixture: 'ivDraft', base: IV_BASE, suffix: '/edit' }, company: 'nonvat', states: true },
+  { name: 'ivIssued', route: { fixture: 'ivIssuedUnpaid', base: IV_BASE }, company: 'nonvat', states: true },
+  { name: 'ivPartly', route: { fixture: 'ivPartly', base: IV_BASE }, company: 'nonvat', states: true },
+  { name: 'ivSettled', route: { fixture: 'ivSettled', base: IV_BASE }, company: 'nonvat', states: true },
+  { name: 'ivPrint', route: { fixture: 'ivIssuedUnpaid', base: '/print/IV' }, company: 'nonvat', states: false },
+  { name: 'blList', route: BL_BASE, company: 'both', states: true },
+  { name: 'blNew', route: `${BL_BASE}/new`, company: 'both', states: true },
+  { name: 'blVat', route: { fixture: 'blVat', base: BL_BASE }, company: 'vat', states: true },
+  { name: 'blNonVat', route: { fixture: 'blNonVat', base: BL_BASE }, company: 'nonvat', states: true },
+  { name: 'blPrint', route: { fixture: 'blVat', base: '/print/BL' }, company: 'vat', states: false },
   { name: 'trialBalance', route: '/reports/financial-statements', company: 'both', states: true },
   { name: 'customers', route: '/master/customers', company: 'both', states: true },
   { name: 'customerView', route: '/master/customers/pc-01', company: 'vat', states: true },

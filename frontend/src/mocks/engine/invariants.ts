@@ -1,4 +1,4 @@
-import { DOC_TYPES, LIVE, SETTLES } from '@/domain/doc-types';
+import { DOC_TYPES, GROUPS, LIVE, SETTLES } from '@/domain/doc-types';
 import type { WhtLine, WhtMode } from '@/domain/types';
 import type { Doc } from '@/domain/types';
 import type { MockState } from '../store';
@@ -6,7 +6,7 @@ import { consumed, q4 } from './chain';
 import { divRoundHalfAway, fromSatang, toSatang } from './money';
 import { firstOpenDate, isClosed } from './periods';
 import { whtOf } from './settlement';
-import { computeDoc } from './vat';
+import { computeDoc, vatOf } from './vat';
 
 type Stored = MockState['docs'][number];
 
@@ -45,7 +45,7 @@ export function whtLineProblems(l: WhtLine, base: number, bp: bigint, mode: WhtM
 
 /** WHT of a PV recomputed from its lines and the fixture rate table with its own bigint formulas (not `computeWht`), and the engine's lines checked against it. */
 function expectedWht(st: MockState, d: Stored): { tax: number; expense: number; cashDelta: number; bad?: string } {
-  const nets = computeDoc(d.lines, !!d.header.priceIncludesVat).lines;
+  const nets = computeDoc(d.lines, !!d.header.priceIncludesVat, vatOf(st, d.companyId)).lines;
   const base = new Map<string, bigint>();
   d.lines.forEach((l, i) => { if (l.whtTypeCode) base.set(l.whtTypeCode, (base.get(l.whtTypeCode) ?? 0n) + BigInt(toSatang(nets[i].net))); });
   const mode = d.header.whtMode ?? 'deduct';
@@ -226,6 +226,24 @@ export function checkInvariants(st: MockState): string[] {
     }
   }
   // (No "settled <= total" check: a credit note or a cancelled debit note after payment legitimately leaves a negative outstanding = customer credit, Ham ruling; over-allocation is refused at issue.)
+
+  // 9. a billing statement (BL): total = the sum of its amounts, its active groups links are its list, every target is a groupable document of the same company and customer, and it posts nothing
+  for (const d of st.docs) {
+    if (!GROUPS[d.type] || !LIVE.includes(d.status)) continue;
+    const allocs = d.allocations ?? [];
+    const total = allocs.reduce((n, a) => n + sat(a.amount, d.id), 0);
+    if (sat(d.totals.total, d.id) !== total) out.push(`${d.id}: BL total ${d.totals.total} is not Σ allocation amounts ${fromSatang(total)}`);
+    const want = allocs.map((a) => `${a.targetId}|${sat(a.amount, d.id)}`).sort().join(',');
+    const have = st.links.filter((l) => l.active && l.kind === 'groups' && l.from === d.id).map((l) => `${l.to}|${sat(l.amount ?? '0.00', d.id)}`).sort().join(',');
+    if (want !== have) out.push(`${d.id}: allocations [${want}] but the active groups links are [${have}]`);
+    for (const a of allocs) {
+      const t = doc(a.targetId);
+      if (!t) continue; // a link to a missing document is reported by check 6
+      if (t.companyId !== d.companyId || t.header.partyId !== d.header.partyId) out.push(`${d.id}: BL groups ${a.targetId} of another party or company`);
+      if (!GROUPS[d.type]!.includes(t.type)) out.push(`${d.id}: BL groups ${a.targetId}, a ${t.type}, which cannot be grouped`);
+    }
+    if (st.journals.some((j) => j.docId === d.id)) out.push(`${d.id}: BL has a journal (a billing statement posts nothing)`);
+  }
 
   // numbering: gap-free per company x type x month, and the series counter agrees
   const groups = new Map<string, number[]>();

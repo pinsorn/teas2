@@ -15,6 +15,7 @@ import { qk } from '@/lib/query/keys';
 import { cn } from '@/lib/utils';
 import { ConfirmIssueDialog } from '../dialogs/ConfirmIssueDialog';
 import { StatusChip } from '../doc-list/StatusChip';
+import { GroupPanel } from './GroupPanel';
 import { HeaderFields } from './HeaderFields';
 import { JournalDrawer } from './JournalDrawer';
 import { isBlankLine, LineGrid, newLine } from './LineGrid';
@@ -113,8 +114,8 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   const payload = useMemo<DocInput>(() => ({
     header,
     lines: lines.filter((l) => !isBlankLine(l)).map((l) => ({ ...l, qty: qtyText(l.qty), unitPrice: moneyText(l.unitPrice) })),
-    ...(d.settles ? { allocations } : {}),
-  }), [header, lines, allocations, d.settles]);
+    ...(d.settles || d.groups ? { allocations } : {}),
+  }), [header, lines, allocations, d.settles, d.groups]);
   const payloadJson = JSON.stringify(payload);
 
   const invalidate = () => {
@@ -242,6 +243,10 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
 
           {d.settles && (
             <SettlementPanel descriptor={d} partyId={header.partyId} value={allocations} onChange={setAllocations} allocation={compute.last?.allocation} />
+          )}
+
+          {d.groups && (
+            <GroupPanel descriptor={d} partyId={header.partyId} value={allocations} onChange={setAllocations} total={compute.last?.totals.total} />
           )}
 
           {showLines && (

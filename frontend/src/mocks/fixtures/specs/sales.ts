@@ -1,4 +1,4 @@
-import type { DocLine, MarkKey } from '@/domain/types';
+import type { Allocation, DocLine, MarkKey } from '@/domain/types';
 import { cancel } from '../../engine/commands';
 import { closeRemainder, setMark } from '../../engine/marks';
 import type { MockState } from '../../store';
@@ -13,6 +13,9 @@ const mark = (id: string, key: MarkKey, reason?: string) => (st: MockState) => {
   setMark(st, id, key, st.docs.find((d) => d.id === id)!.version, USER, reason);
 };
 const due = (date: string) => ({ dueDate: date }); // QT: "ยืนราคาถึง"
+/** A receipt of the non-VAT company settling part / all of one invoice (RC in this file until S4 owns receipts). */
+const pay = (id: string, party: string, date: string, iv: string, amount: string): SeedSpec =>
+  ({ id, type: 'RC', companyId: NV, date, partyId: party, status: 'issued', lines: [], allocations: [{ targetId: iv, targetType: 'IV', amount }] as Allocation[] });
 
 export const SALES_SPECS: SeedSpec[] = [
   // ---- quotations, VAT company ----
@@ -54,4 +57,35 @@ export const SALES_SPECS: SeedSpec[] = [
     convertFrom: { id: 'nqt-2', lines: [{ sourceLineId: 'nqt-2-l1', qty: '20' }, { sourceLineId: 'nqt-2-l2', qty: '40' }] } },
   { id: 'ndo-1', type: 'DO', companyId: NV, date: '2026-10-09', status: 'issued', lines: [], convertFrom: { id: 'nso-1', lines: [{ sourceLineId: 'nso-1-l1', qty: '20' }, { sourceLineId: 'nso-1-l2', qty: '40' }] },
     after: mark('ndo-1', 'delivered') },
+
+  // ---- S3: non-VAT invoices (IV, L-class, no VAT whatever the tax code) and billing statements (BL) ----
+  { id: 'iv-d1', type: 'IV', companyId: NV, date: '2026-10-12', partyId: 'nc-01', status: 'draft', header: due('2026-10-27'),
+    lines: [line('iv-d1', 1, 'บริการจัดเลี้ยงอาหารกล่อง', '20', 'ชุด', '120.00', 'EX')] },
+  { id: 'iv-1', type: 'IV', companyId: NV, date: '2026-10-01', partyId: 'nc-01', status: 'issued', header: due('2026-10-16'),
+    lines: [line('iv-1', 1, 'บริการจัดเลี้ยงอาหารกล่อง', '40', 'ชุด', '120.00', 'EX')] },
+  { id: 'iv-2', type: 'IV', companyId: NV, date: '2026-10-02', partyId: 'nc-03', status: 'issued', header: due('2026-10-17'), // an S7 code on a non-VAT company: VAT stays 0.00 (I1)
+    lines: [line('iv-2', 1, 'ค่าที่ปรึกษาด้านบัญชี', '1', 'งาน', '2500.00', 'S7')] },
+  { id: 'iv-3', type: 'IV', companyId: NV, date: '2026-10-03', partyId: 'nc-06', status: 'issued', header: due('2026-10-18'),
+    lines: [line('iv-3', 1, 'ข้าวสารหอมมะลิ 5 กก.', '30', 'ถุง', '185.00', 'EX'), line('iv-3', 2, 'น้ำพริกเผา', '12', 'ขวด', '55.00', 'EX')] },
+  { id: 'iv-4', type: 'IV', companyId: NV, date: '2026-10-05', partyId: 'nc-01', status: 'issued', header: due('2026-10-20'),
+    lines: [line('iv-4', 1, 'บริการจัดเลี้ยงงานเลี้ยงรุ่น', '10', 'โต๊ะ', '300.00', 'EX')] },
+  { id: 'iv-p1', type: 'IV', companyId: NV, date: '2026-09-20', partyId: 'nc-02', status: 'issued', header: due('2026-10-05'), // 8,000.00, 3,000.00 received, overdue
+    lines: [line('iv-p1', 1, 'ค่าอาหารกลางวันนักเรียน (ภาคเรียน)', '2', 'งวด', '4000.00', 'EX')] },
+  { id: 'iv-p2', type: 'IV', companyId: NV, date: '2026-09-22', partyId: 'nc-04', status: 'issued', header: due('2026-10-07'), // 6,000.00, 2,500.00 received, overdue
+    lines: [line('iv-p2', 1, 'ค่าเช่าแผงตลาดประจำเดือน', '1', 'เดือน', '6000.00', 'EX')] },
+  pay('rc-ivp1', 'nc-02', '2026-09-25', 'iv-p1', '3000.00'),
+  pay('rc-ivp2', 'nc-04', '2026-09-28', 'iv-p2', '2500.00'),
+  { id: 'iv-s1', type: 'IV', companyId: NV, date: '2026-09-18', partyId: 'nc-05', status: 'issued', header: due('2026-10-03'),
+    lines: [line('iv-s1', 1, 'เมล็ดกาแฟคั่ว 1 กก.', '5', 'ถุง', '400.00', 'EX')] },
+  pay('rc-ivs1', 'nc-05', '2026-09-24', 'iv-s1', '2000.00'),
+  { id: 'iv-s2', type: 'IV', companyId: NV, date: '2026-09-19', partyId: 'nc-02', status: 'issued', header: due('2026-10-04'),
+    lines: [line('iv-s2', 1, 'ค่าอาหารว่างประชุมผู้ปกครอง', '3', 'ชุด', '500.00', 'EX')] },
+  pay('rc-ivs2', 'nc-02', '2026-09-26', 'iv-s2', '1500.00'),
+  { id: 'iv-can', type: 'IV', companyId: NV, date: '2026-09-30', partyId: 'nc-03', status: 'cancelled', header: due('2026-10-15'),
+    lines: [line('iv-can', 1, 'ค่าที่ปรึกษาด้านบัญชี', '1', 'งาน', '900.00', 'EX')] },
+  // billing statements: the grouped amounts are the targets' outstanding at issue (server-read); a BL posts nothing
+  { id: 'nbl-1', type: 'BL', companyId: NV, date: '2026-10-06', partyId: 'nc-01', status: 'issued', header: due('2026-10-21'), lines: [],
+    allocations: [{ targetId: 'iv-1', targetType: 'IV', amount: '0.00' }, { targetId: 'iv-4', targetType: 'IV', amount: '0.00' }] },
+  { id: 'bl-1', type: 'BL', companyId: VAT, date: '2026-10-10', partyId: 'pc-01', status: 'issued', header: due('2026-10-31'), lines: [],
+    allocations: [{ targetId: 'spike-60', targetType: 'TI', amount: '0.00' }, { targetId: 'ti-057', targetType: 'TI', amount: '0.00' }] },
 ];

@@ -40,7 +40,7 @@ export function progressOf(st: MockState, d: Doc): string | undefined {
     if (d.type === 'SO' && done >= ordered) return 'ส่งครบ';
     return `${{ SO: 'ส่งแล้ว', DO: 'วางบิลแล้ว', PO: 'รับแล้ว' }[d.type]} ${x}${d.marks?.closed ? ' (ปิดยอดคงเหลือ)' : ''}`;
   }
-  if (d.type === 'TI' && d.outstanding !== undefined) {
+  if ((d.type === 'TI' || d.type === 'IV') && d.outstanding !== undefined) {
     const paid = st.links.filter((l) => l.kind === 'settles' && l.to === d.id && l.active).reduce((a, l) => a + toSatang(l.amount ?? '0.00'), 0);
     return `ชำระแล้ว ${fromSatang(paid)} / ${d.totals.total}`;
   }

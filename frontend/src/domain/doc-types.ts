@@ -39,6 +39,9 @@ export const CONVERSIONS: Partial<Record<DocType, DocType[]>> = {
 /** D-12 / D-17: the open-item types a document allocates to (RC settles TI / IV; PV settles PB and EX only). The engine refuses any other target. */
 export const SETTLES: Partial<Record<DocType, DocType[]>> = { RC: ['TI', 'IV'], PV: ['PB', 'EX'] };
 
+/** SP0 7.8 Groups: the open-item types a billing statement lists (BL groups TI / IV). No ledger, no balance effect; the amounts are informational. */
+export const GROUPS: Partial<Record<DocType, DocType[]>> = { BL: ['TI', 'IV'] };
+
 /** Marks a document type can carry (SP1c S1). Only on a live document; a QT's rejection needs a reason. */
 export const MARKS: Partial<Record<DocType, MarkKey[]>> = { QT: ['accepted', 'rejected'], DO: ['delivered'], PO: ['sent'] };
 

@@ -74,6 +74,11 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCa
             {(p) => <Button {...p} variant="outline" onClick={onConvert}>{t('convert')}</Button>}
           </Guarded>
         ) : null}
+        {d.groups && live ? ( // a billing statement is collected by a receipt that opens on its grouped documents (the receipt task reads fromBl)
+          <Guarded why={missing('doc.RC.create')}>
+            {(p) => <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t('receive')}</span> : <Link href={`/sales/receipts/new?fromBl=${doc.id}`}>{t('receive')}</Link>}</Button>}
+          </Guarded>
+        ) : null}
         {live && CLOSEABLE.includes(d.type) && !doc.marks?.closed ? (
           <Guarded why={missing(d.permissions.issue) ?? (nothingRemaining ? t('whyNothingRemaining') : undefined)}>
             {(p) => <Button {...p} variant="outline" onClick={onCloseRemainder}>{t('closeRemainder')}</Button>}

@@ -2,12 +2,14 @@ import type { DocType } from '@/domain/types';
 import { routesOf, type DocDescriptor } from '@/domain/descriptors';
 import { NAV } from '@/app-shell/nav';
 import { isTypeAvailable } from '@/domain/doc-types';
+import { billingStatement } from './billing-statement';
 import { deliveryOrder } from './delivery-order';
+import { invoice } from './invoice';
 import { quotation } from './quotation';
 import { salesOrder } from './sales-order';
 import { taxInvoice } from './tax-invoice';
 
-export const DESCRIPTORS: Partial<Record<DocType, DocDescriptor>> = { TI: taxInvoice, QT: quotation, SO: salesOrder, DO: deliveryOrder };
+export const DESCRIPTORS: Partial<Record<DocType, DocDescriptor>> = { TI: taxInvoice, QT: quotation, SO: salesOrder, DO: deliveryOrder, IV: invoice, BL: billingStatement };
 export function descriptorByPath(path: string): DocDescriptor | undefined {
   return Object.values(DESCRIPTORS).find((d) => d.basePath === path);
 }

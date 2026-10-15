@@ -34,7 +34,7 @@ export function SettlementPanel(props: SettlementPanelProps) {
 }
 
 /** Zero or negative outstanding cannot be settled; read from the server string, not computed. */
-const settleable = (outstanding: string) => !outstanding.startsWith('-') && !/^0+(\.0+)?$/.test(outstanding);
+export const settleable = (outstanding: string) => !outstanding.startsWith('-') && !/^0+(\.0+)?$/.test(outstanding);
 
 function SettlementPanelInner({ descriptor: d, partyId, value, onChange, allocation, readOnly }: SettlementPanelProps) {
   const t = useTranslations('docEditor.settlement');

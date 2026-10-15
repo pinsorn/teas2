@@ -1,10 +1,10 @@
-import { LIVE, SETTLES } from '@/domain/doc-types';
+import { GROUPS, LIVE, SETTLES, isTypeAvailable } from '@/domain/doc-types';
 import type { Allocation, ComputeResult, DocHeader, DocLine, DocTotals, DocType, PartySummary, WhtLine } from '@/domain/types';
 import type { MockState } from '../store';
 import { bahtText } from './bahtText';
 import { MockError } from './log';
 import { divRoundHalfAway, fromSatang, toSatang } from './money';
-import { computeDoc } from './vat';
+import { computeDoc, vatOf } from './vat';
 import { computeWht, whtTypeOf } from './wht';
 
 type Stored = MockState['docs'][number];
@@ -30,9 +30,47 @@ export function balanceOf(st: MockState, d: Stored): { out: number; paid: number
   return { out, paid, settled };
 }
 
-/** Allocation list as stored: engine-set `targetNumber`, amounts normalised, anything else dropped. A type that settles nothing refuses allocations. */
-export function cleanAllocations(st: MockState, companyId: string, type: DocType, allocs: Allocation[] | undefined): Allocation[] | undefined {
+/** BL: the grouped list as stored. The amount is the target's outstanding NOW, read here (a client amount is ignored); `keep` = the allocations
+ *  already on an issued BL being revised, whose amount stands (the statement says what was owed when it was issued). A target of another company keeps '0.00': groupError refuses it. */
+function cleanGroup(st: MockState, companyId: string, allocs: Allocation[], keep?: Allocation[]): Allocation[] {
+  return allocs.map((a) => {
+    const target = st.docs.find((d) => d.id === a.targetId && d.companyId === companyId);
+    const kept = keep?.find((k) => k.targetId === a.targetId);
+    const amount = kept ? kept.amount : target ? fromSatang(balanceOf(st, target).out) : '0.00';
+    return { targetId: a.targetId, targetType: a.targetType, ...(target?.number ? { targetNumber: target.number } : {}), ...(target?.header.partyId ? { partyId: target.header.partyId } : {}), amount };
+  });
+}
+
+/** BL total = the sum of the grouped amounts, summed by the server. Nothing is taxed or posted on a BL: net = total, VAT 0.00. */
+export function groupTotals(body: Part, lineTotals: DocTotals): DocTotals {
+  const total = fromSatang(sum((body.allocations ?? []).map((a) => money(a.amount, 'settle.invalid_amount'))));
+  return { ...lineTotals, net: total, vat: '0.00', total, amountInWords: bahtText(total) };
+}
+
+/** The command-time rules for a BL list: same company, same party, a groupable type, still open with something owing.
+ *  `prior`: the list an issued statement already carries - a kept target that has since been paid in full does not block revising the rest. */
+function groupError(st: MockState, companyId: string, type: DocType, header: DocHeader, allocs: Allocation[] | undefined, prior?: Allocation[]): MockError | undefined {
+  const seen = new Set<string>();
+  for (const a of allocs ?? []) {
+    const target = st.docs.find((d) => d.id === a.targetId);
+    if (!target || target.companyId !== companyId) return new MockError(422, 'group.target_not_found', 'ไม่พบเอกสารที่ต้องการวางบิล');
+    const label = target.number ?? target.id;
+    if (seen.has(a.targetId)) return new MockError(422, 'group.duplicate_target', `เลือก ${label} ซ้ำ`);
+    seen.add(a.targetId);
+    if (!GROUPS[type]!.includes(target.type) || a.targetType !== target.type || !isTypeAvailable(target.type, vatOf(st, companyId))) {
+      return new MockError(422, 'group.wrong_type', `${label} วางบิลไม่ได้ (วางบิลได้เฉพาะใบกำกับภาษีและใบแจ้งหนี้)`);
+    }
+    if (!LIVE.includes(target.status)) return new MockError(422, 'group.target_not_open', `${label} ไม่อยู่ในสถานะที่วางบิลได้`);
+    if (target.header.partyId !== header.partyId) return new MockError(422, 'group.party_mismatch', `${label} เป็นของคู่ค้าคนละราย วางบิลรวมกันไม่ได้`);
+    if (balanceOf(st, target).out <= 0 && !prior?.some((p) => p.targetId === a.targetId)) return new MockError(422, 'group.nothing_outstanding', `${label} ไม่มียอดค้างชำระ`);
+  }
+  return undefined;
+}
+
+/** Allocation list as stored: engine-set `targetNumber`, amounts normalised, anything else dropped. A type that settles nothing refuses allocations (a BL groups: its own list). */
+export function cleanAllocations(st: MockState, companyId: string, type: DocType, allocs: Allocation[] | undefined, keep?: Allocation[]): Allocation[] | undefined {
   if (allocs === undefined) return undefined;
+  if (GROUPS[type]) return cleanGroup(st, companyId, allocs, keep);
   if (!SETTLES[type]) {
     if (allocs.length) throw new MockError(422, 'settle.not_allowed', 'เอกสารประเภทนี้จัดสรรการชำระไม่ได้');
     return undefined;
@@ -68,7 +106,7 @@ const payeeOf = (st: MockState, companyId: string, partyId?: string): PartySumma
 
 /** WHT of a PV from its lines (D-14): one line per WHT type, rates from `st.whtTypes`. */
 export function whtOf(st: MockState, companyId: string, header: DocHeader, lines: DocLine[]) {
-  const nets = computeDoc(lines, !!header.priceIncludesVat).lines;
+  const nets = computeDoc(lines, !!header.priceIncludesVat, vatOf(st, companyId)).lines;
   return computeWht(lines.map((l, i) => ({ net: toSatang(nets[i].net), whtTypeCode: l.whtTypeCode })), header.whtMode ?? 'deduct',
     payeeOf(st, companyId, header.partyId), header.documentDate, st);
 }
@@ -149,13 +187,13 @@ export function payError(st: MockState, companyId: string, type: DocType, body: 
   if (type === 'PV' && body.lines.some((l) => l.taxCode !== 'EX')) {
     return new MockError(422, 'pv.input_vat_needs_bill', 'ใบสำคัญจ่ายไม่มีภาษีซื้อ ภาษีซื้อต้องบันทึกผ่านใบรับวางบิล (PB) แล้วจึงจ่ายชำระ');
   }
-  if (toSatang(settleTotals(st, companyId, type, body, computeDoc(body.lines, !!h.priceIncludesVat).totals).cash!) < 0) return new MockError(422, 'pay.negative_cash', 'ยอดเงินที่รับ/จ่ายสุทธิติดลบ ตรวจจำนวนเงินและภาษีหัก ณ ที่จ่าย');
+  if (toSatang(settleTotals(st, companyId, type, body, computeDoc(body.lines, !!h.priceIncludesVat, vatOf(st, companyId)).totals).cash!) < 0) return new MockError(422, 'pay.negative_cash', 'ยอดเงินที่รับ/จ่ายสุทธิติดลบ ตรวจจำนวนเงินและภาษีหัก ณ ที่จ่าย');
   return undefined;
 }
 
 /** Every command-time rule of an RC / PV, first violation wins. */
 export const settleProblem = (st: MockState, companyId: string, type: DocType, body: Part, outstanding: (id: string) => number, opts: { partyExempt?: string[]; prior?: Allocation[] } = {}) =>
-  allocationError(st, companyId, type, body.header, body.allocations, outstanding, opts) ?? payError(st, companyId, type, body);
+  GROUPS[type] ? groupError(st, companyId, type, body.header, body.allocations, opts.prior) : allocationError(st, companyId, type, body.header, body.allocations, outstanding, opts) ?? payError(st, companyId, type, body);
 
 /** RC suggestion per allocation: round(service net of the target x rate x amount / target total), the target's service lines' WHT type. */
 export function suggestWht(st: MockState, companyId: string, header: DocHeader, allocs: Allocation[]): NonNullable<ComputeResult['allocation']>['suggestedWht'] {
@@ -166,7 +204,7 @@ export function suggestWht(st: MockState, companyId: string, header: DocHeader, 
     if (!target) continue;
     const total = BigInt(toSatang(target.totals.total)), amount = BigInt(money(a.amount, 'settle.invalid_amount'));
     if (total <= 0n || amount <= 0n) continue;
-    const nets = computeDoc(target.lines, !!target.header.priceIncludesVat).lines;
+    const nets = computeDoc(target.lines, !!target.header.priceIncludesVat, vatOf(st, target.companyId)).lines;
     const byType = new Map<string, bigint>();
     target.lines.forEach((l, i) => {
       const code = l.whtTypeCode ?? st.items.find((it) => it.id === l.itemId && it.companyId === companyId)?.whtTypeCode;

@@ -38,11 +38,11 @@ describe('docListHref / matchNavItem', () => {
   it('routes a document type to its list, honouring VAT status', () => {
     expect(docListHref('TI', true)).toBe('/sales/tax-invoices');
     expect(docListHref('TI', false)).toBeUndefined();
-    expect(docListHref('IV', false)).toBeUndefined();
-    expect(docListHref('IV', true)).toBeUndefined();
+    expect(docListHref('IV', false)).toBe('/sales/invoices');
+    expect(docListHref('IV', true)).toBeUndefined(); // a VAT company issues tax invoices instead
     expect(docListHref('QT', true)).toBe('/sales/quotations');
     expect(docListHref('QT', false)).toBe('/sales/quotations'); // QT is for both kinds of company
-    expect(docListHref('BL', true)).toBeUndefined(); // not built yet
+    expect(docListHref('BL', true)).toBe('/sales/billing-statements');
   });
   it('has no route (so no link) for types without a nav page', () => {
     for (const t of ['JV', 'DP', 'WT', 'FA', 'PR', 'OB'] as const) expect(docListHref(t, true)).toBeUndefined();

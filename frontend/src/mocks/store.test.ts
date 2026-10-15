@@ -45,7 +45,7 @@ describe('mock store', () => {
     const old = { ...seed(), version: 5, items: [] as unknown[] };
     localStorage.setItem('teas2.mock.state.v5', JSON.stringify(old));
     const s = loadState();
-    expect(s.version).toBe(8);
+    expect(s.version).toBe(9);
     expect(s.items.some((i) => i.id === 'EXP-01')).toBe(true);
     expect(s.parties.some((p) => p.id === 'pv-12')).toBe(true);
   });
@@ -71,7 +71,7 @@ describe('mock store', () => {
     expect([n('draft'), n('settled'), n('partly_settled'), n('replaced')]).toEqual([6, 30, 6, 3]);
     expect(n('issued')).toBe(12);
     expect(tis.filter((d) => d.createdBy.kind === 'agent')).toHaveLength(2);
-    const rcTargets = s.links.filter((l) => l.kind === 'settles').map((l) => l.to).sort();
+    const rcTargets = s.links.filter((l) => l.kind === 'settles' && s.docs.find((d) => d.id === l.to)?.type === 'TI').map((l) => l.to).sort(); // (S3's receipts settle IVs)
     expect(rcTargets).toEqual(tis.filter((d) => d.status === 'settled' || d.status === 'partly_settled').map((d) => d.id).sort());
     expect(s.links.filter((l) => l.kind === 'replaces')).toHaveLength(3);
     expect(s.links.filter((l) => l.kind === 'adjusts')).toHaveLength(2);

@@ -1,7 +1,7 @@
 import type {
   Actor, Allocation, ComputeResult, Doc, DocHeader, DocLine, DocTotals, DocType, IsoDate, JournalEntryPreview, JournalPreview, Lock, MissingItem, Money, PartySummary, Qty,
 } from '@/domain/types';
-import { CLASS, CONVERSIONS, DOC_TYPES, LIVE, SETTLES, isTypeAvailable } from '@/domain/doc-types';
+import { CLASS, CONVERSIONS, DOC_TYPES, GROUPS, LIVE, SETTLES, isTypeAvailable } from '@/domain/doc-types';
 import type { MockState } from '../store';
 import { consumed, fmtQ, q4 } from './chain';
 import { ledgerFor, reversalOf } from './ledger';
@@ -10,8 +10,8 @@ import { MockError, diffBody, isPinned, logActivity, logAudit, stamp, today } fr
 import { fromSatang, toSatang } from './money';
 import { SeriesAllocator } from './numbering';
 import { firstOpenDate, isClosed, monthLabelTh } from './periods';
-import { balanceOf, cleanAllocations, fiscalAllocations, payDefaults, settleExtras, settleProblem, settleTotals } from './settlement';
-import { computeDoc } from './vat';
+import { balanceOf, cleanAllocations, fiscalAllocations, groupTotals, payDefaults, settleExtras, settleProblem, settleTotals } from './settlement';
+import { computeDoc, vatOf } from './vat';
 
 export type Body = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] };
 type Stored = MockState['docs'][number];
@@ -53,15 +53,16 @@ const put = (st: MockState, d: Stored) => { st.docs[st.docs.findIndex((x) => x.i
 const checkVersion = (d: Stored, v: number) => {
   if (d.version !== v) throw new MockError(409, 'doc.version_conflict', 'เอกสารถูกแก้ไขโดยผู้อื่นแล้ว กรุณาโหลดใหม่');
 };
-export function calc(body: Body) {
-  try { return computeDoc(body.lines, !!body.header.priceIncludesVat); } catch (e) {
+/** `vatRegistered`: the company's flag, required (I1: a non-VAT company's lines carry VAT 0.00 whatever their tax code). */
+export function calc(body: Body, vatRegistered: boolean) {
+  try { return computeDoc(body.lines, !!body.header.priceIncludesVat, vatRegistered); } catch (e) {
     throw new MockError(422, 'doc.invalid_line', e instanceof Error ? e.message : 'รายการไม่ถูกต้อง');
   }
 }
 /** Document totals: the lines' totals, plus for an RC / PV the settlement money (total, WHT, cash). One seam for create / update / issue / revise / compute. */
 export function totalsOf(st: MockState, companyId: string, type: DocType, body: Body): DocTotals {
-  const t = calc(body).totals;
-  return SETTLES[type] ? settleTotals(st, companyId, type, body, t) : t;
+  const t = calc(body, vatOf(st, companyId)).totals;
+  return SETTLES[type] ? settleTotals(st, companyId, type, body, t) : GROUPS[type] ? groupTotals(body, t) : t;
 }
 function partyOf(st: MockState, companyId: string, id?: string): PartySummary | undefined {
   const p = st.parties.find((x) => x.id === id && x.companyId === companyId);
@@ -104,6 +105,8 @@ export function missingOf(st: MockState, companyId: string, type: DocType, body:
     if (!body.lines.length && !body.allocations?.length && dep <= 0) {
       out.push({ field: 'allocations', message: type === 'RC' ? 'ต้องเลือกใบกำกับภาษีที่ชำระ หรือระบุเงินรับล่วงหน้า' : 'ต้องเลือกรายการที่จ่ายชำระ หรือเพิ่มรายการค่าใช้จ่าย' });
     }
+  } else if (GROUPS[type]) { // BL: the grouped invoices are the content
+    if (!body.allocations?.length) out.push({ field: 'allocations', message: 'ต้องเลือกใบแจ้งหนี้หรือใบกำกับภาษีที่ต้องการวางบิล' });
   } else if (!body.lines.length) out.push({ field: 'lines', message: 'ต้องมีรายการอย่างน้อย 1 รายการ' });
   return out;
 }
@@ -151,9 +154,9 @@ export function markReplaced(st: MockState, oldId: string, newId: string, actor:
 }
 
 /** The body as stored: engine header defaults (RC / PV) and the cleaned allocation list. Refuses a malformed allocation, nothing semantic (that is issue's job). */
-function stored(st: MockState, companyId: string, type: DocType, body: Body): Body {
-  const allocations = cleanAllocations(st, companyId, type, body.allocations);
-  return { header: payDefaults(st, companyId, type, body.header), lines: body.lines, ...(allocations ? { allocations } : {}) };
+function stored(st: MockState, companyId: string, type: DocType, body: Body, keep?: Allocation[]): Body {
+  const allocations = cleanAllocations(st, companyId, type, body.allocations, keep);
+  return { header: payDefaults(st, companyId, type, body.header), lines: GROUPS[type] ? [] : body.lines, ...(allocations ? { allocations } : {}) };
 }
 
 function insertDraft(st: MockState, companyId: string, type: DocType, raw: Body, actor: Actor, id?: string): Stored {
@@ -174,8 +177,8 @@ const outstandingNow = (st: MockState) => (id: string): number => balanceOf(st, 
 
 /** `opts.docId`: the issued document being revised - its own active settlements are given back before the allocations are checked (same as `revise`). */
 export function compute(st: MockState, companyId: string, type: DocType, raw: Body, opts?: { docId?: string }): ComputeResult {
-  const body = stored(st, companyId, type, raw);
-  const c = calc(body);
+  const body = stored(st, companyId, type, raw, opts?.docId ? st.docs.find((x) => x.id === opts.docId)?.allocations : undefined);
+  const c = calc(body, vatOf(st, companyId));
   const totals = totalsOf(st, companyId, type, body);
   const doc: Doc = {
     id: 'preview', type, status: 'draft', correctionClass: CLASS[type], revision: 0, version: 1, header: body.header,
@@ -224,12 +227,14 @@ export function deleteDraft(st: MockState, id: string, version: number, actor: A
   logAudit(st, actor, d.companyId, 'doc.delete', id, { status: 'draft' });
 }
 
-/** Links an RC / PV to every target it allocates to and refreshes their balances (one `settles` link per allocation, with its own amount and WHT). */
+/** Links an RC / PV to every target it allocates to and refreshes their balances (one `settles` link per allocation, with its own amount and WHT).
+ *  A BL links the same way with `groups` (informational amount, no balance effect). */
 function settleTargets(st: MockState, d: Stored, allocations: Allocation[] | undefined): void {
+  const kind = GROUPS[d.type] ? 'groups' : 'settles';
   for (const a of allocations ?? []) {
-    st.links.push({ companyId: d.companyId, from: d.id, to: a.targetId, kind: 'settles', amount: a.amount, active: true, ...(a.wht ? { wht: a.wht } : {}) });
+    st.links.push({ companyId: d.companyId, from: d.id, to: a.targetId, kind, amount: a.amount, active: true, ...(a.wht ? { wht: a.wht } : {}) });
   }
-  for (const a of allocations ?? []) recomputeSettlement(st, a.targetId);
+  if (kind === 'settles') for (const a of allocations ?? []) recomputeSettlement(st, a.targetId);
 }
 
 /** `keepDate`: a correction re-issues a document at its original date (I9), so the period / future checks do not apply.
@@ -238,7 +243,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   const d = getDoc(st, id);
   if (d.status !== 'draft') throw new MockError(409, 'doc.not_draft', 'ออกได้เฉพาะเอกสารฉบับร่าง');
   checkVersion(d, version);
-  const body: Body = { header: d.header, lines: d.lines, ...(d.allocations ? { allocations: d.allocations } : {}) };
+  let body: Body = { header: d.header, lines: d.lines, ...(d.allocations ? { allocations: d.allocations } : {}) };
   const missing = missingOf(st, d.companyId, d.type, body);
   if (missing.length) throw incomplete(missing);
   if (!opts?.keepDate) { // D-10; seed history (pinned clock) is issued as of its own date, so only the closed-period refusal is skipped
@@ -249,13 +254,14 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   }
   const bad = settleProblem(st, d.companyId, d.type, body, outstandingNow(st), { partyExempt: opts?.partyExempt, prior: opts?.prior });
   if (bad) throw bad; // nothing has been written yet: a refused issue leaves no number, link or journal behind
+  if (GROUPS[d.type]) body = { ...body, allocations: cleanAllocations(st, d.companyId, d.type, body.allocations) }; // BL: each target's outstanding AS OF ISSUE, server-read
   const totals = totalsOf(st, d.companyId, d.type, body);
   const next: Stored = {
-    ...d, number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', totals, party: partyOf(st, d.companyId, d.header.partyId),
+    ...d, ...(body.allocations ? { allocations: body.allocations } : {}), number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', totals, party: partyOf(st, d.companyId, d.header.partyId),
     version: d.version + 1, issuedAt: stamp(), ...(hasOut(d.type) ? { outstanding: totals.total } : {}),
   };
   put(st, next);
-  settleTargets(st, next, d.allocations);
+  settleTargets(st, next, body.allocations);
   setJournal(st, id, postedNow(st, d.companyId, ledgerFor(st, next)));
   st.revisions.push({ docId: id, revision: 0, at: next.issuedAt!, actor, snapshot: publicDoc(next), diff: [] });
   logActivity(st, id, actor, 'issue', next.number);
@@ -285,10 +291,20 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
   return publicDoc(next);
 }
 
+/** An IV (L-class, receivable): a revision cannot take the total below what active settlements already took (T5). Equal is fine (outstanding 0.00). */
+export function refuseBelowSettled(st: MockState, d: Stored, body: Body): void {
+  if (d.type !== 'IV') return; // the payable side (PB / EX) keeps its own rule
+  const paid = sumSat(st.links.filter((l) => l.active && l.kind === 'settles' && l.to === d.id).map((l) => l.amount));
+  const total = totalsOf(st, d.companyId, d.type, body).total;
+  if (toSatang(total) < paid) {
+    throw new MockError(422, 'settle.below_settled', `ยอดใหม่ ${total} บาท ต่ำกว่ายอดที่รับชำระแล้ว ${fromSatang(paid)} บาท ยกเลิกหรือถอนการรับชำระก่อน`);
+  }
+}
+
 /** Revise in place (classes N and L). A T-class document only accepts non-fiscal changes here; fiscal ones go through a correction plan. */
 export function revise(st: MockState, id: string, raw: Body, version: number, reason: string, actor: Actor): Doc {
   const d = getDoc(st, id);
-  const body = stored(st, d.companyId, d.type, { ...raw, allocations: raw.allocations ?? d.allocations });
+  const body = stored(st, d.companyId, d.type, { ...raw, allocations: raw.allocations ?? d.allocations }, d.allocations);
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_revisable', 'แก้ไขได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   checkVersion(d, version);
   if (d.correctionClass === 'T' && isFiscalChange(d, body)) {
@@ -296,7 +312,8 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   }
   if (d.correctionClass === 'L' && blockingLocks(d).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก แก้ไขไม่ได้');
   if (d.correctionClass !== 'T') { const m = missingOf(st, d.companyId, d.type, body); if (m.length) throw incomplete(m); }
-  const resettle = SETTLES[d.type] !== undefined && d.correctionClass !== 'T'; // a payment voucher re-points its own links; a receipt (T) can only change a certificate number here
+  refuseBelowSettled(st, d, body);
+  const resettle = (SETTLES[d.type] !== undefined && d.correctionClass !== 'T') || GROUPS[d.type] !== undefined; // a payment voucher / billing statement re-points its own links; a receipt (T) can only change a certificate number here
   if (resettle) { // the voucher's own current links give their amounts back before the new list is checked
     const bad = settleProblem(st, d.companyId, d.type, body, ownBack(st, outstandingNow(st), id), { prior: d.allocations });
     if (bad) throw bad;
@@ -317,10 +334,11 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   if (marks) next.marks = marks; else delete next.marks;
   put(st, next);
   if (resettle) {
-    const before = st.links.filter((l) => l.active && l.kind === 'settles' && l.from === id).map((l) => l.to);
-    st.links = st.links.map((l) => (l.active && l.kind === 'settles' && l.from === id ? { ...l, active: false } : l));
+    const own = GROUPS[d.type] ? 'groups' : 'settles';
+    const before = st.links.filter((l) => l.active && l.kind === own && l.from === id).map((l) => l.to);
+    st.links = st.links.map((l) => (l.active && l.kind === own && l.from === id ? { ...l, active: false } : l));
     settleTargets(st, next, body.allocations);
-    for (const t of before) recomputeSettlement(st, t);
+    if (own === 'settles') for (const t of before) recomputeSettlement(st, t);
   }
   if (hasOut(d.type)) recomputeSettlement(st, id);
   if (d.correctionClass === 'L') {
@@ -343,7 +361,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   if (!LIVE.includes(old.status)) throw new MockError(409, 'doc.not_correctable', 'ออกใหม่ได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   if (blockingLocks(old).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ออกใหม่ไม่ได้');
   if (st.links.some((l) => l.to === id && l.active)) throw new MockError(409, 'doc.has_dependents', 'มีเอกสารอ้างอิงอยู่ ต้องยกเลิกเอกสารนั้นก่อน');
-  let body = stored(st, old.companyId, old.type, { ...raw, allocations: raw.allocations ?? old.allocations });
+  let body = stored(st, old.companyId, old.type, { ...raw, allocations: raw.allocations ?? old.allocations }, old.allocations);
   if (SETTLES[old.type] && fiscalAllocations(body.allocations) !== fiscalAllocations(old.allocations)) { // the links are carried as they are
     throw new MockError(422, 'doc.reissue_allocations_changed', 'ออกใหม่ต้องใช้การจัดสรรชำระเดิม ถ้าต้องการเปลี่ยนให้ยกเลิกแล้วออกใหม่');
   }
@@ -391,6 +409,15 @@ export function convert(st: MockState, id: string, targetType: DocType, lines: {
   if (!CONVERSIONS[src.type]?.includes(targetType)) throw new MockError(422, 'doc.conversion_not_allowed', `แปลง ${src.type} เป็น ${targetType} ไม่ได้`);
   if (!isTypeAvailable(targetType, !!st.companies.find((c) => c.id === src.companyId)?.vatRegistered)) {
     throw new MockError(422, 'doc.type_not_available', unavailableTh(targetType));
+  }
+  if (GROUPS[targetType]) { // a billing statement groups the whole document: no quantities, no converted_from link (the `groups` link is made at issue)
+    const d = insertDraft(st, src.companyId, targetType, {
+      header: { partyId: src.header.partyId, documentDate: today(), ...(src.number ? { reference: src.number } : {}) }, lines: [],
+      allocations: [{ targetId: src.id, targetType: src.type, amount: '0.00' }],
+    }, actor, opts?.id);
+    logActivity(st, d.id, actor, 'create', `จาก ${src.number}`);
+    logAudit(st, actor, src.companyId, 'doc.convert', src.id, undefined, { target: d.id, type: targetType });
+    return publicDoc(getDoc(st, d.id));
   }
   if (!lines.length) throw new MockError(422, 'doc.incomplete', 'ต้องเลือกรายการอย่างน้อย 1 รายการ');
   const wanted = new Map<string, number>();

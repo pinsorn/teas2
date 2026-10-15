@@ -137,7 +137,7 @@ describe('I1: a CN / DN carries one line per tax code and the plan shows exactly
     expect(doc.header.priceIncludesVat).toBe(note.priceIncludesVat);
     expect(doc.totals.total).toBe(note.total);
     for (const row of note.taxLines) {
-      const computed = calc({ header: doc.header, lines: doc.lines.filter((l) => l.taxCode === row.taxCode) });
+      const computed = calc({ header: doc.header, lines: doc.lines.filter((l) => l.taxCode === row.taxCode) }, true);
       expect(row).toEqual({ taxCode: row.taxCode, net: computed.totals.net, vat: computed.totals.vat, total: computed.totals.total });
     }
     return doc;
@@ -148,7 +148,7 @@ describe('I1: a CN / DN carries one line per tax code and the plan shows exactly
     const ti = mkTi(before);
     const plan = correctionPlan(st, ti.id, { header: ti.header, lines: after }, 'accountant');
     expect(plan.steps.map((s) => s.action)).toEqual([exp.type === 'CN' ? 'issue_cn' : 'issue_dn']);
-    expect(toSatang(plan.steps[0].note!.total)).toBe(Math.abs(toSatang(calc({ header: ti.header, lines: after }).totals.total) - toSatang(ti.totals.total)));
+    expect(toSatang(plan.steps[0].note!.total)).toBe(Math.abs(toSatang(calc({ header: ti.header, lines: after }, true).totals.total) - toSatang(ti.totals.total)));
     const note = noteOf(plan, executePlan(st, plan.planId, plan.planHash, me));
     expect(note.totals).toMatchObject({ net: exp.net, vat: exp.vat, total: exp.total });
     expect(st.docs.find((d) => d.id === ti.id)!.outstanding).toBe(outstanding);
@@ -198,7 +198,7 @@ describe('I1: a CN / DN carries one line per tax code and the plan shows exactly
     const { stripOverrides } = await import('../handlers/docs-write');
     for (const bad of [{ header: {} }, { header: {}, lines: [null] }, { header: {}, lines: 'x' }]) {
       expect(() => stripOverrides(bad as never)).not.toThrow();
-      expect(() => calc(bad as never)).toThrow(expect.objectContaining({ status: 422 }));
+      expect(() => calc(bad as never, true)).toThrow(expect.objectContaining({ status: 422 }));
     }
   });
   it('a body arriving over HTTP cannot carry a vatOverride (stripped at the boundary)', async () => {
