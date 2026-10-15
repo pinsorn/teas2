@@ -1,6 +1,6 @@
 import type { DocLine, MarkKey } from '@/domain/types';
 import { cancel } from '../../engine/commands';
-import { setMark } from '../../engine/marks';
+import { closeRemainder, setMark } from '../../engine/marks';
 import type { MockState } from '../../store';
 import { USER } from '../documents';
 import type { SeedSpec } from '../seed-runner';
@@ -37,4 +37,21 @@ export const SALES_SPECS: SeedSpec[] = [
   { id: 'nqt-2', type: 'QT', companyId: NV, date: '2026-10-07', partyId: 'nc-05', status: 'issued', header: due('2026-10-21'),
     lines: [line('nqt-2', 1, 'ข้าวสาร 15 กก.', '20', 'ถุง', '420.00', 'EX'), line('nqt-2', 2, 'ข้าวเหนียว 1 กก.', '40', 'ถุง', '48.00', 'EX')],
     after: mark('nqt-2', 'accepted') },
+
+  // ---- S2: sales orders and delivery orders ----
+  { id: 'so-d1', type: 'SO', companyId: VAT, date: '2026-10-10', partyId: 'pc-02', status: 'draft', header: due('2026-10-31'),
+    lines: [line('so-d1', 1, 'ออกแบบบรรจุภัณฑ์', '1', 'งาน', '35000.00')] },
+  { id: 'so-part', type: 'SO', companyId: VAT, date: '2026-10-10', partyId: 'pc-04', status: 'issued', header: due('2026-10-31'), // 30 units ordered, 10 delivered
+    lines: [line('so-part', 1, 'โปสเตอร์ A2', '20', 'แผ่น', '180.00'), line('so-part', 2, 'ปฏิทินตั้งโต๊ะ', '10', 'ชุด', '95.00')] },
+  { id: 'do-part', type: 'DO', companyId: VAT, date: '2026-10-11', status: 'issued', lines: [], convertFrom: { id: 'so-part', lines: [{ sourceLineId: 'so-part-l1', qty: '10' }] } },
+  { id: 'so-closed', type: 'SO', companyId: VAT, date: '2026-10-10', partyId: 'pc-08', status: 'issued', header: due('2026-10-25'),
+    lines: [line('so-closed', 1, 'นามบัตร 500 ใบ', '10', 'กล่อง', '450.00'), line('so-closed', 2, 'แฟ้มเอกสารพิมพ์โลโก้', '5', 'เล่ม', '65.00')],
+    after: (st) => { closeRemainder(st, 'so-closed', st.docs.find((d) => d.id === 'so-closed')!.version, 'ลูกค้าขอยกเลิกส่วนที่เหลือ', USER); } },
+  // so-u1 is an existing seed SO (one line of 2 เดือน): delivered in full
+  { id: 'do-dlv', type: 'DO', companyId: VAT, date: '2026-10-12', status: 'issued', lines: [], convertFrom: { id: 'so-u1', lines: [{ sourceLineId: 'so-u1-l1', qty: '2' }] },
+    after: mark('do-dlv', 'delivered') },
+  { id: 'nso-1', type: 'SO', companyId: NV, date: '2026-10-08', status: 'issued', lines: [], header: due('2026-10-20'),
+    convertFrom: { id: 'nqt-2', lines: [{ sourceLineId: 'nqt-2-l1', qty: '20' }, { sourceLineId: 'nqt-2-l2', qty: '40' }] } },
+  { id: 'ndo-1', type: 'DO', companyId: NV, date: '2026-10-09', status: 'issued', lines: [], convertFrom: { id: 'nso-1', lines: [{ sourceLineId: 'nso-1-l1', qty: '20' }, { sourceLineId: 'nso-1-l2', qty: '40' }] },
+    after: mark('ndo-1', 'delivered') },
 ];

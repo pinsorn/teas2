@@ -45,3 +45,6 @@ export const MARKS: Partial<Record<DocType, MarkKey[]>> = { QT: ['accepted', 're
 /** The conversion targets a user may actually use: offered by the type, available to the company, and creatable by the role (one filter for the action bar and the dialog). */
 export const convertTargets = (offered: DocType[] | undefined, vatRegistered: boolean, permissions: string[]): DocType[] =>
   (offered ?? []).filter((x) => isTypeAvailable(x, vatRegistered) && permissions.includes(`doc.${x}.create`));
+
+/** Types whose unconverted remainder can be closed (a mark, SP1c S2): the N-class documents that are converted onward line by line. */
+export const CLOSEABLE: DocType[] = ['SO', 'DO', 'PO'];

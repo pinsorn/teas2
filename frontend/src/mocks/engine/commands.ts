@@ -5,7 +5,7 @@ import { CLASS, CONVERSIONS, DOC_TYPES, LIVE, SETTLES, isTypeAvailable } from '@
 import type { MockState } from '../store';
 import { consumed, fmtQ, q4 } from './chain';
 import { ledgerFor, reversalOf } from './ledger';
-import { afterRevision, refuseRejected, withAcceptedStamp } from './marks';
+import { afterRevision, refuseClosed, refuseRejected, withAcceptedStamp } from './marks';
 import { MockError, diffBody, isPinned, logActivity, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
 import { SeriesAllocator } from './numbering';
@@ -380,6 +380,7 @@ export function convert(st: MockState, id: string, targetType: DocType, lines: {
   const src = getDoc(st, id);
   if (!LIVE.includes(src.status)) throw new MockError(409, 'doc.not_convertible', 'แปลงได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   refuseRejected(src);
+  refuseClosed(src);
   if (!CONVERSIONS[src.type]?.includes(targetType)) throw new MockError(422, 'doc.conversion_not_allowed', `แปลง ${src.type} เป็น ${targetType} ไม่ได้`);
   if (!isTypeAvailable(targetType, !!st.companies.find((c) => c.id === src.companyId)?.vatRegistered)) {
     throw new MockError(422, 'doc.type_not_available', unavailableTh(targetType));

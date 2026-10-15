@@ -23,6 +23,7 @@ import { ActionBar, type ConvertibleDescriptor } from './ActionBar';
 import { ActivityTimeline } from './ActivityTimeline';
 import { ChainPanel } from './ChainPanel';
 import { ConvertDialog } from './ConvertDialog';
+import { CloseRemainderDialog } from '../dialogs/CloseRemainderDialog';
 import { MarkDialog } from './MarkDialog';
 import { MarksChips } from './MarksChips';
 import { docEditHref, docViewHref } from '@/descriptors';
@@ -80,6 +81,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
   const [cancelOpen, setCancelOpen] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
   const [markOpen, setMarkOpen] = useState<MarkKey>();
+  const [closeOpen, setCloseOpen] = useState(false);
   const [notice, setNotice] = useState<string>();
   // A dead document opens on its chain: the pointer to the replacement is what the reader needs first.
   const [tab, setTab] = useState(doc.status === 'replaced' || doc.status === 'cancelled' ? 'chain' : 'paper');
@@ -93,6 +95,11 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
   const mark = useMutation({
     mutationFn: (v: { mark: MarkKey; reason?: string }) => endpoints.setMark(d.type, doc.id, v.mark, doc.version, v.reason),
     onSuccess: async () => { await refresh(); setMarkOpen(undefined); },
+    onError: (e) => { if (e instanceof ApiError && e.code === 'doc.version_conflict') void refresh(); },
+  });
+  const close = useMutation({
+    mutationFn: (reason: string) => endpoints.closeRemainder(d.type, doc.id, doc.version, reason),
+    onSuccess: async () => { await refresh(); setCloseOpen(false); },
     onError: (e) => { if (e instanceof ApiError && e.code === 'doc.version_conflict') void refresh(); },
   });
   // A conversion lands on the new draft's edit screen (a type whose screens are not built yet still has its route).
@@ -131,13 +138,17 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
           <div><dt className="text-small text-muted-foreground">{t('header.party')}</dt><dd>{doc.party?.name ?? '-'}</dd></div>
           <div><dt className="text-small text-muted-foreground">{t('header.date')}</dt><dd className="tabular-nums">{formatDateBE(doc.header.documentDate)}</dd></div>
           <div><dt className="text-small text-muted-foreground">{t('header.total')}</dt><dd className="tabular-nums">{formatTHB(doc.totals.total)}</dd></div>
+          {doc.progress ? <div><dt className="text-small text-muted-foreground">{t('header.progress')}</dt><dd className="tabular-nums">{doc.progress}</dd></div> : null}
           {doc.outstanding !== undefined ? <div><dt className="text-small text-muted-foreground">{t('header.outstanding')}</dt><dd className="tabular-nums">{formatTHB(doc.outstanding)}</dd></div> : null}
         </dl>
         <LockBanner locks={doc.locks} exitAction={exitAction} />
       </header>
 
       <ActionBar descriptor={d as ConvertibleDescriptor} doc={doc} permissions={permissions} vatRegistered={me!.vatRegistered} onCancel={() => { cancel.reset(); setCancelOpen(true); }} onConvert={() => setConvertOpen(true)}
-        onMark={(m) => { mark.reset(); setMarkOpen(m); }} />
+        onMark={(m) => { mark.reset(); setMarkOpen(m); }} onCloseRemainder={() => { close.reset(); setCloseOpen(true); }} />
+      {doc.marks?.closed ? (
+        <Alert role="status"><AlertTitle>{t('closedAlert')}</AlertTitle><AlertDescription>{t('marks.rejectedWhy', { reason: doc.marks.closed.reason })}</AlertDescription></Alert>
+      ) : null}
       {d.type === 'QT' && doc.marks?.rejected ? (
         <Alert role="status"><AlertTitle>{t('rejectedQt')}</AlertTitle><AlertDescription>{t('marks.rejectedWhy', { reason: doc.marks.rejected.reason })}</AlertDescription></Alert>
       ) : null}
@@ -163,10 +174,11 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
       </Tabs>
 
       {convertOpen ? <ConvertDialog source={doc} targets={d.convertsTo ?? []} onDone={converted} onClose={() => setConvertOpen(false)} /> : null}
-      {markOpen === 'accepted' || markOpen === 'rejected' ? (
+      {markOpen === 'accepted' || markOpen === 'rejected' || markOpen === 'delivered' ? (
         <MarkDialog mark={markOpen} docLabel={label} busy={mark.isPending} error={mark.error} onCancel={() => setMarkOpen(undefined)}
           onConfirm={(reason) => mark.mutate({ mark: markOpen, reason })} />
       ) : null}
+      {closeOpen ? <CloseRemainderDialog docLabel={label} busy={close.isPending} error={close.error} onCancel={() => setCloseOpen(false)} onConfirm={(r) => close.mutate(r)} /> : null}
       {cancelOpen ? (
         <CancelDialog docLabel={label} total={doc.totals.total} busy={cancel.isPending} error={cancel.error} hint={cancel.error instanceof ApiError && cancel.error.code === 'doc.version_conflict' ? t('cancel.stale') : undefined} onCancel={() => setCancelOpen(false)}
           onConfirm={(code, text) => cancel.mutate({ code, text })} />

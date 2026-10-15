@@ -17,7 +17,7 @@ export function columnsFor(d: DocDescriptor, t: Translate, common: Translate): D
     status: (r) => <StatusChip status={r.status} />,
     dueDate: (r) => r.dueDate ? formatDateBE(r.dueDate) : common('placeholder'),
     reference: (r) => r.reference ?? common('placeholder'),
-    progress: () => common('placeholder'),
+    progress: (r) => r.progress ?? common('placeholder'),
     marks: (r) => r.marks ? <span className="inline-flex flex-wrap gap-1"><MarksChips marks={r.marks} /></span> : common('placeholder'),
   };
   return d.listColumns.map((key) => ({ key, header: t(`columns.${key === 'party' ? partyHeader[d.partyKind ?? ''] ?? 'party' : key}`), cell: cells[key],

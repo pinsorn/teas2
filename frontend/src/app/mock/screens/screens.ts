@@ -10,6 +10,8 @@ export interface Screen {
 
 export const TI_BASE = '/sales/tax-invoices';
 export const QT_BASE = '/sales/quotations';
+export const SO_BASE = '/sales/sales-orders';
+export const DO_BASE = '/sales/delivery-orders';
 // names are keys of messages `screens.name.*`; fixture keys live in src/mocks/fixtures/ids.ts (later tasks append their screens here)
 export const SCREENS: Screen[] = [
   { name: 'home', route: '/', company: 'both', states: true },
@@ -33,6 +35,16 @@ export const SCREENS: Screen[] = [
   { name: 'qtRevised', route: { fixture: 'qtRevised', base: QT_BASE }, company: 'vat', states: true },
   { name: 'qtPrint', route: { fixture: 'qtIssued', base: '/print/QT' }, company: 'vat', states: false },
   { name: 'nqtPrint', route: { fixture: 'nqtIssued', base: '/print/QT' }, company: 'nonvat', states: false },
+  { name: 'soList', route: SO_BASE, company: 'both', states: true },
+  { name: 'soNew', route: `${SO_BASE}/new`, company: 'both', states: true },
+  { name: 'soPartlyDelivered', route: { fixture: 'soPartlyDelivered', base: SO_BASE }, company: 'vat', states: true },
+  { name: 'soClosed', route: { fixture: 'soClosed', base: SO_BASE }, company: 'vat', states: true },
+  { name: 'soPrint', route: { fixture: 'soPartlyDelivered', base: '/print/SO' }, company: 'vat', states: false },
+  { name: 'doList', route: DO_BASE, company: 'both', states: true },
+  { name: 'doDelivered', route: { fixture: 'doDelivered', base: DO_BASE }, company: 'vat', states: true },
+  { name: 'doPrint', route: { fixture: 'doDelivered', base: '/print/DO' }, company: 'vat', states: false },
+  { name: 'nsoIssued', route: { fixture: 'nsoIssued', base: SO_BASE }, company: 'nonvat', states: true },
+  { name: 'ndoDelivered', route: { fixture: 'ndoDelivered', base: DO_BASE }, company: 'nonvat', states: true },
   { name: 'trialBalance', route: '/reports/financial-statements', company: 'both', states: true },
   { name: 'customers', route: '/master/customers', company: 'both', states: true },
   { name: 'customerView', route: '/master/customers/pc-01', company: 'vat', states: true },

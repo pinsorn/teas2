@@ -121,6 +121,48 @@ describe('marks and remaining endpoints', () => {
   });
 });
 
+describe('close-remainder endpoint', () => {
+  const so = () => loadState().docs.find((x) => x.id === 'so-part')!;
+  const post = (id: string, b: unknown) => call('POST', `/docs/SO/${id}/close-remainder`, b);
+  it('403 naming doc.SO.issue without it, and nothing is written', async () => {
+    const d = so();
+    const saved = PERMISSIONS_BY_ROLE.accountant;
+    PERMISSIONS_BY_ROLE.accountant = saved.filter((p) => p !== 'doc.SO.issue');
+    try {
+      const r = await post(d.id, { version: d.version, reason: 'x' });
+      expect(r.status).toBe(403);
+      expect(JSON.stringify(await r.json())).toContain('doc.SO.issue');
+    } finally { PERMISSIONS_BY_ROLE.accountant = saved; }
+    expect(so().marks?.closed).toBeUndefined();
+  });
+  it('a document of another company is 404', async () => {
+    const d = so();
+    setSettings({ companyKey: 'nonvat', role: 'operator' });
+    expect((await post(d.id, { version: d.version, reason: 'x' })).status).toBe(404);
+  });
+  it('missing version 422, stale 409, missing reason 422, a QT 422, then it closes and a second close is 409', async () => {
+    const d = so();
+    const code = async (r: Response) => [r.status, (await r.json()).code];
+    expect(await code(await post(d.id, { reason: 'x' }))).toEqual([422, 'doc.version_required']);
+    expect(await code(await post(d.id, { version: d.version + 4, reason: 'x' }))).toEqual([409, 'doc.version_conflict']);
+    expect(await code(await post(d.id, { version: d.version, reason: '  ' }))).toEqual([422, 'mark.reason_required']);
+    const qt = loadState().docs.find((x) => x.id === 'qt-acc')!;
+    expect(await code(await call('POST', `/docs/QT/${qt.id}/close-remainder`, { version: qt.version, reason: 'x' }))).toEqual([422, 'mark.not_allowed']);
+    const ok = await post(d.id, { version: d.version, reason: 'ลูกค้าไม่รับ' });
+    expect(ok.status).toBe(200);
+    expect((await ok.json()).marks.closed.reason).toBe('ลูกค้าไม่รับ');
+    expect(await code(await post(d.id, { version: d.version + 1, reason: 'y' }))).toEqual([409, 'doc.already_closed']);
+  });
+  it('converting from a closed SO is refused by the server with the revision exit (409 doc.closed)', async () => {
+    const d = loadState().docs.find((x) => x.id === 'so-closed')!;
+    const r = await call('POST', `/docs/SO/${d.id}/convert`, { targetType: 'DO', lines: [{ sourceLineId: 'so-closed-l1', qty: '1' }] });
+    const b = await r.json();
+    expect([r.status, b.code]).toEqual([409, 'doc.closed']);
+    expect(b.title).toContain('แก้ไขเอกสาร');
+    expect((await (await call('GET', `/docs/SO/${d.id}/remaining`)).json()).map((l: { remaining: string }) => l.remaining)).toEqual(['0', '0']);
+  });
+});
+
 describe('paper endpoint', () => {
   const paper = async (id: string, q = '') => (await call('GET', `/docs/TI/${id}/paper${q}`)).json();
   const issuedTi = () => loadState().docs.find((x) => x.type === 'TI' && x.companyId === 'co-vat' && x.status === 'issued' && x.party?.taxId)!;
@@ -160,8 +202,8 @@ describe('paper endpoint', () => {
     expect((await paper(d.id)).voidMark.label).toBe('ยกเลิก');
   });
   it('a type without a paper builder is 404 doc.paper_not_available (registry, not a TI literal)', async () => {
-    const so = loadState().docs.find((x) => x.type === 'SO' && x.status === 'issued' && x.companyId === 'co-vat')!;
-    const r = await call('GET', `/docs/SO/${so.id}/paper`);
+    const so = loadState().docs.find((x) => x.type === 'CN' && x.status === 'issued' && x.companyId === 'co-vat')!;
+    const r = await call('GET', `/docs/CN/${so.id}/paper`);
     expect(r.status).toBe(404);
     expect((await r.json()).code).toBe('doc.paper_not_available');
   });

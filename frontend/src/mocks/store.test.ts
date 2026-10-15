@@ -45,7 +45,7 @@ describe('mock store', () => {
     const old = { ...seed(), version: 5, items: [] as unknown[] };
     localStorage.setItem('teas2.mock.state.v5', JSON.stringify(old));
     const s = loadState();
-    expect(s.version).toBe(7);
+    expect(s.version).toBe(8);
     expect(s.items.some((i) => i.id === 'EXP-01')).toBe(true);
     expect(s.parties.some((p) => p.id === 'pv-12')).toBe(true);
   });
@@ -76,7 +76,7 @@ describe('mock store', () => {
     expect(s.links.filter((l) => l.kind === 'replaces')).toHaveLength(3);
     expect(s.links.filter((l) => l.kind === 'adjusts')).toHaveLength(2);
     expect(kinds('CN')).toHaveLength(2);
-    expect(s.links.filter((l) => l.kind === 'converted_from')).toHaveLength(12);
+    expect(s.links.filter((l) => l.kind === 'converted_from')).toHaveLength(16);
     const delivered = new Set(s.links.filter((l) => l.kind === 'converted_from').map((l) => l.to));
     expect(kinds('SO').filter((d) => d.status === 'issued' && !delivered.has(d.id))).toHaveLength(2);
     const qt = kinds('QT').find((d) => d.revision === 1)!;

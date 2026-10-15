@@ -2,13 +2,16 @@
   "app": { "name": "TEAS 2" },
   "docView": {
     "tabs": { "paper": "Paper", "chain": "Related documents", "ledger": "Ledger effect", "activity": "Activity", "revisions": "Revision history" },
-    "header": { "party": "Counterparty", "date": "Document date", "total": "Total", "outstanding": "Outstanding", "revised": "Revised {n} times" },
+    "header": { "party": "Counterparty", "date": "Document date", "total": "Total", "outstanding": "Outstanding", "revised": "Revised {n} times", "progress": "Progress" },
     "lock": { "label": "Locked", "exits": "Ways forward" },
     "marks": { "accepted": "Customer accepted", "rejected": "Customer rejected", "delivered": "Delivered", "sent": "Sent to vendor", "closed": "Closed", "rejectedWhy": "Reason: {reason}" },
+    "closedAlert": "The remainder of this document is closed, so nothing more can be converted; revise the document to reopen it",
+    "closeRemainder": { "title": "Close remainder", "body": "Close the remainder of {doc}: what is not yet converted will not be converted any more (a revision reopens it). Totals do not change.", "reason": "Reason", "back": "Back", "confirm": "Confirm close remainder" },
     "rejectedQt": "This quotation was rejected; revise it into a new version or copy it as a new quotation",
     "mark": {
       "acceptedTitle": "Customer accepted {doc}", "acceptedBody": "Records that the customer accepted this quotation. Totals do not change and no revision is made.",
       "rejectedTitle": "Customer rejected {doc}", "rejectedBody": "Records that the customer rejected this quotation. It cannot be converted until it is revised or copied as a new one.",
+      "deliveredTitle": "Delivered {doc}", "deliveredBody": "Records that the goods on this order were delivered. A status only: no other document is issued and totals do not change.",
       "reason": "Why the customer rejected it", "confirm": "Save", "back": "Back"
     },
     "convertDialog": {
@@ -19,7 +22,7 @@
     },
     "actions": {
       "label": "Actions", "issueDraft": "Save and issue…", "edit": "Edit", "print": "Print", "copy": "Copy as new",
-      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you"
+      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "markDelivered": "Delivered", "markSent": "Sent to vendor", "whyClosed": "The remainder is closed, so it cannot be converted; revise the document to reopen it"
     },
     "paper": { "notPrintable": "No paper form is available for this document type", "notIssued": "This document has not been issued, so it cannot be printed as a tax invoice. Issue it first.", "stub": "The document paper preview appears here", "snapshot": "Revision {n}" },
     "chain": {
@@ -40,7 +43,7 @@
     },
     "activity": {
       "empty": "No activity yet",
-      "action": { "create": "Created draft", "issue": "Issued", "settle": "Payment received", "cancel": "Cancelled", "revise": "Revised", "convert": "Converted", "accept": "Customer accepted", "reject": "Customer rejected", "deliver": "Delivered", "send": "Sent to vendor" }
+      "action": { "create": "Created draft", "issue": "Issued", "settle": "Payment received", "cancel": "Cancelled", "revise": "Revised", "convert": "Converted", "accept": "Customer accepted", "reject": "Customer rejected", "deliver": "Delivered", "close": "Remainder closed", "send": "Sent to vendor" }
     },
     "revisions": {
       "empty": "No history yet", "first": "First issued version", "n": "Revision {n}", "view": "View this version", "hide": "Hide this version",
@@ -297,6 +300,16 @@
       "qtCancelled": "Quotation: cancelled",
       "qtRevised": "Quotation: revised once",
       "qtPrint": "Print quotation",
+      "soList": "Sales orders: list",
+      "soNew": "Sales order: new",
+      "soPartlyDelivered": "Sales order: partly delivered (delivered 10/30)",
+      "soClosed": "Sales order: remainder closed",
+      "soPrint": "Print sales order",
+      "doList": "Delivery orders: list",
+      "doDelivered": "Delivery order: delivered",
+      "doPrint": "Print delivery order",
+      "nsoIssued": "Sales order (non-VAT)",
+      "ndoDelivered": "Delivery order: delivered (non-VAT)",
       "nqtPrint": "Print quotation (non-VAT, no tax rows)",
       "trialBalance": "Trial balance",
       "customers": "Customers list",
@@ -405,7 +418,7 @@
     "noTaxId": "No tax ID",
     "documentDate": "Document date",
     "dueDate": "Due date",
-    "dueDateByType": { "QT": "Valid until" },
+    "dueDateByType": { "QT": "Valid until", "SO": "Delivery due" },
     "reference": "Reference",
     "notes": "Notes",
     "lines": {
@@ -531,6 +544,7 @@
   "docTypes": {
     "QT": {"title": "Quotation", "issue": "Save and issue quotation", "create": "Create quotation", "empty": "No quotations yet"},
     "SO": {"title": "Sales order", "issue": "Save and issue sales order", "create": "Create sales order", "empty": "No sales orders yet"},
+    "DO": {"title": "Delivery order", "issue": "Save and issue delivery order", "create": "Create delivery order", "empty": "No delivery orders yet"},
     "IV": {"title": "Invoice", "issue": "Save and issue invoice", "create": "Create invoice", "empty": "No invoices yet"},
     "TI": {"title": "Tax invoice", "issue": "Save and issue tax invoice", "create": "Create tax invoice", "empty": "No tax invoices yet"},
     "RC": {"title": "Receipt", "issue": "Save and issue receipt", "create": "Create receipt", "empty": "No receipts yet"},

@@ -6,7 +6,7 @@ import { buildChain } from '../engine/chain';
 import { type Body, unavailableTh, cancel, compute, convert, createDraft, deleteDraft, issue, publicDoc, updateDraft } from '../engine/commands';
 import { buildPlan, correctionPlan, executePlan, planStale } from '../engine/corrections';
 import { MockError } from '../engine/log';
-import { remainingOf, setMark } from '../engine/marks';
+import { closeRemainder, remainingOf, setMark } from '../engine/marks';
 import { CLASS } from '../fixtures/documents';
 import { saveState } from '../store';
 import { ctx, forbidden, problem, screenGate } from './common';
@@ -150,6 +150,14 @@ export const docsWriteHandlers = [
     own(c, t, params.id);
     const body = (await request.json()) as { mark: MarkKey; version?: number; reason?: string };
     const doc = setMark(c.st, String(params.id), body.mark, versionOf(request, body), ACTOR, body.reason);
+    done(c);
+    return HttpResponse.json(doc);
+  })),
+
+  http.post('*/bff/v1/docs/:type/:id/close-remainder', ({ request, params }) => guarded(String(params.type), P('issue'), async (c, t) => {
+    own(c, t, params.id);
+    const body = (await request.json()) as { version?: number; reason?: string };
+    const doc = closeRemainder(c.st, String(params.id), versionOf(request, body), body.reason ?? '', ACTOR);
     done(c);
     return HttpResponse.json(doc);
   })),

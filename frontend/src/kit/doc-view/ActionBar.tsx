@@ -5,7 +5,7 @@ import { useId, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { routesOf, type DocDescriptor } from '@/domain/descriptors';
-import { convertTargets, LIVE, MARKS } from '@/domain/doc-types';
+import { CLOSEABLE, convertTargets, LIVE, MARKS } from '@/domain/doc-types';
 import type { Doc, DocType, MarkKey } from '@/domain/types';
 
 /** A descriptor may list the conversions it allows; the "convert to…" button (and its dialog) exists only for those. */
@@ -25,10 +25,11 @@ export function Guarded({ why, children }: { why?: string; children: (p: { disab
 }
 
 /** Marks that have a button today (delivered / sent land with their own screens). */
-const MARK_BUTTONS: MarkKey[] = ['accepted', 'rejected'];
+const MARK_BUTTONS: MarkKey[] = ['accepted', 'rejected', 'delivered'];
+const MARK_LABEL = { accepted: 'markAccepted', rejected: 'markRejected', delivered: 'markDelivered', sent: 'markSent' } as const;
 
-export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCancel, onConvert, onMark }: {
-  descriptor: ConvertibleDescriptor; doc: Doc; permissions: string[]; /** The active company's VAT status (conversion targets depend on it). */ vatRegistered: boolean; onCancel: () => void; onConvert?: () => void; onMark?: (mark: MarkKey) => void;
+export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCancel, onConvert, onMark, onCloseRemainder }: {
+  descriptor: ConvertibleDescriptor; doc: Doc; permissions: string[]; /** The active company's VAT status (conversion targets depend on it). */ vatRegistered: boolean; onCancel: () => void; onConvert?: () => void; onMark?: (mark: MarkKey) => void; onCloseRemainder?: () => void;
 }) {
   const t = useTranslations('docView.actions');
   const ts = useTranslations('state');
@@ -69,13 +70,18 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCa
           {(p) => <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t('copy')}</span> : <Link href={`${routes.create}?copyFrom=${doc.id}`}>{t('copy')}</Link>}</Button>}
         </Guarded>
         {d.convertsTo?.length && live ? (
-          <Guarded why={d.type === 'QT' && doc.marks?.rejected ? t('whyRejected') : targets.length ? undefined : t('whyNoTarget')}>
+          <Guarded why={d.type === 'QT' && doc.marks?.rejected ? t('whyRejected') : doc.marks?.closed ? t('whyClosed') : targets.length ? undefined : t('whyNoTarget')}>
             {(p) => <Button {...p} variant="outline" onClick={onConvert}>{t('convert')}</Button>}
+          </Guarded>
+        ) : null}
+        {live && CLOSEABLE.includes(d.type) && !doc.marks?.closed ? (
+          <Guarded why={missing(d.permissions.issue)}>
+            {(p) => <Button {...p} variant="outline" onClick={onCloseRemainder}>{t('closeRemainder')}</Button>}
           </Guarded>
         ) : null}
         {live ? marks.map((m) => (
           <Guarded key={m} why={missing(d.permissions.issue)}>
-            {(p) => <Button {...p} variant="outline" onClick={() => onMark?.(m)}>{t(m === 'accepted' ? 'markAccepted' : 'markRejected')}</Button>}
+            {(p) => <Button {...p} variant="outline" onClick={() => onMark?.(m)}>{t(MARK_LABEL[m])}</Button>}
           </Guarded>
         )) : null}
         {live ? (

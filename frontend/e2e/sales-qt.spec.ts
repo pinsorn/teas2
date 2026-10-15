@@ -14,6 +14,7 @@ test('accept → convert 1 of 2 lines to SO → remaining shown on the QT chain'
   await dlg.getByRole('spinbutton').nth(1).fill('0');
   await dlg.getByRole('button', { name: 'สร้างใบสั่งขาย' }).click();
   await expect(page).toHaveURL(/\/sales\/sales-orders\/[^/]+\/edit$/);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('ใบสั่งขาย'); // a working SO editor, not a placeholder
   await page.goto(`/sales/quotations/${id}`);
   await expect(page.locator('[data-mark="accepted"]')).toBeVisible();
   // the QT's chain shows the new draft SO and how much of the QT it took

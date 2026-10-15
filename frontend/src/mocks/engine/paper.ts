@@ -10,6 +10,8 @@ const branchLabel = (code?: string) => (!code ? undefined : code === '00000' ? '
 interface Look { titleTh: string; titleEn: string; signatures: string[]; dueLabel?: string }
 const LOOK: Partial<Record<DocType, Look>> = {
   TI: { titleTh: 'ใบกำกับภาษี', titleEn: 'TAX INVOICE', signatures: ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'] },
+  SO: { titleTh: 'ใบสั่งขาย', titleEn: 'SALES ORDER', signatures: ['ผู้สั่งซื้อ', 'ผู้อนุมัติ', 'ผู้รับคำสั่งซื้อ'], dueLabel: 'กำหนดส่ง' },
+  DO: { titleTh: 'ใบส่งของ', titleEn: 'DELIVERY ORDER', signatures: ['ผู้ส่งของ', 'ผู้รับของ', 'ผู้อนุมัติ'] },
   QT: { titleTh: 'ใบเสนอราคา', titleEn: 'QUOTATION', signatures: ['ผู้เสนอราคา', 'ผู้อนุมัติ', 'ลูกค้ายืนยันสั่งซื้อ'], dueLabel: 'ยืนราคาถึง' },
 };
 
@@ -44,4 +46,4 @@ function paperOf(c: Ctx, d: Doc, copy: boolean): PaperModel {
   };
 }
 
-export const PAPER_BUILDERS: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf, QT: paperOf };
+export const PAPER_BUILDERS: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf, QT: paperOf, SO: paperOf, DO: paperOf };
