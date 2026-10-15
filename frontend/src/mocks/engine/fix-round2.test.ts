@@ -63,7 +63,7 @@ describe('finding 4 residual: compute / revise of an existing mixed-party or cre
     const dn = createDraft(st, 'co-vat', 'DN', { header: hdr('pc-01'), lines: [ln({ taxCode: 'S7' })] }, U, 'dn');
     const dnDone = issue(st, dn.id, dn.version, U);
     addAdjustment(st, dnDone.id, a.id, dnDone.totals.total);
-    const rc2 = rcOf(st, [{ targetId: a.id, targetType: 'TI', amount: '1070.00' }], hdr('pc-01'), 'p2');
+    const rc2 = rcOf(st, [{ targetId: a.id, targetType: 'TI', amount: '1070.00', wht: '10.00' }], hdr('pc-01'), 'p2'); // a certificate needs withheld tax (M3)
     cancel(st, dnDone.id, dnDone.version, 'OTHER', 'x', U);
     expect(out(st, a.id)).toBe(-107000);
     const al = rc2.allocations!.map((x) => ({ ...x, certNumber: CERT }));

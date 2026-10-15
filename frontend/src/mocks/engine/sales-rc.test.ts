@@ -308,6 +308,110 @@ describe('new invariants: every entry has postedAt; GL(1180) is the live receipt
   });
 });
 
+describe('fix round 1 (Opus S4 review): party on an RC correction, in-place whitelist, satang, certificate, pre-validation, 1180 role', () => {
+  const rcBody = (d: Doc, p: { header?: Partial<Doc['header']>; allocations?: Allocation[]; lines?: DocLine[] } = {}) =>
+    ({ header: { ...d.header, ...p.header }, lines: p.lines ?? d.lines, allocations: p.allocations ?? d.allocations });
+  const written = () => JSON.stringify([st.docs, st.links, st.journals]);
+
+  it('I1: rc-multi given to another customer while keeping its allocations is refused before the plan is shown, with an exit, nothing written', () => {
+    const d = get('rc-multi');
+    const before = written();
+    let err: { code?: string; status?: number; message?: string } = {};
+    try { correctionPlan(st, d.id, rcBody(d, { header: { partyId: 'pc-02' } }), 'accountant'); } catch (e) { err = e as typeof err; }
+    expect(err.code).toBe('settle.party_mismatch');
+    expect(err.status).toBe(422);
+    expect(err.message).toContain('ยกเลิกใบเสร็จแล้วออกใบใหม่ให้ลูกค้าที่ถูกต้อง');
+    expect(written()).toBe(before);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('I1: the settlement layer alone also refuses a carried allocation when the receipt\'s own party changed (prior no longer exempts the party check)', () => {
+    const d = get('rc-multi');
+    const draft = createDraft(st, VAT, 'RC', { header: { ...d.header, partyId: 'pc-02' }, lines: [], allocations: d.allocations!.map((a) => ({ ...a })) }, me, `k-${++n}`);
+    cancel(st, d.id, d.version, 'OTHER', 'x', me);
+    const before = written();
+    expect(code(() => issue(st, draft.id, draft.version, me, { keepDate: true, prior: d.allocations, priorParty: d.header.partyId }))).toBe('settle.party_mismatch');
+    expect(written()).toBe(before);
+  });
+  it('I1 guard: a customer change on a settled invoice still carries amounts, certificate and bank into the reissued receipt (receipt party unchanged)', () => {
+    const rc = receipt(VAT, 'pc-01', [alloc('spike-1', '1000.00', { wht: '30.00', whtTypeCode: 'SVC', certNumber: 'C-1' }), alloc('spike-25', '500.00')], { bankAccountId: 'ba-scb' });
+    const ti = get('spike-1');
+    const other = st.parties.find((p) => p.kind === 'customer' && p.companyId === VAT && p.id !== 'pc-01' && p.vatRegistered && p.taxId)!;
+    const plan = correctionPlan(st, ti.id, { header: { ...ti.header, partyId: other.id }, lines: ti.lines }, 'accountant');
+    expect(plan.steps.map((s) => [s.action, s.docType])).toEqual([['cancel', 'RC'], ['reissue', 'TI'], ['reissue', 'RC']]);
+    executePlan(st, plan.planId, plan.planHash, me);
+    const nw = st.docs.find((x) => x.replacesId === rc.id)!;
+    expect(nw.header).toMatchObject({ bankAccountId: 'ba-scb', partyId: 'pc-01' });
+    expect(nw.allocations!.map((a) => [a.amount, a.wht, a.certNumber])).toEqual([['1000.00', '30.00', 'C-1'], ['500.00', undefined, undefined]]);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+
+  it('M1: in place, a receipt takes only certificate numbers, notes and reference; dimensions and cheque are refused doc.revise_not_allowed', () => {
+    const d = get('rc-nocert');
+    const dims = rcBody(d, { header: { dimensions: { project: 'P9' } } });
+    const cheque = rcBody(d, { header: { paymentMethod: 'cheque', cheque: { number: '123', date: '2026-10-14', bank: 'KBANK' } } });
+    expect(code(() => revise(st, d.id, dims, d.version, 'x', me))).toBe('doc.revise_not_allowed');
+    expect(code(() => revise(st, d.id, cheque, d.version, 'x', me))).toBe('doc.revise_not_allowed');
+    expect(get(d.id).revision).toBe(d.revision);
+    const ok = revise(st, d.id, rcBody(d, { header: { notes: 'หมายเหตุ', reference: 'REF-1' }, allocations: d.allocations!.map((a) => ({ ...a, certNumber: 'ท.2569/0999' })) }), d.version, 'x', me);
+    expect(ok).toMatchObject({ revision: d.revision + 1, header: { notes: 'หมายเหตุ', reference: 'REF-1' } });
+    expect(ok.allocations![0].certNumber).toBe('ท.2569/0999');
+  });
+  it('M1: the plan for a dimension change on a receipt is cancel + reissue, not an in-place revise that would fail at execute', () => {
+    const d = get('rc-nocert');
+    const plan = correctionPlan(st, d.id, rcBody(d, { header: { dimensions: { project: 'P9' } } }), 'accountant');
+    expect(plan.steps.map((s) => s.action)).toEqual(['cancel', 'reissue']);
+  });
+
+  it('M2: a deposit of "5000" equals the stored "5000.00": revise is fine and the plan is a single revise, never cancel + reissue of an identical receipt', () => {
+    const d = get('rc-dep');
+    expect(d.header.depositAmount).toBe('5000.00');
+    const body = rcBody(d, { header: { depositAmount: '5000', notes: 'x' } });
+    expect(code(() => revise(st, d.id, body, d.version, 'x', me))).toBeUndefined();
+    const d2 = get('rc-dep');
+    const plan = correctionPlan(st, d2.id, rcBody(d2, { header: { depositAmount: '5000.0', notes: 'y' } }), 'accountant');
+    expect(plan.steps.map((s) => s.action)).toEqual(['revise']);
+    const real = correctionPlan(st, d2.id, rcBody(d2, { header: { depositAmount: '4000' } }), 'accountant');
+    expect(real.steps.map((s) => s.action)).toEqual(['cancel', 'reissue']);
+  });
+
+  it('M3: a certificate number on an allocation with no WHT is 422 rc.cert_without_wht at issue, revise and plan; nothing is written', () => {
+    const d = get('rc-multi');
+    const bad = d.allocations!.map((a) => (a.wht ? a : { ...a, certNumber: 'NOWHT' }));
+    const draft = createDraft(st, VAT, 'RC', { header: { partyId: 'pc-01', documentDate: '2026-10-14' }, lines: [], allocations: [alloc('spike-1', '100.00', { certNumber: 'X-1' })] }, me, `k-${++n}`);
+    const before = written();
+    expect(code(() => revise(st, d.id, rcBody(d, { allocations: bad }), d.version, 'x', me))).toBe('rc.cert_without_wht');
+    expect(code(() => correctionPlan(st, d.id, rcBody(d, { allocations: bad }), 'accountant'))).toBe('rc.cert_without_wht');
+    expect(code(() => issue(st, draft.id, draft.version, me))).toBe('rc.cert_without_wht');
+    expect(written()).toBe(before);
+  });
+
+  it('M4: a plan that cannot execute is never offered (lines on a VAT receipt, over-allocation)', () => {
+    const d = get('rc-multi');
+    expect(code(() => correctionPlan(st, d.id, rcBody(d, { lines: [line('l1', '10.00')] }), 'accountant'))).toBe('rc.lines_need_invoice');
+    const over = d.allocations!.map((a) => (a.targetId === 'ti-057' ? { ...a, amount: '999999.00' } : a));
+    expect(code(() => correctionPlan(st, d.id, rcBody(d, { allocations: over }), 'accountant'))).toBe('settle.over_allocation');
+    expect(Object.keys(st.plans ?? {})).toEqual([]);
+  });
+  it('M4: a legitimate correction of a receipt (its own amounts given back) still plans and runs', () => {
+    const d = get('rc-multi');
+    const plan = correctionPlan(st, d.id, rcBody(d, { allocations: d.allocations!.map((a) => (a.wht ? { ...a, wht: '20.00' } : a)) }), 'accountant');
+    executePlan(st, plan.planId, plan.planHash, me);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+
+  it('M5: GL(1180) is judged on the account the posting profile gives WhtReceivable, not on the code 1180', () => {
+    const acc = st.accounts.find((a) => a.companyId === VAT && a.code === '1180')!;
+    st.accounts.push({ ...acc, code: '1181' });
+    st.postingRules.find((r) => r.companyId === VAT && r.role === 'WhtReceivable')!.accountCode = '1181';
+    for (const j of st.journals) if (get(j.docId).companyId === VAT) for (const e of j.preview.entries) for (const l of e.lines) if (l.accountCode === '1180') l.accountCode = '1181';
+    expect(checkInvariants(st).filter((x) => /GL 11/.test(x))).toEqual([]);
+    const j = st.journals.find((x) => x.docId === 'rc-multi')!;
+    j.preview.entries.push({ date: '2026-10-12', kind: 'correction', postedAt: '2026-10-12T10:00:00+07:00', lines: [
+      { accountCode: '1181', accountName: 'x', debit: '5.00', credit: '0.00', rule: 'r' }, { accountCode: '1130', accountName: 'x', debit: '0.00', credit: '5.00', rule: 'r' }] });
+    expect(checkInvariants(st).join('\n')).toMatch(/GL 1181/);
+  });
+});
+
 describe('receipt paper model (server-built: rows, figures, words, payment)', () => {
   const paper = (id: string, company = VAT) => PAPER_BUILDERS.RC!({ st, company: st.companies.find((c) => c.id === company)! } as never, publicDoc(get(id)), false);
   it('rc-multi: one row per settled invoice with number, date, amount and its WHT; the figures and the words are the document\'s', () => {

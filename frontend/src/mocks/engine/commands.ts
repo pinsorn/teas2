@@ -10,7 +10,7 @@ import { MockError, diffBody, isPinned, logActivity, logAudit, stamp, today } fr
 import { fromSatang, toSatang } from './money';
 import { SeriesAllocator } from './numbering';
 import { firstOpenDate, isClosed, monthLabelTh } from './periods';
-import { balanceOf, cleanAllocations, fiscalAllocations, groupTotals, payDefaults, settleExtras, settleProblem, settleTotals } from './settlement';
+import { balanceOf, certError, cleanAllocations, fiscalAllocations, groupTotals, payDefaults, settleExtras, settleProblem, settleTotals } from './settlement';
 import { computeDoc, vatOf } from './vat';
 
 export type Body = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] };
@@ -115,13 +115,20 @@ export function missingOf(st: MockState, companyId: string, type: DocType, body:
   return out;
 }
 
-/** Fiscal = changes who/when/how much is taxed; only those need a chain-aware correction on a T-class document. */
+/** A money string in satang (so '5000' = '5000.00'); text that is not money is kept as is, to differ from any real amount. */
+const satOf = (m: string | undefined): number | string => { try { return toSatang(m ?? '0.00'); } catch { return m ?? ''; } };
+const stableJson = (o: unknown) => JSON.stringify(o, (_k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : 1))) : v));
+/** A receipt's header without the fields an in-place edit may change (notes, reference): everything else - dimensions, cheque, ... - is evidence the books must follow. */
+const rcHeaderKey = ({ notes: _n, reference: _r, depositAmount, paymentMethod, ...rest }: DocHeader) => { void _n; void _r; return stableJson({ ...rest, paymentMethod: paymentMethod ?? 'transfer', depositAmount: satOf(depositAmount) }); };
+
+/** Fiscal = changes who/when/how much is taxed; only those need a chain-aware correction on a T-class document.
+ *  A receipt takes ONLY certificate numbers, notes and reference in place: any other change is a correction (M1). */
 export function isFiscalChange(d: Doc, b: Body): boolean {
-  return b.header.partyId !== d.header.partyId || b.header.documentDate !== d.header.documentDate
+  return (d.type === 'RC' && rcHeaderKey(b.header) !== rcHeaderKey(d.header)) || b.header.partyId !== d.header.partyId || b.header.documentDate !== d.header.documentDate
     || !!b.header.priceIncludesVat !== !!d.header.priceIncludesVat || JSON.stringify(b.lines) !== JSON.stringify(d.lines)
     // settlement: who is paid how much and into which account changes the books (a certificate number does not)
     || (b.allocations !== undefined && fiscalAllocations(b.allocations) !== fiscalAllocations(d.allocations))
-    || b.header.bankAccountId !== d.header.bankAccountId || (b.header.paymentMethod ?? 'transfer') !== (d.header.paymentMethod ?? 'transfer') || b.header.whtMode !== d.header.whtMode || (b.header.depositAmount ?? '0.00') !== (d.header.depositAmount ?? '0.00');
+    || b.header.bankAccountId !== d.header.bankAccountId || (b.header.paymentMethod ?? 'transfer') !== (d.header.paymentMethod ?? 'transfer') || b.header.whtMode !== d.header.whtMode || satOf(b.header.depositAmount) !== satOf(d.header.depositAmount);
 }
 
 /** SP0 §7.11: outstanding = total - active credit notes + active debit notes - active settlements (active links only). */
@@ -132,13 +139,6 @@ export function recomputeSettlement(st: MockState, id: string): void {
   // I5: 'settled' needs settlements; a TI credited to 0 by CNs alone stays 'issued' with outstanding 0.00
   const locks = [...d.locks.filter((l) => l.kind !== 'settlement'), ...(settled ? [SETTLEMENT_LOCK] : [])];
   put(st, { ...d, locks, outstanding: fromSatang(out), status: settled && out <= 0 ? 'settled' : paid > 0 ? 'partly_settled' : 'issued' });
-}
-
-/** Links a receipt to the document it settles (used by corrections, which re-create receipts). */
-export function addSettlement(st: MockState, rcId: string, targetId: string, amount: Money, wht?: Money): void {
-  const rc = getDoc(st, rcId);
-  st.links.push({ companyId: rc.companyId, from: rcId, to: targetId, kind: 'settles', amount, active: true, ...(wht && wht !== '0.00' ? { wht } : {}) });
-  recomputeSettlement(st, targetId);
 }
 
 /** Links a CN / DN to the TI it adjusts and refreshes that TI's balance. */
@@ -192,7 +192,8 @@ export function compute(st: MockState, companyId: string, type: DocType, raw: Bo
     ...(body.allocations ? { allocations: body.allocations } : {}),
   };
   const missing = missingOf(st, companyId, type, body);
-  const bad = settleProblem(st, companyId, type, body, ownBack(st, outstandingNow(st), opts?.docId), { prior: opts?.docId ? st.docs.find((x) => x.id === opts.docId)?.allocations : undefined });
+  const own = opts?.docId ? st.docs.find((x) => x.id === opts.docId) : undefined;
+  const bad = settleProblem(st, companyId, type, body, ownBack(st, outstandingNow(st), opts?.docId), { prior: own?.allocations, priorParty: own?.header.partyId });
   if (bad) missing.push({ field: 'allocations', message: bad.title });
   return { lines: c.lines, totals, missing, journal: ledgerFor(st, { ...doc, companyId }), ...settleExtras(st, companyId, type, body) };
 }
@@ -269,7 +270,7 @@ export function refusePartyChange(st: MockState, d: Stored, body: Body): void {
 
 /** `keepDate`: a correction re-issues a document at its original date (I9), so the period / future checks do not apply.
  *  `partyExempt`: target ids a correction plan retargeted to a reissued invoice, whose customer may differ from the receipt's. */
-export function issue(st: MockState, id: string, version: number, actor: Actor, opts?: { keepDate?: boolean; partyExempt?: string[]; prior?: Allocation[] }): Doc {
+export function issue(st: MockState, id: string, version: number, actor: Actor, opts?: { keepDate?: boolean; partyExempt?: string[]; prior?: Allocation[]; priorParty?: string }): Doc {
   const d = getDoc(st, id);
   if (d.status !== 'draft') throw new MockError(409, 'doc.not_draft', 'ออกได้เฉพาะเอกสารฉบับร่าง');
   checkVersion(d, version);
@@ -278,7 +279,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   if (missing.length) throw incomplete(missing);
   if (!opts?.keepDate) dateGuards(st, d.companyId, d.header.documentDate); // D-10
   refuseNonPositive(st, d.companyId, d.type, body);
-  const bad = settleProblem(st, d.companyId, d.type, body, outstandingNow(st), { partyExempt: opts?.partyExempt, prior: opts?.prior });
+  const bad = settleProblem(st, d.companyId, d.type, body, outstandingNow(st), { partyExempt: opts?.partyExempt, prior: opts?.prior, priorParty: opts?.priorParty });
   if (bad) throw bad; // nothing has been written yet: a refused issue leaves no number, link or journal behind
   if (GROUPS[d.type]) body = { ...body, allocations: cleanAllocations(st, d.companyId, d.type, body.allocations) }; // BL: each target's outstanding AS OF ISSUE, server-read
   const totals = totalsOf(st, d.companyId, d.type, body);
@@ -328,6 +329,20 @@ export function refuseBelowSettled(st: MockState, d: Stored, body: Body): void {
   }
 }
 
+/** A correction of receipt `d` is only offered when it can be issued (M4, I1): the same body shape, completeness, party and allocation rules the reissue will meet,
+ *  with the receipt's own settlements given back (as the cancel step will do). Throws; reads only. */
+export function refuseUnissuableReceipt(st: MockState, d: Stored, proposed: Body): void {
+  const body = stored(st, d.companyId, 'RC', { ...proposed, allocations: proposed.allocations ?? d.allocations });
+  const header = { ...body.header, documentDate: d.header.documentDate }; // a reissue keeps the original date
+  if (header.partyId !== d.header.partyId && (body.allocations ?? []).some((a) => st.docs.find((t) => t.id === a.targetId)?.header.partyId !== header.partyId)) {
+    throw new MockError(422, 'settle.party_mismatch', 'เปลี่ยนลูกค้าของใบเสร็จไม่ได้ เพราะยังจัดสรรไปยังเอกสารของลูกค้าเดิม ยกเลิกใบเสร็จแล้วออกใบใหม่ให้ลูกค้าที่ถูกต้อง');
+  }
+  const m = missingOf(st, d.companyId, 'RC', { ...body, header });
+  if (m.length) throw incomplete(m);
+  const bad = settleProblem(st, d.companyId, 'RC', { ...body, header }, ownBack(st, outstandingNow(st), d.id), { prior: d.allocations, priorParty: d.header.partyId });
+  if (bad) throw bad;
+}
+
 /** A receipt revised only to record a withholding certificate (50 tawi, possibly late): the activity says which number. */
 function certNote(d: Stored, body: Body): string | undefined {
   if (d.type !== 'RC') return undefined;
@@ -352,9 +367,10 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   refuseBelowSettled(st, d, body);
   const resettle = (SETTLES[d.type] !== undefined && d.correctionClass !== 'T') || GROUPS[d.type] !== undefined; // a payment voucher / billing statement re-points its own links; a receipt (T) can only change a certificate number here
   if (resettle) { // the voucher's own current links give their amounts back before the new list is checked
-    const bad = settleProblem(st, d.companyId, d.type, body, ownBack(st, outstandingNow(st), id), { prior: d.allocations });
+    const bad = settleProblem(st, d.companyId, d.type, body, ownBack(st, outstandingNow(st), id), { prior: d.allocations, priorParty: d.header.partyId });
     if (bad) throw bad;
   }
+  if (d.type === 'RC') for (const a of body.allocations ?? []) { const bad = certError(a, a.targetNumber ?? a.targetId, toSatang(a.wht ?? '0.00')); if (bad) throw bad; } // a receipt is revised in place for its certificates only
   for (const ol of d.lines) { // a converted line cannot be lowered below what active targets (drafts hold quantity too) already took
     const taken = consumed(st, d, ol);
     const nl = body.lines.find((l) => l.id === ol.id);
