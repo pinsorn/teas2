@@ -42,6 +42,7 @@ function Head({ m }: { m: PaperModel }) {
           <h2>{m.titleTh}</h2>
           <span className="paper-en">{m.titleEn}</span>
           <span className="paper-pill">{m.copyLabel}</span>
+          {m.revisionLabel ? <span className="paper-rev">{m.revisionLabel}</span> : null}
         </div>
       </div>
       <div className="paper-parties">
@@ -55,7 +56,7 @@ function Head({ m }: { m: PaperModel }) {
           <dl>
             <dt>{L.no}</dt><dd className="paper-docno">{m.number}</dd>
             <dt>{L.date}</dt><dd>{formatDateBE(m.documentDate)}</dd>
-            {m.dueDate ? <><dt>{L.due}</dt><dd>{formatDateBE(m.dueDate)}</dd></> : null}
+            {m.dueDate ? <><dt>{m.dueLabel ?? L.due}</dt><dd>{formatDateBE(m.dueDate)}</dd></> : null}
             {m.reference ? <><dt>{L.ref}</dt><dd>{m.reference}</dd></> : null}
           </dl>
         </section>
@@ -104,8 +105,8 @@ function Foot({ m }: { m: PaperModel }) {
             <tbody>
               <tr><td>{L.gross}</td><td>{formatMoney(t.gross)}</td></tr>
               {Number(t.discount) !== 0 ? <tr><td>{L.discount}</td><td>{formatMoney(t.discount)}</td></tr> : null}
-              <tr className="sub"><td>{L.net}</td><td>{formatMoney(t.net)}</td></tr>
-              {m.vatLines.map((v) => <tr key={v.label}><td>{v.label}</td><td>{formatMoney(v.amount)}</td></tr>)}
+              {m.vatLines ? <tr className="sub"><td>{L.net}</td><td>{formatMoney(t.net)}</td></tr> : null}
+              {m.vatLines?.map((v) => <tr key={v.label}><td>{v.label}</td><td>{formatMoney(v.amount)}</td></tr>)}
             </tbody>
           </table>
           <div className="paper-grand"><span className="l">{L.total}<span className="paper-en">{L.baht}</span></span><span className="v">{formatMoney(t.total)}</span></div>
@@ -125,7 +126,7 @@ function PageFoot({ m, n, total }: { m: PaperModel; n: number; total: number }) 
 const fontsReady = () => (typeof document !== 'undefined' && document.fonts ? document.fonts.ready : Promise.resolve());
 const h = (e: Element | null) => (e ? Math.ceil(e.getBoundingClientRect().height) : 0);
 
-/** The printed tax invoice. Rows are measured once in a hidden probe (real layout, after fonts load); `measure` replaces that in tests. */
+/** The printed tax invoice, and (via CommercialPaper) every other sales / purchase paper: the server-built model decides titles, VAT rows and revision wording. Rows are measured once in a hidden probe (real layout, after fonts load); `measure` replaces that in tests. */
 export function TaxInvoicePaper({ model, measure, onReady }: { model: PaperModel; measure?: (rowIndex: number) => number; onReady?: () => void }) {
   const probe = useRef<HTMLDivElement>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(null);

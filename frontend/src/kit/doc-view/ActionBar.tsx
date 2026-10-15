@@ -3,13 +3,12 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useId, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { routesOf, type DocDescriptor } from '@/domain/descriptors';
-import { LIVE } from '@/domain/doc-types';
-import type { Doc, DocType } from '@/domain/types';
+import { LIVE, MARKS } from '@/domain/doc-types';
+import type { Doc, DocType, MarkKey } from '@/domain/types';
 
-/** A descriptor may list the conversions it allows; none of the SP1 descriptors do yet, so the menu stays hidden. */
+/** A descriptor may list the conversions it allows; the "convert to…" button (and its dialog) exists only for those. */
 export type ConvertibleDescriptor = DocDescriptor & { convertsTo?: DocType[] };
 
 
@@ -25,8 +24,11 @@ export function Guarded({ why, children }: { why?: string; children: (p: { disab
   );
 }
 
-export function ActionBar({ descriptor: d, doc, permissions, onCancel, onConvert }: {
-  descriptor: ConvertibleDescriptor; doc: Doc; permissions: string[]; onCancel: () => void; onConvert?: (target: DocType) => void;
+/** Marks that have a button today (delivered / sent land with their own screens). */
+const MARK_BUTTONS: MarkKey[] = ['accepted', 'rejected'];
+
+export function ActionBar({ descriptor: d, doc, permissions, onCancel, onConvert, onMark }: {
+  descriptor: ConvertibleDescriptor; doc: Doc; permissions: string[]; onCancel: () => void; onConvert?: () => void; onMark?: (mark: MarkKey) => void;
 }) {
   const t = useTranslations('docView.actions');
   const ts = useTranslations('state');
@@ -38,6 +40,7 @@ export function ActionBar({ descriptor: d, doc, permissions, onCancel, onConvert
   const locked = blocker ? t('locked', { reason: blocker.reason }) : undefined;
   const live = LIVE.includes(doc.status);
   const targets = (d.convertsTo ?? []).filter((x) => can(`doc.${x}.create`));
+  const marks = (MARKS[d.type] ?? []).filter((m) => MARK_BUTTONS.includes(m) && !doc.marks?.[m]);
 
   return (
     <TooltipProvider>
@@ -66,11 +69,15 @@ export function ActionBar({ descriptor: d, doc, permissions, onCancel, onConvert
           {(p) => <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t('copy')}</span> : <Link href={`${routes.create}?copyFrom=${doc.id}`}>{t('copy')}</Link>}</Button>}
         </Guarded>
         {targets.length && live ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild><Button variant="outline">{t('convert')}</Button></DropdownMenuTrigger>
-            <DropdownMenuContent>{targets.map((x) => <DropdownMenuItem key={x} onSelect={() => onConvert?.(x)}>{x}</DropdownMenuItem>)}</DropdownMenuContent>
-          </DropdownMenu>
+          <Guarded why={d.type === 'QT' && doc.marks?.rejected ? t('whyRejected') : undefined}>
+            {(p) => <Button {...p} variant="outline" onClick={onConvert}>{t('convert')}</Button>}
+          </Guarded>
         ) : null}
+        {live ? marks.map((m) => (
+          <Guarded key={m} why={missing(d.permissions.issue)}>
+            {(p) => <Button {...p} variant="outline" onClick={() => onMark?.(m)}>{t(m === 'accepted' ? 'markAccepted' : 'markRejected')}</Button>}
+          </Guarded>
+        )) : null}
         {live ? (
           <Guarded why={missing(d.permissions.cancel) ?? locked}>
             {(p) => <Button {...p} variant="outline" onClick={onCancel}>{t('cancel')}</Button>}

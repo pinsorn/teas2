@@ -16,7 +16,7 @@ describe('named fixture ids', () => {
     expect([d.type, d.status, d.locks.length, d.outstanding === d.totals.total, d.header.documentDate >= '2026-10-01']).toEqual(['TI', 'issued', 0, true, true]);
   });
   it('fails loudly when a predicate matches nothing (can fail)', () => {
-    const st = seed(); st.docs = st.docs.filter((d) => d.type !== 'TI');
+    const st = seed(); st.docs = [];
     const keys = Object.keys(FIXTURE_PREDICATES);
     let msg = ''; try { fixtureIds(st); } catch (e) { msg = String(e); }
     for (const k of keys) expect(msg, k).toContain(k); // every unresolved key is listed, not just the first

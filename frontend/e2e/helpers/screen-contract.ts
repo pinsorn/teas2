@@ -9,6 +9,8 @@ export interface ScreenSpec {
   heading: string | RegExp;                            // the h1 in the normal state
   company: 'vat' | 'nonvat' | 'both';                  // out-of-scope company must render data-screen-state="not-available"
   states: ScreenState[];                               // each must render its data-screen-state, never together with "empty" when "error"
+  /** What the out-of-scope company shows. A type available to both companies has no "not-available": a fixture document of the other company is simply not found. Default 'not-available'. */
+  otherCompany?: 'not-available' | 'not-found';
   forbiddenRole?: Role;                                // renders data-screen-state="forbidden" (normal state)
   roles?: Role[];                                      // normal render + axe for each (default ['accountant'])
 }
@@ -46,7 +48,7 @@ export function screenContract(spec: ScreenSpec): void {
     for (const company of outOfScope) {
       test(`${company} company: not available`, async ({ page }) => {
         await open(page, { company, role: roles[0], state: 'normal' });
-        await expect(marker(page, 'not-available').first()).toBeVisible();
+        await expect(marker(page, spec.otherCompany ?? 'not-available').first()).toBeVisible();
       });
     }
     if (spec.forbiddenRole) {

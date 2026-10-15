@@ -5,6 +5,7 @@ import { CLASS, CONVERSIONS, DOC_TYPES, LIVE, SETTLES, isTypeAvailable } from '@
 import type { MockState } from '../store';
 import { consumed, fmtQ, q4 } from './chain';
 import { ledgerFor, reversalOf } from './ledger';
+import { afterRevision, refuseRejected, withAcceptedStamp } from './marks';
 import { MockError, diffBody, isPinned, logActivity, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
 import { SeriesAllocator } from './numbering';
@@ -305,6 +306,8 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
     ...rest, header: body.header, lines: body.lines, totals: totalsOf(st, d.companyId, d.type, body), party: partyOf(st, d.companyId, body.header.partyId),
     revision: d.revision + 1, version: d.version + 1, ...(body.allocations ? { allocations: body.allocations } : {}),
   };
+  const marks = afterRevision(d); // a quotation's customer answer is void once it is revised
+  if (marks) next.marks = marks; else delete next.marks;
   put(st, next);
   if (resettle) {
     const before = st.links.filter((l) => l.active && l.kind === 'settles' && l.from === id).map((l) => l.to);
@@ -376,6 +379,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
 export function convert(st: MockState, id: string, targetType: DocType, lines: { sourceLineId: string; qty: Qty }[], actor: Actor, opts?: { id?: string }): Doc {
   const src = getDoc(st, id);
   if (!LIVE.includes(src.status)) throw new MockError(409, 'doc.not_convertible', 'แปลงได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
+  refuseRejected(src);
   if (!CONVERSIONS[src.type]?.includes(targetType)) throw new MockError(422, 'doc.conversion_not_allowed', `แปลง ${src.type} เป็น ${targetType} ไม่ได้`);
   if (!isTypeAvailable(targetType, !!st.companies.find((c) => c.id === src.companyId)?.vatRegistered)) {
     throw new MockError(422, 'doc.type_not_available', unavailableTh(targetType));
@@ -399,6 +403,8 @@ export function convert(st: MockState, id: string, targetType: DocType, lines: {
     header: { partyId: src.header.partyId, documentDate: today(), ...(src.number ? { reference: src.number } : {}), priceIncludesVat: !!src.header.priceIncludesVat },
     lines: newLines,
   }, actor, opts?.id);
+  const accepted = withAcceptedStamp(src, actor);
+  if (accepted !== src.marks) put(st, { ...getDoc(st, src.id), marks: accepted, version: src.version + 1 });
   st.links.push({ companyId: src.companyId, from: d.id, to: src.id, kind: 'converted_from', qty: fmtQ([...wanted.values()].reduce((a, b) => a + b, 0)), active: true });
   logActivity(st, d.id, actor, 'create', `แปลงจาก ${src.number}`);
   logActivity(st, src.id, actor, 'convert', `สร้าง ${targetType} ฉบับร่าง`);

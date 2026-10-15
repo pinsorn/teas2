@@ -7,8 +7,15 @@ type Ctx = ReturnType<typeof ctx>;
 
 const branchLabel = (code?: string) => (!code ? undefined : code === '00000' ? 'สำนักงานใหญ่ (00000)' : `สาขา ${code}`);
 
-/** Paper from the stored snapshots; amounts and words are the engine's, never recomputed in the UI. */
+interface Look { titleTh: string; titleEn: string; signatures: string[]; dueLabel?: string }
+const LOOK: Partial<Record<DocType, Look>> = {
+  TI: { titleTh: 'ใบกำกับภาษี', titleEn: 'TAX INVOICE', signatures: ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'] },
+  QT: { titleTh: 'ใบเสนอราคา', titleEn: 'QUOTATION', signatures: ['ผู้เสนอราคา', 'ผู้อนุมัติ', 'ลูกค้ายืนยันสั่งซื้อ'], dueLabel: 'ยืนราคาถึง' },
+};
+
+/** Paper from the stored snapshots; amounts and words are the engine's, never recomputed in the UI. A company outside VAT gets no VAT rows at all. */
 function paperOf(c: Ctx, d: Doc, copy: boolean): PaperModel {
+  const look = LOOK[d.type]!;
   const co: Company = c.company;
   const calc = compute(c.st, co.id, d.type, { header: d.header, lines: d.lines }).lines;
   const net = new Map(calc.map((l) => [l.id, l.net]));
@@ -22,17 +29,19 @@ function paperOf(c: Ctx, d: Doc, copy: boolean): PaperModel {
   const other = (id?: string) => c.st.docs.find((x) => x.id === id);
   const old = other(d.replacesId), nw = other(d.replacedById);
   return {
-    titleTh: 'ใบกำกับภาษี', titleEn: 'TAX INVOICE', copyLabel: copy ? 'สำเนา' : 'ต้นฉบับ',
+    titleTh: look.titleTh, titleEn: look.titleEn, copyLabel: copy ? 'สำเนา' : 'ต้นฉบับ',
     number: d.number ?? '-', documentDate: d.header.documentDate, dueDate: d.header.dueDate, reference: d.header.reference,
     seller: { name: co.legalNameTh, nameEn: co.legalNameEn, address: co.address, phone: co.phone, taxId: co.taxId, branchLabel: branchLabel(co.branchCode) },
     buyer: { name: d.party?.name ?? '-', address: d.party?.address ?? '', taxId: d.party?.taxId, branchLabel: d.party?.taxId ? branchLabel(d.party.branchCode) : undefined },
     lines: d.lines.map((l, i) => ({ no: i + 1, description: l.description, qty: l.qty, unit: l.unit, unitPrice: l.unitPrice, amount: net.get(l.id) ?? '0.00', taxCode: l.taxCode, ...(l.discountPct ? { discountPct: l.discountPct } : {}) })),
-    totals: d.totals, vatLines, notes: d.header.notes,
+    totals: d.totals, notes: d.header.notes, ...(co.vatRegistered ? { vatLines } : {}),
+    ...(look.dueLabel ? { dueLabel: look.dueLabel } : {}),
+    ...(d.correctionClass === 'N' && d.revision > 0 ? { revisionLabel: `ฉบับแก้ไขครั้งที่ ${d.revision}` } : {}),
     ...(old ? { replacementNote: `ยกเลิกและออกแทนฉบับเดิม เลขที่ ${old.number ?? '-'} ลงวันที่ ${formatDateBE(old.header.documentDate)}` } : {}),
     ...(d.status === 'replaced' ? { voidMark: { label: 'ถูกแทนที่', note: nw?.number ? `ออกแทนด้วยเลขที่ ${nw.number}` : undefined } }
       : d.status === 'cancelled' ? { voidMark: { label: 'ยกเลิก', note: d.cancel?.reasonText } } : {}),
-    signatures: ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'],
+    signatures: look.signatures,
   };
 }
 
-export const PAPER_BUILDERS: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf };
+export const PAPER_BUILDERS: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf, QT: paperOf };

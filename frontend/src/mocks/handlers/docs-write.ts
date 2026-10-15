@@ -1,11 +1,12 @@
 import { DOC_TYPES, isTypeAvailable } from '@/domain/doc-types';
 import { HttpResponse, http } from 'msw';
-import type { Actor, DocType, Qty } from '@/domain/types';
+import type { Actor, DocType, MarkKey, Qty } from '@/domain/types';
 import { PAPER_BUILDERS } from '../engine/paper';
 import { buildChain } from '../engine/chain';
 import { type Body, unavailableTh, cancel, compute, convert, createDraft, deleteDraft, issue, publicDoc, updateDraft } from '../engine/commands';
 import { buildPlan, correctionPlan, executePlan, planStale } from '../engine/corrections';
 import { MockError } from '../engine/log';
+import { remainingOf, setMark } from '../engine/marks';
 import { CLASS } from '../fixtures/documents';
 import { saveState } from '../store';
 import { ctx, forbidden, problem, screenGate } from './common';
@@ -143,6 +144,19 @@ export const docsWriteHandlers = [
     const doc = convert(c.st, String(params.id), body.targetType, body.lines, ACTOR);
     done(c);
     return HttpResponse.json(doc, { status: 201 });
+  })),
+
+  http.post('*/bff/v1/docs/:type/:id/marks', ({ request, params }) => guarded(String(params.type), P('issue'), async (c, t) => {
+    own(c, t, params.id);
+    const body = (await request.json()) as { mark: MarkKey; version?: number; reason?: string };
+    const doc = setMark(c.st, String(params.id), body.mark, versionOf(request, body), ACTOR, body.reason);
+    done(c);
+    return HttpResponse.json(doc);
+  })),
+
+  http.get('*/bff/v1/docs/:type/:id/remaining', ({ params }) => guarded(String(params.type), P('read'), (c, t) => {
+    own(c, t, params.id);
+    return HttpResponse.json(remainingOf(c.st, String(params.id)));
   })),
 
   http.get('*/bff/v1/docs/:type/:id/chain', ({ params }) => guarded(String(params.type), P('read'), (c, t) => {

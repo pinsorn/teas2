@@ -1,4 +1,4 @@
-import type { CorrectionClass, DocStatus, DocType } from './types';
+import type { CorrectionClass, DocStatus, DocType, MarkKey } from './types';
 
 /** Statuses of a document that is in force (the one definition: engine, locks, invariants, action bar). */
 export const LIVE: DocStatus[] = ['issued', 'partly_settled', 'settled'];
@@ -38,3 +38,6 @@ export const CONVERSIONS: Partial<Record<DocType, DocType[]>> = {
 
 /** D-12 / D-17: the open-item types a document allocates to (RC settles TI / IV; PV settles PB and EX only). The engine refuses any other target. */
 export const SETTLES: Partial<Record<DocType, DocType[]>> = { RC: ['TI', 'IV'], PV: ['PB', 'EX'] };
+
+/** Marks a document type can carry (SP1c S1). Only on a live document; a QT's rejection needs a reason. */
+export const MARKS: Partial<Record<DocType, MarkKey[]>> = { QT: ['accepted', 'rejected'], DO: ['delivered'], PO: ['sent'] };

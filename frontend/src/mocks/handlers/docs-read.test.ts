@@ -81,7 +81,8 @@ describe('tenant isolation', () => {
     expect((await json('/docs/QT?limit=100')).items.map((d: { id: string }) => d.id)).not.toContain('qt-nv-1');
     expect((await get('/docs/QT/qt-nv-1')).status).toBe(404);
     setSettings({ companyKey: 'nonvat' });
-    expect((await json('/docs/QT')).items.map((d: { id: string }) => d.id)).toEqual(['qt-nv-1']);
+    expect((await json('/docs/QT?limit=100')).items.map((d: { id: string }) => d.id)).toContain('qt-nv-1');
+    expect((await json('/docs/QT?limit=100')).items.map((d: { id: string }) => d.id)).not.toContain('qt-c1');
     expect((await get('/docs/QT/qt-nv-1')).status).toBe(200);
   });
   it('parties and items are scoped to the active company', async () => {
@@ -104,12 +105,14 @@ describe('tenant isolation', () => {
 describe('search hrefs come from the registry', () => {
   it('a built type links to its view route; an unbuilt type has no href (never a wrong path)', async () => {
     const ti = loadState().docs.find((d) => d.type === 'TI' && d.companyId === 'co-vat' && d.number)!;
-    const qt = loadState().docs.find((d) => d.type === 'QT' && d.companyId === 'co-vat' && d.number)!;
+    const qt = loadState().docs.find((d) => d.type === 'SO' && d.companyId === 'co-vat' && d.number)!; // SO: its screens land in S2
     const t = (await json(`/search?q=${ti.number}`)).items.find((h: { id: string }) => h.id === ti.id);
     expect(t.href).toBe(`/sales/tax-invoices/${ti.id}`);
     const q = (await json(`/search?q=${qt.number}`)).items.find((h: { id: string }) => h.id === qt.id);
     expect(q).toBeDefined();
     expect(q.href).toBeUndefined();
+    const built = loadState().docs.find((d) => d.type === 'QT' && d.companyId === 'co-vat' && d.number)!;
+    expect((await json(`/search?q=${built.number}`)).items.find((h: { id: string }) => h.id === built.id).href).toBe(`/sales/quotations/${built.id}`);
   });
 });
 
@@ -119,8 +122,8 @@ describe('doc detail, locked, forbidden', () => {
     const paid = state.docs.find((d) => d.type === 'TI' && d.status === 'settled')!;
     paid.locks = [];
     localStorage.setItem('teas2.mock.state.v2', JSON.stringify({ ...state, version: 2 }));
-    localStorage.removeItem('teas2.mock.state.v6');
-    expect(loadState().version).toBe(6);
+    localStorage.removeItem('teas2.mock.state.v7');
+    expect(loadState().version).toBe(7);
     expect(loadState().docs.find((d) => d.id === paid.id)!.locks).toContainEqual(expect.objectContaining({ kind: 'settlement' }));
   });
   it('GET derives the period lock for a document dated in a closed month, and not for an open-month one (F4)', async () => {
@@ -133,7 +136,7 @@ describe('doc detail, locked, forbidden', () => {
     const state = loadState();
     const paid = state.docs.find((d) => d.type === 'TI' && d.status === 'settled')!;
     paid.locks = [];
-    localStorage.setItem('teas2.mock.state.v6', JSON.stringify(state));
+    localStorage.setItem('teas2.mock.state.v7', JSON.stringify(state));
     const doc = await json(`/docs/TI/${paid.id}`);
     expect(doc.locks).toContainEqual(expect.objectContaining({ kind: 'settlement' }));
   });

@@ -111,8 +111,8 @@ describe('paper endpoint', () => {
     expect((await paper(d.id)).voidMark.label).toBe('ยกเลิก');
   });
   it('a type without a paper builder is 404 doc.paper_not_available (registry, not a TI literal)', async () => {
-    const qt = loadState().docs.find((x) => x.type === 'QT' && x.status === 'issued' && x.companyId === 'co-vat')!;
-    const r = await call('GET', `/docs/QT/${qt.id}/paper`);
+    const so = loadState().docs.find((x) => x.type === 'SO' && x.status === 'issued' && x.companyId === 'co-vat')!;
+    const r = await call('GET', `/docs/SO/${so.id}/paper`);
     expect(r.status).toBe(404);
     expect((await r.json()).code).toBe('doc.paper_not_available');
   });

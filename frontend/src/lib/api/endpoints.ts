@@ -1,6 +1,6 @@
 import type {
   ActivityEntry, Allocation, ChainGraph, ComputeResult, CorrectionPlan, CorrectionResult, Doc, DocHeader, DocLine, DocSummary,
-  DocType, HomeInbox, Money, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, Revision, SearchHit,
+  DocType, HomeInbox, MarkKey, Money, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, RemainingLine, Revision, SearchHit,
 } from '@/domain/types';
 import type { RecordKind, RecordRow } from '@/domain/records';
 import type { ReportKind, ReportModel } from '@/domain/reports';
@@ -46,6 +46,8 @@ export const endpoints = {
     api<CorrectionResult>('POST', '/corrections', { planId, planHash }),
   convertDoc: (type: DocType, id: string, targetType: DocType, lines: { sourceLineId: string; qty: Qty }[]) =>
     api<Doc>('POST', `${d(type, id)}/convert`, { targetType, lines }),
+  setMark: (type: DocType, id: string, mark: MarkKey, version: number, reason?: string) => api<Doc>('POST', `${d(type, id)}/marks`, { mark, version, reason }),
+  getRemaining: (type: DocType, id: string) => api<RemainingLine[]>('GET', `${d(type, id)}/remaining`),
   getChain: (type: DocType, id: string) => api<ChainGraph>('GET', `${d(type, id)}/chain`),
   getActivity: (type: DocType, id: string) => api<ActivityEntry[]>('GET', `${d(type, id)}/activity`),
   getRevisions: (type: DocType, id: string) => api<Revision[]>('GET', `${d(type, id)}/revisions`),

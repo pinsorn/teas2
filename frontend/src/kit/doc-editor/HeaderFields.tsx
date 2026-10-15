@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import type { HeaderFieldKey } from '@/domain/descriptors';
-import type { DocHeader, WhtMode } from '@/domain/types';
+import type { DocHeader, DocType, WhtMode } from '@/domain/types';
 import { endpoints } from '@/lib/api/endpoints';
 import { formatDateBE } from '@/lib/format';
 import { qk } from '@/lib/query/keys';
@@ -34,8 +34,8 @@ function BankAccountField({ id, header, setHeader }: { id: string; header: DocHe
   );
 }
 
-export function HeaderFields({ keys, ids, header, setHeader }: {
-  keys: HeaderFieldKey[]; ids: string; header: DocHeader; setHeader: Dispatch<SetStateAction<DocHeader>>;
+export function HeaderFields({ type, keys, ids, header, setHeader }: {
+  /** Picks per-type labels (a quotation's due date is "valid until"). */ type?: DocType; keys: HeaderFieldKey[]; ids: string; header: DocHeader; setHeader: Dispatch<SetStateAction<DocHeader>>;
 }) {
   const t = useTranslations('docEditor');
   const field = (key: HeaderFieldKey) => {
@@ -49,7 +49,7 @@ export function HeaderFields({ keys, ids, header, setHeader }: {
       );
       case 'dueDate': return (
         <div className="grid gap-1.5">
-          <Label htmlFor={`${ids}-due`}>{t('dueDate')}</Label>
+          <Label htmlFor={`${ids}-due`}>{type && t.has(`dueDateByType.${type}`) ? t(`dueDateByType.${type}`) : t('dueDate')}</Label>
           <Input id={`${ids}-due`} type="date" value={header.dueDate ?? ''} onChange={(e) => setHeader((h) => ({ ...h, dueDate: e.target.value || undefined }))} />
           {header.dueDate && <p className="text-small text-muted-foreground">{formatDateBE(header.dueDate)}</p>}
         </div>

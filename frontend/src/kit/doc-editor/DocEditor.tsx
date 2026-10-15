@@ -237,7 +237,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
                   search={(q) => endpoints.searchParties({ kind: partyKind === 'employee' ? undefined : partyKind, q, limit: 8 }).then((p) => p.items)} />
               </div>
             )}
-            <HeaderFields keys={d.headerFields} ids={ids} header={header} setHeader={setHeader} />
+            <HeaderFields type={d.type} keys={d.headerFields} ids={ids} header={header} setHeader={setHeader} />
           </section>
 
           {d.settles && (

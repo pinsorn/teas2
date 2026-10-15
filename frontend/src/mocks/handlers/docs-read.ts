@@ -15,6 +15,7 @@ const LOCKABLE = ['issued', 'partly_settled', 'settled'];
 export const toSummary = (d: Doc): DocSummary => ({
   id: d.id, type: d.type, number: d.number, status: d.status, documentDate: d.header.documentDate, partyName: d.party?.name ?? '',
   total: d.totals.total, outstanding: d.outstanding, dueDate: d.header.dueDate, reference: d.header.reference, createdByAgent: d.createdBy.kind === 'agent',
+  ...(d.marks ? { marks: d.marks } : {}),
 });
 
 export const docsReadHandlers = [

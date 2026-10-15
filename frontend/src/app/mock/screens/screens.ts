@@ -9,6 +9,7 @@ export interface Screen {
 }
 
 export const TI_BASE = '/sales/tax-invoices';
+export const QT_BASE = '/sales/quotations';
 // names are keys of messages `screens.name.*`; fixture keys live in src/mocks/fixtures/ids.ts (later tasks append their screens here)
 export const SCREENS: Screen[] = [
   { name: 'home', route: '/', company: 'both', states: true },
@@ -22,6 +23,16 @@ export const SCREENS: Screen[] = [
   { name: 'tiEdit', route: { fixture: 'tiDraft', suffix: '/edit' }, company: 'vat', states: true },
   { name: 'print', route: { fixture: 'tiIssuedUnpaid', base: '/print/TI' }, company: 'vat', states: false },
   { name: 'printLong', route: { fixture: 'tiLong', base: '/print/TI' }, company: 'vat', states: false },
+  { name: 'qtList', route: QT_BASE, company: 'both', states: true },
+  { name: 'qtNew', route: `${QT_BASE}/new`, company: 'both', states: true },
+  { name: 'qtDraft', route: { fixture: 'qtDraft', base: QT_BASE }, company: 'vat', states: true },
+  { name: 'qtEdit', route: { fixture: 'qtDraft', base: QT_BASE, suffix: '/edit' }, company: 'vat', states: true },
+  { name: 'qtIssued', route: { fixture: 'qtIssued', base: QT_BASE }, company: 'vat', states: true },
+  { name: 'qtRejected', route: { fixture: 'qtRejected', base: QT_BASE }, company: 'vat', states: true },
+  { name: 'qtCancelled', route: { fixture: 'qtCancelled', base: QT_BASE }, company: 'vat', states: true },
+  { name: 'qtRevised', route: { fixture: 'qtRevised', base: QT_BASE }, company: 'vat', states: true },
+  { name: 'qtPrint', route: { fixture: 'qtIssued', base: '/print/QT' }, company: 'vat', states: false },
+  { name: 'nqtPrint', route: { fixture: 'nqtIssued', base: '/print/QT' }, company: 'nonvat', states: false },
   { name: 'trialBalance', route: '/reports/financial-statements', company: 'both', states: true },
   { name: 'customers', route: '/master/customers', company: 'both', states: true },
   { name: 'customerView', route: '/master/customers/pc-01', company: 'vat', states: true },

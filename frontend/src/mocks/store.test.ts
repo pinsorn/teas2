@@ -45,7 +45,7 @@ describe('mock store', () => {
     const old = { ...seed(), version: 5, items: [] as unknown[] };
     localStorage.setItem('teas2.mock.state.v5', JSON.stringify(old));
     const s = loadState();
-    expect(s.version).toBe(6);
+    expect(s.version).toBe(7);
     expect(s.items.some((i) => i.id === 'EXP-01')).toBe(true);
     expect(s.parties.some((p) => p.id === 'pv-12')).toBe(true);
   });
@@ -87,7 +87,8 @@ describe('mock store', () => {
       expect(d.number).toMatch(/^[A-Z]+-\d{6}-\d{4}$/);
       expect(s.revisions.some((r) => r.docId === d.id && r.revision === 0)).toBe(true);
     }
-    expect(new Set(s.docs.map((d) => d.number).filter(Boolean)).size).toBe(s.docs.filter((d) => d.number).length);
+    // numbering is per company (each has its own series)
+    expect(new Set(s.docs.filter((d) => d.number).map((d) => `${d.companyId}|${d.number}`)).size).toBe(s.docs.filter((d) => d.number).length);
   });
   it('every seeded doc has the SP0 §7.3 correction class', () => {
     const T = ['TI', 'RC', 'CN', 'DN', 'WT'], N = ['QT', 'SO', 'DO', 'BL', 'PO'];

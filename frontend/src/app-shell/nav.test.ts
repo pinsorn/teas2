@@ -40,7 +40,9 @@ describe('docListHref / matchNavItem', () => {
     expect(docListHref('TI', false)).toBeUndefined();
     expect(docListHref('IV', false)).toBeUndefined();
     expect(docListHref('IV', true)).toBeUndefined();
-    expect(docListHref('QT', true)).toBeUndefined();
+    expect(docListHref('QT', true)).toBe('/sales/quotations');
+    expect(docListHref('QT', false)).toBe('/sales/quotations'); // QT is for both kinds of company
+    expect(docListHref('SO', true)).toBeUndefined(); // not built yet
   });
   it('has no route (so no link) for types without a nav page', () => {
     for (const t of ['JV', 'DP', 'WT', 'FA', 'PR', 'OB'] as const) expect(docListHref(t, true)).toBeUndefined();

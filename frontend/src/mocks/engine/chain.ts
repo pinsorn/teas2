@@ -26,7 +26,7 @@ export function consumed(st: MockState, src: Doc, line: DocLine): number {
 }
 
 function progressOf(st: MockState, d: Doc): string | undefined {
-  if (d.type === 'SO' || d.type === 'DO') {
+  if (d.type === 'QT' || d.type === 'SO' || d.type === 'DO') { // converted / ordered
     const ordered = d.lines.reduce((a, l) => a + q4(l.qty), 0);
     const delivered = d.lines.reduce((a, l) => a + consumed(st, d, l), 0);
     return `${fmtQ(delivered)}/${fmtQ(ordered)}`;

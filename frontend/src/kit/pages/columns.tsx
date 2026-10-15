@@ -1,5 +1,6 @@
 import type { DocDescriptor, ListColumnKey, SavedViewKey } from '@/domain/descriptors';
 import type { DocListColumn, SavedView } from '@/kit/doc-list/DocList';
+import { MarksChips } from '@/kit/doc-view/MarksChips';
 import { StatusChip } from '@/kit/doc-list/StatusChip';
 import { formatDateBE, formatTHB } from '@/lib/format';
 
@@ -17,7 +18,7 @@ export function columnsFor(d: DocDescriptor, t: Translate, common: Translate): D
     dueDate: (r) => r.dueDate ? formatDateBE(r.dueDate) : common('placeholder'),
     reference: (r) => r.reference ?? common('placeholder'),
     progress: () => common('placeholder'),
-    marks: () => common('placeholder'),
+    marks: (r) => r.marks ? <span className="inline-flex flex-wrap gap-1"><MarksChips marks={r.marks} /></span> : common('placeholder'),
   };
   return d.listColumns.map((key) => ({ key, header: t(`columns.${key === 'party' ? partyHeader[d.partyKind ?? ''] ?? 'party' : key}`), cell: cells[key],
     ...(['total', 'outstanding'].includes(key) ? { align: 'end' as const } : {}) }));

@@ -4,9 +4,22 @@
     "tabs": { "paper": "Paper", "chain": "Related documents", "ledger": "Ledger effect", "activity": "Activity", "revisions": "Revision history" },
     "header": { "party": "Counterparty", "date": "Document date", "total": "Total", "outstanding": "Outstanding", "revised": "Revised {n} times" },
     "lock": { "label": "Locked", "exits": "Ways forward" },
+    "marks": { "accepted": "Customer accepted", "rejected": "Customer rejected", "delivered": "Delivered", "sent": "Sent to vendor", "closed": "Closed", "rejectedWhy": "Reason: {reason}" },
+    "rejectedQt": "This quotation was rejected; revise it into a new version or copy it as a new quotation",
+    "mark": {
+      "acceptedTitle": "Customer accepted {doc}", "acceptedBody": "Records that the customer accepted this quotation. Totals do not change and no revision is made.",
+      "rejectedTitle": "Customer rejected {doc}", "rejectedBody": "Records that the customer rejected this quotation. It cannot be converted until it is revised or copied as a new one.",
+      "reason": "Why the customer rejected it", "confirm": "Save", "back": "Back"
+    },
+    "convertDialog": {
+      "title": "Convert {doc}", "body": "Pick the target document and the quantity of each line. Enter 0 to leave a line out.", "target": "Target document",
+      "colItem": "Item", "colUnit": "Unit", "colOrdered": "Total", "colConverted": "Converted", "colRemaining": "Remaining", "colQty": "Quantity to convert",
+      "qty": "Quantity to convert, line {n}", "create": "Create {target}", "creating": "Creating…", "close": "Close",
+      "noTarget": "No target document is available to this company and permitted to you", "loadFailed": "Could not load the remaining quantities"
+    },
     "actions": {
       "label": "Actions", "issueDraft": "Save and issue…", "edit": "Edit", "print": "Print", "copy": "Copy as new",
-      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}"
+      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted"
     },
     "paper": { "notPrintable": "No paper form is available for this document type", "notIssued": "This document has not been issued, so it cannot be printed as a tax invoice. Issue it first.", "stub": "The document paper preview appears here", "snapshot": "Revision {n}" },
     "chain": {
@@ -27,7 +40,7 @@
     },
     "activity": {
       "empty": "No activity yet",
-      "action": { "create": "Created draft", "issue": "Issued", "settle": "Payment received", "cancel": "Cancelled", "revise": "Revised" }
+      "action": { "create": "Created draft", "issue": "Issued", "settle": "Payment received", "cancel": "Cancelled", "revise": "Revised", "convert": "Converted", "accept": "Customer accepted", "reject": "Customer rejected", "deliver": "Delivered", "send": "Sent to vendor" }
     },
     "revisions": {
       "empty": "No history yet", "first": "First issued version", "n": "Revision {n}", "view": "View this version", "hide": "Hide this version",
@@ -275,6 +288,16 @@
       "tiLong": "Tax invoice: 60 lines",
       "print": "Print tax invoice",
       "printLong": "Print tax invoice: 60 lines",
+      "qtList": "Quotations: list",
+      "qtNew": "Quotation: new",
+      "qtDraft": "Quotation: draft",
+      "qtEdit": "Quotation: edit draft",
+      "qtIssued": "Quotation: accepted by the customer, not converted",
+      "qtRejected": "Quotation: rejected by the customer",
+      "qtCancelled": "Quotation: cancelled",
+      "qtRevised": "Quotation: revised once",
+      "qtPrint": "Print quotation",
+      "nqtPrint": "Print quotation (non-VAT, no tax rows)",
       "trialBalance": "Trial balance",
       "customers": "Customers list",
       "customerView": "Customer detail",
@@ -382,6 +405,7 @@
     "noTaxId": "No tax ID",
     "documentDate": "Document date",
     "dueDate": "Due date",
+    "dueDateByType": { "QT": "Valid until" },
     "reference": "Reference",
     "notes": "Notes",
     "lines": {
@@ -505,6 +529,9 @@
     }
   },
   "docTypes": {
+    "QT": {"title": "Quotation", "issue": "Save and issue quotation", "create": "Create quotation", "empty": "No quotations yet"},
+    "SO": {"title": "Sales order", "issue": "Save and issue sales order", "create": "Create sales order", "empty": "No sales orders yet"},
+    "IV": {"title": "Invoice", "issue": "Save and issue invoice", "create": "Create invoice", "empty": "No invoices yet"},
     "TI": {"title": "Tax invoice", "issue": "Save and issue tax invoice", "create": "Create tax invoice", "empty": "No tax invoices yet"},
     "RC": {"title": "Receipt", "issue": "Save and issue receipt", "create": "Create receipt", "empty": "No receipts yet"},
     "PV": {"title": "Payment voucher", "issue": "Save and issue payment voucher", "create": "Create payment voucher", "empty": "No payment vouchers yet"}

@@ -57,6 +57,8 @@
 .paper-title .paper-en { display: block; font-size: 9pt; margin-top: 0.5mm; letter-spacing: 0.02em; }
 .paper-pill { display: inline-block; margin-top: 2.5mm; padding: 0.6mm 3.5mm; border: 1pt solid var(--paper-ink); border-radius: 99px; font-size: 8.5pt; font-weight: 600; }
 
+.paper-rev { display: block; margin-top: 1.5mm; font-size: 8.5pt; font-weight: 600; }
+
 .paper-parties { display: grid; grid-template-columns: 1fr 66mm; gap: 5mm; padding-top: 4.5mm; }
 .paper-box { border: 0.75pt solid var(--paper-rule); border-radius: 2mm; padding: 3mm 3.5mm; }
 .paper-box-h { font-size: 8pt; font-weight: 600; color: var(--paper-accent-text); margin-bottom: 1.2mm; }
