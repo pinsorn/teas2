@@ -2,7 +2,7 @@ import type { Actor, Allocation, ChainEdge, CorrectionNote, CorrectionPlan, Corr
 import { PERMISSIONS_BY_ROLE } from '../permissions';
 import type { MockState } from '../store';
 import {
-  type Body, LIVE, addAdjustment, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, markReplaced, refuseBelowSettled, reissue, revise, totalsOf,
+  type Body, LIVE, addAdjustment, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, markReplaced, refuseBelowSettled, refuseNonPositive, refusePartyChange, reissue, revise, totalsOf,
 } from './commands';
 import { MockError, today } from './log';
 import { fromSatang, toSatang } from './money';
@@ -77,6 +77,8 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
   if (sameBody) {
     explanation = 'ไม่มีการเปลี่ยนแปลง';
   } else if (d.correctionClass !== 'T' || !isFiscalChange(d, proposed)) {
+    refusePartyChange(st, d, proposed);
+    refuseNonPositive(st, d.companyId, d.type, proposed);
     refuseBelowSettled(st, d, proposed); // an IV cannot be revised below what is already received: say so before the plan is shown
     add('revise', d, `แก้ไข ${label} (เลขที่เดิม เพิ่มรุ่นแก้ไข)`, `doc.${d.type}.correct`);
     explanation = 'การแก้ไขนี้ไม่กระทบภาษี แก้ไขในเอกสารเดิมและเก็บประวัติการแก้ไข';

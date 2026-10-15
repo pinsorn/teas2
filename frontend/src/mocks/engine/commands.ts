@@ -37,6 +37,10 @@ const reverseEntry = (st: MockState, companyId: string, e: JournalEntryPreview):
   isPinned() ? reversalOf(e, stamp().slice(0, 10)) // seed history: reversed on its own (pinned) date, in the period that was open then
     : isClosed(st, companyId, e.date) ? { ...reversalOf(e, firstOpenDate(st, companyId)), late: true } : reversalOf(e, today());
 
+/** A correction's reversal (SP0 5.9): on the ORIGINAL entry's date while that period is open, else late on the first open date. Only a user cancel posts its reversal today. */
+const correctionReversal = (st: MockState, companyId: string, e: JournalEntryPreview): JournalEntryPreview =>
+  isPinned() || isClosed(st, companyId, e.date) ? reverseEntry(st, companyId, e) : reversalOf(e, e.date);
+
 /** D-10: a NEW entry for a document dated in a closed month posts on the first open date, late; the document date is unchanged (I9). */
 const postedNow = (st: MockState, companyId: string, p: JournalPreview): JournalPreview => {
   const [first, ...rest] = p.entries;
@@ -237,6 +241,30 @@ function settleTargets(st: MockState, d: Stored, allocations: Allocation[] | und
   if (kind === 'settles') for (const a of allocations ?? []) recomputeSettlement(st, a.targetId);
 }
 
+/** D-10: a document is dated today or earlier, in an open month (seed history, on the pinned clock, only skips the closed-period refusal). Issue, and revise when the date moves. */
+function dateGuards(st: MockState, companyId: string, date: IsoDate): void {
+  if (date > today()) throw new MockError(422, 'doc.future_date', `วันที่เอกสารอยู่ในอนาคต (วันนี้ ${today()}) ออกเอกสารไม่ได้ ให้แก้วันที่เป็นวันนี้หรือก่อนหน้า`);
+  if (!isPinned() && isClosed(st, companyId, date)) {
+    throw new MockError(422, 'period.closed', `งวดบัญชี ${monthLabelTh(date.slice(0, 7))} ปิดแล้ว ออกเอกสารลงวันที่ในงวดนี้ไม่ได้ ให้เปลี่ยนวันที่เป็น ${firstOpenDate(st, companyId)} เป็นต้นไป หรือขอเปิดงวดอีกครั้ง`);
+  }
+}
+
+/** An invoice of 0.00 or less is not a document: cancel it instead. */
+export function refuseNonPositive(st: MockState, companyId: string, type: DocType, body: Body): void {
+  if (type !== 'IV') return;
+  if (toSatang(totalsOf(st, companyId, type, body).total) <= 0) {
+    throw new MockError(422, 'doc.total_not_positive', 'ยอดรวมใบแจ้งหนี้ต้องมากกว่า 0.00 บาท ถ้าไม่ต้องการเอกสารนี้ให้ยกเลิกเอกสาร');
+  }
+}
+
+/** A document that receipts (`settles`) or a billing statement (`groups`) point at keeps its customer: their AR / list belong to that customer. */
+export function refusePartyChange(st: MockState, d: Stored, body: Body): void {
+  if (body.header.partyId === d.header.partyId) return;
+  if (st.links.some((l) => l.active && l.to === d.id && (l.kind === 'settles' || l.kind === 'groups'))) {
+    throw new MockError(422, 'doc.party_locked', 'เปลี่ยนลูกค้าไม่ได้ เพราะมีใบเสร็จหรือใบวางบิลอ้างถึงอยู่ ยกเลิกใบเสร็จ/ใบวางบิลที่อ้างถึงก่อน หรือยกเลิกใบแจ้งหนี้แล้วออกใบใหม่');
+  }
+}
+
 /** `keepDate`: a correction re-issues a document at its original date (I9), so the period / future checks do not apply.
  *  `partyExempt`: target ids a correction plan retargeted to a reissued invoice, whose customer may differ from the receipt's. */
 export function issue(st: MockState, id: string, version: number, actor: Actor, opts?: { keepDate?: boolean; partyExempt?: string[]; prior?: Allocation[] }): Doc {
@@ -246,12 +274,8 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   let body: Body = { header: d.header, lines: d.lines, ...(d.allocations ? { allocations: d.allocations } : {}) };
   const missing = missingOf(st, d.companyId, d.type, body);
   if (missing.length) throw incomplete(missing);
-  if (!opts?.keepDate) { // D-10; seed history (pinned clock) is issued as of its own date, so only the closed-period refusal is skipped
-    if (d.header.documentDate > today()) throw new MockError(422, 'doc.future_date', `วันที่เอกสารอยู่ในอนาคต (วันนี้ ${today()}) ออกเอกสารไม่ได้ ให้แก้วันที่เป็นวันนี้หรือก่อนหน้า`);
-    if (!isPinned() && isClosed(st, d.companyId, d.header.documentDate)) {
-      throw new MockError(422, 'period.closed', `งวดบัญชี ${monthLabelTh(d.header.documentDate.slice(0, 7))} ปิดแล้ว ออกเอกสารลงวันที่ในงวดนี้ไม่ได้ ให้เปลี่ยนวันที่เป็น ${firstOpenDate(st, d.companyId)} เป็นต้นไป หรือขอเปิดงวดอีกครั้ง`);
-    }
-  }
+  if (!opts?.keepDate) dateGuards(st, d.companyId, d.header.documentDate); // D-10
+  refuseNonPositive(st, d.companyId, d.type, body);
   const bad = settleProblem(st, d.companyId, d.type, body, outstandingNow(st), { partyExempt: opts?.partyExempt, prior: opts?.prior });
   if (bad) throw bad; // nothing has been written yet: a refused issue leaves no number, link or journal behind
   if (GROUPS[d.type]) body = { ...body, allocations: cleanAllocations(st, d.companyId, d.type, body.allocations) }; // BL: each target's outstanding AS OF ISSUE, server-read
@@ -312,6 +336,9 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   }
   if (d.correctionClass === 'L' && blockingLocks(d).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก แก้ไขไม่ได้');
   if (d.correctionClass !== 'T') { const m = missingOf(st, d.companyId, d.type, body); if (m.length) throw incomplete(m); }
+  if (body.header.documentDate !== d.header.documentDate) dateGuards(st, d.companyId, body.header.documentDate); // a moved date follows the issue rules
+  refusePartyChange(st, d, body);
+  refuseNonPositive(st, d.companyId, d.type, body);
   refuseBelowSettled(st, d, body);
   const resettle = (SETTLES[d.type] !== undefined && d.correctionClass !== 'T') || GROUPS[d.type] !== undefined; // a payment voucher / billing statement re-points its own links; a receipt (T) can only change a certificate number here
   if (resettle) { // the voucher's own current links give their amounts back before the new list is checked
@@ -345,7 +372,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
     const prev = st.journals.find((j) => j.docId === id)?.preview.entries ?? [];
     const live = prev[prev.length - 1];
     const fresh = ledgerFor(st, getDoc(st, id)).entries[0];
-    setJournal(st, id, { entries: [...prev, ...(live && live.kind !== 'reversal' ? [reverseEntry(st, d.companyId, live)] : []),
+    setJournal(st, id, { entries: [...prev, ...(live && live.kind !== 'reversal' ? [correctionReversal(st, d.companyId, live)] : []),
       ...(fresh ? [{ ...fresh, kind: 'correction' as const, ...(isClosed(st, d.companyId, fresh.date) ? { date: firstOpenDate(st, d.companyId), late: true } : {}) }] : [])] });
   }
   const at = stamp();
@@ -390,7 +417,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   st.links.push({ companyId: old.companyId, from: created.id, to: old.id, kind: 'replaces', active: true });
   const oj = st.journals.find((j) => j.docId === old.id);
   const last = oj?.preview.entries[oj.preview.entries.length - 1];
-  if (oj && last && last.kind !== 'reversal') oj.preview = { entries: [...oj.preview.entries, reverseEntry(st, old.companyId, last)] };
+  if (oj && last && last.kind !== 'reversal') oj.preview = { entries: [...oj.preview.entries, correctionReversal(st, old.companyId, last)] };
   setJournal(st, created.id, postedNow(st, created.companyId, ledgerFor(st, created)));
   st.revisions.push({ docId: created.id, revision: 0, at, actor, reason, snapshot: publicDoc(created), diff: [] });
   for (const l of carried) if (l.kind === 'settles' || l.kind === 'adjusts') recomputeSettlement(st, l.to);
@@ -406,6 +433,7 @@ export function convert(st: MockState, id: string, targetType: DocType, lines: {
   if (!LIVE.includes(src.status)) throw new MockError(409, 'doc.not_convertible', 'แปลงได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   refuseRejected(src);
   refuseClosed(src);
+  if (SETTLES[targetType]) throw new MockError(422, 'doc.conversion_not_allowed', `แปลง ${src.type} เป็น ${targetType} ด้วยวิธีนี้ไม่ได้ (เอกสารรับ/จ่ายชำระต้องจัดสรรกับเอกสารที่ค้างชำระ)`);
   if (!CONVERSIONS[src.type]?.includes(targetType)) throw new MockError(422, 'doc.conversion_not_allowed', `แปลง ${src.type} เป็น ${targetType} ไม่ได้`);
   if (!isTypeAvailable(targetType, !!st.companies.find((c) => c.id === src.companyId)?.vatRegistered)) {
     throw new MockError(422, 'doc.type_not_available', unavailableTh(targetType));

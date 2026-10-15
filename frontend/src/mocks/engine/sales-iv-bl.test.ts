@@ -4,6 +4,7 @@ import { USER as me } from '../fixtures/documents';
 import { fixtureIds } from '../fixtures/ids';
 import { seed, type MockState } from '../store';
 import { buildChain } from './chain';
+import { CONVERSIONS } from '@/domain/doc-types';
 import { calc, cancel, compute, convert, createDraft, issue, publicDoc, reissue, revise, updateDraft } from './commands';
 import { buildPlan } from './corrections';
 import { checkInvariants } from './invariants';
@@ -227,5 +228,77 @@ describe('BL: groups open TI / IV of one party, no ledger, total = Σ outstandin
   });
   it('the named fixtures resolve', () => {
     expect(fixtureIds(st)).toMatchObject({ ivDraft: 'iv-d1', ivIssuedUnpaid: 'iv-1', ivPartly: 'iv-p1', ivSettled: 'iv-s1', blVat: 'bl-1', blNonVat: 'nbl-1' });
+  });
+});
+
+describe('S3 fix round 1 (Opus review)', () => {
+  const ivBody = (d: Doc, p: { partyId?: string; documentDate?: string; price?: string } = {}) =>
+    ({ header: { ...d.header, ...(p.partyId ? { partyId: p.partyId } : {}), ...(p.documentDate ? { documentDate: p.documentDate } : {}) }, lines: [line('l1', p.price ?? '5000.00', { taxCode: 'EX' })] });
+  const snap = () => JSON.stringify([st.docs, st.links, st.journals, st.revisions, st.series]);
+  const month = (id: string, m: string) => st.journals.find((j) => j.docId === id)!.preview.entries
+    .filter((e) => e.date.startsWith(m)).flatMap((e) => e.lines).filter((l) => l.accountCode === '4100').reduce((a, l) => a + sat(l.credit) - sat(l.debit), 0);
+
+  it('C1: an IV with receipts or a BL cannot change customer (revise and plan); the AR subledger stays clean; an unlinked IV can', () => {
+    for (const [id, to] of [['iv-p1', 'nc-01'], ['iv-1', 'nc-02']] as const) {
+      const d = get(id), before = snap();
+      expect(code(() => revise(st, id, ivBody(d, { partyId: to, price: '4800.00' }), d.version, 'เปลี่ยนลูกค้า', me))).toBe('doc.party_locked');
+      expect(() => revise(st, id, ivBody(d, { partyId: to }), d.version, 'x', me)).toThrow('ยกเลิกใบเสร็จ/ใบวางบิลที่อ้างถึงก่อน');
+      expect(code(() => buildPlan(st, id, ivBody(d, { partyId: to }), 'accountant'))).toBe('doc.party_locked');
+      expect(snap()).toBe(before);
+      expect(checkInvariants(st)).toEqual([]);
+    }
+    const free = get('iv-3');
+    revise(st, free.id, ivBody(free, { partyId: 'nc-01', price: '6210.00' }), free.version, 'เปลี่ยนลูกค้า', me);
+    expect(get('iv-3').header.partyId).toBe('nc-01');
+    assertBalanced(st);
+  });
+
+  it('I1: the generic convert never creates a settle-type document (RC / PV), writes nothing, and IV no longer lists RC', () => {
+    const before = snap();
+    expect(code(() => convert(st, 'iv-1', 'RC', [{ sourceLineId: 'iv-1-l1', qty: '40' }], me))).toBe('doc.conversion_not_allowed');
+    expect(code(() => convert(st, fixtureIds(st).tiIssuedUnpaid, 'RC', [{ sourceLineId: get(fixtureIds(st).tiIssuedUnpaid).lines[0].id, qty: '1' }], me))).toBe('doc.conversion_not_allowed');
+    expect(snap()).toBe(before);
+    expect(CONVERSIONS.IV).toEqual(['BL']);
+  });
+
+  it('I2: revise refuses a date in a closed month or the future (IV, and N-class SO through the shared path); an unchanged date is fine', () => {
+    const d = get('iv-1'), before = snap();
+    expect(code(() => revise(st, d.id, ivBody(d, { documentDate: '2026-05-01', price: '4800.00' }), d.version, 'x', me))).toBe('period.closed');
+    expect(code(() => revise(st, d.id, ivBody(d, { documentDate: '2026-12-01', price: '4800.00' }), d.version, 'x', me))).toBe('doc.future_date');
+    const so = get('so-part');
+    expect(code(() => revise(st, so.id, { header: { ...so.header, documentDate: '2026-12-01' }, lines: so.lines }, so.version, 'x', me))).toBe('doc.future_date');
+    expect(snap()).toBe(before);
+    expect(revise(st, d.id, ivBody(d, { price: '5000.00' }), d.version, 'ราคา', me).totals.total).toBe('5000.00');
+    const ti = get(fixtureIds(st).tiIssuedUnpaid);
+    expect(() => revise(st, ti.id, { header: { ...ti.header, documentDate: '2026-12-01' }, lines: ti.lines }, ti.version, 'x', me)).toThrow(); // TI: a date is fiscal, refused earlier
+  });
+
+  it('I3: the reversal posts on the original entry\'s date when its month is open: September keeps 9,000.00 net, October nothing', () => {
+    const d = get('iv-p1');
+    revise(st, d.id, ivBody(d, { price: '9000.00' }), d.version, 'เพิ่มยอด', me); 
+    const e = st.journals.find((j) => j.docId === 'iv-p1')!.preview.entries;
+    expect(e.map((x) => [x.kind, x.date, !!x.late])).toEqual([['original', '2026-09-20', false], ['reversal', '2026-09-20', false], ['correction', '2026-09-20', false]]);
+    expect([month('iv-p1', '2026-09'), month('iv-p1', '2026-10')]).toEqual([900000, 0]);
+    assertBalanced(st);
+  });
+  it('I3: when the original month is closed, the reversal and the new entry post late on the first open date', () => {
+    st.periods.find((p) => p.companyId === NV && p.month === '2026-09')!.status = 'closed';
+    st.periods.find((p) => p.companyId === NV && p.month === '2026-09')!.closedAt = '2026-10-10T09:00:00+07:00';
+    const d = get('iv-p1');
+    revise(st, d.id, ivBody(d, { price: '9000.00' }), d.version, 'เพิ่มยอด', me);
+    const e = st.journals.find((j) => j.docId === 'iv-p1')!.preview.entries;
+    expect(e.map((x) => [x.kind, x.date, !!x.late])).toEqual([['original', '2026-09-20', false], ['reversal', '2026-10-01', true], ['correction', '2026-10-01', true]]);
+    assertBalanced(st);
+  });
+
+  it('M2: an IV of 0.00 or less is refused with doc.total_not_positive at revise, plan and issue', () => {
+    const d = get('iv-3');
+    for (const price of ['0.00', '-100.00']) {
+      expect(code(() => revise(st, d.id, ivBody(d, { price }), d.version, 'x', me))).toBe('doc.total_not_positive');
+      expect(code(() => buildPlan(st, d.id, ivBody(d, { price }), 'accountant'))).toBe('doc.total_not_positive');
+      const draft = createDraft(st, NV, 'IV', { header: { partyId: 'nc-01', documentDate: '2026-10-14' }, lines: [line('l1', price, { taxCode: 'EX' })] }, me, `k-z${price}`);
+      expect(code(() => issue(st, draft.id, draft.version, me))).toBe('doc.total_not_positive');
+    }
+    expect(() => revise(st, d.id, ivBody(d, { price: '0.00' }), d.version, 'x', me)).toThrow('ยกเลิก');
   });
 });

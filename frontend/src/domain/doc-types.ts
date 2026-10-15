@@ -32,7 +32,7 @@ export const isTypeAvailable = (t: DocType, vatRegistered: boolean) =>
   DOC_TYPES[t].vat === 'both' || (DOC_TYPES[t].vat === 'vat-only') === vatRegistered;
 /** SP0 §7.7. The engine refuses any pair not listed; a type's task enables its row's UI. */
 export const CONVERSIONS: Partial<Record<DocType, DocType[]>> = {
-  QT: ['SO', 'TI', 'IV'], SO: ['DO', 'TI', 'IV'], DO: ['TI', 'IV'], TI: ['BL', 'RC', 'CN', 'DN'], IV: ['BL', 'RC'],
+  QT: ['SO', 'TI', 'IV'], SO: ['DO', 'TI', 'IV'], DO: ['TI', 'IV'], TI: ['BL', 'RC', 'CN', 'DN'], IV: ['BL'],
   PO: ['PB', 'PV'], PB: ['PCN', 'PDN', 'PV'], EX: ['PV'],
 };
 
