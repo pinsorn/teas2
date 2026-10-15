@@ -2,3 +2,4 @@
 
 | Date | Task | Worker | Why this worker |
 |---|---|---|---|
+| 2026-10-14 | SP1c plan draft | opus-designer | plan for every remaining screen (Appendix C + SP0 §11.2) is architecture-level, large-context synthesis — design work, Fable reviews before execution |
