@@ -301,6 +301,13 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
     const bad = settleProblem(st, d.companyId, d.type, body, ownBack(st, outstandingNow(st), id), { prior: d.allocations });
     if (bad) throw bad;
   }
+  for (const ol of d.lines) { // a converted line cannot be lowered below what active targets (drafts hold quantity too) already took
+    const taken = consumed(st, d, ol);
+    const nl = body.lines.find((l) => l.id === ol.id);
+    if (taken > 0 && (!nl || q4(nl.qty) < taken)) {
+      throw new MockError(422, 'doc.below_converted', `รายการ “${ol.description}” แปลงไปแล้ว ${fmtQ(taken)} ${ol.unit} ลดต่ำกว่านี้หรือลบไม่ได้ ให้ยกเลิกหรือแก้ไขเอกสารปลายทางก่อน`);
+    }
+  }
   const { allocations: _a, ...rest } = d; void _a;
   const next: Stored = {
     ...rest, header: body.header, lines: body.lines, totals: totalsOf(st, d.companyId, d.type, body), party: partyOf(st, d.companyId, body.header.partyId),

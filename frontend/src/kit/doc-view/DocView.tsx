@@ -27,6 +27,7 @@ import { CloseRemainderDialog } from '../dialogs/CloseRemainderDialog';
 import { MarkDialog } from './MarkDialog';
 import { MarksChips } from './MarksChips';
 import { docEditHref, docViewHref } from '@/descriptors';
+import { CLOSEABLE, LIVE } from '@/domain/doc-types';
 import { LedgerTab } from './LedgerTab';
 import { LockBanner, type ExitAction } from './LockBanner';
 import { PAPERS } from '../paper/registry';
@@ -97,6 +98,8 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
     onSuccess: async () => { await refresh(); setMarkOpen(undefined); },
     onError: (e) => { if (e instanceof ApiError && e.code === 'doc.version_conflict') void refresh(); },
   });
+  const closeable = CLOSEABLE.includes(d.type) && LIVE.includes(doc.status) && !doc.marks?.closed;
+  const rem = useQuery({ queryKey: qk.remaining(me!.activeCompanyId, d.type, doc.id), queryFn: () => endpoints.getRemaining(d.type, doc.id), enabled: closeable });
   const close = useMutation({
     mutationFn: (reason: string) => endpoints.closeRemainder(d.type, doc.id, doc.version, reason),
     onSuccess: async () => { await refresh(); setCloseOpen(false); },
@@ -145,7 +148,8 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
       </header>
 
       <ActionBar descriptor={d as ConvertibleDescriptor} doc={doc} permissions={permissions} vatRegistered={me!.vatRegistered} onCancel={() => { cancel.reset(); setCancelOpen(true); }} onConvert={() => setConvertOpen(true)}
-        onMark={(m) => { mark.reset(); setMarkOpen(m); }} onCloseRemainder={() => { close.reset(); setCloseOpen(true); }} />
+        onMark={(m) => { mark.reset(); setMarkOpen(m); }} onCloseRemainder={() => { close.reset(); setCloseOpen(true); }}
+        nothingRemaining={closeable && !!rem.data && rem.data.every((l) => l.remaining === '0')} />
       {doc.marks?.closed ? (
         <Alert role="status"><AlertTitle>{t('closedAlert')}</AlertTitle><AlertDescription>{t('marks.rejectedWhy', { reason: doc.marks.closed.reason })}</AlertDescription></Alert>
       ) : null}

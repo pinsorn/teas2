@@ -62,6 +62,15 @@ describe('DocView: quotation marks and conversion', () => {
       expect(btn).toHaveAccessibleDescription(/ไม่มีเอกสารปลายทาง/);
     } finally { PERMISSIONS_BY_ROLE.operator = saved; }
   });
+  it('"close remainder" is disabled with the reason on a fully delivered SO', async () => {
+    setSettings({ role: 'operator', companyKey: 'nonvat' });
+    const { DocView: V } = await import('./DocView');
+    const { salesOrder } = await import('@/descriptors/sales-order');
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><V descriptor={salesOrder} id="nso-1" /></QueryClientProvider>);
+    await screen.findByRole('button', { name: 'ปิดยอดคงเหลือ' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'ปิดยอดคงเหลือ' })).toBeDisabled()); // re-queried: the guard re-mounts the button once the quantities arrive
+    expect(screen.getByRole('button', { name: 'ปิดยอดคงเหลือ' })).toHaveAccessibleDescription(/แปลงครบทุกรายการแล้ว/);
+  });
   it('a viewer without doc.QT.issue sees the mark buttons disabled with the reason', async () => {
     setSettings({ role: 'operator', companyKey: 'nonvat' });
     const { PERMISSIONS_BY_ROLE } = await import('@/mocks/permissions');

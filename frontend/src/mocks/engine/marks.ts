@@ -34,7 +34,8 @@ export const afterRevision = (d: Stored): DocMarks | undefined => {
   return Object.keys(kept).length ? kept : undefined;
 };
 
-/** Closes what is left to convert on a live SO / DO / PO. A mark: no revision, no totals change; an N-class revision reopens it. */
+/** Closes what is left to convert on a live SO / DO / PO. A mark: no revision, no totals change; an N-class revision reopens it.
+ *  A draft target that already reserved quantity stays valid (it was within the remainder when created): issuing it after the close works, /remaining stays 0. */
 export function closeRemainder(st: MockState, id: string, version: number, reason: string, actor: Actor): Doc {
   const d = find(st, id);
   if (!CLOSEABLE.includes(d.type)) throw new MockError(422, 'mark.not_allowed', 'เอกสารประเภทนี้ปิดยอดคงเหลือไม่ได้');
@@ -43,6 +44,7 @@ export function closeRemainder(st: MockState, id: string, version: number, reaso
   const why = reason?.trim();
   if (!why) throw new MockError(422, 'mark.reason_required', 'ต้องระบุเหตุผลที่ปิดยอดคงเหลือ');
   if (d.marks?.closed) throw new MockError(409, 'doc.already_closed', 'เอกสารนี้ปิดยอดคงเหลือแล้ว');
+  if (remainingOf(st, id).every((l) => l.remaining === '0')) throw new MockError(409, 'doc.nothing_remaining', 'ไม่มียอดคงเหลือให้ปิด (แปลงครบทุกรายการแล้ว)');
   const marks: DocMarks = { ...d.marks, closed: { at: stamp(), by: actor.name, reason: why } };
   const next: Stored = { ...d, marks, version: d.version + 1 };
   st.docs[st.docs.findIndex((x) => x.id === id)] = next;

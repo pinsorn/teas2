@@ -55,8 +55,13 @@ describe('SO / DO progress (derived, §7.11)', () => {
   it('DO progress = billed qty / DO qty ("วางบิลแล้ว x/y")', () => {
     const d = toDo(make('SO'), [{ sourceLineId: 'l1', qty: '10' }]);
     expect(progress(d.id)).toBe('วางบิลแล้ว 0/10');
-    convert(st, d.id, 'TI', [{ sourceLineId: d.lines[0].id, qty: '4' }], me);
+    const ti = convert(st, d.id, 'TI', [{ sourceLineId: d.lines[0].id, qty: '4' }], me);
+    expect(progress(d.id)).toBe('วางบิลแล้ว 0/10'); // a draft TI bills nothing (it only reserves the quantity)
+    expect(remainingOf(st, d.id)[0].remaining).toBe('6');
+    const issued = issue(st, ti.id, ti.version, me);
     expect(progress(d.id)).toBe('วางบิลแล้ว 4/10');
+    cancel(st, issued.id, issued.version, 'OTHER', 'x', me);
+    expect(progress(d.id)).toBe('วางบิลแล้ว 0/10');
   });
   it('DO → BL conversion is refused (D-07), and the refusal leaves nothing behind', () => {
     const d = toDo(make('SO'), [{ sourceLineId: 'l1', qty: '10' }]);
@@ -70,6 +75,35 @@ describe('SO / DO progress (derived, §7.11)', () => {
     const m = setMark(st, d.id, 'delivered', d.version, me);
     expect(m.marks?.delivered).toBeDefined();
     expect([st.docs.filter((x) => x.type === 'TI').length, m.revision, m.totals]).toEqual([tis, d.revision, d.totals]);
+  });
+});
+
+describe('revising below what was converted', () => {
+  it('is refused (422 doc.below_converted) naming the line and the converted quantity; equal or higher is fine; removing the line is refused too', () => {
+    const so = make('SO');
+    const d1 = toDo(so, [{ sourceLineId: 'l1', qty: '10' }]);
+    const cur = get(so.id);
+    const lowered = (qty: string) => cur.lines.map((l) => (l.id === 'l1' ? { ...l, qty } : l));
+    expect(() => revise(st, so.id, { header: cur.header, lines: lowered('9') }, cur.version, 'ลด', me)).toThrow(/doc.below_converted.*รายการ l1.*10.*ยกเลิกหรือแก้ไขเอกสารปลายทาง/);
+    expect(() => revise(st, so.id, { header: cur.header, lines: cur.lines.filter((l) => l.id !== 'l1') }, cur.version, 'ลบ', me)).toThrow(/doc.below_converted/);
+    expect(get(so.id).revision).toBe(0); // nothing was written
+    const ok = revise(st, so.id, { header: cur.header, lines: lowered('10') }, cur.version, 'เท่าเดิม', me);
+    expect(ok.revision).toBe(1);
+    cancel(st, d1.id, d1.version, 'OTHER', 'x', me); // the exit: cancel the target first
+    const again = get(so.id);
+    expect(revise(st, so.id, { header: again.header, lines: again.lines.map((l) => (l.id === 'l1' ? { ...l, qty: '5' } : l)) }, again.version, 'ลด', me).revision).toBe(2);
+  });
+  it('a draft target counts too: it holds the quantity until it is deleted', () => {
+    const so = make('SO');
+    toDo(so, [{ sourceLineId: 'l1', qty: '10' }], false);
+    const cur = get(so.id);
+    expect(() => revise(st, so.id, { header: cur.header, lines: cur.lines.map((l) => (l.id === 'l1' ? { ...l, qty: '3' } : l)) }, cur.version, 'x', me)).toThrow(/doc.below_converted/);
+  });
+  it('progress reads "ส่งครบ" when delivered is at least ordered (belt and braces)', () => {
+    const so = make('SO');
+    toDo(so, [{ sourceLineId: 'l1', qty: '20' }, { sourceLineId: 'l2', qty: '10' }]);
+    const s = get(so.id); s.lines = s.lines.map((l) => ({ ...l, qty: '5' })); // forced past the guard: stored state only
+    expect(progress(so.id)).toBe('ส่งครบ');
   });
 });
 
@@ -117,6 +151,21 @@ describe('close remainder', () => {
     const c = closeRemainder(st, so.id, so.version, 'x', me);
     expect(() => closeRemainder(st, so.id, c.version, 'y', me)).toThrow(/doc\.already_closed/);
     expect(so.marks?.closed).toBeUndefined();
+  });
+  it('nothing left to close is refused (409 doc.nothing_remaining)', () => {
+    const so = make('SO');
+    toDo(so, [{ sourceLineId: 'l1', qty: '20' }, { sourceLineId: 'l2', qty: '10' }]);
+    expect(() => closeRemainder(st, so.id, get(so.id).version, 'x', me)).toThrow(/doc.nothing_remaining/);
+    expect(get(so.id).marks?.closed).toBeUndefined();
+  });
+  it('a draft target that already reserved quantity stays valid after the close: issuing it works and progress rises, remaining stays 0', () => {
+    const so = make('SO');
+    const draft = toDo(so, [{ sourceLineId: 'l1', qty: '10' }], false);
+    closeRemainder(st, so.id, get(so.id).version, 'x', me);
+    expect(progress(so.id)).toBe('ส่งแล้ว 0/30 (ปิดยอดคงเหลือ)');
+    issue(st, draft.id, draft.version, me);
+    expect(progress(so.id)).toBe('ส่งแล้ว 10/30 (ปิดยอดคงเหลือ)');
+    expect(remainingOf(st, so.id).map((l) => l.remaining)).toEqual(['0', '0']);
   });
   it('a DO can be closed too, and revising a DO keeps its delivered mark but clears closed', () => {
     const d = toDo(make('SO'), [{ sourceLineId: 'l1', qty: '10' }]);

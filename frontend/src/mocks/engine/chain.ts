@@ -1,4 +1,5 @@
 import { LIVE } from '@/domain/doc-types';
+import type { DocType } from '@/domain/types';
 import type { ChainEdge, ChainGraph, ChainNode, Doc, DocLine, Qty } from '@/domain/types';
 import type { MockState } from '../store';
 import { fromSatang, toSatang } from './money';
@@ -30,11 +31,13 @@ export function consumed(st: MockState, src: Doc, line: DocLine, only?: (target:
 export function progressOf(st: MockState, d: Doc): string | undefined {
   if (d.type === 'QT' || d.type === 'SO' || d.type === 'DO' || d.type === 'PO') {
     const ordered = d.lines.reduce((a, l) => a + q4(l.qty), 0);
-    const only = d.type === 'SO' ? (t: Doc) => t.type === 'DO' && LIVE.includes(t.status) : undefined; // a draft DO has delivered nothing
+    // only issued targets count: a draft DO has delivered nothing, a draft TI / IV has billed nothing (they only reserve the quantity)
+    const kinds: DocType[] | undefined = d.type === 'SO' ? ['DO'] : d.type === 'DO' ? ['TI', 'IV'] : undefined;
+    const only = kinds ? (t: Doc) => kinds.includes(t.type) && LIVE.includes(t.status) : undefined;
     const done = d.lines.reduce((a, l) => a + consumed(st, d, l, only), 0);
     const x = `${fmtQ(done)}/${fmtQ(ordered)}`;
     if (d.type === 'QT') return x;
-    if (d.type === 'SO' && done === ordered) return 'ส่งครบ';
+    if (d.type === 'SO' && done >= ordered) return 'ส่งครบ';
     return `${{ SO: 'ส่งแล้ว', DO: 'วางบิลแล้ว', PO: 'รับแล้ว' }[d.type]} ${x}${d.marks?.closed ? ' (ปิดยอดคงเหลือ)' : ''}`;
   }
   if (d.type === 'TI' && d.outstanding !== undefined) {

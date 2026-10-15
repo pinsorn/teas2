@@ -28,8 +28,8 @@ export function Guarded({ why, children }: { why?: string; children: (p: { disab
 const MARK_BUTTONS: MarkKey[] = ['accepted', 'rejected', 'delivered'];
 const MARK_LABEL = { accepted: 'markAccepted', rejected: 'markRejected', delivered: 'markDelivered', sent: 'markSent' } as const;
 
-export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCancel, onConvert, onMark, onCloseRemainder }: {
-  descriptor: ConvertibleDescriptor; doc: Doc; permissions: string[]; /** The active company's VAT status (conversion targets depend on it). */ vatRegistered: boolean; onCancel: () => void; onConvert?: () => void; onMark?: (mark: MarkKey) => void; onCloseRemainder?: () => void;
+export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCancel, onConvert, onMark, onCloseRemainder, nothingRemaining }: {
+  descriptor: ConvertibleDescriptor; doc: Doc; permissions: string[]; /** The active company's VAT status (conversion targets depend on it). */ vatRegistered: boolean; onCancel: () => void; onConvert?: () => void; onMark?: (mark: MarkKey) => void; onCloseRemainder?: () => void; /** Every line is already converted in full: there is nothing to close. */ nothingRemaining?: boolean;
 }) {
   const t = useTranslations('docView.actions');
   const ts = useTranslations('state');
@@ -75,7 +75,7 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCa
           </Guarded>
         ) : null}
         {live && CLOSEABLE.includes(d.type) && !doc.marks?.closed ? (
-          <Guarded why={missing(d.permissions.issue)}>
+          <Guarded why={missing(d.permissions.issue) ?? (nothingRemaining ? t('whyNothingRemaining') : undefined)}>
             {(p) => <Button {...p} variant="outline" onClick={onCloseRemainder}>{t('closeRemainder')}</Button>}
           </Guarded>
         ) : null}

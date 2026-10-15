@@ -49,6 +49,32 @@ test('SO → DO: the delivery lands in the DO editor, the SO list shows its prog
   await expect(page.getByText('วางบิลแล้ว 0/2')).toBeVisible();
 });
 
+test('DO: the delivered button records a status-only mark with an activity entry, then goes away', async ({ page }) => {
+  await page.goto('/'); const sid = await fixtureId(page, 'soPartlyDelivered');
+  await page.goto(`/sales/sales-orders/${sid}`);
+  await page.getByRole('button', { name: 'แปลงเป็น…' }).click();
+  const dlg = page.getByRole('dialog', { name: /แปลงใบสั่งขาย/ });
+  await dlg.getByLabel('เอกสารปลายทาง').selectOption('DO');
+  await dlg.getByRole('button', { name: 'สร้างใบส่งของ' }).click();
+  await expect(page).toHaveURL(/\/sales\/delivery-orders\/[^/]+\/edit$/);
+  const did = page.url().split('/').at(-2)!;
+  // issue the draft DO through the API of the mock worker (the editor flow is TI's, covered elsewhere), then mark it delivered in the UI
+  const issued = await page.evaluate(async (id) => {
+    const g = await (await fetch(`/bff/v1/docs/DO/${id}`)).json();
+    return (await fetch(`/bff/v1/docs/DO/${id}/issue`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: g.version }) })).status;
+  }, did);
+  expect(issued).toBe(200);
+  await page.goto(`/sales/delivery-orders/${did}`);
+  await expect(page.locator('[data-mark]')).toHaveCount(0);
+  await page.getByRole('button', { name: 'ส่งของแล้ว' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'บันทึก' }).click();
+  await expect(page.locator('[data-mark="delivered"]')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'ส่งของแล้ว' })).toHaveCount(0);
+  await expect(page.getByText(/วางบิลแล้ว 0\/\d+/)).toBeVisible(); // status-only: nothing billed, no TI created
+  await page.getByRole('tab', { name: 'กิจกรรม' }).click();
+  await expect(page.getByText('ส่งมอบแล้ว')).toBeVisible();
+});
+
 test('a DO offers TI / IV only (D-07: no billing note from a delivery order)', async ({ page }) => {
   await page.goto('/'); const did = await fixtureId(page, 'doDelivered');
   await page.goto(`/sales/delivery-orders/${did}`);
