@@ -21,9 +21,11 @@ import { LoadingState } from '../states/LoadingState';
 import { isNotFound, NotFoundState } from '../states/NotFoundState';
 import { ActionBar, type ConvertibleDescriptor } from './ActionBar';
 import { ActivityTimeline } from './ActivityTimeline';
-import { ChainPanel, docHref } from './ChainPanel';
+import { ChainPanel } from './ChainPanel';
+import { docViewHref } from '@/descriptors';
 import { LedgerTab } from './LedgerTab';
 import { LockBanner, type ExitAction } from './LockBanner';
+import { PAPERS } from '../paper/registry';
 import { PaperView } from '../paper/PaperView';
 import { RevisionHistory } from './RevisionHistory';
 
@@ -35,7 +37,7 @@ function PaperStub({ doc, revision }: { doc: Doc; revision?: number }) {
   return (
     <div className="rounded-lg border border-dashed border-border p-6 text-body text-muted-foreground">
       {revision !== undefined ? <p className="font-medium text-foreground">{t('snapshot', { n: revision })}</p> : null}
-      <p>{t('stub')}</p>
+      <p>{t(revision !== undefined ? 'stub' : 'notPrintable')}</p>
       <p className="tabular-nums">{doc.number ?? ''}</p>
     </div>
   );
@@ -87,13 +89,14 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
     mutationFn: (target: DocType) => endpoints.convertDoc(d.type, doc.id, target, doc.lines.map((l) => ({ sourceLineId: l.id, qty: l.qty }))),
     onSuccess: async (nd) => {
       await refresh();
-      const href = docHref(nd.type, nd.id);
+      const href = docViewHref(nd.type, nd.id);
       if (href) router.push(href); else setNotice(t('actions.converted', { number: nd.number ?? nd.type }));
     },
   });
 
   // Exits are real actions. Filing / period: the same correction flow as the edit button (proposing a correction needs the create permission; the plan lists what its steps need); settlement: the chain, where the receipt is un-applied.
-  const exitAction: ExitAction = (lock) => {
+  const exitAction: ExitAction = (lock, exit) => {
+    if (lock.kind === 'period' && exit !== lock.exits[0]) return undefined; // the reopen exit is plain text until AC6 builds period reopen
     if (lock.kind === 'filing' || lock.kind === 'period') {
       return { onClick: () => router.push(routesOf(d).edit(doc.id)), why: permissions.includes(d.permissions.create) ? undefined : ts('needPermission', { permission: d.permissions.create }) };
     }
@@ -104,6 +107,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
   const title = locale === 'en' ? d.titleEn : d.titleTh;
   const label = `${doc.type} ${doc.number ?? ''}`.trim();
   const tabs = ['paper', 'chain', 'ledger', 'activity', 'revisions'] as const;
+  const canLedger = permissions.includes('ledger.read'); // D-09: journals need ledger.read, not just the document's read
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
@@ -128,8 +132,16 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
       {convert.error ? <Alert variant="destructive"><AlertTitle>{convert.error instanceof ApiError ? convert.error.problem.title : tc('retry')}</AlertTitle></Alert> : null}
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="h-auto flex-wrap group-data-horizontal/tabs:h-auto">{tabs.map((k) => <TabsTrigger key={k} value={k} className="h-8 flex-auto">{t(`tabs.${k}`)}</TabsTrigger>)}</TabsList>
-        <TabsContent value="paper" className="overflow-x-auto">{doc.type === 'TI' ? <PaperView type="TI" id={doc.id} /> : <PaperStub doc={doc} />}</TabsContent>
+        <TabsList className="h-auto flex-wrap group-data-horizontal/tabs:h-auto">{tabs.map((k) => k === 'ledger' && !canLedger ? (
+          <span key={k} title={t('ledger.needsPermission')} className="flex flex-auto">
+            <TabsTrigger value={k} disabled className="h-8 flex-auto">{t(`tabs.${k}`)}<span className="sr-only"> ({t('ledger.needsPermission')})</span></TabsTrigger>
+          </span>
+        ) : <TabsTrigger key={k} value={k} className="h-8 flex-auto">{t(`tabs.${k}`)}</TabsTrigger>)}</TabsList>
+        <TabsContent value="paper">
+          <section role="region" aria-label={t('tabs.paper')} tabIndex={0} className="overflow-x-auto">
+            {PAPERS[doc.type] ? <PaperView type={doc.type} id={doc.id} /> : <PaperStub doc={doc} />}
+          </section>
+        </TabsContent>
         <TabsContent value="chain"><ChainPanel type={d.type} id={doc.id} /></TabsContent>
         <TabsContent value="ledger"><LedgerTab type={d.type} id={doc.id} /></TabsContent>
         <TabsContent value="activity"><ActivityTimeline type={d.type} id={doc.id} /></TabsContent>
@@ -139,7 +151,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
       </Tabs>
 
       {cancelOpen ? (
-        <CancelDialog docLabel={label} busy={cancel.isPending} error={cancel.error} hint={cancel.error instanceof ApiError && cancel.error.code === 'doc.version_conflict' ? t('cancel.stale') : undefined} onCancel={() => setCancelOpen(false)}
+        <CancelDialog docLabel={label} total={doc.totals.total} busy={cancel.isPending} error={cancel.error} hint={cancel.error instanceof ApiError && cancel.error.code === 'doc.version_conflict' ? t('cancel.stale') : undefined} onCancel={() => setCancelOpen(false)}
           onConfirm={(code, text) => cancel.mutate({ code, text })} />
       ) : null}
     </div>

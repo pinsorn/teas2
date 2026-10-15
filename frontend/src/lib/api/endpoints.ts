@@ -1,11 +1,14 @@
 import type {
-  ActivityEntry, ChainGraph, ComputeResult, CorrectionPlan, CorrectionResult, Doc, DocHeader, DocLine, DocSummary,
-  DocType, HomeInbox, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, Revision, SearchHit,
+  ActivityEntry, Allocation, ChainGraph, ComputeResult, CorrectionPlan, CorrectionResult, Doc, DocHeader, DocLine, DocSummary,
+  DocType, HomeInbox, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, Revision, SearchHit,
 } from '@/domain/types';
-import { api } from './client';
+import type { ReportKind, ReportModel } from '@/domain/reports';
+import { api, ApiError, normalizeProblem } from './client';
 
-export type DocInput = { header: DocHeader; lines: DocLine[] };
-export interface ListDocsParams { status?: string; from?: string; to?: string; q?: string; outstanding?: 'positive'; limit?: number; cursor?: string }
+export type DocInput = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] };
+export interface BankAccountRef { id: string; nameTh: string; accountNo?: string; default?: boolean }
+export interface WhtTypeRef { code: string; nameTh: string; rate: string; incomeType: string }
+export interface ListDocsParams { status?: string; from?: string; to?: string; q?: string; outstanding?: 'positive'; overdue?: '1'; agent?: '1'; limit?: number; cursor?: string }
 
 /** Query string without undefined / empty values. */
 const qs = (p: Record<string, string | number | undefined>) => {
@@ -27,7 +30,7 @@ export const endpoints = {
 
   listDocs: (type: DocType, params: ListDocsParams = {}) => api<Page<DocSummary>>('GET', `/docs/${type}${qs({ ...params })}`),
   getDoc: (type: DocType, id: string) => api<Doc>('GET', d(type, id)),
-  computeDocument: (type: DocType, body: DocInput) => api<ComputeResult>('POST', `/docs/${type}/compute`, body),
+  computeDocument: (type: DocType, body: DocInput, docId?: string) => api<ComputeResult>('POST', `/docs/${type}/compute${qs({ docId })}`, body),
   createDoc: (type: DocType, body: DocInput, idempotencyKey: string) =>
     api<Doc>('POST', `/docs/${type}`, body, { idempotencyKey }),
   updateDoc: (type: DocType, id: string, body: DocInput, version: number) =>
@@ -46,5 +49,15 @@ export const endpoints = {
   getActivity: (type: DocType, id: string) => api<ActivityEntry[]>('GET', `${d(type, id)}/activity`),
   getRevisions: (type: DocType, id: string) => api<Revision[]>('GET', `${d(type, id)}/revisions`),
   getLedger: (type: DocType, id: string) => api<JournalPreview>('GET', `${d(type, id)}/ledger`),
+  openItems: (p: { partyId: string; types: DocType[] }) => api<OpenItem[]>('GET', `/docs/open-items${qs({ partyId: p.partyId, types: p.types.join(',') })}`),
+  bankAccounts: () => api<BankAccountRef[]>('GET', '/bank-accounts'),
+  whtTypes: () => api<WhtTypeRef[]>('GET', '/wht-types'),
+  getReport: (kind: ReportKind, params: Record<string, string>) => api<ReportModel>('GET', `/reports/${kind}${qs(params)}`),
+  /** The CSV the server builds for the same parameters (text/csv, BOM, CRLF). */
+  exportReport: async (kind: ReportKind, params: Record<string, string>): Promise<Blob> => {
+    const res = await fetch(new URL(`/bff/v1/reports/${kind}/export${qs(params)}`, window.location.origin));
+    if (!res.ok) throw new ApiError(normalizeProblem(res.status, await res.json().catch(() => undefined)));
+    return res.blob();
+  },
   getPaper: (type: DocType, id: string, copy = false) => api<PaperModel>('GET', `${d(type, id)}/paper${qs({ copy: copy ? 1 : undefined })}`),
 };

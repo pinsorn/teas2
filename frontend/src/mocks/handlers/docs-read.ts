@@ -1,34 +1,63 @@
+import { DOC_TYPES, LIVE, isTypeAvailable } from '@/domain/doc-types';
 import { HttpResponse, http } from 'msw';
-import type { Doc, DocSummary, Lock, Page } from '@/domain/types';
+import type { Doc, DocType, DocSummary, Lock, OpenItem, Page } from '@/domain/types';
 import { ctx, forbidden, problem, screenGate } from './common';
 
-import { recomputeSettlement } from '../engine/commands';
+import { recomputeSettlement, unavailableTh } from '../engine/commands';
+import { today } from '../engine/log';
+import { derivedLocks } from '../engine/locks';
+import { balanceOf } from '../engine/settlement';
+import { fromSatang } from '../engine/money';
 
-const VAT_ONLY = ['TI'];
 const LOCKED: Lock = { kind: 'filing', reason: 'ภ.พ.30 เดือน ก.ย. 2569 ยื่นแล้ว', exits: ['ออกใบลดหนี้ / ใบเพิ่มหนี้ในงวดถัดไป'] };
 const LOCKABLE = ['issued', 'partly_settled', 'settled'];
 
 export const toSummary = (d: Doc): DocSummary => ({
   id: d.id, type: d.type, number: d.number, status: d.status, documentDate: d.header.documentDate, partyName: d.party?.name ?? '',
-  total: d.totals.total, outstanding: d.outstanding, dueDate: d.header.dueDate, createdByAgent: d.createdBy.kind === 'agent',
+  total: d.totals.total, outstanding: d.outstanding, dueDate: d.header.dueDate, reference: d.header.reference, createdByAgent: d.createdBy.kind === 'agent',
 });
 
 export const docsReadHandlers = [
+  // registered before `/docs/:type` so "open-items" is never read as a document type.
+  // Permission: doc.<T>.read for every requested type this company has (a type the company cannot use, e.g. IV for a VAT company, is skipped).
+  http.get('*/bff/v1/docs/open-items', async ({ request }) => {
+    const gate = await screenGate('item');
+    if (gate) return gate;
+    const { st, company, perms } = ctx();
+    const u = new URL(request.url);
+    const partyId = u.searchParams.get('partyId');
+    const asked = (u.searchParams.get('types') ?? '').split(',').filter(Boolean);
+    if (!partyId || !asked.length || asked.some((t) => !Object.hasOwn(DOC_TYPES, t) || !DOC_TYPES[t as DocType].outstanding)) {
+      return problem(422, 'doc.open_items_query', 'ต้องระบุคู่ค้าและประเภทเอกสารที่มียอดค้างชำระ');
+    }
+    const types = (asked as DocType[]).filter((t) => isTypeAvailable(t, company.vatRegistered));
+    for (const t of types) if (!perms.includes(`doc.${t}.read`)) return forbidden(`doc.${t}.read`);
+    const items = st.docs
+      .filter((d) => d.companyId === company.id && d.header.partyId === partyId && types.includes(d.type) && LIVE.includes(d.status) && balanceOf(st, d).out !== 0)
+      .sort((a, b) => a.header.documentDate.localeCompare(b.header.documentDate) || (a.number ?? '').localeCompare(b.number ?? ''))
+      .map((d): OpenItem => ({ id: d.id, type: d.type, number: d.number ?? '', documentDate: d.header.documentDate, ...(d.header.dueDate ? { dueDate: d.header.dueDate } : {}),
+        total: d.totals.total, outstanding: fromSatang(balanceOf(st, d).out) }));
+    return HttpResponse.json(items);
+  }),
   http.get('*/bff/v1/docs/:type', async ({ request, params }) => {
     const gate = await screenGate('list');
     if (gate) return gate;
-    const type = String(params.type);
+    const rawType = String(params.type);
+    if (!Object.hasOwn(DOC_TYPES, rawType)) return problem(404, 'doc.type_not_available', 'ไม่รู้จักประเภทเอกสารนี้');
+    const type = rawType as DocType;
     const { st, company, perms } = ctx();
-    if (VAT_ONLY.includes(type) && !company.vatRegistered) return problem(404, 'doc.type_not_available', 'บริษัทนี้ไม่ได้จดทะเบียนภาษีมูลค่าเพิ่ม');
+    if (!isTypeAvailable(type, company.vatRegistered)) return problem(404, 'doc.type_not_available', unavailableTh(type));
     if (!perms.includes(`doc.${type}.read`)) return forbidden(`doc.${type}.read`);
     const u = new URL(request.url);
     const statuses = u.searchParams.get('status')?.split(',').filter(Boolean), from = u.searchParams.get('from'), to = u.searchParams.get('to');
     const q = (u.searchParams.get('q') ?? '').toLowerCase(), owing = u.searchParams.get('outstanding') === 'positive';
+    const overdue = u.searchParams.get('overdue') === '1', agent = u.searchParams.get('agent') === '1', now = today();
     const limit = Math.min(Number(u.searchParams.get('limit')) || 25, 100);
     const offset = u.searchParams.get('cursor') ? Number(atob(u.searchParams.get('cursor')!)) || 0 : 0;
     const rows = st.docs
       .filter((d) => d.companyId === company.id && d.type === type && (!statuses?.length || statuses.includes(d.status))
-        && (!owing || Number(d.outstanding ?? 0) > 0) && (!from || d.header.documentDate >= from) && (!to || d.header.documentDate <= to)
+        && (!owing || Number(d.outstanding ?? 0) > 0)
+        && (!overdue || (!!d.header.dueDate && d.header.dueDate < now && Number(d.outstanding ?? 0) > 0)) && (!agent || d.createdBy.kind === 'agent') && (!from || d.header.documentDate >= from) && (!to || d.header.documentDate <= to)
         && (!q || `${d.number ?? ''} ${d.party?.name ?? ''}`.toLowerCase().includes(q)))
       .sort((a, b) => b.header.documentDate.localeCompare(a.header.documentDate) || (a.number ?? '').localeCompare(b.number ?? ''));
     const items = rows.slice(offset, offset + limit).map(toSummary);
@@ -38,15 +67,19 @@ export const docsReadHandlers = [
   http.get('*/bff/v1/docs/:type/:id', async ({ params }) => {
     const gate = await screenGate('item');
     if (gate) return gate;
-    const type = String(params.type);
+    const rawType = String(params.type);
+    if (!Object.hasOwn(DOC_TYPES, rawType)) return problem(404, 'doc.type_not_available', 'ไม่รู้จักประเภทเอกสารนี้');
+    const type = rawType as DocType;
     const { st, s, company, perms } = ctx();
-    if (VAT_ONLY.includes(type) && !company.vatRegistered) return problem(404, 'doc.type_not_available', 'บริษัทนี้ไม่ได้จดทะเบียนภาษีมูลค่าเพิ่ม');
+    if (!isTypeAvailable(type, company.vatRegistered)) return problem(404, 'doc.type_not_available', unavailableTh(type));
     if (!perms.includes(`doc.${type}.read`)) return forbidden(`doc.${type}.read`);
     const found = st.docs.find((d) => d.id === params.id && d.type === type && d.companyId === company.id);
     if (!found) return problem(404, 'doc.not_found', 'ไม่พบเอกสาร');
     recomputeSettlement(st, found.id);
-    const { companyId, ...doc } = st.docs.find((d) => d.id === found.id)!; void companyId;
-    const locks = s.screenState === 'locked' && LOCKABLE.includes(doc.status) && !doc.locks.some((l) => l.kind === 'filing') ? [...doc.locks, LOCKED] : doc.locks;
+    const cur = st.docs.find((d) => d.id === found.id)!;
+    const { companyId, ...doc } = cur; void companyId;
+    const own = derivedLocks(st, cur);
+    const locks = s.screenState === 'locked' && LOCKABLE.includes(doc.status) && !own.some((l) => l.kind === 'filing') ? [...own, LOCKED] : own;
     return HttpResponse.json({ ...doc, locks } satisfies Doc);
   }),
 ];

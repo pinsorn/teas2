@@ -25,7 +25,7 @@ const NV_ITEMS: [string, string, string, 'good' | 'service'][] = [
 ];
 
 const mk = (companyId: string, id: string, code: string, name: string, kind: 'good' | 'service', unit: string, unitPrice: string,
-  taxCode: TaxCode): SeedItem => ({ companyId, id, code, name, kind, unit, unitPrice, taxCode, ...(kind === 'service' ? { whtTypeCode: 'PND3-40' } : {}) });
+  taxCode: TaxCode): SeedItem => ({ companyId, id, code, name, kind, unit, unitPrice, taxCode, ...(kind === 'service' ? { whtTypeCode: 'SVC' } : {}) });
 
 export const vatItems = (): SeedItem[] => [
   ...VAT_SERVICES.map(([n, u, p], i) => mk('co-vat', `SV-${pad(i + 1)}`, `SV-${pad(i + 1)}`, n, 'service', u, p, 'S7')),

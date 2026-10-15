@@ -238,6 +238,14 @@ output VAT register (TX1).
 
 **Depends on:** AC5.
 
+**Carried from F4 review (must fix here):** invariant 7 (`mocks/engine/invariants.ts`) cannot express "a late entry
+was posted before its own period closed" because journal entries carry no posted-at time — once this task closes a
+month that holds late entries (dated on that month's first open day), every such entry is reported as posted after
+close and `assertBalanced` goes red. Add a posted-at timestamp to journal entries (set at posting, kept on reversal),
+check posted-at ≤ `closedAt` for every entry in a closed period, and make the L-class revise correction honour the
+pinned clock like `reverseEntry`. Also: a non-late `correction` entry must be checked against the revision that
+produced it, not the doc's latest revision. Corrupted-state test for each.
+
 **Files:** Create `frontend/src/mocks/engine/close.ts` (+ test), `frontend/src/app/(app)/accounting/period-close/page.tsx`,
 `frontend/src/kit/close/{PeriodGrid,ChecklistPanel,ReopenDialog}.tsx` (+ tests), `frontend/e2e/accounting-close.spec.ts`.
 Modify `mocks/engine/periods.ts`, `mocks/handlers` (`/periods/*`), permissions (`ledger.period.close`,

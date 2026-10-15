@@ -10,7 +10,7 @@ import type { CorrectionPlan, Doc } from '@/domain/types';
 import { ApiError } from '@/lib/api/client';
 import { endpoints, type DocInput } from '@/lib/api/endpoints';
 import { CorrectionPlanDialog } from '../dialogs/CorrectionPlanDialog';
-import { docHref } from './ChainPanel';
+import { docViewHref } from '@/descriptors';
 
 /**
  * Glue for revise mode: the editor's `onRevisionRequested(proposed)` calls `request`, which fetches the plan and opens the dialog.
@@ -25,13 +25,14 @@ export function useCorrectionFlow(d: DocDescriptor, doc: Doc) {
   const router = useRouter();
   const [plan, setPlan] = useState<CorrectionPlan>();
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>();
   const [sent, setSent] = useState(false);
   const [proposed, setProposed] = useState<DocInput>();
 
   const request = async (next: DocInput) => {
-    setError(undefined); setSent(false); setProposed(next);
-    try { setPlan(await endpoints.getCorrectionPlan(d.type, doc.id, next)); } catch (e) { setError(e); }
+    setError(undefined); setSent(false); setProposed(next); setLoading(true);
+    try { setPlan(await endpoints.getCorrectionPlan(d.type, doc.id, next)); } catch (e) { setError(e); } finally { setLoading(false); }
   };
   const confirm = async () => {
     if (!plan) return;
@@ -41,8 +42,8 @@ export function useCorrectionFlow(d: DocDescriptor, doc: Doc) {
       if (me) await qc.invalidateQueries({ queryKey: [me.activeCompanyId] });
       const next = [...affected].reverse().find((a) => a.type === d.type) ?? affected[affected.length - 1];
       setPlan(undefined);
-      // each affected document opens on its own type's route (a CN-only plan lands on the CN, never a TI route)
-      router.push((next && docHref(next.type, next.docId)) ?? docHref(d.type, doc.id) ?? d.basePath);
+      // each affected document opens on its own type's route; a type without a built screen yet (docViewHref undefined, e.g. CN until its task) falls back to the source document's view
+      router.push((next && docViewHref(next.type, next.docId)) ?? docViewHref(d.type, doc.id) ?? d.basePath);
     } catch (e) {
       setError(e);
     } finally {
@@ -56,7 +57,7 @@ export function useCorrectionFlow(d: DocDescriptor, doc: Doc) {
   const stale = error instanceof ApiError && ['correction.plan_stale', 'correction.plan_not_found'].includes(error.code) && !!proposed;
   const ui = (
     <>
-      {plan ? <CorrectionPlanDialog plan={plan} busy={busy} error={error} onRegenerate={stale ? () => void request(proposed!) : undefined} onConfirm={() => void confirm()} onSendToApprover={send} onCancel={() => { setPlan(undefined); setError(undefined); }} /> : null}
+      {plan ? <CorrectionPlanDialog plan={plan} busy={busy} loading={loading} error={error} onRegenerate={stale ? () => void request(proposed!) : undefined} onConfirm={() => void confirm()} onSendToApprover={send} onCancel={() => { setPlan(undefined); setError(undefined); }} /> : null}
       {!plan && error ? <Alert variant="destructive"><AlertTitle>{error instanceof ApiError ? error.code === 'correction.unrepresentable' ? tp('correctionUnrepresentable') : error.problem.title : tp('default')}</AlertTitle></Alert> : null}
       {sent ? <Alert role="status"><AlertTitle>{t('sent')}</AlertTitle></Alert> : null}
     </>

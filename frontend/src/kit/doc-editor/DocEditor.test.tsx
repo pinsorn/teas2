@@ -65,7 +65,7 @@ describe('DocEditor', () => {
     await userEvent.type(screen.getByRole('textbox', { name: 'หมายเหตุ' }), 'ส่งภายในวันศุกร์');
     await waitFor(() => expect(calls.some((c) => c.startsWith('PUT /bff/v1/docs/TI/'))).toBe(true), { timeout: 4000 });
     expect(calls.filter((c) => c === 'POST /bff/v1/docs/TI')).toHaveLength(1);
-  });
+  }, 12_000); // two 2 s idle windows back to back: the default 5 s leaves ~0.5 s of slack and flaked under load
   it('Ctrl+Enter opens the confirm dialog with totals; Enter issues', async () => {
     const onIssued = ui();
     await userEvent.type(screen.getByRole('combobox', { name: 'ลูกค้า' }), 'นาวา{Enter}');
@@ -74,6 +74,33 @@ describe('DocEditor', () => {
     expect(await screen.findByRole('alertdialog')).toHaveTextContent('รวมทั้งสิ้น');
     await userEvent.keyboard('{Enter}');
     await waitFor(() => expect(onIssued).toHaveBeenCalledWith(expect.objectContaining({ status: 'issued' })));
+  });
+  it('the default document date is the server business date, not the browser clock (browser pinned to 2026-10-20), and issuing succeeds', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-20T03:00:00+07:00'));
+    try {
+      const onIssued = ui();
+      const date = await screen.findByDisplayValue('2026-10-14');
+      expect(date).toHaveAttribute('type', 'date');
+      expect(screen.queryByDisplayValue('2026-10-20')).toBeNull();
+      await userEvent.type(screen.getByRole('combobox', { name: 'ลูกค้า' }), 'นาวา{Enter}');
+      await waitFor(() => expect(screen.getByRole('region', { name: 'ยังขาดอะไร' })).toHaveTextContent('ครบแล้ว'));
+      await userEvent.keyboard('{Control>}{Enter}{/Control}');
+      await screen.findByRole('alertdialog');
+      await userEvent.keyboard('{Enter}');
+      await waitFor(() => expect(onIssued).toHaveBeenCalledWith(expect.objectContaining({ status: 'issued' })));
+    } finally { vi.useRealTimers(); }
+  });
+  it('the business date fills a blank new document once: a cleared date stays empty, names the gap and blocks issuing', async () => {
+    ui();
+    const date = await screen.findByDisplayValue('2026-10-14');
+    await userEvent.clear(date);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(date).toHaveValue('');
+    await userEvent.type(screen.getByRole('combobox', { name: 'ลูกค้า' }), 'นาวา{Enter}');
+    expect(await screen.findByRole('region', { name: 'ยังขาดอะไร' })).toHaveTextContent('ต้องระบุวันที่เอกสาร');
+    expect(date).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'บันทึกและออกใบกำกับภาษี' })).toBeDisabled();
   });
   it('a 409 on save tells the user and keeps their input', async () => {
     testServer.use(http.put('*/bff/v1/docs/TI/:id', () => new Response(JSON.stringify({ title: 'มีคนแก้เอกสารนี้ก่อนคุณ', code: 'doc.version_conflict', status: 409 }), { status: 409, headers: { 'content-type': 'application/problem+json' } })));
@@ -94,8 +121,8 @@ describe('DocEditor', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
   it('revise mode hands the proposal off instead of issuing', async () => {
-    const issued = (await endpoints.listDocs('TI', { status: 'issued', limit: 1 })).items[0];
-    const doc = await endpoints.getDoc('TI', issued.id);
+    const issued = (await endpoints.listDocs(taxInvoice.type, { status: 'issued', limit: 1 })).items[0];
+    const doc = await endpoints.getDoc(taxInvoice.type, issued.id);
     const onRevisionRequested = vi.fn();
     render(<QueryClientProvider client={new QueryClient()}><DocEditor descriptor={taxInvoice} mode="revise" initial={doc} onIssued={vi.fn()} onRevisionRequested={onRevisionRequested} /></QueryClientProvider>);
     const save = await screen.findByRole('button', { name: 'บันทึกการแก้ไข' });
@@ -219,7 +246,7 @@ describe('final review: I2 / I3 / I7', () => {
     await waitFor(() => expect(calls).toContain('POST /bff/v1/docs/TI'), { timeout: 1500 });
   });
   it('I3: a copied draft (create mode with initial content) saves and issues like any new draft', async () => {
-    const src = await endpoints.getDoc('TI', (await endpoints.listDocs('TI', { status: 'issued', limit: 1 })).items[0].id);
+    const src = await endpoints.getDoc(taxInvoice.type, (await endpoints.listDocs(taxInvoice.type, { status: 'issued', limit: 1 })).items[0].id);
     const copy: Doc = { ...src, id: '', number: undefined, status: 'draft', version: 0, revision: 0, locks: [], issuedAt: undefined, outstanding: undefined,
       header: { ...src.header, dueDate: undefined }, lines: src.lines.map((l) => ({ ...l, id: crypto.randomUUID() })) };
     const onIssued = vi.fn();
@@ -247,4 +274,18 @@ describe('final review: I2 / I3 / I7', () => {
     await new Promise((r) => setTimeout(r, 2600));
     expect(calls.filter((c) => /^(POST|PUT) \/bff\/v1\/docs\/TI(\/|$)/.test(c) && !c.endsWith('/compute'))).toEqual([]);
   }, 15000);
+});
+
+describe('D-09 journal drawer needs ledger.read', () => {
+  it('without ledger.read the journal button is disabled and names the permission; with it the button is enabled', async () => {
+    setSettings({ role: 'operator' });
+    ui();
+    const off = await screen.findByRole('button', { name: /ต้องมีสิทธิ์ ดูบัญชี/ });
+    expect(off).toBeDisabled();
+    expect(off).toHaveAccessibleName(/ดูรายการบัญชี.*ledger\.read/);
+    cleanup();
+    setSettings({ role: 'accountant' });
+    ui();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'ดูรายการบัญชี' })).toBeEnabled());
+  });
 });

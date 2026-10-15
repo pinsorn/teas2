@@ -2,23 +2,18 @@
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { NAV } from '@/app-shell/nav';
-import { useMe } from '@/app-shell/useMe';
+import { docViewHref } from '@/descriptors';
+import { isForbidden, useMe } from '@/app-shell/useMe';
 import type { ChainEdge, ChainGraph, ChainNode, DocType } from '@/domain/types';
 import { endpoints } from '@/lib/api/endpoints';
 import { formatTHB } from '@/lib/format';
 import { qk } from '@/lib/query/keys';
 import { cn } from '@/lib/utils';
 import { StatusChip } from '../doc-list/StatusChip';
+import { ApiError } from '@/lib/api/client';
 import { ErrorState } from '../states/ErrorState';
+import { ForbiddenState } from '../states/ForbiddenState';
 import { LoadingState } from '../states/LoadingState';
-
-/** List route of a document type, from the nav (the non-VAT "invoices" entry shares the TI permission: prefer the plain one). */
-const listOf = (type: DocType) => {
-  const items = NAV.flatMap((g) => g.items).filter((i) => i.permission === `doc.${type}.read`);
-  return (items.find((i) => !i.nonVatOnly) ?? items[0])?.href;
-};
-export const docHref = (type: DocType, id: string) => { const l = listOf(type); return l ? `${l}/${id}` : undefined; };
 
 interface TreeNode { node: ChainNode; edge?: ChainEdge; incoming: boolean; depth: number }
 
@@ -48,9 +43,9 @@ export function ChainPanel({ type, id }: { type: DocType; id: string }) {
   const t = useTranslations('docView');
   const { me } = useMe();
   const cid = me!.activeCompanyId;
-  const q = useQuery({ queryKey: qk.chain(cid, id), queryFn: () => endpoints.getChain(type, id) });
+  const q = useQuery({ queryKey: qk.chain(cid, type, id), queryFn: () => endpoints.getChain(type, id) });
   if (q.isPending) return <LoadingState rows={3} />;
-  if (q.error) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
+  if (q.error) return isForbidden(q.error) ? <ForbiddenState permission={`doc.${type}.read`} detail={q.error instanceof ApiError ? q.error.problem.detail : undefined} /> : <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
   // the region exists only once the graph is loaded
   return (
     <section aria-label={t('tabs.chain')} className="grid gap-2">
@@ -59,7 +54,7 @@ export function ChainPanel({ type, id }: { type: DocType; id: string }) {
           <ul className="grid gap-1">
             {flatten(q.data).map(({ node, edge, incoming, depth }) => {
               const dead = node.status === 'cancelled' || node.status === 'replaced';
-              const href = docHref(node.type, node.id);
+              const href = docViewHref(node.type, node.id);
               const label = `${node.type} ${node.number ?? ''}`.trim();
               return (
                 <li key={node.id} style={{ marginInlineStart: `${Math.min(depth, 4) * 1.5}rem` }} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1">

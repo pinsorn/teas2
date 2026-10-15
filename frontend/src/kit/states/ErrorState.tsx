@@ -10,7 +10,7 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => 
   const tc = useTranslations("problem");
   const p = error instanceof ApiError ? error.problem : undefined;
   return (
-    <Alert variant="destructive">
+    <Alert variant="destructive" data-screen-state="error">
       <TriangleAlertIcon aria-hidden />
       <AlertTitle>{t("errorTitle")}</AlertTitle>
       <AlertDescription className="text-foreground!">

@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { assertBalanced, type Actor, type DocLine, type MockStateLike } from './test-helpers';
 import { seed } from '../store';
-import { today } from './log';
+import { fixtureIds } from '../fixtures/ids';
+import { firstOpenDate } from './periods';
 import { cancel, compute, convert, createDraft, issue, missingOf, revise, updateDraft } from './commands';
 import { fromSatang, toSatang } from './money';
 
@@ -56,6 +57,15 @@ describe('drafts and issue', () => {
   });
 });
 
+describe('doc-type table drives the engine (SP0 3.1, 7.7)', () => {
+  it('DO -> BL is refused (D-07) and a VAT company cannot use IV', () => {
+    const dod = st.docs.find((d) => d.companyId === vatCo && d.type === 'DO' && ['issued', 'partly_settled', 'settled'].includes(d.status))!;
+    expect(() => convert(st, dod.id, 'BL', [{ sourceLineId: dod.lines[0].id, qty: dod.lines[0].qty }], me)).toThrow(/doc.conversion_not_allowed/);
+    const m = missingOf(st, vatCo, 'IV', { header: { partyId: vatCustomer, documentDate: '2026-10-14' }, lines: [line()] });
+    expect(m.find((x) => x.field === 'type')?.message).toBe('บริษัทที่จดทะเบียน VAT ใช้ใบกำกับภาษีแทนใบแจ้งหนี้');
+  });
+});
+
 describe('revisions (classes N and L)', () => {
   it('an N-class revision keeps the number, bumps the revision and records a diff', () => {
     const qt = st.docs.find((d) => d.companyId === vatCo && d.type === 'QT' && d.status === 'issued')!;
@@ -66,7 +76,10 @@ describe('revisions (classes N and L)', () => {
     expect(rev.diff).toContainEqual({ path: 'header.notes', before: qt.header.notes ?? null, after: 'ยืนราคา 45 วัน' });
   });
   it('an L-class revision writes a reversal plus a correcting entry, all balanced', () => {
-    const d = createDraft(st, vatCo, 'IV', { header: { partyId: vatCustomer, documentDate: '2026-10-14' }, lines: [line()] }, me, 'k7');
+    // IV exists only for a non-VAT company (SP0 §3.1)
+    const nvCo = st.companies.find((c) => !c.vatRegistered)!.id;
+    const nvCustomer = st.parties.find((p) => p.companyId === nvCo && p.kind === 'customer')!.id;
+    const d = createDraft(st, nvCo, 'IV', { header: { partyId: nvCustomer, documentDate: '2026-10-14' }, lines: [line({ taxCode: 'EX' })] }, me, 'k7');
     const a = issue(st, d.id, d.version, me);
     const r = revise(st, a.id, { header: a.header, lines: [line({ unitPrice: '2500.00' })] }, a.version, 'แก้ราคา', me);
     expect(r.number).toBe(a.number);
@@ -116,7 +129,7 @@ describe('fix round 1: outstanding, seed validity, cancel blocks (SP0 7.4 / 7.11
   it('seed: every non-draft document passes the same validation as issue', () => {
     const s = seed();
     for (const d of s.docs.filter((x) => x.status !== 'draft')) {
-      expect({ id: d.id, missing: missingOf(s, d.companyId, d.type, { header: d.header, lines: d.lines }) }).toEqual({ id: d.id, missing: [] });
+      expect({ id: d.id, missing: missingOf(s, d.companyId, d.type, { header: d.header, lines: d.lines, allocations: d.allocations }) }).toEqual({ id: d.id, missing: [] });
     }
     const tinless = (id?: string) => s.parties.some((p) => p.id === id && p.vatRegistered && !p.taxId);
     expect(s.parties.some((p) => p.vatRegistered && !p.taxId)).toBe(true); // the TIN-less party still exists
@@ -131,21 +144,21 @@ describe('fix round 1: outstanding, seed validity, cancel blocks (SP0 7.4 / 7.11
 });
 
 describe('cancel vs locks (SP0 7.5)', () => {
-  const lockedTi = (kind: 'period' | 'filing') => {
+  const lockedTi = (kind: 'filing') => {
     const d = createDraft(st, vatCo, 'TI', { header: { partyId: vatCustomer, documentDate: '2026-08-14' }, lines: [line({ qty: '2', unitPrice: '100.00' })] }, me, `lk-${kind}`);
     const a = issue(st, d.id, d.version, me);
     const i = st.docs.findIndex((x) => x.id === a.id);
     st.docs[i] = { ...st.docs[i], locks: [{ kind, reason: 'ล็อก', exits: ['ทางออก'] }] };
     return st.docs[i];
   };
-  it('a period-locked cancel succeeds, reverses in the current period and stays balanced', () => {
-    const d = lockedTi('period');
+  it('a period-locked cancel succeeds: the lock is derived (never stored), the reversal posts in the first open period, late', () => {
+    const d = st.docs.find((x) => x.id === fixtureIds(st).tiPeriodLocked)!;
+    expect(d.locks).toEqual([]);
     expect(cancel(st, d.id, d.version, 'OTHER', 'x', me).status).toBe('cancelled');
     assertBalanced(st);
     const rv = st.journals.find((j) => j.docId === d.id)!.preview.entries.at(-1)!;
-    expect(rv.kind).toBe('reversal');
-    expect(rv.date).toBe(today()); // posted in the current open period, not the locked one
-    expect(rv.date).not.toBe('2026-08-14');
+    expect(rv).toMatchObject({ kind: 'reversal', date: firstOpenDate(st, d.companyId), late: true });
+    expect(rv.date).not.toBe(d.header.documentDate);
   });
   it('a filing-locked cancel is still refused with 409 doc.locked', () => {
     const d = lockedTi('filing');

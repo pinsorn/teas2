@@ -1,21 +1,26 @@
+import { DOC_TYPES, isTypeAvailable } from '@/domain/doc-types';
 import { HttpResponse, http } from 'msw';
-import type { Actor, Company, Doc, DocType, PaperModel, Qty } from '@/domain/types';
-import { formatDateBE } from '@/lib/format';
-import { fromSatang, toSatang } from '../engine/money';
+import type { Actor, DocType, Qty } from '@/domain/types';
+import { PAPER_BUILDERS } from '../engine/paper';
 import { buildChain } from '../engine/chain';
-import { type Body, cancel, compute, convert, createDraft, deleteDraft, issue, publicDoc, updateDraft } from '../engine/commands';
-import { buildPlan, correctionPlan, executePlan } from '../engine/corrections';
+import { type Body, unavailableTh, cancel, compute, convert, createDraft, deleteDraft, issue, publicDoc, updateDraft } from '../engine/commands';
+import { buildPlan, correctionPlan, executePlan, planStale } from '../engine/corrections';
 import { MockError } from '../engine/log';
 import { CLASS } from '../fixtures/documents';
 import { saveState } from '../store';
 import { ctx, forbidden, problem, screenGate } from './common';
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
-const VAT_ONLY = ['TI'];
 
-/** vatOverride is engine-set (correction notes) only: never accepted from an API caller. */
-export const stripOverrides = <T extends Body>(b: T): T => (Array.isArray(b?.lines)
-  ? { ...b, lines: b.lines.map((l) => { if (!l || typeof l !== 'object') return l; const { vatOverride, ...r } = l; void vatOverride; return r; }) } : b);
+/** vatOverride (correction notes) and allocation targetNumber are engine-set only: never accepted from an API caller. */
+export const stripOverrides = <T extends Body>(b: T): T => {
+  if (!Array.isArray(b?.lines)) return b;
+  const lines = b.lines.map((l) => { if (!l || typeof l !== 'object') return l; const { vatOverride, ...r } = l; void vatOverride; return r; });
+  // `targetNumber` is engine-set (the engine re-reads it from the target); only the user's own figures and the certificate number come from the caller
+  const allocations = Array.isArray(b.allocations)
+    ? b.allocations.map((a) => { if (!a || typeof a !== 'object') return a; const { targetNumber, partyId, ...r } = a; void targetNumber; void partyId; return r; }) : b.allocations;
+  return { ...b, lines, ...(allocations ? { allocations } : {}) };
+};
 
 type Ctx = ReturnType<typeof ctx>;
 type Out = Response | Promise<Response>;
@@ -26,9 +31,9 @@ async function guarded(type: string | undefined, perm: ((t: DocType) => string) 
   if (gate) return gate;
   try {
     const c = ctx();
-    if (!type || !(type in CLASS)) return problem(404, 'doc.type_not_available', 'ไม่รู้จักประเภทเอกสารนี้');
+    if (!type || !Object.hasOwn(CLASS, type)) return problem(404, 'doc.type_not_available', 'ไม่รู้จักประเภทเอกสารนี้');
     const t = type as DocType;
-    if (VAT_ONLY.includes(t) && !c.company.vatRegistered) return problem(404, 'doc.type_not_available', 'บริษัทนี้ไม่ได้จดทะเบียนภาษีมูลค่าเพิ่ม');
+    if (!isTypeAvailable(t, c.company.vatRegistered)) return problem(404, 'doc.type_not_available', unavailableTh(t));
     const need = typeof perm === 'function' ? perm(t) : perm;
     if (need && !c.perms.includes(need)) return forbidden(need);
     return await run(c, t);
@@ -49,43 +54,18 @@ const versionOf = (req: Request, body?: { version?: number }) => {
   if (!Number.isFinite(v)) throw new MockError(422, 'doc.version_required', 'ต้องระบุเวอร์ชันของเอกสาร');
   return v;
 };
-const branchLabel = (code?: string) => (!code ? undefined : code === '00000' ? 'สำนักงานใหญ่ (00000)' : `สาขา ${code}`);
-
-/** Paper from the stored snapshots; amounts and words are the engine's, never recomputed in the UI. */
-function paperOf(c: Ctx, d: Doc, copy: boolean): PaperModel {
-  const co: Company = c.company;
-  const calc = compute(c.st, co.id, d.type, { header: d.header, lines: d.lines }).lines;
-  const net = new Map(calc.map((l) => [l.id, l.net]));
-  const sum = (code: string, k: 'net' | 'vat') => fromSatang(d.lines.reduce((a, l, i) => a + (l.taxCode === code ? toSatang(calc[i][k]) : 0), 0));
-  const has = (code: string) => d.lines.some((l) => l.taxCode === code);
-  const vatLines = [
-    ...(has('Z0') ? [{ label: 'ยอดขายอัตราร้อยละ 0', amount: sum('Z0', 'net') }] : []),
-    ...(has('EX') ? [{ label: 'ยอดขายที่ได้รับยกเว้น', amount: sum('EX', 'net') }] : []),
-    has('S7') ? { label: 'ภาษีมูลค่าเพิ่ม 7%', amount: sum('S7', 'vat') } : { label: 'ภาษีมูลค่าเพิ่ม', amount: '0.00' },
-  ];
-  const other = (id?: string) => c.st.docs.find((x) => x.id === id);
-  const old = other(d.replacesId), nw = other(d.replacedById);
-  return {
-    titleTh: 'ใบกำกับภาษี', titleEn: 'TAX INVOICE', copyLabel: copy ? 'สำเนา' : 'ต้นฉบับ',
-    number: d.number ?? '-', documentDate: d.header.documentDate, dueDate: d.header.dueDate, reference: d.header.reference,
-    seller: { name: co.legalNameTh, nameEn: co.legalNameEn, address: co.address, phone: co.phone, taxId: co.taxId, branchLabel: branchLabel(co.branchCode) },
-    buyer: { name: d.party?.name ?? '-', address: d.party?.address ?? '', taxId: d.party?.taxId, branchLabel: d.party?.taxId ? branchLabel(d.party.branchCode) : undefined },
-    lines: d.lines.map((l, i) => ({ no: i + 1, description: l.description, qty: l.qty, unit: l.unit, unitPrice: l.unitPrice, amount: net.get(l.id) ?? '0.00', taxCode: l.taxCode, ...(l.discountPct ? { discountPct: l.discountPct } : {}) })),
-    totals: d.totals, vatLines, notes: d.header.notes,
-    ...(old ? { replacementNote: `ยกเลิกและออกแทนฉบับเดิม เลขที่ ${old.number ?? '-'} ลงวันที่ ${formatDateBE(old.header.documentDate)}` } : {}),
-    ...(d.status === 'replaced' ? { voidMark: { label: 'ถูกแทนที่', note: nw?.number ? `ออกแทนด้วยเลขที่ ${nw.number}` : undefined } }
-      : d.status === 'cancelled' ? { voidMark: { label: 'ยกเลิก', note: d.cancel?.reasonText } } : {}),
-    signatures: ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'],
-  };
-}
-
 const done = (c: Ctx) => saveState(c.st);
 
 const P = (perm: string) => (t: DocType) => `doc.${t}.${perm}`;
 
 export const docsWriteHandlers = [
   http.post('*/bff/v1/docs/:type/compute', ({ request, params }) => guarded(String(params.type), P('read'), async (c, t) =>
-    HttpResponse.json(compute(c.st, c.company.id, t, stripOverrides((await request.json()) as Body))))),
+    {
+    const docId = new URL(request.url).searchParams.get('docId') ?? undefined; // revise mode: the issued document's own settlements are given back
+    if (docId) own(c, t, docId);
+    const { journal, ...r } = compute(c.st, c.company.id, t, stripOverrides((await request.json()) as Body), { docId });
+    return HttpResponse.json(c.perms.includes('ledger.read') ? { ...r, journal } : r); // D-09: no journal without ledger.read
+  })),
 
   http.post('*/bff/v1/docs/:type', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
     const key = request.headers.get('Idempotency-Key') ?? crypto.randomUUID();
@@ -142,7 +122,9 @@ export const docsWriteHandlers = [
       const stored = c.st.plans?.[planId];
       const target = stored && c.st.docs.find((d) => d.id === stored.docId && d.companyId === c.company.id);
       if (!stored || !target) throw new MockError(404, 'correction.plan_not_found', 'ไม่พบแผนการแก้ไข');
-      for (const s of buildPlan(c.st, stored.docId, stored.proposed, c.s.role).steps) if (!c.perms.includes(s.permission)) return forbidden(s.permission);
+      let current;
+      try { current = buildPlan(c.st, stored.docId, stored.proposed, c.s.role); } catch { throw planStale(); } // the world moved since the plan: stale, not a raw engine error
+      for (const s of current.steps) if (!c.perms.includes(s.permission)) return forbidden(s.permission);
       const result = executePlan(c.st, planId, planHash, ACTOR, c.s.role);
       done(c);
       return HttpResponse.json(result);
@@ -155,7 +137,7 @@ export const docsWriteHandlers = [
   http.post('*/bff/v1/docs/:type/:id/convert', ({ request, params }) => guarded(String(params.type), P('read'), async (c, t) => {
     own(c, t, params.id);
     const body = (await request.json()) as { targetType: DocType; lines: { sourceLineId: string; qty: Qty }[] };
-    if (!(body.targetType in CLASS)) throw new MockError(422, 'doc.conversion_not_allowed', 'ประเภทเอกสารปลายทางไม่ถูกต้อง');
+    if (!Object.hasOwn(CLASS, body.targetType)) throw new MockError(422, 'doc.conversion_not_allowed', 'ประเภทเอกสารปลายทางไม่ถูกต้อง');
     const need = `doc.${body.targetType}.create`;
     if (!c.perms.includes(need)) return forbidden(need);
     const doc = convert(c.st, String(params.id), body.targetType, body.lines, ACTOR);
@@ -176,14 +158,16 @@ export const docsWriteHandlers = [
     return HttpResponse.json(c.st.revisions.filter((r) => r.docId === params.id).map(({ docId, ...r }) => (void docId, r)).sort((a, b) => b.revision - a.revision));
   })),
   http.get('*/bff/v1/docs/:type/:id/ledger', ({ params }) => guarded(String(params.type), P('read'), (c, t) => {
+    if (!c.perms.includes('ledger.read')) return forbidden('ledger.read'); // D-09: the document's read is checked first, then the ledger's
     own(c, t, params.id);
     return HttpResponse.json(c.st.journals.find((j) => j.docId === params.id)?.preview ?? { entries: [] });
   })),
   http.get('*/bff/v1/docs/:type/:id/paper', ({ request, params }) => guarded(String(params.type), P('read'), (c, t) => {
     const d = own(c, t, params.id);
-    if (t !== 'TI') return problem(404, 'doc.paper_not_available', 'ยังไม่มีแบบพิมพ์สำหรับเอกสารประเภทนี้');
+    const builder = PAPER_BUILDERS[t];
+    if (!DOC_TYPES[t].printable || !builder) return problem(404, 'doc.paper_not_available', 'ยังไม่มีแบบพิมพ์สำหรับเอกสารประเภทนี้');
     if (['draft', 'pending', 'approved'].includes(d.status)) return problem(409, 'doc.not_printable', 'เอกสารที่ยังไม่ได้ออกพิมพ์ไม่ได้ ต้องออกเอกสารก่อน');
-    return HttpResponse.json(paperOf(c, publicDoc(d), new URL(request.url).searchParams.get('copy') === '1'));
+    return HttpResponse.json(builder(c, publicDoc(d), new URL(request.url).searchParams.get('copy') === '1'));
   })),
 ];
 

@@ -92,6 +92,8 @@ Thai. Money and dates use `tabular-nums` and right-align money columns. Dates ar
 via `formatMoney`/`formatTHB`, amount in words ends "บาทถ้วน". shadcn internals that still use `text-sm` (14px: menus,
 command list) are acceptable; app code uses the four classes above.
 
+**`cn()` and custom utility groups.** `cn()` (`src/lib/utils.ts`) is `twMerge` extended with our own groups. tailwind-merge reads `text-title` / `text-section` / `text-body` / `text-small` as *colours* unless told they are font sizes, and then silently drops one of two conflicting classes. So any new custom utility whose name collides with a built-in group (a new `text-*` size, a custom `shadow-*`, `rounded-*` or `z-*` scale entry added in `@theme`) must be registered in `extendTailwindMerge({ extend: { classGroups } })` in the same change, with a unit test that both classes survive `cn()`.
+
 ## 3. Density
 
 Direction B is "comfortable": 40 px rows and controls, 12 px cell padding, 20 px (`p-5`) panel padding, 24 px page

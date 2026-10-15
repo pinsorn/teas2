@@ -17,8 +17,7 @@ export const NAV: NavGroup[] = [
     doc('quotations', '/sales/quotations', 'QT'),
     doc('salesOrders', '/sales/sales-orders', 'SO'),
     doc('deliveryOrders', '/sales/delivery-orders', 'DO'),
-    // The non-VAT sibling of the tax invoice: readable with the same permission.
-    item('invoices', '/sales/invoices', 'doc.TI.read', { nonVatOnly: true }),
+    item('invoices', '/sales/invoices', 'doc.IV.read', { nonVatOnly: true }),
     doc('billingStatements', '/sales/billing-statements', 'BL'),
     doc('taxInvoices', '/sales/tax-invoices', 'TI', { vatOnly: true }),
     doc('receipts', '/sales/receipts', 'RC'),
@@ -53,7 +52,7 @@ export const NAV: NavGroup[] = [
     item('payrollFilings', '/payroll/filings', 'payroll.read'),
   ]),
   group('reports', [
-    item('financialStatements', '/reports/financial-statements', LEDGER),
+    item('financialStatements', '/reports/financial-statements', 'report.read'),
     item('receivablesPayables', '/reports/receivables-payables', LEDGER),
     item('salesPurchases', '/reports/sales-purchases', LEDGER),
     item('auditReport', '/reports/audit', 'audit.read'),
@@ -71,23 +70,6 @@ export function visibleNav(nav: NavGroup[], ctx: { permissions: string[]; vatReg
   const ok = (i: NavItem) =>
     (!i.permission || ctx.permissions.includes(i.permission)) && !(i.vatOnly && !ctx.vatRegistered) && !(i.nonVatOnly && ctx.vatRegistered);
   return nav.map((g) => ({ ...g, items: g.items.filter(ok) })).filter((g) => g.items.length > 0);
-}
-
-const DOC_ITEM: Partial<Record<DocType, NavItem>> = (() => {
-  const items = NAV.flatMap((g) => g.items);
-  const out: Partial<Record<DocType, NavItem>> = {};
-  for (const i of items) {
-    const m = /^doc\.(\w+)\.read$/.exec(i.permission ?? '');
-    if (m && !i.nonVatOnly) out[m[1] as DocType] = i;
-  }
-  out.IV = items.find((i) => i.key === 'invoices');
-  return out;
-})();
-
-/** List route of a document type in this company, or undefined when it has none (not built, or hidden for the company's VAT status). */
-export function docHref(type: DocType, vatRegistered: boolean): string | undefined {
-  const i = DOC_ITEM[type];
-  return i && !(i.vatOnly && !vatRegistered) && !(i.nonVatOnly && vatRegistered) ? i.href : undefined;
 }
 
 /** The nav item whose route is the longest prefix of `pathname` (document pages under a list route match their list). */

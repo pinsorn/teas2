@@ -110,6 +110,12 @@ describe('paper endpoint', () => {
     await call('POST', `/docs/TI/${d.id}/cancel`, { version: issued.version, reasonCode: 'OTHER', reasonText: 'ทดสอบ' });
     expect((await paper(d.id)).voidMark.label).toBe('ยกเลิก');
   });
+  it('a type without a paper builder is 404 doc.paper_not_available (registry, not a TI literal)', async () => {
+    const qt = loadState().docs.find((x) => x.type === 'QT' && x.status === 'issued' && x.companyId === 'co-vat')!;
+    const r = await call('GET', `/docs/QT/${qt.id}/paper`);
+    expect(r.status).toBe(404);
+    expect((await r.json()).code).toBe('doc.paper_not_available');
+  });
   it('a document of another company is 404', async () => {
     const id = issuedTi().id;
     setSettings({ companyKey: 'nonvat' });
@@ -139,5 +145,18 @@ describe('paper endpoint', () => {
       { label: 'ภาษีมูลค่าเพิ่ม 7%', amount: m.doc.totals.vat },
     ]);
     expect(m.doc.totals.vat).toBe('70.00');
+  });
+});
+
+describe('ledger 186: the confirm endpoint reports a vanished plan as plan_stale', () => {
+  it('a document cancelled after the plan was built is plan_stale (409), not a raw doc.not_correctable', async () => {
+    const d = await (await call('POST', '/docs/TI', body())).json();
+    const issued = await (await call('POST', `/docs/TI/${d.id}/issue`, { version: d.version })).json();
+    const plan = await (await call('POST', `/docs/TI/${d.id}/correction-plan`, { header: issued.header, lines: [{ ...issued.lines[0], unitPrice: '900.00' }] })).json();
+    expect(plan.steps.length).toBeGreaterThan(0);
+    expect((await call('POST', `/docs/TI/${d.id}/cancel`, { version: issued.version, reasonCode: 'OTHER', reasonText: 'x' })).status).toBe(200);
+    const r = await call('POST', '/corrections', { planId: plan.planId, planHash: plan.planHash });
+    expect(r.status).toBe(409);
+    expect((await r.json()).code).toBe('correction.plan_stale');
   });
 });

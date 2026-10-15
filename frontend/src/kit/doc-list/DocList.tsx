@@ -1,9 +1,9 @@
 'use client';
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { PlusIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useLocale, useTranslations } from 'next-intl';
+import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useMe } from '@/app-shell/useMe';
 import type { DocDescriptor } from '@/domain/descriptors';
 import { routesOf } from '@/domain/descriptors';
-import type { DocStatus, DocSummary } from '@/domain/types';
+import type { DocStatus, DocSummary, Page } from '@/domain/types';
 import { ApiError } from '@/lib/api/client';
 import { endpoints } from '@/lib/api/endpoints';
 import { todayIso } from '@/lib/format';
@@ -35,6 +35,8 @@ export interface DocListProps { descriptor: DocDescriptor; columns: DocListColum
 const PAGE = 25;
 const STATUSES: DocStatus[] = ['draft', 'pending', 'approved', 'issued', 'partly_settled', 'settled', 'cancelled', 'replaced'];
 const DAY = 86_400_000;
+/** A saved view's status list that is not one status: the select needs a matching <option> or it shows "all" while filtering. */
+const OUTSTANDING_STATUS = 'issued,partly_settled';
 
 /** Days past the due date for a document that still owes money; 0 when not overdue. Derived, never stored. */
 export function daysOverdue(r: DocSummary, today = todayIso()): number {
@@ -50,7 +52,7 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
   const ts = useTranslations('state');
   const tStatus = useTranslations('status');
   const tc = useTranslations('common');
-  const locale = useLocale();
+  const td = useTranslations(`docTypes.${d.type}`);
   const router = useRouter();
   const { me, isError: meFailed, error: meError, refetch: refetchMe } = useMe();
   const { filters, setFilters, patch } = useDocListParams();
@@ -58,8 +60,17 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
   const [sel, setSel] = useState<{ scope: string; ids: Set<string> }>({ scope: '', ids: new Set() });
   const searchRef = useRef<HTMLInputElement>(null);
   const debounce = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // The box is controlled by local text so back / forward (a new ?q=) can restore it; `pushed` is the last q this box wrote to the URL.
+  const pushed = useRef(filters.q ?? '');
+  const [text, setText] = useState(filters.q ?? '');
+  useEffect(() => {
+    if ((filters.q ?? '') === pushed.current) return;
+    clearTimeout(debounce.current);
+    pushed.current = filters.q ?? '';
+    setText(pushed.current);
+  }, [filters.q]);
 
-  const title = locale === 'en' ? d.titleEn : d.titleTh;
+  const title = td('title');
   const routes = routesOf(d);
   const canCreate = !!me?.permissions.includes(d.permissions.create);
   const companyId = me?.activeCompanyId;
@@ -71,10 +82,20 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
   const setSelected = (u: Set<string> | ((s: Set<string>) => Set<string>)) =>
     setSel((c) => ({ scope, ids: typeof u === 'function' ? u(c.scope === scope ? c.ids : new Set()) : u }));
 
-  const server = { status: filters.status, q: filters.q, from: filters.from, to: filters.to, outstanding: filters.outstanding === 'positive' ? ('positive' as const) : undefined };
-  const q = useInfiniteQuery({
+  const rangeBad = !!filters.from && !!filters.to && filters.from > filters.to;
+  const wanted = {
+    status: filters.status, q: filters.q, from: filters.from, to: filters.to, outstanding: filters.outstanding === 'positive' ? ('positive' as const) : undefined,
+    overdue: filters.overdue === '1' ? ('1' as const) : undefined, agent: filters.agent === '1' ? ('1' as const) : undefined,
+  };
+  // An impossible date range is never sent: the last valid query stays on screen under the inline error.
+  const [lastOk, setLastOk] = useState(rangeBad ? { ...wanted, from: undefined, to: undefined } : wanted);
+  if (!rangeBad && JSON.stringify(lastOk) !== JSON.stringify(wanted)) setLastOk(wanted);
+  const server = rangeBad ? lastOk : wanted;
+  const q = useInfiniteQuery<Page<DocSummary>, Error, InfiniteData<Page<DocSummary>, string | undefined>, ReturnType<typeof qk.docs>, string | undefined>({
     queryKey: qk.docs(companyId ?? '', d.type, server),
     enabled: !!companyId,
+    // A filter change keeps the old rows on screen (so the search box is not torn down mid-typing); another company's rows are never kept.
+    placeholderData: (prev, prevQuery) => (prevQuery?.queryKey[0] === companyId ? prev : undefined),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) => endpoints.listDocs(d.type, { ...server, limit: PAGE, cursor: pageParam }),
     getNextPageParam: (last) => last.nextCursor,
@@ -85,12 +106,12 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
     if (replaceAll) setFilters(next); else patch(next);
   };
   const hasFilters = Object.keys(filters).length > 0;
-  const clearFilters = () => { if (searchRef.current) searchRef.current.value = ''; apply({}, true); };
+  const clearFilters = () => apply({}, true);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
-      if (e.key === '/') { e.preventDefault(); searchRef.current?.focus(); }
+      if (e.code === 'Slash') { e.preventDefault(); searchRef.current?.focus(); }
       else if (e.code === 'KeyN' && canCreate) { e.preventDefault(); router.push(routes.create); }
     };
     window.addEventListener('keydown', onKey);
@@ -103,15 +124,14 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
   if ((meFailed && !me) || (q.isError && !q.data)) {
     const e = meFailed && !me ? meError : q.error;
     if (e instanceof ApiError && e.problem.status === 403) return <ForbiddenState detail={e.problem.detail} permission={meFailed && !me ? undefined : d.permissions.read} />;
-    if (e instanceof ApiError && e.problem.status === 404 && e.code === 'doc.type_not_available') return <NotAvailableState />;
+    if (e instanceof ApiError && e.problem.status === 404 && e.code === 'doc.type_not_available') return <NotAvailableState reason={d.vat === 'non-vat-only' ? 'nonVatOnly' : 'vatOnly'} />;
     return <ErrorState error={e} onRetry={() => void (meFailed && !me ? refetchMe() : q.refetch())} />;
   }
   if (!q.data) return <LoadingState />;
 
   const all = q.data.pages.flatMap((p) => p.items);
-  // "overdue" is derived client-side (the list endpoint has no such filter), applied to the pages loaded so far.
-  const rows = filters.overdue === '1' ? all.filter((r) => daysOverdue(r) > 0) : all;
-  const today = todayIso();
+  const rows = all; // overdue / agent / outstanding are filtered by the server before paging
+  const today = me?.businessDate ?? todayIso();
   const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
   const someSelected = rows.some((r) => selected.has(r.id));
   const toggle = (id: string, on: boolean) => setSelected((s) => { const n = new Set(s); if (on) n.add(id); else n.delete(id); return n; });
@@ -123,22 +143,27 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
   const field = 'h-(--ctl-h) rounded-lg border border-input bg-card px-3 text-body outline-none';
   return (
     <div className="flex flex-col gap-3">
+      <h1 className="text-title font-semibold">{title}</h1>
       <SavedViews type={d.type} presets={savedViews} activeKey={filters.view} current={Object.fromEntries(Object.entries(filters).filter(([k]) => k !== 'view'))}
-        onSelect={(v) => { if (searchRef.current) searchRef.current.value = v?.params.q ?? ''; apply(v ? { ...v.params, view: v.key } : {}, true); }} />
+        onSelect={(v) => apply(v ? { ...v.params, view: v.key } : {}, true)} />
       <div className="flex flex-wrap items-end gap-2">
         <Input ref={searchRef} type="search" aria-label={t('searchLabel')} placeholder={t('searchPlaceholder')}
-          defaultValue={filters.q ?? ''} className="max-w-72"
+          value={text} className="max-w-72"
           onChange={(e) => {
-            const v = e.target.value; clearTimeout(debounce.current);
-            debounce.current = setTimeout(() => apply({ q: v || undefined }), 300);
+            const v = e.target.value; setText(v); clearTimeout(debounce.current);
+            debounce.current = setTimeout(() => { pushed.current = v; apply({ q: v || undefined }); }, 300);
           }} />
         <select aria-label={t('statusLabel')} className={field} value={filters.status ?? ''}
-          onChange={(e) => apply({ status: e.target.value || undefined })}>
+          onChange={(e) => apply({ status: e.target.value || undefined, outstanding: e.target.value === OUTSTANDING_STATUS ? 'positive' : undefined })}>
           <option value="">{t('statusAll')}</option>
           {STATUSES.map((s) => <option key={s} value={s}>{tStatus(s)}</option>)}
+          <option value={OUTSTANDING_STATUS}>{t('views.outstanding')}</option>
+          {filters.status && filters.status !== OUTSTANDING_STATUS && !STATUSES.includes(filters.status as DocStatus)
+            ? <option value={filters.status}>{filters.status.split(',').map((s) => (STATUSES.includes(s as DocStatus) ? tStatus(s as DocStatus) : s)).join(' / ')}</option> : null}
         </select>
         <input type="date" aria-label={t('from')} className={field} value={filters.from ?? ''} onChange={(e) => apply({ from: e.target.value || undefined })} />
         <input type="date" aria-label={t('to')} className={field} value={filters.to ?? ''} onChange={(e) => apply({ to: e.target.value || undefined })} />
+        {rangeBad ? <p role="alert" className="w-full text-small text-destructive">{t('rangeInvalid')}</p> : null}
         {hasFilters ? <Button variant="ghost" onClick={clearFilters}>{t('clearFilters')}</Button> : null}
         {rows.length > 0 ? <div className="ml-auto">{createLink('create')}</div> : null}
       </div>
@@ -151,7 +176,7 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
       {rows.length === 0 && !q.hasNextPage && !q.isError ? (
         hasFilters
           ? <EmptyState title={t('noMatchTitle')} body={t('noMatchBody')} action={<Button variant="outline" onClick={clearFilters}>{t('clearFilters')}</Button>} />
-          : <EmptyState title={ts('emptyTitle', { title })} body={ts('emptyBody')} action={createLink('emptyCreate')} />
+          : <EmptyState title={td('empty')} body={ts('emptyBody')} action={createLink('emptyCreate')} />
       ) : (
         <div className="overflow-hidden rounded-lg border bg-card">
           <Table>

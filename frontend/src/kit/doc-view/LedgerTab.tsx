@@ -14,7 +14,7 @@ import { LoadingState } from '../states/LoadingState';
 export function LedgerTab({ type, id }: { type: DocType; id: string }) {
   const t = useTranslations('docView.ledger');
   const { me } = useMe();
-  const q = useQuery({ queryKey: qk.ledger(me!.activeCompanyId, id), queryFn: () => endpoints.getLedger(type, id) });
+  const q = useQuery({ queryKey: qk.ledger(me!.activeCompanyId, type, id), queryFn: () => endpoints.getLedger(type, id) });
   if (q.isPending) return <LoadingState rows={3} />;
   if (q.error) return isForbidden(q.error) ? <ForbiddenState permission="ledger.read" /> : <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
   if (!q.data.entries.length) return <p className="text-body text-muted-foreground">{t('empty')}</p>;
@@ -24,6 +24,7 @@ export function LedgerTab({ type, id }: { type: DocType; id: string }) {
         <section key={`${e.number ?? i}-${e.kind}`} className="grid gap-1">
           <h3 className="text-body font-medium">
             {t(`kind.${e.kind}`)}{e.number ? ` ${e.number}` : ''} <span className="font-normal text-muted-foreground">{formatDateBE(e.date)}</span>
+            {e.late ? <span className="ml-2 rounded-sm border px-1.5 py-0.5 text-small font-normal">{t('late')}</span> : null}
           </h3>
           <table className="w-full text-body">
             <thead>

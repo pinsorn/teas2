@@ -41,7 +41,7 @@ export function ComingInSp1c({ title, href }: { title: string; href?: string }) 
     );
   } else {
     body = (
-      <div className="flex flex-col items-start gap-3">
+      <div data-screen-state="coming" className="flex flex-col items-start gap-3">
         <h2 className="text-base font-medium">{t('shell.comingTitle')}</h2>
         <p className="max-w-prose text-sm text-muted-foreground">{t('shell.comingBody', { title })}</p>
         <Button variant="outline" asChild><Link href="/">{t('shell.comingBack')}</Link></Button>

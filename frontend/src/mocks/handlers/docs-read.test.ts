@@ -1,6 +1,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { setSettings } from '../settings';
 import { PERMISSIONS_BY_ROLE } from '../permissions';
+import { today } from '../engine/log';
+import { fixtureIds } from '../fixtures/ids';
 import { loadState, resetState, saveState } from '../store';
 import { testServer } from '../test-server';
 
@@ -99,21 +101,39 @@ describe('tenant isolation', () => {
   });
 });
 
+describe('search hrefs come from the registry', () => {
+  it('a built type links to its view route; an unbuilt type has no href (never a wrong path)', async () => {
+    const ti = loadState().docs.find((d) => d.type === 'TI' && d.companyId === 'co-vat' && d.number)!;
+    const qt = loadState().docs.find((d) => d.type === 'QT' && d.companyId === 'co-vat' && d.number)!;
+    const t = (await json(`/search?q=${ti.number}`)).items.find((h: { id: string }) => h.id === ti.id);
+    expect(t.href).toBe(`/sales/tax-invoices/${ti.id}`);
+    const q = (await json(`/search?q=${qt.number}`)).items.find((h: { id: string }) => h.id === qt.id);
+    expect(q).toBeDefined();
+    expect(q.href).toBeUndefined();
+  });
+});
+
 describe('doc detail, locked, forbidden', () => {
-  it('a pre-wave stored session (v1 key, paid TI, locks: []) reseeds and the paid TI shows its settlement lock', async () => {
+  it('a pre-wave stored session (v2 key, paid TI, locks: []) reseeds and the paid TI shows its settlement lock', async () => {
     const state = loadState();
     const paid = state.docs.find((d) => d.type === 'TI' && d.status === 'settled')!;
     paid.locks = [];
-    localStorage.setItem('teas2.mock.state.v1', JSON.stringify({ ...state, version: 1 }));
-    localStorage.removeItem('teas2.mock.state.v2');
-    expect(loadState().version).toBe(2);
+    localStorage.setItem('teas2.mock.state.v2', JSON.stringify({ ...state, version: 2 }));
+    localStorage.removeItem('teas2.mock.state.v4');
+    expect(loadState().version).toBe(4);
     expect(loadState().docs.find((d) => d.id === paid.id)!.locks).toContainEqual(expect.objectContaining({ kind: 'settlement' }));
+  });
+  it('GET derives the period lock for a document dated in a closed month, and not for an open-month one (F4)', async () => {
+    const state = loadState();
+    const ids = fixtureIds(state);
+    expect((await json('/docs/TI/' + ids.tiPeriodLocked)).locks).toEqual([expect.objectContaining({ kind: 'period', exits: expect.arrayContaining([expect.stringContaining('แก้ไขย้อนหลัง')]) })]);
+    expect((await json('/docs/TI/' + ids.tiIssuedUnpaid)).locks).toEqual([]);
   });
   it('GET derives the settlement lock on read even when the stored doc has locks: []', async () => {
     const state = loadState();
     const paid = state.docs.find((d) => d.type === 'TI' && d.status === 'settled')!;
     paid.locks = [];
-    localStorage.setItem('teas2.mock.state.v2', JSON.stringify(state));
+    localStorage.setItem('teas2.mock.state.v4', JSON.stringify(state));
     const doc = await json(`/docs/TI/${paid.id}`);
     expect(doc.locks).toContainEqual(expect.objectContaining({ kind: 'settlement' }));
   });
@@ -176,5 +196,63 @@ describe('me follows the active company', () => {
     const me2 = await json('/me');
     expect(me2.memberships.find((m: { companyId: string }) => m.companyId === 'co-nonvat').role).toBe('operator');
     expect(me2.permissions).toEqual(PERMISSIONS_BY_ROLE.operator);
+  });
+});
+
+describe('F3 list filters (overdue, agent) are server-side, applied before paging', () => {
+  const ids = (r: { items: { id: string }[] }) => r.items.map((i) => i.id).sort();
+  it('overdue=1 returns exactly the documents past due that still owe money, across pages', async () => {
+    const st = loadState();
+    const ti = st.docs.filter((d) => d.companyId === 'co-vat' && d.type === 'TI');
+    const expected = ti.filter((d) => !!d.header.dueDate && d.header.dueDate < today() && Number(d.outstanding ?? 0) > 0).map((d) => d.id).sort();
+    expect(expected.length).toBeGreaterThan(0);
+    expect(expected.length).toBeLessThan(ti.length);
+    const page1 = await (await get('/docs/TI?overdue=1&limit=1')).json();
+    expect(page1.total).toBe(expected.length); // filtered BEFORE paging, so the total is the overdue count
+    const all = await (await get('/docs/TI?overdue=1&limit=100')).json();
+    expect(ids(all)).toEqual(expected);
+  });
+  it('agent=1 returns only documents an agent created', async () => {
+    const expected = loadState().docs.filter((d) => d.companyId === 'co-vat' && d.type === 'TI' && d.createdBy.kind === 'agent').map((d) => d.id).sort();
+    expect(expected.length).toBeGreaterThan(0);
+    expect(ids(await (await get('/docs/TI?agent=1&limit=100')).json())).toEqual(expected);
+  });
+});
+
+describe('D-09 ledger.read gates journals', () => {
+  const issued = () => loadState().docs.find((d) => d.companyId === 'co-vat' && d.type === 'TI' && d.status === 'issued')!;
+  const compute = (d: ReturnType<typeof issued>) => fetch('http://localhost/bff/v1/docs/TI/compute', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ header: d.header, lines: d.lines }) });
+  it('/ledger is 403 naming ledger.read for an operator (who can read the document), 200 for an accountant', async () => {
+    const d = issued();
+    setSettings({ role: 'operator' });
+    expect(PERMISSIONS_BY_ROLE.operator).toContain('doc.TI.read');
+    const r = await get(`/docs/TI/${d.id}/ledger`);
+    expect(r.status).toBe(403);
+    expect((await r.json()).detail).toContain('ledger.read');
+    setSettings({ role: 'accountant' });
+    expect((await get(`/docs/TI/${d.id}/ledger`)).status).toBe(200);
+  });
+  it('compute omits journal without ledger.read and includes it with', async () => {
+    const d = issued();
+    setSettings({ role: 'operator' });
+    const op = await (await compute(d)).json();
+    expect(op.totals).toBeTruthy();
+    expect('journal' in op).toBe(false);
+    setSettings({ role: 'accountant' });
+    expect((await (await compute(d)).json()).journal.entries.length).toBeGreaterThan(0);
+  });
+});
+
+describe('/ledger needs BOTH ledger.read and the document read permission', () => {
+  it('ledger.read alone is not enough', async () => {
+    const d = loadState().docs.find((x) => x.companyId === 'co-vat' && x.type === 'TI' && x.status === 'issued')!;
+    const saved = PERMISSIONS_BY_ROLE.accountant;
+    try {
+      PERMISSIONS_BY_ROLE.accountant = saved.filter((p) => p !== 'doc.TI.read');
+      expect(PERMISSIONS_BY_ROLE.accountant).toContain('ledger.read');
+      const r = await get(`/docs/TI/${d.id}/ledger`);
+      expect(r.status).toBe(403);
+      expect((await r.json()).detail).toContain('doc.TI.read');
+    } finally { PERMISSIONS_BY_ROLE.accountant = saved; }
   });
 });

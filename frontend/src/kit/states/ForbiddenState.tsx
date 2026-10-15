@@ -6,7 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 export function ForbiddenState({ permission, detail }: { permission?: string; detail?: string }) {
   const t = useTranslations("state");
   return (
-    <Alert role="status">
+    <Alert role="status" data-screen-state="forbidden">
       <ShieldAlertIcon aria-hidden />
       <AlertTitle>{t("forbiddenTitle")}</AlertTitle>
       <AlertDescription>

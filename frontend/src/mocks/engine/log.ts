@@ -1,4 +1,4 @@
-import type { Actor, DocHeader, DocLine, FieldChange } from '@/domain/types';
+import type { Actor, Allocation, DocHeader, DocLine, FieldChange } from '@/domain/types';
 import { ANCHOR } from '../fixtures/documents';
 import type { MockState } from '../store';
 
@@ -9,7 +9,16 @@ export class MockError extends Error {
 
 /** The mock world's "today" (the seed never reads the clock either). */
 export const today = () => ANCHOR;
-export const stamp = () => new Date().toISOString();
+let fixed: { base: number; n: number } | undefined;
+/** Server clock: the real one, or inside `withFixedClock` the pinned instant plus one second per call (seed history, D-23). */
+export const stamp = () => (fixed ? new Date(fixed.base + 1000 * fixed.n++).toISOString() : new Date().toISOString());
+/** True while history is being replayed: documents are posted "as of" their own date, so period/future checks do not apply. */
+export const isPinned = () => fixed !== undefined;
+export function withFixedClock<T>(iso: string, fn: () => T): T {
+  const prev = fixed;
+  fixed = { base: Date.parse(iso), n: 0 };
+  try { return fn(); } finally { fixed = prev; }
+}
 
 export function logActivity(st: MockState, docId: string, actor: Actor, action: string, detail?: string): void {
   const n = st.activity.filter((a) => a.docId === docId).length + 1;
@@ -20,7 +29,7 @@ export function logAudit(st: MockState, actor: Actor, companyId: string, command
   st.audit.push({ id: `aud-${st.audit.length + 1}`, at: stamp(), actor, companyId, command, target, before, after, result: 'ok' });
 }
 
-type Body = { header: DocHeader; lines: DocLine[] };
+type Body = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] };
 const val = (v: unknown): string | null => (v == null ? null : typeof v === 'string' ? v : JSON.stringify(v));
 const keys = (a: object, b: object) => [...new Set([...Object.keys(a), ...Object.keys(b)])];
 
@@ -35,6 +44,14 @@ export function diffBody(a: Body, b: Body): FieldChange[] {
     const lb = b.lines.find((l) => l.id === id) as unknown as Record<string, unknown> | undefined;
     if (!la || !lb) { push(`lines.${id}`, la?.description, lb?.description); continue; }
     for (const k of keys(la, lb)) push(`lines.${id}.${k}`, la[k], lb[k]);
+  }
+  // settlement allocations, one path per target (a certificate number edit shows as allocations.<target>.certNumber)
+  const aa = new Map((a.allocations ?? []).map((x) => [x.targetId, x as unknown as Record<string, unknown>]));
+  const ab = new Map((b.allocations ?? []).map((x) => [x.targetId, x as unknown as Record<string, unknown>]));
+  for (const id of new Set([...aa.keys(), ...ab.keys()])) {
+    const x = aa.get(id), y = ab.get(id);
+    if (!x || !y) { push(`allocations.${id}`, x?.amount, y?.amount); continue; }
+    for (const k of keys(x, y)) if (k !== 'targetNumber') push(`allocations.${id}.${k}`, x[k], y[k]);
   }
   return out;
 }

@@ -37,4 +37,11 @@ describe('CommandMenu search states', () => {
     expect(screen.queryByText('ไม่พบรายการที่ตรงกับคำค้น')).not.toBeInTheDocument();
     expect(await screen.findByText('ไม่พบรายการที่ตรงกับคำค้น')).toBeInTheDocument();
   });
+  it('T7: a server hit is listed even when its label does not fuzzy-match what was typed', async () => {
+    // the server matched on the document number; the visible label has none of the typed letters in order
+    search.mockResolvedValue({ items: [{ kind: 'doc', id: 'd1', label: 'ใบกำกับภาษี ลูกค้า นาวา', href: '/sales/tax-invoices/d1' }] });
+    mount();
+    await userEvent.type(screen.getByRole('combobox'), 'TI-2026');
+    expect(await screen.findByRole('option', { name: 'ใบกำกับภาษี ลูกค้า นาวา' })).toBeInTheDocument();
+  });
 });

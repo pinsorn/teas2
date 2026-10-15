@@ -1,4 +1,6 @@
-import type { ActivityEntry, Actor, ChainEdge, CorrectionClass, Doc, DocLine, DocStatus, DocType, Lock, PartySummary, Revision } from '@/domain/types';
+import type { ActivityEntry, Actor, ChainEdge, Doc, DocLine, DocStatus, DocType, Lock, PartySummary, Revision } from '@/domain/types';
+import { CLASS } from '@/domain/doc-types';
+import { bahtText } from '../engine/bahtText';
 import { fromSatang, toSatang } from '../engine/money';
 import { SeriesAllocator } from '../engine/numbering';
 import { computeDoc } from '../engine/vat';
@@ -16,11 +18,7 @@ export const addDays = (d: string, n: number) => {
 export const USER: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
 export const AGENT: Actor = { kind: 'agent', id: 'ag-1', name: 'ผู้ช่วยบัญชี (AI)', ownerName: USER.name };
 /** SP0-charter §7.3 */
-export const CLASS: Record<DocType, CorrectionClass> = {
-  QT: 'N', SO: 'N', DO: 'N', BL: 'N', PO: 'N',
-  IV: 'L', PB: 'L', PCN: 'L', PDN: 'L', PV: 'L', EX: 'L', JV: 'L', FA: 'L', DP: 'L', PR: 'L', OB: 'L',
-  TI: 'T', RC: 'T', CN: 'T', DN: 'T', WT: 'T',
-};
+export { CLASS } from '@/domain/doc-types';
 const pad = (n: number, w = 3) => String(n).padStart(w, '0');
 const strip = (p: SeedParty): PartySummary => { const r: Partial<SeedParty> = { ...p }; delete r.companyId; return r as PartySummary; };
 const FILING_LOCK: Lock = { kind: 'filing', reason: 'ภ.พ.30 เดือน ก.ย. 2569 ยื่นแล้ว', exits: ['ออกใบลดหนี้ / ใบเพิ่มหนี้ในงวดถัดไป'] };
@@ -103,8 +101,8 @@ export function buildDocs(parties: SeedParty[], items: SeedItem[]) {
   });
   add({ key: 'qt-r1', type: 'QT', party: customers[5], date: addDays(ANCHOR, -12), lines: linesFor('qt-r1', customers[5], 12), status: 'issued',
     by: USER, revision: 1, prevNotes: 'ราคายังไม่รวมค่าจัดส่ง', notes: 'ราคารวมค่าจัดส่ง ชำระภายใน 30 วัน' });
-  // ---- 2 credit notes adjusting issued TIs ----
-  tis().filter((s) => s.status === 'issued' && !s.replaces).slice(0, 2).forEach((ti, n) => {
+  // ---- 2 credit notes adjusting issued TIs (never the open-month one: the tiIssuedUnpaid fixture stays untouched) ----
+  tis().filter((s) => s.status === 'issued' && !s.replaces && s.date < '2026-10-01').slice(0, 2).forEach((ti, n) => {
     const key = `cn-${n + 1}`; const d = addDays(ti.date, 5);
     add({ key, type: 'CN', party: ti.party, date: ANCHOR < d ? ANCHOR : d, status: 'issued', by: USER, adjusts: ti.key,
       lines: [{ id: `${key}-l1`, description: 'ลดหนี้ส่วนลดการค้า', qty: '1', unit: 'งาน', unitPrice: n ? '2500.00' : '1000.00', taxCode: 'S7' }] });
@@ -135,10 +133,11 @@ export function buildDocs(parties: SeedParty[], items: SeedItem[]) {
   const activity: (ActivityEntry & { docId: string })[] = [], revisions: (Revision & { docId: string })[] = [];
 
   for (const s of specs) {
-    const lines = s.type === 'RC'
-      ? [{ id: `${s.key}-l1`, description: `รับชำระตามใบกำกับภาษี ${number[s.settles!]}`, qty: '1', unit: 'ครั้ง', unitPrice: fromSatang(s.paid!), taxCode: 'EX' as const }]
-      : s.lines;
-    const totals = computeDoc(lines, false).totals;
+    // a receipt settles through allocations, not lines (D-12): its total is the allocated amount, cash = total (no WHT withheld in the seed)
+    const lines = s.type === 'RC' ? [] : s.lines;
+    const totals = s.type === 'RC'
+      ? { ...computeDoc([], false).totals, total: fromSatang(s.paid!), wht: '0.00', cash: fromSatang(s.paid!), amountInWords: bahtText(fromSatang(s.paid!)) }
+      : computeDoc(lines, false).totals;
     const outstanding = s.type !== 'TI' ? undefined : s.status === 'settled' ? '0.00' : s.status === 'partly_settled' ? fromSatang(toSatang(totals.total) - s.paid!)
       : s.status === 'issued' ? totals.total : undefined;
     const issuedAt = s.status === 'draft' ? undefined : at(s.date, '10:00:00');
@@ -147,7 +146,8 @@ export function buildDocs(parties: SeedParty[], items: SeedItem[]) {
       revision: s.revision ?? 0, version: 1,
       header: { partyId: s.party.id, documentDate: s.date, ...(s.term ? { dueDate: addDays(s.date, s.party.paymentTermDays) } : {}),
         ...(s.notes ? { notes: s.notes } : {}), priceIncludesVat: false },
-      party: strip(s.party), lines, totals, ...(outstanding ? { outstanding } : {}), locks: s.locks ?? [], createdBy: s.by,
+      party: strip(s.party), lines, totals,
+      ...(s.type === 'RC' ? { allocations: [{ targetId: s.settles!, targetType: 'TI' as const, targetNumber: number[s.settles!], amount: fromSatang(s.paid!) }] } : {}), ...(outstanding ? { outstanding } : {}), locks: s.locks ?? [], createdBy: s.by,
       ...(issuedAt ? { issuedAt } : {}),
       ...(s.status === 'replaced' ? { cancel: { reasonCode: 'WRONG_DETAIL', reasonText: 'ข้อมูลผู้ซื้อไม่ถูกต้อง ยกเลิกและออกใหม่', at: at(addDays(s.date, 2), '11:00:00') } } : {}),
       ...(s.replacedBy ? { replacedById: s.replacedBy } : {}), ...(s.replaces ? { replacesId: s.replaces } : {}),

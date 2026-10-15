@@ -43,11 +43,14 @@ const NONVAT_VENDORS: Raw[] = [
   'ฟาร์มผักปลอดสารพิษ', 'ร้านก๊าซสุขใจ',
 ].map((n, i): Raw => [n, corpTin(80 + i), i % 2 === 0, 30]);
 
+/** Individuals carry the title คุณ; Northwind Studio is the foreign payee; everyone else is a juristic person. */
+const entityKindOf = (name: string): PartySummary['entityKind'] => (name.startsWith('คุณ') ? 'individual' : name.startsWith('Northwind') ? 'foreign' : 'juristic');
+
 function build(companyId: string, prefix: string, kind: 'customer' | 'vendor', raws: Raw[], usual?: (i: number) => string[]): SeedParty[] {
   return raws.map(([name, taxId, vatRegistered, paymentTermDays], i) => ({
     companyId, id: `${prefix}-${pad(i + 1)}`, kind, code: `${kind === 'customer' ? 'C' : 'V'}${pad(i + 1)}`, name, taxId,
-    ...(taxId ? { branchCode: '00000' } : {}), vatRegistered, address: ADDR[i % ADDR.length], paymentTermDays,
-    ...(kind === 'vendor' && vatRegistered ? { defaultWhtTypeCode: 'PND53-3' } : {}),
+    entityKind: entityKindOf(name), ...(taxId ? { branchCode: '00000' } : {}), vatRegistered, address: ADDR[i % ADDR.length], paymentTermDays,
+    ...(kind === 'vendor' && vatRegistered ? { defaultWhtTypeCode: 'SVC' } : {}),
     ...(usual ? { usualItemIds: usual(i) } : {}),
   }));
 }
