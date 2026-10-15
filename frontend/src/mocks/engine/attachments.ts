@@ -81,11 +81,13 @@ export function dropAttachmentsOf(st: MockState, docId: string): void {
 
 export const printCountOf = (st: MockState, docId: string): number => st.prints.filter((p) => p.docId === docId).length;
 
-/** The print action was used. The server decides what it was: the first print is the ต้นฉบับ, every later one is a สำเนา whatever the caller asked. */
+/** The print action was used. The server decides what it was: the first print of a live document is the ต้นฉบับ, every later one a สำเนา whatever the caller asked.
+ *  A cancelled / replaced document may be printed (the paper carries its void stamp) but that is logged as such and is never the original. */
 export function markPrinted(st: MockState, doc: Doc, copy: boolean, actor: Actor): { copy: boolean; printCount: number } {
   if (['draft', 'pending', 'approved'].includes(doc.status)) throw new MockError(409, 'doc.not_printable', 'เอกสารที่ยังไม่ได้ออกพิมพ์ไม่ได้ ต้องออกเอกสารก่อน');
-  const asCopy = copy || printCountOf(st, doc.id) > 0;
+  const dead = doc.status === 'cancelled' || doc.status === 'replaced';
+  const asCopy = copy || dead || printCountOf(st, doc.id) > 0;
   st.prints.push({ docId: doc.id, at: stamp(), by: actor.name, copy: asCopy });
-  logActivity(st, doc.id, actor, asCopy ? 'พิมพ์สำเนา' : 'พิมพ์ต้นฉบับ');
+  logActivity(st, doc.id, actor, dead ? 'พิมพ์เอกสารที่ยกเลิกแล้ว' : asCopy ? 'พิมพ์สำเนา' : 'พิมพ์ต้นฉบับ');
   return { copy: asCopy, printCount: printCountOf(st, doc.id) };
 }

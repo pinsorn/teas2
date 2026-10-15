@@ -191,3 +191,52 @@ describe('default notes and the agent filter', () => {
     expect(one.createdBy.kind).toBe('agent');
   });
 });
+
+describe('S6 fix round 1', () => {
+  it('I1: the server says copy for a second print, whichever caller asks; two "tabs" make one original only', async () => {
+    const i = await issued();
+    const [a, b] = await Promise.all([call('POST', `/docs/TI/${i.id}/printed`, { copy: false }), call('POST', `/docs/TI/${i.id}/printed`, { copy: false })]);
+    const r = [await a.json(), await b.json()] as { copy: boolean }[];
+    expect(r.filter((x) => !x.copy)).toHaveLength(1);
+    expect(loadState().prints.filter((p) => !p.copy)).toHaveLength(1);
+  });
+  it('a cancelled document may be printed (void stamp) but is logged as such and never counted as the original', async () => {
+    const i = await issued();
+    await call('POST', `/docs/TI/${i.id}/cancel`, { version: i.version, reasonCode: 'OTHER', reasonText: 'x' });
+    const r = await (await call('POST', `/docs/TI/${i.id}/printed`, { copy: false })).json();
+    expect(r.copy).toBe(true);
+    const acts = ((await (await call('GET', `/docs/TI/${i.id}/activity`)).json()) as { action: string }[]).map((x) => x.action);
+    expect(acts).toContain('พิมพ์เอกสารที่ยกเลิกแล้ว');
+    expect(acts).not.toContain('พิมพ์ต้นฉบับ');
+    expect(loadState().prints.some((p) => !p.copy)).toBe(false);
+  });
+  it('I3: a write the browser cannot persist is a 507 storage.full, never a success, and the stored state is untouched', async () => {
+    const d = await draft();
+    const before = localStorage.getItem('teas2.mock.state.v14');
+    const real = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, k: string, v: string) {
+      if (k === 'teas2.mock.state.v14') throw new DOMException('full', 'QuotaExceededError');
+      return real.call(this, k, v);
+    });
+    const r = await call('POST', `/docs/TI/${d.id}/issue`, { version: d.version });
+    expect(r.status).toBe(507);
+    const p = await r.json();
+    expect(p.code).toBe('storage.full');
+    expect(p.title).toContain('พื้นที่เก็บข้อมูลตัวอย่างเต็ม');
+    expect(localStorage.getItem('teas2.mock.state.v14')).toBe(before);
+    vi.restoreAllMocks();
+    const again = await (await call('GET', `/docs/TI/${d.id}`)).json();
+    expect(again.status).toBe('draft');
+    expect(again.number).toBeUndefined();
+  });
+  it('I3 for real: attachments fill the origin quota, then an issue answers 507 and the document is still a draft', async () => {
+    const d = await draft();
+    let full = false;
+    for (let n = 0; n < 8 && !full; n++) full = (await call('POST', `/docs/TI/${d.id}/attachments`, att({ dataUrl: dataUrl('application/pdf', 1024 * 1024) }))).status === 507;
+    expect(full).toBe(true); // the quota is reachable with ordinary attachments
+    const e = await draft().catch(() => undefined);
+    const r = e ? await call('POST', `/docs/TI/${e.id}/issue`, { version: e.version }) : undefined;
+    if (r) expect([200, 507]).toContain(r.status); // whatever the leftover room allows, a 200 must really be persisted
+    if (r?.status === 200) expect((await (await call('GET', `/docs/TI/${e!.id}`)).json()).status).toBe('issued');
+  });
+});

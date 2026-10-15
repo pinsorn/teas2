@@ -2,7 +2,7 @@ import type { Actor, Allocation, ChainEdge, CorrectionNote, CorrectionPlan, Corr
 import { PERMISSIONS_BY_ROLE } from '../permissions';
 import type { MockState } from '../store';
 import {
-  type Body, LIVE, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, keepNoteLines, markReplaced, refuseBelowSettled, refuseNonPositive, refusePartyChange, refuseUnissuableReceipt, reissue, revise, stableJson, totalsOf,
+  type Body, LIVE, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, keepNoteLines, keepOmitted, markReplaced, refuseBelowSettled, refuseNonPositive, refusePartyChange, refuseUnissuableReceipt, reissue, revise, stableJson, totalsOf,
 } from './commands';
 import { MockError, today } from './log';
 import { fromSatang, toSatang } from './money';
@@ -79,6 +79,7 @@ function noteFor(d: Stored, p: Body, full: boolean, vat: boolean): CorrectionNot
 /** Pure: what a correction would do, from the current state. */
 export function buildPlan(st: MockState, id: string, proposed: Body, role: Role): CorrectionPlan {
   const d = getDoc(st, id);
+  proposed = { ...proposed, header: keepOmitted(d, proposed.header) };
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_correctable', 'แก้ไขได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   const label = `${d.type} ${d.number ?? ''}`.trim();
   const steps: Omit<CorrectionStep, 'order'>[] = [];
@@ -103,6 +104,9 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
     }
     const newTotal = toSatang(totalsOf(st, d.companyId, d.type, keepNoteLines(d, proposed), d.id).total); // a note's own earlier VAT is not its predecessor; unchanged lines keep it (F4) // a note's own earlier VAT is not its predecessor
     const delta = newTotal - toSatang(d.totals.total);
+    if (d.type === 'TI' && stableJson(proposed.header.dimensions ?? {}) !== stableJson(d.header.dimensions ?? {}) && delta !== 0) { // the notes of an amount change cannot carry the new dimensions: ask for two plans
+      throw new MockError(422, 'correction.dimension_with_amount', 'แก้มิติและแก้ยอดเงินแยกกันทีละครั้ง การแก้ไขนี้เปลี่ยนทั้งสองอย่างพร้อมกัน');
+    }
     const partyChanged = proposed.header.partyId !== d.header.partyId;
     const contentChanged = JSON.stringify(proposed.lines) !== JSON.stringify(d.lines) || !!proposed.header.priceIncludesVat !== !!d.header.priceIncludesVat
       || stableJson(proposed.header.dimensions ?? {}) !== stableJson(d.header.dimensions ?? {}); // a dimension change re-posts the journal: the invoice is reissued
@@ -162,7 +166,8 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
 /** Builds the plan and remembers it (single use) so `executePlan` can recompute it. */
 export function correctionPlan(st: MockState, id: string, proposed: Body, role: Role): CorrectionPlan {
   const plan = buildPlan(st, id, proposed, role);
-  (st.plans ??= {})[plan.planId] = { docId: id, proposed: structuredClone(proposed), role, plan: structuredClone(plan) };
+  const kept = { ...proposed, header: keepOmitted(getDoc(st, id), proposed.header) }; // what the plan was built from (omitted fields = unchanged)
+  (st.plans ??= {})[plan.planId] = { docId: id, proposed: structuredClone(kept), role, plan: structuredClone(plan) };
   return plan;
 }
 

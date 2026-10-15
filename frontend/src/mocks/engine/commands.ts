@@ -131,8 +131,14 @@ export const sameLines = (a: DocLine[], b: DocLine[]) => JSON.stringify(a.map(({
 /** A note whose lines are unchanged keeps its issued lines (and their VAT) and its price basis: an API caller cannot send the engine-set VAT back, and the VAT is never recomputed from today's siblings (F4). */
 export const keepNoteLines = (d: Doc, body: Body): Body =>
   isNote(d.type) && sameLines(body.lines, d.lines) ? { ...body, header: { ...body.header, ...(d.header.priceIncludesVat ? { priceIncludesVat: true } : {}) }, lines: d.lines } : body;
+/** An API proposal that leaves a field out (or sends a null bank account) means "unchanged", never "cleared": the stored bank account and dimensions stand. */
+export const keepOmitted = (d: Doc, h: DocHeader): DocHeader => ({
+  ...h,
+  ...(h.bankAccountId == null && d.header.bankAccountId ? { bankAccountId: d.header.bankAccountId } : {}),
+  ...(h.dimensions === undefined && d.header.dimensions ? { dimensions: d.header.dimensions } : {}),
+});
 export function isFiscalChange(d: Doc, b: Body): boolean {
-  const asked = b.header.bankAccountId === undefined && d.header.bankAccountId ? { ...b.header, bankAccountId: d.header.bankAccountId } : b.header; // an absent bank account means "unchanged", not "cleared"
+  const asked = keepOmitted(d, b.header);
   return (d.type === 'RC' && rcHeaderKey(asked) !== rcHeaderKey(d.header)) || b.header.partyId !== d.header.partyId || b.header.documentDate !== d.header.documentDate
     || !!b.header.priceIncludesVat !== !!d.header.priceIncludesVat || !sameLines(b.lines, d.lines)
     // a note's invoice and reason are fiscal (ม.86/10): changing them is a correction, never an in-place edit
@@ -141,7 +147,7 @@ export function isFiscalChange(d: Doc, b: Body): boolean {
     || (b.allocations !== undefined && fiscalAllocations(b.allocations) !== fiscalAllocations(d.allocations))
     || asked.bankAccountId !== d.header.bankAccountId ||
     // the journal carries the header dimensions (S6 carry): changing them outside a plan would leave the books on the old ones
-    stableJson(b.header.dimensions ?? {}) !== stableJson(d.header.dimensions ?? {}) || (b.header.paymentMethod ?? 'transfer') !== (d.header.paymentMethod ?? 'transfer') || b.header.whtMode !== d.header.whtMode || satOf(b.header.depositAmount) !== satOf(d.header.depositAmount);
+    stableJson(asked.dimensions ?? {}) !== stableJson(d.header.dimensions ?? {}) || (b.header.paymentMethod ?? 'transfer') !== (d.header.paymentMethod ?? 'transfer') || b.header.whtMode !== d.header.whtMode || satOf(b.header.depositAmount) !== satOf(d.header.depositAmount);
 }
 
 /** SP0 §7.11: outstanding = total - active credit notes + active debit notes - active settlements (active links only). */
@@ -375,8 +381,7 @@ function certNote(d: Stored, body: Body): string | undefined {
 /** Revise in place (classes N and L). A T-class document only accepts non-fiscal changes here; fiscal ones go through a correction plan. */
 export function revise(st: MockState, id: string, raw: Body, version: number, reason: string, actor: Actor): Doc {
   const d = getDoc(st, id);
-  // an absent bank account means "unchanged": the company default must not fill it in (it would read as a move to another bank)
-  const keepBank = raw.header.bankAccountId === undefined && d.header.bankAccountId ? { ...raw.header, bankAccountId: d.header.bankAccountId } : raw.header;
+  const keepBank = keepOmitted(d, raw.header); // absent bank account / dimensions mean "unchanged": the company default must not fill the bank in (it would read as a move)
   const sent = stored(st, d.companyId, d.type, { ...raw, header: keepBank, allocations: raw.allocations ?? d.allocations }, d.allocations);
   const body = keepNoteLines(d, sent); // an API caller cannot send the engine-set VAT back: the issued lines stand
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_revisable', 'แก้ไขได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');

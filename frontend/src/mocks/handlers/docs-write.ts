@@ -10,7 +10,7 @@ import { MockError } from '../engine/log';
 import { closeRemainder, remainingOf, setMark } from '../engine/marks';
 import { CLASS } from '../fixtures/documents';
 import { saveState } from '../store';
-import { ctx, forbidden, problem, screenGate } from './common';
+import { ctx, forbidden, persist, problem, screenGate } from './common';
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
 
@@ -56,7 +56,7 @@ const versionOf = (req: Request, body?: { version?: number }) => {
   if (!Number.isFinite(v)) throw new MockError(422, 'doc.version_required', 'ต้องระบุเวอร์ชันของเอกสาร');
   return v;
 };
-const done = (c: Ctx) => saveState(c.st);
+const done = (c: Ctx) => persist(c.st);
 
 const P = (perm: string) => (t: DocType) => `doc.${t}.${perm}`;
 
@@ -205,10 +205,11 @@ export const docsWriteHandlers = [
     return new HttpResponse(null, { status: 204 });
   })),
   // the print action was used (the paper page's print button): what it counts as is the server's decision
-  http.post('*/bff/v1/docs/:type/:id/printed', ({ request, params }) => guarded(String(params.type), P('read'), async (c, t) => {
-    const d = own(c, t, params.id);
+  http.post('*/bff/v1/docs/:type/:id/printed', ({ request, params }) => guarded(String(params.type), P('read'), async (c0, t) => {
+    own(c0, t, params.id);
     const body = (await request.json().catch(() => ({}))) as { copy?: boolean };
-    const r = markPrinted(c.st, d, body.copy === true, ACTOR);
+    const c = ctx(); // the body was awaited: read the state again so two quick prints (two tabs) see each other and only one is the original
+    const r = markPrinted(c.st, own(c, t, params.id), body.copy === true, ACTOR);
     done(c);
     return HttpResponse.json(r);
   })),

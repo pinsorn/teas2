@@ -304,7 +304,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
             <TotalsPanel totals={compute.data?.totals} whtLines={compute.data?.whtLines} pending={compute.pending} error={compute.error} onRetry={compute.retry} />
           </div>
           {me ? <AttachmentsPanel type={d.type} docId={draftId} ensureDocId={async () => draftId ?? (await autosave.flush())?.id}
-            canEdit={me.permissions.includes(d.permissions.create)} issued={!!initial && !['draft', 'pending', 'approved'].includes(initial.status)} /> : null}
+            canEdit={me.permissions.includes(d.permissions.create)} issued={!!initial && initial.status !== 'draft'} /> : null}
         </div>
         <PreviewDrawer open={previewOpen} onOpenChange={setPreviewChoice} docked={wide} party={party} lines={lines} compute={compute.data} />
       </fieldset>

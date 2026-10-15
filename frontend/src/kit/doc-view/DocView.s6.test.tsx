@@ -179,7 +179,7 @@ describe('print tracking in the document view', () => {
     await waitFor(() => expect(loadState().prints.map((p) => p.copy)).toEqual([false, true]));
     vi.unstubAllGlobals();
   });
-  it('a failed log does not block the print and says so', async () => {
+  it('a print that could not be logged is not printed, and says so', async () => {
     const ti = issuedTi();
     const print = vi.fn();
     vi.stubGlobal('print', print);
@@ -189,8 +189,36 @@ describe('print tracking in the document view', () => {
     const btn = await screen.findByRole('button', { name: 'พิมพ์' });
     await waitFor(() => expect(btn).toBeEnabled());
     await userEvent.click(btn);
-    await waitFor(() => expect(print).toHaveBeenCalled());
-    expect(await screen.findByText('บันทึกการพิมพ์ไม่สำเร็จ')).toBeVisible();
+    expect(await screen.findByText(/บันทึกการพิมพ์ไม่สำเร็จ/)).toBeVisible();
+    expect(print).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+  const label = () => document.querySelector('.paper-pill')?.textContent;
+  it('I1: a page opened as the original on a document whose original is already out re-renders as สำเนา BEFORE printing', async () => {
+    const ti = issuedTi();
+    await endpoints.markPrinted('TI', ti.id, false); // another tab printed the original
+    const seen: (string | null | undefined)[] = [];
+    vi.stubGlobal('print', vi.fn(() => seen.push(label())));
+    wrap(<PaperView type="TI" id={ti.id} toolbar />);
+    await waitFor(() => expect(label()).toBe('ต้นฉบับ'));
+    const btn = await screen.findByRole('button', { name: 'พิมพ์' });
+    await waitFor(() => expect(btn).toBeEnabled());
+    await userEvent.click(btn);
+    await waitFor(() => expect(seen).toEqual(['สำเนา'])); // what window.print() saw on screen
+    vi.unstubAllGlobals();
+  });
+  it('I1: two prints from the same page of a fresh document - the first sheet is the original, the second a copy', async () => {
+    const ti = issuedTi();
+    const seen: (string | null | undefined)[] = [];
+    vi.stubGlobal('print', vi.fn(() => seen.push(label())));
+    wrap(<PaperView type="TI" id={ti.id} toolbar />);
+    await waitFor(() => expect(label()).toBe('ต้นฉบับ'));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'พิมพ์' })).toBeEnabled());
+    await userEvent.click(screen.getByRole('button', { name: 'พิมพ์' }));
+    await waitFor(() => expect(seen).toEqual(['ต้นฉบับ']));
+    await userEvent.click(screen.getByRole('button', { name: 'พิมพ์' }));
+    await waitFor(() => expect(seen).toEqual(['ต้นฉบับ', 'สำเนา']));
+    expect(loadState().prints.map((p) => p.copy)).toEqual([false, true]);
     vi.unstubAllGlobals();
   });
 });

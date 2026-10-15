@@ -21,12 +21,16 @@ export function PaperView({ type, id, copy = false, toolbar = false }: { type: D
   const tpr = useTranslations('docView.print');
   const [ready, setReady] = useState(false);
   const [logFailed, setLogFailed] = useState(false);
+  const [forced, setForced] = useState(false); // the server said this print is a copy although the page was opened as the original
+  const asCopy = copy || forced;
+  const printing = useRef(false);
+  const printWhenReady = useRef(false);
   const qc = useQueryClient();
   const root = useRef<HTMLDivElement>(null);
   const PaperComponent = PAPERS[type];
 
   const { me, isPending: mePending, error: meError, refetch: refetchMe } = useMe();
-  const q = useQuery({ queryKey: qk.paper(me?.activeCompanyId ?? '', type, id, copy), queryFn: () => endpoints.getPaper(type, id, copy), enabled: !!me });
+  const q = useQuery({ queryKey: qk.paper(me?.activeCompanyId ?? '', type, id, asCopy), queryFn: () => endpoints.getPaper(type, id, asCopy), enabled: !!me });
   useEffect(() => {
     const el = root.current;
     if (!el) { setReady(false); return; } // model changed and the new one is not rendered yet: the old "ready" must not linger
@@ -36,6 +40,7 @@ export function PaperView({ type, id, copy = false, toolbar = false }: { type: D
     check();
     return () => observer.disconnect();
   }, [q.data]);
+  useEffect(() => { if (ready && printWhenReady.current) { printWhenReady.current = false; window.print(); } }, [ready]); // the paper re-rendered with the server's label
   if (!PaperComponent) return <Alert role="status"><AlertTitle>{tp('notPrintable')}</AlertTitle></Alert>;
   if (meError) return <ErrorState error={meError} onRetry={() => void refetchMe()} />;
   if (mePending || q.isPending) return <LoadingState rows={3} />;
@@ -47,12 +52,17 @@ export function PaperView({ type, id, copy = false, toolbar = false }: { type: D
         <div className="paper-noprint flex items-center justify-end gap-3 p-3">
           {logFailed ? <p role="status" className="text-small text-muted-foreground">{tpr('logFailed')}</p> : null}
           <Button disabled={!ready} onClick={() => {
-            // the print is logged first (ต้นฉบับ / สำเนา is the server's call); a failed log never blocks the print itself
-            setLogFailed(false);
-            endpoints.markPrinted(type, id, copy)
-              .then(() => { if (me) void qc.invalidateQueries({ queryKey: [me.activeCompanyId, 'doc', type, id] }); })
+            if (printing.current) return;
+            printing.current = true; setLogFailed(false);
+            // The print is logged FIRST and the server decides ต้นฉบับ / สำเนา. If it says copy while this page shows the original, the paper is re-rendered as สำเนา before anything is printed;
+            // a print that could not be logged is not printed (nobody could tell whether the original is already out).
+            endpoints.markPrinted(type, id, asCopy)
+              .then((r) => {
+                if (me) void qc.invalidateQueries({ queryKey: [me.activeCompanyId, 'doc', type, id] });
+                if (r.copy && !asCopy) { printWhenReady.current = true; setForced(true); } else window.print();
+              })
               .catch(() => setLogFailed(true))
-              .finally(() => window.print());
+              .finally(() => { printing.current = false; });
           }}>{t('print')}</Button>
         </div>
       ) : null}
