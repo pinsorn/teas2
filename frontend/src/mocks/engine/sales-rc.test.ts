@@ -254,8 +254,22 @@ describe('correction plan on a receipt: cancel + reissue keeps each target\'s se
     expect(get(moved).header.bankAccountId).toBe(other.id);
     const second = get(moved);
     const stripped = { ...second.header }; delete stripped.bankAccountId;
-    const again = executePlanFor(moved, { ...stripped, notes: 'x' }, second);
+    const again = executePlanFor(moved, { ...stripped, dimensions: { project: 'X' } }, second); // a real change with the bank field absent: reissued, into the posted account
     expect(get(again).header.bankAccountId).toBe(other.id);
+    assertBalanced(st);
+  });
+  it('a notes-only edit with the bank field absent stays in place (S6 carry 3) and keeps the posted account, even when it is not the company default', () => {
+    const first = get('rc-multi');
+    const other = st.bankAccounts.find((b) => b.companyId === VAT && b.id !== 'ba-kbank' && b.accountCode !== '1110')!;
+    const id = executePlanFor('rc-multi', { ...first.header, bankAccountId: other.id }, first); // now posted to a bank that is not the company default
+    const d = get(id);
+    expect(d.header.bankAccountId).toBe(other.id);
+    const stripped = { ...d.header, notes: 'x' }; delete stripped.bankAccountId;
+    const plan = correctionPlan(st, id, { header: stripped, lines: d.lines, allocations: d.allocations }, 'accountant');
+    expect(plan.steps.map((s) => s.action)).toEqual(['revise']);
+    executePlan(st, plan.planId, plan.planHash, me);
+    expect(get(id).header.bankAccountId).toBe(other.id);
+    expect(get(id).header.notes).toBe('x');
     assertBalanced(st);
   });
   /** Correction plan that changes the header of receipt `id`. */

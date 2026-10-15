@@ -1,7 +1,7 @@
 'use client';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { isForbidden, useMe } from '@/app-shell/useMe';
 import { DESCRIPTORS } from '@/descriptors';
 import type { DocDescriptor } from '@/domain/descriptors';
@@ -22,8 +22,8 @@ import { TypeGate } from './TypeGate';
 const DRAFTABLE = ['draft', 'approved'];
 
 /** Issued documents change through the correction plan; the editor only hands the proposal over. */
-function Revise({ doc, d }: { doc: Doc; d: DocDescriptor }) {
-  const flow = useCorrectionFlow(d, doc);
+function Revise({ doc, d, onLanding }: { doc: Doc; d: DocDescriptor; onLanding: () => void }) {
+  const flow = useCorrectionFlow(d, doc, onLanding);
   return (
     <>
       <DocEditor descriptor={d} mode="revise" initial={doc} onIssued={() => undefined} onRevisionRequested={(p) => void flow.request(p)} />
@@ -42,9 +42,10 @@ function Edit({ id, d }: { id: string; d: DocDescriptor }) {
     enabled: !!me,
   });
   const doc = q.data;
+  const landing = useRef(false); // a correction plan just ran: its flow navigates to the result, this page must not also redirect to the (now replaced) document
   const editable = !!doc && (DRAFTABLE.includes(doc.status) || LIVE.includes(doc.status));
   // Cancelled / replaced / pending documents cannot be edited: send the reader to the view, which says why.
-  useEffect(() => { if (doc && !editable) router.replace(routesOf(d).view(id)); }, [doc, editable, id, router, d]);
+  useEffect(() => { if (doc && !editable && !landing.current) router.replace(routesOf(d).view(id)); }, [doc, editable, id, router, d]);
 
   if (meFailed && !me) return <ErrorState error={meError} onRetry={() => void refetchMe()} />;
   if (q.isError && isNotFound(q.error)) return <NotFoundState listHref={routes.list} />;
@@ -53,7 +54,7 @@ function Edit({ id, d }: { id: string; d: DocDescriptor }) {
   if (DRAFTABLE.includes(doc.status)) {
     return <DocEditor key={doc.id} descriptor={d} mode="edit-draft" initial={doc} onIssued={(d) => router.replace(routes.view(d.id))} />;
   }
-  return <Revise key={doc.id} doc={doc} d={d} />;
+  return <Revise key={doc.id} doc={doc} d={d} onLanding={() => { landing.current = true; }} />;
 }
 
 export function DocEditPage({ type }: { type: DocType }) {

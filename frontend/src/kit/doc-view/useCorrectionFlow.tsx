@@ -15,9 +15,10 @@ import { docViewHref } from '@/descriptors';
 /**
  * Glue for revise mode: the editor's `onRevisionRequested(proposed)` calls `request`, which fetches the plan and opens the dialog.
  * Confirming runs the whole plan (all or nothing on the server) and lands on the newest affected document of the same type.
+ * `onLanding` fires the moment the plan has run, BEFORE the caches refresh: the host screen must stop redirecting on the replaced document, so this flow's navigation is the only one.
  * `ui` must be rendered by the host screen.
  */
-export function useCorrectionFlow(d: DocDescriptor, doc: Doc) {
+export function useCorrectionFlow(d: DocDescriptor, doc: Doc, onLanding?: () => void) {
   const t = useTranslations('docView.plan');
   const tp = useTranslations('problem');
   const { me } = useMe();
@@ -39,6 +40,7 @@ export function useCorrectionFlow(d: DocDescriptor, doc: Doc) {
     setBusy(true); setError(undefined);
     try {
       const { affected } = await endpoints.executeCorrection(plan.planId, plan.planHash);
+      onLanding?.();
       if (me) await qc.invalidateQueries({ queryKey: [me.activeCompanyId] });
       const next = [...affected].reverse().find((a) => a.type === d.type) ?? affected[affected.length - 1];
       setPlan(undefined);

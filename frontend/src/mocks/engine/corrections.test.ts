@@ -172,6 +172,8 @@ describe('I1: a CN / DN carries one line per tax code and the plan shows exactly
     expect(dn.lines.map((l) => [l.sourceLineId, l.vatOverride])).toEqual([[undefined, '0.02']]); // the added one is a line of its own
     const j = st.journals.find((x) => x.docId === cn.id)!.preview.entries[0].lines.map((l) => [l.accountCode, l.debit, l.credit]);
     expect(j).toEqual(expect.arrayContaining([['4110', '0.32', '0.00'], ['2151', '0.04', '0.00'], ['1130', '0.00', '0.36']]));
+    const jd = st.journals.find((x) => x.docId === dn.id)!.preview.entries[0].lines.map((l) => [l.accountCode, l.debit, l.credit]); // the DN: Dr AR 0.35, Cr revenue 0.33, Cr output VAT 0.02
+    expect(jd).toEqual(expect.arrayContaining([['1130', '0.35', '0.00'], ['4100', '0.00', '0.33'], ['2151', '0.00', '0.02']]));
   });
   it('2 x S7 0.07 -> S7 0.08: CN net 0.14 VAT 0.00, DN net 0.08 VAT 0.01, outstanding 0.09', () => {
     deltaAll([line('a', 'S7', '0.07'), line('b', 'S7', '0.07')], [line('z', 'S7', '0.08')], [{ type: 'CN', net: '0.14', vat: '0.00', total: '0.14' }, { type: 'DN', net: '0.08', vat: '0.01', total: '0.09' }], '0.09');

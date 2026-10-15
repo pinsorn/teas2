@@ -136,11 +136,12 @@ test('reissuing the receipt through the correction plan keeps each invoice\'s se
   const dlg = page.getByRole('alertdialog', { name: /แผนการแก้ไข/ });
   await expect(dlg).toContainText('ยกเลิก RC');
   await dlg.getByRole('button', { name: 'ยืนยันทั้งหมด' }).click();
-  // where the plan lands (the original or the new receipt) is the correction flow's business, not this task's: read the outcome from the API
   await expect.poll(async () => (await doc(page, 'RC', id)).status).toBe('replaced');
   const newId = (await doc(page, 'RC', id)).replacedById!;
+  await expect(page).toHaveURL(new RegExp(`/sales/receipts/${newId}$`)); // the plan lands on the new receipt, never on the replaced one
   const nw = await doc(page, 'RC', newId);
   expect(nw.number).not.toBe(before.number);
+  await expect(page.getByTestId('doc-number')).toHaveText(nw.number);
   expect(nw.allocations!.map((x) => [x.targetId, x.amount, x.wht])).toEqual([['ti-057', '1000.00', '25.00'], ['spike-60', '500.00', undefined]]);
   expect(nw.totals).toMatchObject({ total: '1500.00', wht: '25.00', cash: '1475.00' });
   expect((await doc(page, 'RC', id)).status).toBe('replaced');

@@ -1,6 +1,7 @@
 import { DOC_TYPES, isTypeAvailable } from '@/domain/doc-types';
 import { HttpResponse, http } from 'msw';
-import type { Actor, DocType, MarkKey, Qty } from '@/domain/types';
+import type { Actor, AttachmentCategory, DocType, MarkKey, Qty } from '@/domain/types';
+import { addAttachment, discardAttachment, listAttachments, markPrinted, removeAttachment } from '../engine/attachments';
 import { PAPER_BUILDERS } from '../engine/paper';
 import { buildChain } from '../engine/chain';
 import { type Body, unavailableTh, cancel, compute, convert, createDraft, deleteDraft, issue, publicDoc, updateDraft } from '../engine/commands';
@@ -183,6 +184,33 @@ export const docsWriteHandlers = [
     if (!c.perms.includes('ledger.read')) return forbidden('ledger.read'); // D-09: the document's read is checked first, then the ledger's
     own(c, t, params.id);
     return HttpResponse.json(c.st.journals.find((j) => j.docId === params.id)?.preview ?? { entries: [] });
+  })),
+  http.get('*/bff/v1/docs/:type/:id/attachments', ({ params }) => guarded(String(params.type), P('read'), (c, t) => {
+    own(c, t, params.id);
+    return HttpResponse.json(listAttachments(c.st, String(params.id)));
+  })),
+  http.post('*/bff/v1/docs/:type/:id/attachments', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
+    const d = own(c, t, params.id);
+    const a = addAttachment(c.st, d, (await request.json()) as { category: AttachmentCategory; name: string; mime: string; dataUrl: string }, ACTOR);
+    if (!saveState(c.st)) { // the bytes went in but the record of them did not: undo, never claim a file the next read would not find
+      discardAttachment(c.st, a.id);
+      return problem(507, 'attachment.storage_full', 'พื้นที่เก็บไฟล์ตัวอย่างเต็ม — ลบไฟล์แนบเก่าหรือรีเซ็ตข้อมูลตัวอย่าง');
+    }
+    return HttpResponse.json(a, { status: 201 });
+  })),
+  http.delete('*/bff/v1/docs/:type/:id/attachments/:attId', ({ params }) => guarded(String(params.type), P('create'), (c, t) => {
+    const d = own(c, t, params.id);
+    removeAttachment(c.st, d, String(params.attId), ACTOR);
+    done(c);
+    return new HttpResponse(null, { status: 204 });
+  })),
+  // the print action was used (the paper page's print button): what it counts as is the server's decision
+  http.post('*/bff/v1/docs/:type/:id/printed', ({ request, params }) => guarded(String(params.type), P('read'), async (c, t) => {
+    const d = own(c, t, params.id);
+    const body = (await request.json().catch(() => ({}))) as { copy?: boolean };
+    const r = markPrinted(c.st, d, body.copy === true, ACTOR);
+    done(c);
+    return HttpResponse.json(r);
   })),
   http.get('*/bff/v1/docs/:type/:id/paper', ({ request, params }) => guarded(String(params.type), P('read'), (c, t) => {
     const d = own(c, t, params.id);

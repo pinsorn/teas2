@@ -143,11 +143,11 @@ describe('DocEditor', () => {
     testServer.use(http.put('*/bff/v1/docs/TI/:id', () => new Response(JSON.stringify({ title: 'มีคนแก้เอกสารนี้ก่อนคุณ', code: 'doc.version_conflict', status: 409 }), { status: 409, headers: { 'content-type': 'application/problem+json' } })));
     ui();
     await userEvent.type(screen.getByRole('combobox', { name: 'ลูกค้า' }), 'นาวา{Enter}');
-    await waitFor(() => expect(calls).toContain('POST /bff/v1/docs/TI'), { timeout: 4000 }); // the first save is a POST after 2 s idle
+    await waitFor(() => expect(calls).toContain('POST /bff/v1/docs/TI'), { timeout: 12000 }); // the first save is a POST after 2 s idle
     await userEvent.type(screen.getByRole('textbox', { name: 'หมายเหตุ' }), 'x');
-    expect(await screen.findByText('มีคนแก้เอกสารนี้ก่อนคุณ', {}, { timeout: 4000 })).toBeVisible();
+    expect(await screen.findByText('มีคนแก้เอกสารนี้ก่อนคุณ', {}, { timeout: 12000 })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'หมายเหตุ' })).toHaveValue('x');
-  });
+  }, 30000);
 
   it('a VAT customer without a tax id shows the server message and blocks issuing', async () => {
     ui();

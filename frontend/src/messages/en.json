@@ -1,7 +1,7 @@
 {
   "app": { "name": "TEAS 2" },
   "docView": {
-    "tabs": { "paper": "Paper", "chain": "Related documents", "ledger": "Ledger effect", "activity": "Activity", "revisions": "Revision history" },
+    "tabs": { "paper": "Paper", "chain": "Related documents", "ledger": "Ledger effect", "activity": "Activity", "revisions": "Revision history", "attachments": "Attachments" },
     "header": { "party": "Counterparty", "date": "Document date", "total": "Total", "outstanding": "Outstanding", "revised": "Revised {n} times", "progress": "Progress" },
     "lock": { "label": "Locked", "exits": "Ways forward" },
     "marks": { "accepted": "Customer accepted", "rejected": "Customer rejected", "delivered": "Delivered", "sent": "Sent to vendor", "closed": "Closed", "rejectedWhy": "Reason: {reason}" },
@@ -24,6 +24,14 @@
     "actions": {
       "label": "Actions", "issueDraft": "Save and issue…", "edit": "Edit", "print": "Print", "copy": "Copy as new",
       "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "receive": "Receive payment", "whyInclusiveNote": "This invoice is priced VAT-inclusive, so a credit / debit note cannot be issued directly. Use Edit (a correction plan) instead.", "issueCn": "Issue credit note", "issueDn": "Issue debit note", "markDelivered": "Delivered", "markSent": "Sent to vendor", "whyNothingRemaining": "Every line is already converted in full; there is nothing to close", "whyClosed": "The remainder is closed, so it cannot be converted; revise the document to reopen it"
+    },
+    "print": { "reprintTitle": "Reprint {doc}", "reprintBody": "A reprint is printed as a 'COPY'. The original has already been printed.", "reprintConfirm": "Print a copy", "back": "Back", "logFailed": "The print could not be logged" },
+    "agent": { "draftBy": "Drafted by {name} for {owner}", "draftByNoOwner": "Drafted by {name}", "createdBy": "Created by {name} for {owner}", "createdByNoOwner": "Created by {name}", "report": "View the check report" },
+    "attachments": {
+      "title": "Attachments", "category": "File type", "add": "Add file", "file": "Choose a file", "limits": "PDF, PNG, JPEG or WebP, up to 1 MB per file", "empty": "No attachments yet",
+      "remove": "Remove", "removeNamed": "Remove {name}", "removeTitle": "Remove attachment", "removeBody": "Remove {name} from an issued document. The removal is recorded in the history and the audit log.", "removeConfirm": "Remove file", "back": "Back",
+      "needDraft": "Fill in the document first, then attach files (the draft is saved automatically)", "readFailed": "The file could not be read", "loadFailed": "The attachments could not be loaded", "by": "by {name}",
+      "kb": "{size} KB", "categories": { "customer_po": "Customer purchase order", "purchase_order": "Purchase order (PO)", "delivery": "Proof of delivery", "vendor_tax_invoice": "Vendor tax invoice", "receipt": "Receipt", "transfer_slip": "Transfer slip", "contract": "Contract", "photo": "Photo", "wht_certificate": "Withholding tax certificate", "government": "Government document", "other": "Other" }
     },
     "paper": { "notPrintable": "No paper form is available for this document type", "notIssued": "This document has not been issued, so it cannot be printed as a tax invoice. Issue it first.", "stub": "The document paper preview appears here", "snapshot": "Revision {n}" },
     "chain": {
@@ -132,7 +140,7 @@
     "clearSelection": "Clear selection",
     "needsPermission": "Requires permission {permission}",
     "bulkFailed": "The action failed. Try again",
-    "agentChip": "AI agent",
+    "agentChip": "Created by AI",
     "rangeInvalid": "The start date must not be after the end date",
     "overdueDays": "{days} days overdue"
   },

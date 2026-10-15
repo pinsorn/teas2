@@ -1,5 +1,5 @@
 import type {
-  ActivityEntry, Allocation, ChainGraph, ComputeResult, CorrectionPlan, CorrectionResult, Doc, DocHeader, DocLine, DocSummary,
+  ActivityEntry, Allocation, Attachment, AttachmentCategory, ChainGraph, ComputeResult, CorrectionPlan, CorrectionResult, Doc, DocHeader, DocLine, DocSummary,
   DocType, HomeInbox, MarkKey, Money, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, RemainingLine, Revision, SearchHit,
 } from '@/domain/types';
 import type { RecordKind, RecordRow } from '@/domain/records';
@@ -74,5 +74,11 @@ export const endpoints = {
     if (!res.ok) throw new ApiError(normalizeProblem(res.status, await res.json().catch(() => undefined)));
     return res.blob();
   },
+  listAttachments: (type: DocType, id: string) => api<Attachment[]>('GET', `${d(type, id)}/attachments`),
+  addAttachment: (type: DocType, id: string, a: { category: AttachmentCategory; name: string; mime: string; dataUrl: string }) => api<Attachment>('POST', `${d(type, id)}/attachments`, a),
+  removeAttachment: (type: DocType, id: string, attId: string) => api<void>('DELETE', `${d(type, id)}/attachments/${attId}`),
+  /** The print action was used. The server decides ต้นฉบับ / สำเนา; the answer says which it recorded. */
+  markPrinted: (type: DocType, id: string, copy: boolean) => api<{ copy: boolean; printCount: number }>('POST', `${d(type, id)}/printed`, { copy }),
+  getDefaultNotes: () => api<Partial<Record<DocType, string>>>('GET', '/settings/default-notes'),
   getPaper: (type: DocType, id: string, copy = false) => api<PaperModel>('GET', `${d(type, id)}/paper${qs({ copy: copy ? 1 : undefined })}`),
 };

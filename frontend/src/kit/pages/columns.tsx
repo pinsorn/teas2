@@ -30,5 +30,6 @@ const PARAMS: Record<SavedViewKey, Record<string, string>> = {
   cancelled: { status: 'cancelled' }, agent: { agent: '1' },
 };
 export function savedViewsFor(d: DocDescriptor, t: Translate): SavedView[] {
-  return d.savedViews.map((key) => ({ key, label: t(`views.${key}`), params: { ...PARAMS[key] } }));
+  const keys: SavedViewKey[] = d.savedViews.includes('agent') ? d.savedViews : [...d.savedViews, 'agent']; // "created by an AI agent" exists for every document type
+  return keys.map((key) => ({ key, label: t(`views.${key}`), params: { ...PARAMS[key] } }));
 }

@@ -29,8 +29,8 @@ export function Guarded({ why, children }: { why?: string; children: (p: { disab
 const MARK_BUTTONS: MarkKey[] = ['accepted', 'rejected', 'delivered'];
 const MARK_LABEL = { accepted: 'markAccepted', rejected: 'markRejected', delivered: 'markDelivered', sent: 'markSent' } as const;
 
-export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCancel, onConvert, onMark, onCloseRemainder, nothingRemaining }: {
-  descriptor: ConvertibleDescriptor; doc: Doc; permissions: string[]; /** The active company's VAT status (conversion targets depend on it). */ vatRegistered: boolean; onCancel: () => void; onConvert?: () => void; onMark?: (mark: MarkKey) => void; onCloseRemainder?: () => void; /** Every line is already converted in full: there is nothing to close. */ nothingRemaining?: boolean;
+export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCancel, onConvert, onMark, onCloseRemainder, nothingRemaining, onReprint }: {
+  descriptor: ConvertibleDescriptor; doc: Doc; permissions: string[]; /** The active company's VAT status (conversion targets depend on it). */ vatRegistered: boolean; onCancel: () => void; onConvert?: () => void; onMark?: (mark: MarkKey) => void; onCloseRemainder?: () => void; /** Every line is already converted in full: there is nothing to close. */ nothingRemaining?: boolean; /** The original was printed: the print action asks first (a reprint is a สำเนา). */ onReprint?: () => void;
 }) {
   const t = useTranslations('docView.actions');
   const ts = useTranslations('state');
@@ -67,7 +67,9 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCa
         )}
         {doc.status !== 'draft' ? (
           <Guarded why={missing(d.permissions.read)}>
-            {(p) => <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t('print')}</span> : <Link href={routes.print(doc.id)}>{t('print')}</Link>}</Button>}
+            {(p) => (doc.printCount ?? 0) > 0 && !p.disabled
+              ? <Button {...p} variant="outline" onClick={onReprint}>{t('print')}</Button>
+              : <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t('print')}</span> : <Link href={routes.print(doc.id)}>{t('print')}</Link>}</Button>}
           </Guarded>
         ) : null}
         <Guarded why={missing(d.permissions.create)}>

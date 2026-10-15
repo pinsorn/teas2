@@ -33,10 +33,16 @@ Entry format — terse, greppable by symptom:
 - **Fix:** header `{ documentDate, refDocId: <TI id>, reasonCode: 'RETURN' | ... }`, each CN line `sourceLineId: <TI line id>`; drop the manual link call. A seeded fixture note goes through `SALES_SPECS` (runSeed), never straight into `st.docs`.
 - **Seen:** 2026-10-16, SP1c S5
 
-## e2e: after confirming a correction plan the page sometimes shows the ORIGINAL (replaced) document, sometimes the new one
-- **Root cause:** `useCorrectionFlow.confirm` does `await invalidateQueries` then `router.push(new doc)`; the edit page's effect `router.replace(view(old doc))` (the old document is no longer editable) races with that push, and either can win.
-- **Fix:** do not assert where the plan lands. Wait for the API outcome (`expect.poll` on the original's status, then read `replacedById`) as `e2e/sales-rc.spec.ts` does. (The flow itself is not changed here; the TI loop test only looks at the chain tab, which exists on both.)
-- **Seen:** 2026-10-15, SP1c S4
+## e2e: after confirming a correction plan the page sometimes showed the ORIGINAL (replaced) document - FIXED in S6
+- **Root cause:** `useCorrectionFlow.confirm` did `await invalidateQueries` then `router.push(new doc)`; the edit page's effect `router.replace(view(old doc))` (the old document stops being editable) raced with that push, and either could win.
+- **Fix:** `useCorrectionFlow(d, doc, onLanding)` calls `onLanding` right after the plan ran, BEFORE the caches refresh; `DocEditPage` sets a ref there and its redirect effect skips while it is set, so the flow's push (the new document, or the CN / DN for a note-only plan; an in-place revise lands on the same document) is the only navigation. `sales-rc` and `ti-loop` e2e now assert the landing URL. Any new screen that hosts the flow must pass the same hook.
+- **Seen:** 2026-10-15, SP1c S4; fixed 2026-10-16, S6
+
+## `revise()` silently moved a receipt to the company default bank when the proposal left the bank field out
+- **Symptom:** a notes-only API edit of a receipt posted to a non-default bank was planned as `revise`, then `executePlan` failed `doc.revise_not_allowed` (or, before S6, needlessly became cancel + reissue).
+- **Root cause:** `stored()` -> `payDefaults()` fills `bankAccountId` with the company default when absent, so the in-place edit looked like a move to another bank. The plan compared the raw proposal, execute compared the defaulted one.
+- **Fix:** an absent `bankAccountId` means "unchanged" in BOTH places (`isFiscalChange` and the start of `revise`). Test vector: move a receipt to a bank that is not the default first (a default-bank receipt cannot show it).
+- **Seen:** 2026-10-16, SP1c S6
 
 ## e2e: "ยังขาดอะไร" still says เลือกลูกค้า / a panel has 0 checkboxes after `fill()` + `Enter` on the customer combobox
 - **Root cause:** the party search is asynchronous; `Enter` pressed before the option list renders picks nothing (flaked `sales-iv-bl` once, bit two S4 tests).

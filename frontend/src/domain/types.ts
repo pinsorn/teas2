@@ -62,7 +62,13 @@ export interface Doc { id: string; type: DocType; number?: string; status: DocSt
   /** CN / DN (ม.86/10): the invoice's net, the correct value after this note, the difference and its VAT, taken when the note is issued; the paper prints these. Server-written. */
   adjustSnapshot?: { originalNet: Money; correctNet: Money; diffNet: Money; vat: Money };
   cancel?: { reasonCode: string; reasonText: string; at: string }; replacedById?: string; replacesId?: string; marks?: DocMarks;
-  /** SO / DO / PO / QT: conversion progress text, derived on every read from the active links (never stored). */ progress?: string }
+  /** SO / DO / PO / QT: conversion progress text, derived on every read from the active links (never stored). */ progress?: string;
+  /** How many times the print action was used on this issued document (derived from the print log on every read, never stored); 0 / absent = not printed yet, so the next print is the ต้นฉบับ. */ printCount?: number;
+  /** An agent-created document: the id of the agent's check report ("ดูรายงานการตรวจ"). */ agentReportId?: string }
+/** D-30: what an attached file is evidence of. Labels live in messages (`attachments.category.*`). */
+export type AttachmentCategory = 'customer_po' | 'purchase_order' | 'delivery' | 'vendor_tax_invoice' | 'receipt' | 'transfer_slip'
+  | 'contract' | 'photo' | 'wht_certificate' | 'government' | 'other';
+export interface Attachment { id: string; docId: string; category: AttachmentCategory; name: string; size: number; mime: string; dataUrl: string; at: string; by: string }
 export interface DocSummary { id: string; type: DocType; number?: string; status: DocStatus; documentDate: IsoDate;
   partyName: string; total: Money; outstanding?: Money; dueDate?: IsoDate; reference?: string; createdByAgent: boolean; marks?: DocMarks; progress?: string }
 export interface Page<T> { items: T[]; nextCursor?: string; total?: number }

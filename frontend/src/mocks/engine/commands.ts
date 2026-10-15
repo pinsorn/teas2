@@ -3,6 +3,7 @@ import type {
 } from '@/domain/types';
 import { CLASS, CONVERSIONS, DOC_TYPES, GROUPS, LIVE, SETTLES, isTypeAvailable } from '@/domain/doc-types';
 import type { MockState } from '../store';
+import { dropAttachmentsOf } from './attachments';
 import { consumed, fmtQ, q4 } from './chain';
 import { ledgerFor, reversalOf } from './ledger';
 import { afterRevision, refuseClosed, refuseRejected, withAcceptedStamp } from './marks';
@@ -119,7 +120,7 @@ export function missingOf(st: MockState, companyId: string, type: DocType, body:
 
 /** A money string in satang (so '5000' = '5000.00'); text that is not money is kept as is, to differ from any real amount. */
 const satOf = (m: string | undefined): number | string => { try { return toSatang(m ?? '0.00'); } catch { return m ?? ''; } };
-const stableJson = (o: unknown) => JSON.stringify(o, (_k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : 1))) : v));
+export const stableJson = (o: unknown) => JSON.stringify(o, (_k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : 1))) : v));
 /** A receipt's header without the fields an in-place edit may change (notes, reference): everything else - dimensions, cheque, ... - is evidence the books must follow. */
 const rcHeaderKey = ({ notes: _n, reference: _r, depositAmount, paymentMethod, ...rest }: DocHeader) => { void _n; void _r; return stableJson({ ...rest, paymentMethod: paymentMethod ?? 'transfer', depositAmount: satOf(depositAmount) }); };
 
@@ -131,13 +132,16 @@ export const sameLines = (a: DocLine[], b: DocLine[]) => JSON.stringify(a.map(({
 export const keepNoteLines = (d: Doc, body: Body): Body =>
   isNote(d.type) && sameLines(body.lines, d.lines) ? { ...body, header: { ...body.header, ...(d.header.priceIncludesVat ? { priceIncludesVat: true } : {}) }, lines: d.lines } : body;
 export function isFiscalChange(d: Doc, b: Body): boolean {
-  return (d.type === 'RC' && rcHeaderKey(b.header) !== rcHeaderKey(d.header)) || b.header.partyId !== d.header.partyId || b.header.documentDate !== d.header.documentDate
+  const asked = b.header.bankAccountId === undefined && d.header.bankAccountId ? { ...b.header, bankAccountId: d.header.bankAccountId } : b.header; // an absent bank account means "unchanged", not "cleared"
+  return (d.type === 'RC' && rcHeaderKey(asked) !== rcHeaderKey(d.header)) || b.header.partyId !== d.header.partyId || b.header.documentDate !== d.header.documentDate
     || !!b.header.priceIncludesVat !== !!d.header.priceIncludesVat || !sameLines(b.lines, d.lines)
     // a note's invoice and reason are fiscal (ม.86/10): changing them is a correction, never an in-place edit
     || b.header.refDocId !== d.header.refDocId || b.header.reasonCode !== d.header.reasonCode || (b.header.reasonText ?? '') !== (d.header.reasonText ?? '')
     // settlement: who is paid how much and into which account changes the books (a certificate number does not)
     || (b.allocations !== undefined && fiscalAllocations(b.allocations) !== fiscalAllocations(d.allocations))
-    || b.header.bankAccountId !== d.header.bankAccountId || (b.header.paymentMethod ?? 'transfer') !== (d.header.paymentMethod ?? 'transfer') || b.header.whtMode !== d.header.whtMode || satOf(b.header.depositAmount) !== satOf(d.header.depositAmount);
+    || asked.bankAccountId !== d.header.bankAccountId ||
+    // the journal carries the header dimensions (S6 carry): changing them outside a plan would leave the books on the old ones
+    stableJson(b.header.dimensions ?? {}) !== stableJson(d.header.dimensions ?? {}) || (b.header.paymentMethod ?? 'transfer') !== (d.header.paymentMethod ?? 'transfer') || b.header.whtMode !== d.header.whtMode || satOf(b.header.depositAmount) !== satOf(d.header.depositAmount);
 }
 
 /** SP0 §7.11: outstanding = total - active credit notes + active debit notes - active settlements (active links only). */
@@ -240,6 +244,7 @@ export function deleteDraft(st: MockState, id: string, version: number, actor: A
   checkVersion(d, version);
   st.docs = st.docs.filter((x) => x.id !== id);
   st.links = st.links.filter((l) => l.from !== id && l.to !== id);
+  dropAttachmentsOf(st, id);
   logActivity(st, id, actor, 'delete');
   logAudit(st, actor, d.companyId, 'doc.delete', id, { status: 'draft' });
 }
@@ -370,7 +375,9 @@ function certNote(d: Stored, body: Body): string | undefined {
 /** Revise in place (classes N and L). A T-class document only accepts non-fiscal changes here; fiscal ones go through a correction plan. */
 export function revise(st: MockState, id: string, raw: Body, version: number, reason: string, actor: Actor): Doc {
   const d = getDoc(st, id);
-  const sent = stored(st, d.companyId, d.type, { ...raw, allocations: raw.allocations ?? d.allocations }, d.allocations);
+  // an absent bank account means "unchanged": the company default must not fill it in (it would read as a move to another bank)
+  const keepBank = raw.header.bankAccountId === undefined && d.header.bankAccountId ? { ...raw.header, bankAccountId: d.header.bankAccountId } : raw.header;
+  const sent = stored(st, d.companyId, d.type, { ...raw, header: keepBank, allocations: raw.allocations ?? d.allocations }, d.allocations);
   const body = keepNoteLines(d, sent); // an API caller cannot send the engine-set VAT back: the issued lines stand
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_revisable', 'แก้ไขได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   checkVersion(d, version);

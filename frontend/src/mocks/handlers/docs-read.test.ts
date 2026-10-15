@@ -128,8 +128,8 @@ describe('doc detail, locked, forbidden', () => {
     const paid = state.docs.find((d) => d.type === 'TI' && d.status === 'settled')!;
     paid.locks = [];
     localStorage.setItem('teas2.mock.state.v2', JSON.stringify({ ...state, version: 2 }));
-    localStorage.removeItem('teas2.mock.state.v13');
-    expect(loadState().version).toBe(13);
+    localStorage.removeItem('teas2.mock.state.v14');
+    expect(loadState().version).toBe(14);
     expect(loadState().docs.find((d) => d.id === paid.id)!.locks).toContainEqual(expect.objectContaining({ kind: 'settlement' }));
   });
   it('GET derives the period lock for a document dated in a closed month, and not for an open-month one (F4)', async () => {
@@ -142,7 +142,7 @@ describe('doc detail, locked, forbidden', () => {
     const state = loadState();
     const paid = state.docs.find((d) => d.type === 'TI' && d.status === 'settled')!;
     paid.locks = [];
-    localStorage.setItem('teas2.mock.state.v13', JSON.stringify(state));
+    localStorage.setItem('teas2.mock.state.v14', JSON.stringify(state));
     const doc = await json(`/docs/TI/${paid.id}`);
     expect(doc.locks).toContainEqual(expect.objectContaining({ kind: 'settlement' }));
   });

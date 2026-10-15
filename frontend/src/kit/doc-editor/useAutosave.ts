@@ -98,6 +98,14 @@ export function useAutosave({ type, payload, enabled, initial, onCreated, startU
     return latest.current.json === saved.current && doc.current ? { ...doc.current, json: saved.current } : undefined;
   };
 
+  /** The content changed by the system, not the user (a default note): before any draft exists it becomes the baseline, so a blank editor still never POSTs. */
+  const rebase = () => {
+    if (doc.current || pendingCreate.current) return;
+    clearTimeout(timer.current);
+    saved.current = latest.current.json;
+    setSavedJson(latest.current.json);
+  };
+
   const flushRef = useRef(flush);
   useEffect(() => { flushRef.current = flush; });
   useEffect(() => {
@@ -118,5 +126,5 @@ export function useAutosave({ type, payload, enabled, initial, onCreated, startU
   const status: SaveStatus = !enabled ? 'idle'
     : phase === 'conflict' ? 'conflict' : phase === 'saving' ? 'saving' : phase === 'error' ? 'error'
     : dirty ? 'pending' : hasDoc ? 'saved' : 'idle';
-  return { status, problem, flush };
+  return { status, problem, flush, rebase };
 }

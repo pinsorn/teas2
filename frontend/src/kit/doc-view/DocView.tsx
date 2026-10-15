@@ -21,6 +21,9 @@ import { LoadingState } from '../states/LoadingState';
 import { isNotFound, NotFoundState } from '../states/NotFoundState';
 import { ActionBar, type ConvertibleDescriptor } from './ActionBar';
 import { ActivityTimeline } from './ActivityTimeline';
+import { AgentBanner } from './AgentBanner';
+import { AttachmentsPanel } from './AttachmentsPanel';
+import { ReprintDialog } from './ReprintDialog';
 import { ChainPanel } from './ChainPanel';
 import { ConvertDialog } from './ConvertDialog';
 import { CloseRemainderDialog } from '../dialogs/CloseRemainderDialog';
@@ -83,6 +86,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
   const [convertOpen, setConvertOpen] = useState(false);
   const [markOpen, setMarkOpen] = useState<MarkKey>();
   const [closeOpen, setCloseOpen] = useState(false);
+  const [reprintOpen, setReprintOpen] = useState(false);
   const [notice, setNotice] = useState<string>();
   // A dead document opens on its chain: the pointer to the replacement is what the reader needs first.
   const [tab, setTab] = useState(doc.status === 'replaced' || doc.status === 'cancelled' ? 'chain' : 'paper');
@@ -124,7 +128,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
 
   const title = locale === 'en' ? d.titleEn : d.titleTh;
   const label = `${doc.type} ${doc.number ?? ''}`.trim();
-  const tabs = ['paper', 'chain', 'ledger', 'activity', 'revisions'] as const;
+  const tabs = ['paper', 'chain', 'ledger', 'activity', 'attachments', 'revisions'] as const;
   const canLedger = permissions.includes('ledger.read'); // D-09: journals need ledger.read, not just the document's read
 
   return (
@@ -145,10 +149,11 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
           {doc.outstanding !== undefined ? <div><dt className="text-small text-muted-foreground">{t('header.outstanding')}</dt><dd className="tabular-nums">{formatTHB(doc.outstanding)}</dd></div> : null}
         </dl>
         <LockBanner locks={doc.locks} exitAction={exitAction} />
+        <AgentBanner actor={doc.createdBy} status={doc.status} reportId={doc.agentReportId} />
       </header>
 
       <ActionBar descriptor={d as ConvertibleDescriptor} doc={doc} permissions={permissions} vatRegistered={me!.vatRegistered} onCancel={() => { cancel.reset(); setCancelOpen(true); }} onConvert={() => setConvertOpen(true)}
-        onMark={(m) => { mark.reset(); setMarkOpen(m); }} onCloseRemainder={() => { close.reset(); setCloseOpen(true); }}
+        onReprint={() => setReprintOpen(true)} onMark={(m) => { mark.reset(); setMarkOpen(m); }} onCloseRemainder={() => { close.reset(); setCloseOpen(true); }}
         nothingRemaining={closeable && !!rem.data && rem.data.every((l) => l.remaining === '0')} />
       {doc.marks?.closed ? (
         <Alert role="status"><AlertTitle>{t('closedAlert')}</AlertTitle><AlertDescription>{t('marks.rejectedWhy', { reason: doc.marks.closed.reason })}</AlertDescription></Alert>
@@ -172,11 +177,15 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
         <TabsContent value="chain"><ChainPanel type={d.type} id={doc.id} /></TabsContent>
         <TabsContent value="ledger"><LedgerTab type={d.type} id={doc.id} /></TabsContent>
         <TabsContent value="activity"><ActivityTimeline type={d.type} id={doc.id} /></TabsContent>
+        <TabsContent value="attachments">
+          <AttachmentsPanel type={d.type} docId={doc.id} canEdit={permissions.includes(d.permissions.create)} issued={doc.status !== 'draft'} />
+        </TabsContent>
         <TabsContent value="revisions">
           <RevisionHistory type={d.type} id={doc.id} renderPaper={(snap, n) => <PaperStub doc={snap} revision={n} />} />
         </TabsContent>
       </Tabs>
 
+      {reprintOpen ? <ReprintDialog docLabel={label} onCancel={() => setReprintOpen(false)} onConfirm={() => router.push(`${routesOf(d).print(doc.id)}?copy=1`)} /> : null}
       {convertOpen ? <ConvertDialog source={doc} targets={d.convertsTo ?? []} onDone={converted} onClose={() => setConvertOpen(false)} /> : null}
       {markOpen === 'accepted' || markOpen === 'rejected' || markOpen === 'delivered' ? (
         <MarkDialog mark={markOpen} docLabel={label} busy={mark.isPending} error={mark.error} onCancel={() => setMarkOpen(undefined)}

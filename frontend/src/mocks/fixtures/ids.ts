@@ -4,7 +4,7 @@ import { derivedLocks } from '../engine/locks';
 type D = MockState['docs'][number];
 const isTi = (d: D) => d.type === 'TI';
 
-export type FixtureKey = 'tiDraft' | 'tiDraftNoTin' | 'tiIssuedUnpaid' | 'tiPartly' | 'tiSettled' | 'tiFilingLocked'
+export type FixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssuedUnpaid' | 'tiPartly' | 'tiSettled' | 'tiFilingLocked'
   | 'tiReplaced' | 'tiLong' | 'tiPeriodLocked' | 'rcTargetsA' | 'rcTargetsB'
   | 'qtDraft' | 'qtIssued' | 'qtRejected' | 'qtCancelled' | 'qtRevised' | 'nqtIssued'
   | 'soPartlyDelivered' | 'soClosed' | 'doDelivered' | 'nsoIssued' | 'ndoDelivered'
@@ -22,6 +22,7 @@ const byId = (id: string, ok: (d: D) => boolean = () => true) => (d: D) => d.id 
 /** Predicates evaluate the READ model (derivedLocks), never the stored row alone. */
 export const FIXTURE_PREDICATES: Record<FixtureKey, (d: D, st: MockState) => boolean> = {
   tiDraft: (d) => isTi(d) && d.status === 'draft' && d.createdBy.kind === 'user',
+  tiAgentDraft: (d) => isTi(d) && d.status === 'draft' && d.createdBy.kind === 'agent',
   tiDraftNoTin: (d) => isTi(d) && d.status === 'draft' && !!d.party?.vatRegistered && !d.party.taxId,
   tiIssuedUnpaid: (d, st) => isTi(d) && d.status === 'issued' && derivedLocks(st, d).length === 0
     && d.outstanding === d.totals.total && d.header.documentDate >= '2026-10-01',

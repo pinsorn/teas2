@@ -16,6 +16,8 @@ import { endpoints, type DocInput } from '@/lib/api/endpoints';
 import { qk } from '@/lib/query/keys';
 import { cn } from '@/lib/utils';
 import { ConfirmIssueDialog } from '../dialogs/ConfirmIssueDialog';
+import { AgentBanner } from '../doc-view/AgentBanner';
+import { AttachmentsPanel } from '../doc-view/AttachmentsPanel';
 import { StatusChip } from '../doc-list/StatusChip';
 import { GroupPanel } from './GroupPanel';
 import { HeaderFields } from './HeaderFields';
@@ -92,6 +94,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   const issuing = useRef(false);
   const pickGen = useRef(0); // newest party selection wins: older usual-item lookups are dropped
   const [stale, setStale] = useState(false);
+  const [draftId, setDraftId] = useState<string | undefined>(initial?.id || undefined); // attachments belong to the saved draft: known from the start when editing, after the first save when creating
   const [partyBusy, setPartyBusy] = useState(false); // a party lookup / pick (with its usual-item prefill) is still landing
   const [picking, setPicking] = useState(false);
 
@@ -133,8 +136,25 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
     startUnsaved: mode === 'create' && !!initial,
     flushOnLeave: () => qc.getQueryData<Me>(qk.me())?.activeCompanyId === owner.current,
     // the address bar follows the draft, but the editor stays mounted (a router navigation would remount it and lose focus / input)
-    onCreated: (id) => { if (root.current) window.history.replaceState(window.history.state, '', routesOf(d).edit(id)); invalidate(); },
+    onCreated: (id) => { setDraftId(id); if (root.current) window.history.replaceState(window.history.state, '', routesOf(d).edit(id)); invalidate(); },
   });
+
+  // A blank new document starts with its type's default note; a copy / conversion / prefilled screen (`initial`) keeps its source's. The note is the system's, not the user's:
+  // when the editor is still untouched it becomes the autosave baseline, so merely opening the screen never saves a draft.
+  const blank = mode === 'create' && !initial;
+  const defaults = useQuery({ queryKey: qk.defaultNotes(me?.activeCompanyId ?? ''), queryFn: endpoints.getDefaultNotes, enabled: blank && !!me });
+  const [notesAdopted, setNotesAdopted] = useState(false);
+  const [baselineNotes, setBaselineNotes] = useState<string>(); // the default note that was adopted into a still-untouched editor
+  const blankJson = JSON.stringify({ header: { documentDate: me?.businessDate ?? '' }, lines: [], ...(d.settles || d.groups ? { allocations: [] } : {}) });
+  const defaultText = defaults.data?.[d.type];
+  if (blank && !notesAdopted && defaults.data) { // ONCE, like the date: a note the user typed first (or later cleared) is theirs
+    setNotesAdopted(true);
+    if (defaultText && !header.notes) {
+      if (payloadJson === blankJson) setBaselineNotes(defaultText);
+      setHeader((h) => (h.notes ? h : { ...h, notes: defaultText }));
+    }
+  }
+  useEffect(() => { if (baselineNotes) autosave.rebase(); }, [baselineNotes]); // eslint-disable-line react-hooks/exhaustive-deps -- once, after the render that holds the note
 
   const title = locale === 'en' ? d.titleEn : d.titleTh;
   const partyKind = d.partyKind;
@@ -225,6 +245,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
         <StatusChip status={initial?.status ?? 'draft'} />
       </div>
 
+      {initial?.createdBy.kind === 'agent' && initial.id ? <AgentBanner actor={initial.createdBy} status={initial.status} reportId={initial.agentReportId} /> : null}
       {conflict && <ProblemBanner error={autosave.status === 'conflict' ? autosave.problem : issueError} hint={t('conflictHint')} action={reload} />}
       {autosave.status === 'error' && <ProblemBanner error={autosave.problem} hint={t('saveFailedHint')}
         action={<Button size="sm" variant="outline" onClick={() => void autosave.flush()}>{t('save')}</Button>} />}
@@ -282,6 +303,8 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
               partyLabel={partyKind ? t(`party.${partyKind}`) : undefined} onJump={jump} />
             <TotalsPanel totals={compute.data?.totals} whtLines={compute.data?.whtLines} pending={compute.pending} error={compute.error} onRetry={compute.retry} />
           </div>
+          {me ? <AttachmentsPanel type={d.type} docId={draftId} ensureDocId={async () => draftId ?? (await autosave.flush())?.id}
+            canEdit={me.permissions.includes(d.permissions.create)} issued={!!initial && !['draft', 'pending', 'approved'].includes(initial.status)} /> : null}
         </div>
         <PreviewDrawer open={previewOpen} onOpenChange={setPreviewChoice} docked={wide} party={party} lines={lines} compute={compute.data} />
       </fieldset>

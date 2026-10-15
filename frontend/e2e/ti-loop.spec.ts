@@ -45,7 +45,8 @@ test('non-fiscal edit after issue → revision 1, same number', async ({ page })
 });
 
 test('change customer on a paid TI → plan of 3 steps → replacement chain', async ({ page }) => {
-  await page.goto(`/sales/tax-invoices/${await fixtureId(page, 'tiSettled')}`);
+  const oldId = await fixtureId(page, 'tiSettled');
+  await page.goto(`/sales/tax-invoices/${oldId}`);
   await page.getByRole('link', { name: 'แก้ไข' }).click();
   await page.getByRole('combobox', { name: 'ลูกค้า' }).fill('นาวา');
   await page.keyboard.press('Enter');
@@ -54,8 +55,11 @@ test('change customer on a paid TI → plan of 3 steps → replacement chain', a
   await expect(dialog.getByRole('listitem')).toHaveCount(3);
   await axeClean(page);
   await dialog.getByRole('button', { name: 'ยืนยันทั้งหมด' }).click();
+  await expect.poll(async () => page.evaluate(async (i) => (await (await fetch(`/bff/v1/docs/TI/${i}`)).json()).replacedById as string | undefined, oldId)).toBeTruthy();
+  const newId = await page.evaluate(async (i) => (await (await fetch(`/bff/v1/docs/TI/${i}`)).json()).replacedById as string, oldId);
+  await expect(page).toHaveURL(new RegExp(`/sales/tax-invoices/${newId}$`)); // lands on the new invoice, never on the replaced one
   await page.getByRole('tab', { name: 'เอกสารที่เกี่ยวข้อง' }).click();
-  await expect(page.getByText(/ออกแทนโดย/).first()).toBeVisible();
+  await expect(page.getByText(/ออกแทน/).first()).toBeVisible();
 });
 
 test('lower amount → plan proposes a credit note', async ({ page }) => {

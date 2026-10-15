@@ -2,7 +2,7 @@ import type { Actor, Allocation, ChainEdge, CorrectionNote, CorrectionPlan, Corr
 import { PERMISSIONS_BY_ROLE } from '../permissions';
 import type { MockState } from '../store';
 import {
-  type Body, LIVE, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, keepNoteLines, markReplaced, refuseBelowSettled, refuseNonPositive, refusePartyChange, refuseUnissuableReceipt, reissue, revise, totalsOf,
+  type Body, LIVE, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, keepNoteLines, markReplaced, refuseBelowSettled, refuseNonPositive, refusePartyChange, refuseUnissuableReceipt, reissue, revise, stableJson, totalsOf,
 } from './commands';
 import { MockError, today } from './log';
 import { fromSatang, toSatang } from './money';
@@ -104,7 +104,8 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
     const newTotal = toSatang(totalsOf(st, d.companyId, d.type, keepNoteLines(d, proposed), d.id).total); // a note's own earlier VAT is not its predecessor; unchanged lines keep it (F4) // a note's own earlier VAT is not its predecessor
     const delta = newTotal - toSatang(d.totals.total);
     const partyChanged = proposed.header.partyId !== d.header.partyId;
-    const contentChanged = JSON.stringify(proposed.lines) !== JSON.stringify(d.lines) || !!proposed.header.priceIncludesVat !== !!d.header.priceIncludesVat;
+    const contentChanged = JSON.stringify(proposed.lines) !== JSON.stringify(d.lines) || !!proposed.header.priceIncludesVat !== !!d.header.priceIncludesVat
+      || stableJson(proposed.header.dimensions ?? {}) !== stableJson(d.header.dimensions ?? {}); // a dimension change re-posts the journal: the invoice is reissued
     /** Adds the CN / DN step with the amount the engine will post; false = nothing to adjust (no step shown). */
     const note = (full: boolean) => {
       const ns = noteFor(d, proposed, full, vatOf(st, d.companyId));
