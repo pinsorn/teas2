@@ -6,8 +6,9 @@ import { itemsHandlers } from './items';
 import { meHandlers } from './me';
 import { mockFixturesHandlers } from './mock-fixtures';
 import { partiesHandlers } from './parties';
+import { recordsHandlers } from './records';
 import { reportsHandlers } from './reports';
 import { searchHandlers } from './search';
 
 export * from './common';
-export const handlers = [...meHandlers, ...homeHandlers, ...partiesHandlers, ...itemsHandlers, ...docsReadHandlers, ...docsWriteHandlers, ...financeRefsHandlers, ...reportsHandlers, ...searchHandlers, ...mockFixturesHandlers];
+export const handlers = [...meHandlers, ...homeHandlers, ...partiesHandlers, ...recordsHandlers, ...itemsHandlers, ...docsReadHandlers, ...docsWriteHandlers, ...financeRefsHandlers, ...reportsHandlers, ...searchHandlers, ...mockFixturesHandlers];

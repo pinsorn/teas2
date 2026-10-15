@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { OpenItem } from '@/domain/types';
+import { toSatang } from '../engine/money';
 import { fixtureIds } from '../fixtures/ids';
 import { setSettings } from '../settings';
 import { loadState, resetState, saveState } from '../store';
@@ -16,7 +17,8 @@ describe('GET /docs/open-items', () => {
   it('lists the party live documents with an outstanding balance, oldest first, outstanding as the server string', async () => {
     const r = await get('/docs/open-items?partyId=pc-01&types=TI,IV');
     expect(r.status).toBe(200);
-    const items = (await r.json()) as OpenItem[];
+    const body = (await r.json()) as { items: OpenItem[]; total: string };
+    const items = body.items;
     const st = loadState();
     const expected = st.docs.filter((d) => d.type === 'TI' && d.header.partyId === 'pc-01' && ['issued', 'partly_settled'].includes(d.status) && Number(d.outstanding) !== 0);
     expect(items.length).toBe(expected.length);
@@ -24,9 +26,11 @@ describe('GET /docs/open-items', () => {
     for (const i of items) expect(i).toMatchObject({ type: 'TI', outstanding: st.docs.find((d) => d.id === i.id)!.outstanding, total: st.docs.find((d) => d.id === i.id)!.totals.total });
     expect(items.map((i) => i.documentDate)).toEqual([...items.map((i) => i.documentDate)].sort());
     expect(items.map((i) => i.id)).toContain(fixtureIds(st).rcTargetsA);
+    // the total is the server's sum of the very rows it returned (the browser never adds money)
+    expect(toSatang(body.total)).toBe(items.reduce((a, i) => a + toSatang(i.outstanding), 0));
   });
   it('excludes settled, replaced and draft documents and other parties', async () => {
-    const items = (await (await get('/docs/open-items?partyId=pc-01&types=TI')).json()) as OpenItem[];
+    const items = ((await (await get('/docs/open-items?partyId=pc-01&types=TI')).json()) as { items: OpenItem[] }).items;
     const st = loadState();
     for (const i of items) {
       const d = st.docs.find((x) => x.id === i.id)!;
@@ -39,13 +43,13 @@ describe('GET /docs/open-items', () => {
     const cn = st.docs.find((d) => d.type === 'CN')!;
     st.links.push({ companyId: ti.companyId, from: cn.id, to: ti.id, kind: 'adjusts', amount: '10.00', active: true });
     saveState(st);
-    const items = (await (await get(`/docs/open-items?partyId=${ti.header.partyId}&types=TI`)).json()) as OpenItem[];
+    const items = ((await (await get(`/docs/open-items?partyId=${ti.header.partyId}&types=TI`)).json()) as { items: OpenItem[] }).items;
     expect(items.find((i) => i.id === ti.id)?.outstanding).toBe('-10.00');
   });
   it('a type the company cannot use is skipped (IV for a VAT company), not an error', async () => {
     const r = await get('/docs/open-items?partyId=pc-01&types=IV');
     expect(r.status).toBe(200);
-    expect(await r.json()).toEqual([]);
+    expect(await r.json()).toEqual({ items: [], total: '0.00' });
   });
   it('422 without a party or with a type that carries no balance; 403 without the read permission; screen states apply', async () => {
     expect((await get('/docs/open-items?types=TI')).status).toBe(422);

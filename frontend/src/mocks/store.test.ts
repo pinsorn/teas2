@@ -44,11 +44,11 @@ describe('mock store', () => {
   it('seeds the fixtures later tasks depend on', () => {
     const s = seed();
     const vat = s.parties.filter((p) => p.companyId === 'co-vat');
-    expect(vat.filter((p) => p.kind === 'customer')).toHaveLength(12);
-    expect(vat.filter((p) => p.kind === 'vendor')).toHaveLength(10);
+    expect(vat.filter((p) => p.kind === 'customer')).toHaveLength(13); // + pc-13 (inactive, M1)
+    expect(vat.filter((p) => p.kind === 'vendor')).toHaveLength(11); // + pv-11 (foreign, M1)
     expect(s.items.filter((i) => i.companyId === 'co-vat')).toHaveLength(20);
     const nonvat = s.parties.filter((p) => p.companyId === 'co-nonvat');
-    expect([nonvat.filter((p) => p.kind === 'customer').length, nonvat.filter((p) => p.kind === 'vendor').length]).toEqual([8, 6]);
+    expect([nonvat.filter((p) => p.kind === 'customer').length, nonvat.filter((p) => p.kind === 'vendor').length]).toEqual([9, 6]); // + nc-09 (inactive, M1)
     expect(s.items.filter((i) => i.companyId === 'co-nonvat')).toHaveLength(12);
     const nava = vat.find((p) => p.name === 'บริษัท นาวาพาณิชย์ จำกัด')!;
     expect([nava.taxId, nava.branchCode, nava.usualItemIds]).toEqual(['0105568024684', '00000', ['SV-01']]);

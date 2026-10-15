@@ -6,7 +6,7 @@ import { ctx, screenGate } from './common';
 /** Page hits; a document list is linked through the registry and dropped when its screens are not built / not available. */
 const PAGES: { label: string; href?: string; type?: DocType }[] = [
   { label: 'หน้าหลัก', href: '/' }, { label: 'ใบกำกับภาษี', type: 'TI' }, { label: 'ใบเสนอราคา', type: 'QT' },
-  { label: 'ใบเสร็จรับเงิน', type: 'RC' }, { label: 'ลูกค้า', href: '/contacts/customers' }, { label: 'สินค้าและบริการ', href: '/items' },
+  { label: 'ใบเสร็จรับเงิน', type: 'RC' }, { label: 'ลูกค้า', href: '/master/customers' }, { label: 'สินค้าและบริการ', href: '/items' },
 ];
 
 export const searchHandlers = [
@@ -21,7 +21,7 @@ export const searchHandlers = [
       .slice(0, 5).map((d) => ({ kind: 'doc', id: d.id, label: `${d.number} · ${d.party?.name ?? ''}`, href: docViewHref(d.type, d.id) }));
     const parties: SearchHit[] = perms.includes('party.read')
       ? st.parties.filter((p) => p.companyId === company.id && p.name.toLowerCase().includes(q)).slice(0, 5)
-        .map((p) => ({ kind: 'party', id: p.id, label: p.name, href: `/contacts/${p.kind === 'customer' ? 'customers' : 'vendors'}/${p.id}` }))
+        .map((p) => ({ kind: 'party', id: p.id, label: p.name, href: `/master/${p.kind === 'customer' ? 'customers' : 'vendors'}/${p.id}` }))
       : [];
     const pages: SearchHit[] = PAGES.filter((p) => p.label.toLowerCase().includes(q))
       .map((p) => ({ label: p.label, href: p.type ? docListHref(p.type, company.vatRegistered) : p.href }))

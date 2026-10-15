@@ -18,7 +18,8 @@ export interface MockState {
   version: 4;
   companies: Company[];
   memberships: (Membership & { userId: string })[];
-  parties: (PartySummary & { companyId: string })[];
+  /** `active` (default true) and `version` (default 1) are the master record's; documents keep their own party snapshot. */
+  parties: (PartySummary & { companyId: string; active?: boolean; version?: number })[];
   items: (ItemSummary & { companyId: string })[];
   docs: (Doc & { companyId: string })[];
   links: (ChainEdge & { companyId: string })[];

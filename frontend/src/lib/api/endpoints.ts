@@ -1,7 +1,8 @@
 import type {
   ActivityEntry, Allocation, ChainGraph, ComputeResult, CorrectionPlan, CorrectionResult, Doc, DocHeader, DocLine, DocSummary,
-  DocType, HomeInbox, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, Revision, SearchHit,
+  DocType, HomeInbox, Money, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, Revision, SearchHit,
 } from '@/domain/types';
+import type { RecordKind, RecordRow } from '@/domain/records';
 import type { ReportKind, ReportModel } from '@/domain/reports';
 import { api, ApiError, normalizeProblem } from './client';
 
@@ -49,9 +50,20 @@ export const endpoints = {
   getActivity: (type: DocType, id: string) => api<ActivityEntry[]>('GET', `${d(type, id)}/activity`),
   getRevisions: (type: DocType, id: string) => api<Revision[]>('GET', `${d(type, id)}/revisions`),
   getLedger: (type: DocType, id: string) => api<JournalPreview>('GET', `${d(type, id)}/ledger`),
-  openItems: (p: { partyId: string; types: DocType[] }) => api<OpenItem[]>('GET', `/docs/open-items${qs({ partyId: p.partyId, types: p.types.join(',') })}`),
+  openItems: (p: { partyId: string; types: DocType[] }) => api<{ items: OpenItem[]; total: Money }>('GET', `/docs/open-items${qs({ partyId: p.partyId, types: p.types.join(',') })}`),
   bankAccounts: () => api<BankAccountRef[]>('GET', '/bank-accounts'),
   whtTypes: () => api<WhtTypeRef[]>('GET', '/wht-types'),
+  /** Every document of one party, across the types the role can read. */
+  docsByParty: (partyId: string) => api<Page<DocSummary>>('GET', `/docs/by-party/${encodeURIComponent(partyId)}`),
+  listRecords: (kind: RecordKind, p: { q?: string; active?: 'true' | 'false' | 'all'; limit?: number; cursor?: string; [k: string]: string | number | undefined }) =>
+    api<Page<RecordRow>>('GET', `/records/${kind}${qs(p)}`),
+  getRecord: (kind: RecordKind, id: string) => api<RecordRow>('GET', `/records/${kind}/${encodeURIComponent(id)}`),
+  createRecord: (kind: RecordKind, values: Record<string, unknown>, idempotencyKey: string) =>
+    api<RecordRow>('POST', `/records/${kind}`, values, { idempotencyKey }),
+  updateRecord: (kind: RecordKind, id: string, values: Record<string, unknown>, version: number) =>
+    api<RecordRow>('PUT', `/records/${kind}/${encodeURIComponent(id)}`, { ...values, version }),
+  setRecordActive: (kind: RecordKind, id: string, active: boolean, version: number) =>
+    api<RecordRow>('POST', `/records/${kind}/${encodeURIComponent(id)}/active`, { active, version }),
   getReport: (kind: ReportKind, params: Record<string, string>) => api<ReportModel>('GET', `/reports/${kind}${qs(params)}`),
   /** The CSV the server builds for the same parameters (text/csv, BOM, CRLF). */
   exportReport: async (kind: ReportKind, params: Record<string, string>): Promise<Blob> => {

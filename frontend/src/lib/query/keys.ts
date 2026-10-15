@@ -1,3 +1,4 @@
+import type { RecordKind } from '@/domain/records';
 import type { ReportKind } from '@/domain/reports';
 import type { DocType } from '@/domain/types';
 
@@ -15,5 +16,9 @@ export const qk = {
   openItems: (c: string, partyId: string, types: string) => [c, 'open-items', partyId, types] as const,
   bankAccounts: (c: string) => [c, 'bank-accounts'] as const,
   report: (c: string, kind: ReportKind, params: Record<string, string>) => [c, 'report', kind, params] as const,
+  records: (c: string, kind: RecordKind, params: object) => [c, 'records', kind, params] as const,
+  record: (c: string, kind: RecordKind, id: string) => [c, 'record', kind, id] as const,
+  docsByParty: (c: string, partyId: string) => [c, 'docs-by-party', partyId] as const,
+  itemOptions: (c: string) => [c, 'item-options'] as const,
   whtTypes: (c: string) => [c, 'wht-types'] as const,
 };

@@ -32,7 +32,7 @@ export type SeedDoc = Doc & { companyId: string };
 
 export function buildDocs(parties: SeedParty[], items: SeedItem[]) {
   const companyId = 'co-vat';
-  const customers = parties.filter((p) => p.companyId === companyId && p.kind === 'customer');
+  const customers = parties.filter((p) => p.companyId === companyId && p.kind === 'customer' && p.active !== false); // inactive masters are never picked: the seed's index maths stay put
   const item = (id: string) => items.find((i) => i.id === id)!;
   const specs: Spec[] = [];
   const add = (s: Omit<Spec, 'order'>) => { const full = { ...s, order: specs.length }; specs.push(full); return full; };

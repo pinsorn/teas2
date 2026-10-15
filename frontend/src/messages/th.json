@@ -276,6 +276,9 @@
       "print": "พิมพ์ใบกำกับภาษี",
       "printLong": "พิมพ์ใบกำกับภาษี 60 รายการ",
       "trialBalance": "งบทดลอง",
+      "customers": "ลูกค้า รายการ",
+      "customerView": "ลูกค้า รายละเอียด",
+      "vendors": "ผู้ขาย รายการ",
       "styleGuide": "คู่มือการออกแบบ"
     },
     "state": { "normal": "ปกติ", "empty": "ไม่มีข้อมูล", "loading": "กำลังโหลด", "error": "เกิดข้อผิดพลาด", "forbidden": "ไม่มีสิทธิ์", "locked": "ถูกล็อก" },
@@ -518,6 +521,38 @@
     "tabs": { "label": "งบการเงิน", "tb": "งบทดลอง", "pl": "กำไรขาดทุน", "bs": "งบแสดงฐานะการเงิน", "gl": "บัญชีแยกประเภท" },
     "tb": { "title": "งบทดลอง", "code": "รหัสบัญชี", "name": "ชื่อบัญชี", "debit": "เดบิต", "credit": "เครดิต", "balanced": "เดบิตรวม {left} บาท เทียบกับเครดิตรวม {right} บาท" }
   },
+  "records": {
+    "common": {
+      "create": "เพิ่ม{title}", "editTitle": "แก้ไข{title}", "edit": "แก้ไข", "save": "บันทึก", "cancel": "ยกเลิก", "saving": "กำลังบันทึก",
+      "searchLabel": "ค้นหา", "activeLabel": "สถานะ", "activeTrue": "ใช้งาน", "activeFalse": "ปิดใช้งาน", "activeAll": "ทั้งหมด",
+      "clearFilters": "ล้างตัวกรอง", "noMatchTitle": "ไม่พบรายการที่ตรงกับตัวกรอง", "noMatchBody": "ลองเปลี่ยนคำค้นหรือสถานะ",
+      "loadMore": "โหลดเพิ่ม", "loadingMore": "กำลังโหลด", "yes": "ใช่", "no": "ไม่ใช่", "needManage": "ต้องมีสิทธิ์ {permission}",
+      "selectPlaceholder": "— เลือก —", "required": "ต้องระบุ", "tinInvalid": "เลขประจำตัวผู้เสียภาษีไม่ถูกต้อง (ตรวจสอบหลักสุดท้าย)",
+      "branchInvalid": "ต้องระบุสาขา 5 หลัก", "intInvalid": "ต้องเป็นจำนวนเต็มไม่น้อยกว่า 0",
+      "conflictTitle": "ข้อมูลนี้ถูกแก้ไขโดยผู้อื่นแล้ว", "conflictBody": "ค่าที่คุณกรอกยังอยู่ โหลดข้อมูลล่าสุดก่อน แล้วบันทึกอีกครั้ง",
+      "reload": "โหลดข้อมูลใหม่", "formError": "บันทึกไม่สำเร็จ", "deactivate": "ปิดใช้งาน", "activate": "เปิดใช้งาน",
+      "lockedAfterUse": "แก้ไม่ได้หลังจากใช้ในเอกสารแล้ว", "pickItems": "เลือกสินค้า/บริการ", "none": "ไม่มี"
+    },
+    "customer": { "title": "ลูกค้า", "search": "ค้นหารหัส ชื่อ หรือเลขประจำตัวผู้เสียภาษี", "empty": "ยังไม่มีลูกค้า" },
+    "vendor": { "title": "ผู้ขาย", "search": "ค้นหารหัส ชื่อ หรือเลขประจำตัวผู้เสียภาษี", "empty": "ยังไม่มีผู้ขาย" },
+    "fields": {
+      "entityKind": "ประเภทคู่ค้า", "code": "รหัส", "name": "ชื่อ", "nameEn": "ชื่อ (อังกฤษ)", "taxId": "เลขประจำตัวผู้เสียภาษี",
+      "branchCode": "สาขา", "vatRegistered": "จดทะเบียนภาษีมูลค่าเพิ่ม (VAT)", "address": "ที่อยู่ตามทะเบียน", "phone": "โทรศัพท์",
+      "email": "อีเมล", "paymentTermDays": "เครดิต (วัน)", "partyGroup": "กลุ่ม", "defaultWhtTypeCode": "อัตราหัก ณ ที่จ่ายเริ่มต้น",
+      "notes": "หมายเหตุ", "vatDRegistered": "จดทะเบียน VAT-D (ภ.พ.36 ไม่ต้องนำส่ง)", "bankName": "ธนาคาร", "bankAccountNo": "เลขที่บัญชี",
+      "bankAccountName": "ชื่อบัญชี", "usualItemIds": "สินค้าและบริการที่ซื้อบ่อย", "active": "สถานะ"
+    },
+    "options": {
+      "entityKind": { "individual": "บุคคลธรรมดา", "juristic": "นิติบุคคล", "foreign": "ต่างประเทศ" },
+      "partyGroup": { "general": "ทั่วไป", "major": "ลูกค้ารายใหญ่", "government": "หน่วยงานรัฐ", "foreign": "ต่างประเทศ" }
+    },
+    "view": {
+      "tabs": { "info": "ข้อมูล", "docs": "เอกสาร", "open": "ยอดค้าง" }, "tin": "เลขประจำตัวผู้เสียภาษี", "branch": "สาขา",
+      "notFoundTitle": "ไม่พบข้อมูลนี้", "notFoundBody": "ข้อมูลอาจถูกลบ หรืออยู่ในบริษัทอื่นที่ไม่ได้เลือกใช้งานอยู่",
+      "docsEmpty": "ยังไม่มีเอกสารของคู่ค้านี้", "openEmpty": "ไม่มียอดค้าง", "openTotal": "ยอดค้างรวม", "number": "เลขที่", "type": "ประเภท",
+      "date": "วันที่", "status": "สถานะ", "total": "ยอดรวม", "outstanding": "ค้างชำระ", "due": "ครบกำหนด"
+    }
+  },
   "permissions": {
     "doc_QT_read": "ดูใบเสนอราคา",
     "doc_QT_create": "สร้างใบเสนอราคา",
@@ -637,6 +672,7 @@
     "doc_OB_cancel": "ยกเลิกยอดยกมา",
     "doc_OB_correct": "แก้ไขยอดยกมาที่ออกแล้ว",
     "party_read": "ดูคู่ค้า",
+    "party_manage": "จัดการคู่ค้า",
     "item_read": "ดูสินค้า",
     "ledger_read": "ดูบัญชีแยกประเภท",
     "payroll_read": "ดูข้อมูลเงินเดือน",

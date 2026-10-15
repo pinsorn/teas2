@@ -13,7 +13,7 @@ export const partiesHandlers = [
     const q = (u.searchParams.get('q') ?? '').toLowerCase();
     const limit = Math.min(Number(u.searchParams.get('limit')) || 50, 200);
     const items = st.parties
-      .filter((p) => p.companyId === company.id && (!kind || p.kind === kind)
+      .filter((p) => p.companyId === company.id && p.active !== false && (!kind || p.kind === kind)
         && (!q || `${p.name} ${p.code} ${p.taxId ?? ''}`.toLowerCase().includes(q)))
       .slice(0, limit).map(({ companyId, ...p }) => { void companyId; return p as PartySummary; });
     return HttpResponse.json({ items } satisfies Page<PartySummary>);

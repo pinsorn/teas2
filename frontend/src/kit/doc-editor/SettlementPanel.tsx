@@ -86,7 +86,7 @@ function SettlementPanelInner({ descriptor: d, partyId, value, onChange, allocat
   }
 
   // open items first; an allocation whose target is no longer open still shows (so it can be unticked)
-  const open = q.data;
+  const open = q.data.items;
   const rows: { id: string; type: Allocation['targetType']; number: string; dueDate?: string; total?: string; outstanding?: string }[] = [
     ...open.map((i: OpenItem) => ({ id: i.id, type: i.type, number: i.number, dueDate: i.dueDate, total: i.total, outstanding: i.outstanding })),
     ...value.filter((a) => !open.some((i) => i.id === a.targetId)).map((a) => ({ id: a.targetId, type: a.targetType, number: a.targetNumber ?? a.targetId })),
