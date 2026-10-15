@@ -11,7 +11,8 @@ export interface FieldSpec { key: string; kind: FieldKind; labelKey: string; req
   showWhen?: FieldCondition; readOnlyAfterUse?: boolean; vat?: VatScope;
   /** Required when ANY of these holds. The server decides; the form only mirrors the shape. */ requiredWhen?: FieldCondition[];
   /** kind 'item': pick several. */ multiple?: boolean; defaultValue?: string | boolean }
-export interface RecordColumn { key: string; labelKey: string; align?: 'start' | 'end'; kind?: 'text' | 'money' | 'bool' | 'date' }
+export interface RecordColumn { key: string; labelKey: string; align?: 'start' | 'end'; kind?: 'text' | 'money' | 'bool' | 'date';
+  /** The value is a code: show the label `records.options.<optionKey>.<value>`. */ optionKey?: string }
 export interface RecordDescriptor { kind: RecordKind; basePath: string; titleKey: string; permissions: { read: string; manage: string };
   columns: RecordColumn[]; fields: FieldSpec[]; detail: boolean; vat?: VatScope; searchPlaceholderKey: string }
 export interface RecordRow { id: string; version: number; active: boolean; inUse?: boolean; [field: string]: unknown }

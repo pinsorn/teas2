@@ -90,6 +90,7 @@ function RecordListInner({ descriptor: d }: { descriptor: RecordDescriptor }) {
     const v = r[c.key];
     if (c.key === 'active') return v ? tr('activeTrue') : <span className="text-muted-foreground">{tr('activeFalse')}</span>;
     if (v === undefined || v === null || v === '') return <span aria-hidden className="text-muted-foreground">–</span>;
+    if (c.optionKey) return t(`records.options.${c.optionKey}.${String(v)}`);
     if (c.kind === 'bool') return v ? tr('yes') : tr('no');
     if (c.kind === 'money') return formatMoney(String(v));
     if (c.kind === 'date') return formatDateBE(String(v));

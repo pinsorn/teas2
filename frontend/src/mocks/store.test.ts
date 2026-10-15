@@ -41,11 +41,12 @@ describe('mock store', () => {
     expect(by('replaced')).toBeGreaterThanOrEqual(1);
     expect(tis.some((d) => d.createdBy.kind === 'agent')).toBe(true);
   });
-  it('a browser holding the previous (v4) persisted state is reseeded and picks up the master-data parties', () => {
-    const old = { ...seed(), version: 4, parties: [] as unknown[] };
-    localStorage.setItem('teas2.mock.state.v4', JSON.stringify(old));
+  it('a browser holding the previous (v5) persisted state is reseeded and picks up the purchase items', () => {
+    const old = { ...seed(), version: 5, items: [] as unknown[] };
+    localStorage.setItem('teas2.mock.state.v5', JSON.stringify(old));
     const s = loadState();
-    expect(s.version).toBe(5);
+    expect(s.version).toBe(6);
+    expect(s.items.some((i) => i.id === 'EXP-01')).toBe(true);
     expect(s.parties.some((p) => p.id === 'pv-12')).toBe(true);
   });
   it('seeds the fixtures later tasks depend on', () => {
@@ -53,10 +54,10 @@ describe('mock store', () => {
     const vat = s.parties.filter((p) => p.companyId === 'co-vat');
     expect(vat.filter((p) => p.kind === 'customer')).toHaveLength(13); // + pc-13 (inactive, M1)
     expect(vat.filter((p) => p.kind === 'vendor')).toHaveLength(11); // + pv-12 (foreign, M1)
-    expect(s.items.filter((i) => i.companyId === 'co-vat')).toHaveLength(20);
+    expect(s.items.filter((i) => i.companyId === 'co-vat')).toHaveLength(28); // 20 sales + 8 purchase (M2)
     const nonvat = s.parties.filter((p) => p.companyId === 'co-nonvat');
     expect([nonvat.filter((p) => p.kind === 'customer').length, nonvat.filter((p) => p.kind === 'vendor').length]).toEqual([9, 6]); // + nc-09 (inactive, M1)
-    expect(s.items.filter((i) => i.companyId === 'co-nonvat')).toHaveLength(12);
+    expect(s.items.filter((i) => i.companyId === 'co-nonvat')).toHaveLength(15); // 12 sales + 3 purchase (M2)
     const nava = vat.find((p) => p.name === 'บริษัท นาวาพาณิชย์ จำกัด')!;
     expect([nava.taxId, nava.branchCode, nava.usualItemIds]).toEqual(['0105568024684', '00000', ['SV-01']]);
     expect(vat.find((p) => p.name === 'บริษัท ปิ่นทองการพิมพ์ จำกัด')?.taxId).toBe('0105565077124');

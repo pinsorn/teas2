@@ -279,6 +279,7 @@
       "customers": "Customers list",
       "customerView": "Customer detail",
       "vendors": "Vendors list",
+      "items": "Items list",
       "styleGuide": "Style guide"
     },
     "state": { "normal": "Normal", "empty": "Empty", "loading": "Loading", "error": "Error", "forbidden": "Forbidden", "locked": "Locked" },
@@ -372,6 +373,8 @@
     "partyHint": "Type a name or code, then press Enter to pick",
     "searchFailed": "Search failed. Try typing again.",
     "noMatch": "No match. You can keep the text you typed.",
+    "noMatchNeedManage": "No match. You need {permission} to add a new {party}.",
+    "quickCreate": "+ Add {party} “{name}”",
     "results": "{count} results",
   "staleConfirm": "The document changed while confirming. Nothing was issued. Check the totals and confirm again.",
   "searching": "Searching…",
@@ -535,16 +538,23 @@
     },
     "customer": { "title": "Customers", "search": "Search code, name or tax ID", "empty": "No customers yet" },
     "vendor": { "title": "Vendors", "search": "Search code, name or tax ID", "empty": "No vendors yet" },
+    "item": { "title": "Items and services", "search": "Search code or name", "empty": "No items or services yet" },
     "fields": {
       "entityKind": "Party type", "code": "Code", "name": "Name", "nameEn": "Name (English)", "taxId": "Tax ID",
       "branchCode": "Branch", "vatRegistered": "VAT registered", "address": "Registered address", "phone": "Phone",
       "email": "Email", "paymentTermDays": "Credit (days)", "partyGroup": "Group", "defaultWhtTypeCode": "Default withholding rate",
       "notes": "Notes", "vatDRegistered": "VAT-D registered (no PP.36 filing)", "bankName": "Bank", "bankAccountNo": "Account number",
-      "bankAccountName": "Account name", "usualItemIds": "Items usually bought", "active": "Status"
+      "bankAccountName": "Account name", "usualItemIds": "Items usually bought", "active": "Status",
+      "kind": "Type", "unit": "Unit", "unitPrice": "Unit price", "taxCode": "VAT", "whtTypeCode": "Withholding type",
+      "usage": "Used for", "usageSales": "Use on sales documents", "usagePurchase": "Use on purchase documents", "expenseCategory": "Expense category"
     },
     "options": {
       "entityKind": { "individual": "Individual", "juristic": "Company", "foreign": "Foreign" },
-      "partyGroup": { "general": "General", "major": "Key account", "government": "Government", "foreign": "Foreign" }
+      "partyGroup": { "general": "General", "major": "Key account", "government": "Government", "foreign": "Foreign" },
+      "itemKind": { "good": "Goods", "service": "Service" },
+      "taxCode": { "S7": "VAT 7%", "Z0": "VAT 0%", "EX": "VAT exempt" },
+      "itemUsage": { "sales": "Sales", "purchase": "Purchases", "both": "Sales and purchases" },
+      "expenseCategory": { "rent": "Rent", "services": "Services", "advertising": "Advertising", "transport": "Transport", "entertainment": "Entertainment (input VAT not recoverable)", "supplies": "Supplies", "capex-equipment": "Asset purchase (equipment)", "cost-of-sales": "Cost of sales" }
     },
     "view": {
       "tabs": { "info": "Details", "docs": "Documents", "open": "Outstanding" }, "tin": "Tax ID", "branch": "Branch",
@@ -674,6 +684,7 @@
     "party_read": "Read parties",
     "party_manage": "Manage parties",
     "item_read": "Read items",
+    "item_manage": "Manage items and services",
     "ledger_read": "Read ledger",
     "payroll_read": "Read payroll data",
     "audit_read": "Read audit trail",

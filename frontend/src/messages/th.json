@@ -279,6 +279,7 @@
       "customers": "ลูกค้า รายการ",
       "customerView": "ลูกค้า รายละเอียด",
       "vendors": "ผู้ขาย รายการ",
+      "items": "สินค้า/บริการ รายการ",
       "styleGuide": "คู่มือการออกแบบ"
     },
     "state": { "normal": "ปกติ", "empty": "ไม่มีข้อมูล", "loading": "กำลังโหลด", "error": "เกิดข้อผิดพลาด", "forbidden": "ไม่มีสิทธิ์", "locked": "ถูกล็อก" },
@@ -372,6 +373,8 @@
     "partyHint": "พิมพ์ชื่อหรือรหัส แล้วกด Enter เพื่อเลือก",
     "searchFailed": "ค้นหาไม่สำเร็จ ลองพิมพ์ใหม่อีกครั้ง",
     "noMatch": "ไม่พบรายการที่ตรงกัน ใช้ข้อความที่พิมพ์ต่อไปได้",
+    "noMatchNeedManage": "ไม่พบรายการที่ตรงกัน ต้องมีสิทธิ์ {permission} จึงจะเพิ่ม{party}ใหม่ได้",
+    "quickCreate": "+ เพิ่ม{party} “{name}”",
     "results": "พบ {count} รายการ",
   "staleConfirm": "ข้อมูลเปลี่ยนไประหว่างยืนยัน ยังไม่ได้ออกเอกสาร ตรวจยอดแล้วยืนยันอีกครั้ง",
   "searching": "กำลังค้นหา…",
@@ -535,16 +538,23 @@
     },
     "customer": { "title": "ลูกค้า", "search": "ค้นหารหัส ชื่อ หรือเลขประจำตัวผู้เสียภาษี", "empty": "ยังไม่มีลูกค้า" },
     "vendor": { "title": "ผู้ขาย", "search": "ค้นหารหัส ชื่อ หรือเลขประจำตัวผู้เสียภาษี", "empty": "ยังไม่มีผู้ขาย" },
+    "item": { "title": "สินค้า/บริการ", "search": "ค้นหารหัสหรือชื่อ", "empty": "ยังไม่มีสินค้าหรือบริการ" },
     "fields": {
       "entityKind": "ประเภทคู่ค้า", "code": "รหัส", "name": "ชื่อ", "nameEn": "ชื่อ (อังกฤษ)", "taxId": "เลขประจำตัวผู้เสียภาษี",
       "branchCode": "สาขา", "vatRegistered": "จดทะเบียนภาษีมูลค่าเพิ่ม (VAT)", "address": "ที่อยู่ตามทะเบียน", "phone": "โทรศัพท์",
       "email": "อีเมล", "paymentTermDays": "เครดิต (วัน)", "partyGroup": "กลุ่ม", "defaultWhtTypeCode": "อัตราหัก ณ ที่จ่ายเริ่มต้น",
       "notes": "หมายเหตุ", "vatDRegistered": "จดทะเบียน VAT-D (ภ.พ.36 ไม่ต้องนำส่ง)", "bankName": "ธนาคาร", "bankAccountNo": "เลขที่บัญชี",
-      "bankAccountName": "ชื่อบัญชี", "usualItemIds": "สินค้าและบริการที่ซื้อบ่อย", "active": "สถานะ"
+      "bankAccountName": "ชื่อบัญชี", "usualItemIds": "สินค้าและบริการที่ซื้อบ่อย", "active": "สถานะ",
+      "kind": "ประเภท", "unit": "หน่วย", "unitPrice": "ราคาต่อหน่วย", "taxCode": "ภาษีมูลค่าเพิ่ม", "whtTypeCode": "ประเภทภาษีหัก ณ ที่จ่าย",
+      "usage": "การใช้งาน", "usageSales": "ใช้ในเอกสารขาย", "usagePurchase": "ใช้ในเอกสารซื้อ", "expenseCategory": "หมวดค่าใช้จ่าย"
     },
     "options": {
       "entityKind": { "individual": "บุคคลธรรมดา", "juristic": "นิติบุคคล", "foreign": "ต่างประเทศ" },
-      "partyGroup": { "general": "ทั่วไป", "major": "ลูกค้ารายใหญ่", "government": "หน่วยงานรัฐ", "foreign": "ต่างประเทศ" }
+      "partyGroup": { "general": "ทั่วไป", "major": "ลูกค้ารายใหญ่", "government": "หน่วยงานรัฐ", "foreign": "ต่างประเทศ" },
+      "itemKind": { "good": "สินค้า", "service": "บริการ" },
+      "taxCode": { "S7": "VAT 7%", "Z0": "VAT 0%", "EX": "ยกเว้น VAT" },
+      "itemUsage": { "sales": "ขาย", "purchase": "ซื้อ", "both": "ขายและซื้อ" },
+      "expenseCategory": { "rent": "ค่าเช่า", "services": "ค่าบริการ", "advertising": "ค่าโฆษณา", "transport": "ค่าขนส่ง", "entertainment": "ค่ารับรอง (ภาษีซื้อขอคืนไม่ได้)", "supplies": "ค่าวัสดุสิ้นเปลือง", "capex-equipment": "ซื้อสินทรัพย์ (อุปกรณ์)", "cost-of-sales": "ต้นทุนขาย" }
     },
     "view": {
       "tabs": { "info": "ข้อมูล", "docs": "เอกสาร", "open": "ยอดค้าง" }, "tin": "เลขประจำตัวผู้เสียภาษี", "branch": "สาขา",
@@ -674,6 +684,7 @@
     "party_read": "ดูคู่ค้า",
     "party_manage": "จัดการคู่ค้า",
     "item_read": "ดูสินค้า",
+    "item_manage": "จัดการสินค้าและบริการ",
     "ledger_read": "ดูบัญชีแยกประเภท",
     "payroll_read": "ดูข้อมูลเงินเดือน",
     "audit_read": "ดูประวัติการตรวจสอบ",

@@ -19,6 +19,8 @@ export interface RecordFormProps {
   descriptor: RecordDescriptor;
   /** Present = edit this record; absent = create. */
   row?: RecordRow;
+  /** Create only: starting values for the form (e.g. the name typed in a document editor). */
+  prefill?: Record<string, unknown>;
   onSaved: (row: RecordRow) => void;
   onCancel: () => void;
 }
@@ -28,10 +30,12 @@ export function RecordForm(props: RecordFormProps) {
   return <RecordFormInner key={useCompanyEpoch()} {...props} />;
 }
 
-function RecordFormInner({ descriptor: d, row: given, onSaved, onCancel }: RecordFormProps) {
+function RecordFormInner({ descriptor: desc, row: given, prefill, onSaved, onCancel }: RecordFormProps) {
   const tc = useTranslations('records.common');
   const qc = useQueryClient();
   const { me } = useMe();
+  // a field limited to one VAT scope is not offered in the other kind of company (the server ignores it there)
+  const d = useMemo(() => ({ ...desc, fields: desc.fields.filter((f) => !f.vat || f.vat === 'both' || (f.vat === 'vat-only') === (me?.vatRegistered !== false)) }), [desc, me?.vatRegistered]);
   const idempotencyKey = useRef(crypto.randomUUID());
   const [conflict, setConflict] = useState(false);
   // After a conflict the reload fetches the record itself: the caller's row may be a stale list snapshot, the version must come from the server.
@@ -43,7 +47,7 @@ function RecordFormInner({ descriptor: d, row: given, onSaved, onCancel }: Recor
   const schema = useMemo(() => z.record(z.string(), z.unknown()).superRefine((v, ctx) => {
     for (const [key, message] of Object.entries(validateShape(d.fields, v, msg))) ctx.addIssue({ code: 'custom', path: [key], message });
   }), [d.fields, msg]);
-  const form = useForm<FieldValues>({ resolver: zodResolver(schema), defaultValues: defaultsOf(d.fields, row) });
+  const form = useForm<FieldValues>({ resolver: zodResolver(schema), defaultValues: defaultsOf(d.fields, row ?? prefill) });
   const { handleSubmit, setError, setFocus, control, formState: { errors } } = form;
   const values = useWatch({ control }) as Record<string, unknown>;
 
@@ -107,14 +111,14 @@ function RecordFormInner({ descriptor: d, row: given, onSaved, onCancel }: Recor
 }
 
 /** The form in a modal named "เพิ่ม<title>" / "แก้ไข<title>"; closing (Esc, ×, Cancel) drops the typed values. */
-export function RecordFormDialog({ descriptor: d, row, onSaved, onClose }: Omit<RecordFormProps, 'onCancel'> & { onClose: () => void }) {
+export function RecordFormDialog({ descriptor: d, row, prefill, onSaved, onClose }: Omit<RecordFormProps, 'onCancel'> & { onClose: () => void }) {
   const t = useTranslations();
   const title = t(d.titleKey);
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent aria-describedby={undefined} className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader><DialogTitle>{t(row ? 'records.common.editTitle' : 'records.common.create', { title })}</DialogTitle></DialogHeader>
-        <RecordForm descriptor={d} row={row} onSaved={onSaved} onCancel={onClose} />
+        <RecordForm descriptor={d} row={row} prefill={prefill} onSaved={onSaved} onCancel={onClose} />
       </DialogContent>
     </Dialog>
   );

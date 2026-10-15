@@ -1,6 +1,7 @@
 import type { VatScope } from '@/domain/doc-types';
 import type { RecordKind, RecordRow } from '@/domain/records';
 import type { MockState } from '../store';
+import { itemImpl } from './items';
 import { partyImpl } from './parties';
 
 /** One implementation per record kind: the handlers in `handlers/records.ts` are generic over this. */
@@ -18,4 +19,4 @@ export interface RecordKindImpl {
   canDeactivate?: (st: MockState, companyId: string, id: string) => string | undefined;
 }
 
-export const RECORD_IMPLS: Partial<Record<RecordKind, RecordKindImpl>> = { customer: partyImpl('customer'), vendor: partyImpl('vendor') };
+export const RECORD_IMPLS: Partial<Record<RecordKind, RecordKindImpl>> = { customer: partyImpl('customer'), vendor: partyImpl('vendor'), item: itemImpl };

@@ -6,7 +6,7 @@ import { ctx, screenGate } from './common';
 /** Page hits; a document list is linked through the registry and dropped when its screens are not built / not available. */
 const PAGES: { label: string; href?: string; type?: DocType }[] = [
   { label: 'หน้าหลัก', href: '/' }, { label: 'ใบกำกับภาษี', type: 'TI' }, { label: 'ใบเสนอราคา', type: 'QT' },
-  { label: 'ใบเสร็จรับเงิน', type: 'RC' }, { label: 'ลูกค้า', href: '/master/customers' }, { label: 'สินค้าและบริการ', href: '/items' },
+  { label: 'ใบเสร็จรับเงิน', type: 'RC' }, { label: 'ลูกค้า', href: '/master/customers' }, { label: 'สินค้าและบริการ', href: '/master/items' },
 ];
 
 export const searchHandlers = [

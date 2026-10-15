@@ -2,7 +2,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { EyeIcon, ListTreeIcon } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
-import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
 import { useCompanyEpoch } from '@/app-shell/useCompanyEpoch';
 import { useMe } from '@/app-shell/useMe';
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -51,10 +51,11 @@ const addDays = (iso: string, n: number) => {
   const [y, m, d] = iso.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
 };
-const searchItems = (q: string) => endpoints.searchItems({ q, limit: 8 }).then((p) => p.items);
-async function itemById(id: string): Promise<ItemSummary | undefined> {
-  const hit = (await endpoints.searchItems({ q: id, limit: 5 })).items.find((i) => i.id === id);
-  return hit ?? (await endpoints.searchItems({ limit: 200 })).items.find((i) => i.id === id);
+/** Customer documents sell, everything else buys: the type-ahead offers only the items usable on that side. */
+type Usage = 'sales' | 'purchase';
+async function itemById(id: string, usage: Usage): Promise<ItemSummary | undefined> {
+  const hit = (await endpoints.searchItems({ q: id, limit: 5, usage })).items.find((i) => i.id === id);
+  return hit ?? (await endpoints.searchItems({ limit: 200, usage })).items.find((i) => i.id === id);
 }
 
 function ProblemBanner({ error, hint, action }: { error: unknown; hint?: string; action?: React.ReactNode }) {
@@ -133,6 +134,8 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
 
   const title = locale === 'en' ? d.titleEn : d.titleTh;
   const partyKind = d.partyKind;
+  const usage: Usage = partyKind === 'customer' ? 'sales' : 'purchase';
+  const searchItems = useCallback((q: string) => endpoints.searchItems({ q, limit: 8, usage }).then((p) => p.items), [usage]);
   const showLines = d.lineEditor !== 'none' && !(d.linesWhen === 'non-vat' && me?.vatRegistered !== false); // D-12: a VAT company's receipt settles invoices, it has no line grid
   const amountEditor = d.lineEditor === 'amount';
   const withholds = d.headerFields.includes('whtMode'); // only a document that pays out withholds tax from its lines
@@ -184,7 +187,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
     setPicking(true);
     const first = p.usualItemIds?.[0];
     let item: ItemSummary | undefined;
-    if (first && lines.length > 0 && isBlankLine(lines[0])) { try { item = await itemById(first); } catch { /* the prefill is a convenience */ } }
+    if (first && lines.length > 0 && isBlankLine(lines[0])) { try { item = await itemById(first, usage); } catch { /* the prefill is a convenience */ } }
     if (gen !== pickGen.current) return;
     setPicking(false);
     if (p.id !== header.partyId) setAllocations([]); // the ticked open items belong to the previous party
@@ -229,7 +232,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
           <section className="grid gap-4 rounded-xl bg-card p-4 ring-1 ring-foreground/10 md:grid-cols-2">
             {partyKind && (
               <div className="md:col-span-2">
-                <PartyField kind={partyKind} value={party} onPick={(p) => void onPickParty(p)}
+                <PartyField kind={partyKind} value={party} onPick={(p) => void onPickParty(p)} canCreate={me ? me.permissions.includes('party.manage') : undefined}
                   onPending={setPartyBusy} onClear={() => { pickGen.current++; setPicking(false); setParty(undefined); setAllocations([]); setHeader((h) => ({ ...h, partyId: undefined })); }}
                   search={(q) => endpoints.searchParties({ kind: partyKind === 'employee' ? undefined : partyKind, q, limit: 8 }).then((p) => p.items)} />
               </div>

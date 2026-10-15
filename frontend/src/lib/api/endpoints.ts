@@ -26,7 +26,7 @@ export const endpoints = {
   getHome: () => api<HomeInbox>('GET', '/home'),
   searchParties: (p: { kind?: 'customer' | 'vendor'; q?: string; limit?: number } = {}) =>
     api<Page<PartySummary>>('GET', `/parties${qs(p)}`),
-  searchItems: (p: { q?: string; limit?: number } = {}) => api<Page<ItemSummary>>('GET', `/items${qs(p)}`),
+  searchItems: (p: { q?: string; limit?: number; usage?: 'sales' | 'purchase' } = {}) => api<Page<ItemSummary>>('GET', `/items${qs(p)}`),
   search: (q: string) => api<{ items: SearchHit[] }>('GET', `/search${qs({ q })}`),
 
   listDocs: (type: DocType, params: ListDocsParams = {}) => api<Page<DocSummary>>('GET', `/docs/${type}${qs({ ...params })}`),

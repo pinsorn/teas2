@@ -7,7 +7,7 @@ import { LineGrid } from './LineGrid';
 
 const blank: DocLine = { id: 'l1', description: '', qty: '1', unit: '', unitPrice: '0.00', taxCode: 'S7' };
 const WHT = [{ code: 'SVC', nameTh: 'ค่าบริการ', rate: '3%', incomeType: '40(8)' }, { code: 'RENT', nameTh: 'ค่าเช่า', rate: '5%', incomeType: '40(5)' }];
-const svc: ItemSummary = { id: 'SV-01', code: 'SV-01', name: 'ถ่ายภาพ', kind: 'service', unit: 'งาน', unitPrice: '5000.00', taxCode: 'EX', whtTypeCode: 'SVC' };
+const svc: ItemSummary = { id: 'SV-01', code: 'SV-01', name: 'ถ่ายภาพ', kind: 'service', unit: 'งาน', unitPrice: '5000.00', taxCode: 'EX', whtTypeCode: 'SVC', usage: { sales: true, purchase: true } };
 
 function Host({ lines = [blank], spy, ...rest }: { lines?: DocLine[]; spy?: (l: DocLine[]) => void } & Partial<Parameters<typeof LineGrid>[0]>) {
   const [v, setV] = useState(lines);

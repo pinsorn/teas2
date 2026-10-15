@@ -88,10 +88,11 @@ export function useSuggest<T>(search: (q: string) => Promise<T[]>, onPick: (item
 export type Suggest<T> = ReturnType<typeof useSuggest<T>>;
 
 /** The list under the input, plus a polite live region: searching / N results / no results / failed. */
-export function SuggestList<T>({ s, label, render }: { s: Suggest<T>; label: string; render: (item: T) => ReactNode }) {
+export function SuggestList<T>({ s, label, render, noMatch }: { s: Suggest<T>; label: string; render: (item: T) => ReactNode; /** Replaces the "no match" text (e.g. to say what the user lacks to add one). */ noMatch?: string }) {
   const t = useTranslations('docEditor');
+  const none = noMatch ?? t('noMatch');
   const say = s.note === 'searching' ? t('searching') : s.note === 'done'
-    ? (s.failed ? t('searchFailed') : s.items.length ? t('results', { count: s.items.length }) : t('noMatch')) : '';
+    ? (s.failed ? t('searchFailed') : s.items.length ? t('results', { count: s.items.length }) : none) : '';
   return (
     <>
       <span role="status" className="sr-only">{say}</span>
@@ -109,7 +110,7 @@ export function SuggestList<T>({ s, label, render }: { s: Suggest<T>; label: str
             </ul>
           ) : (
             <p aria-hidden className={cn('px-2.5 py-2 text-small', s.failed ? 'text-destructive' : 'text-muted-foreground')}>
-              {s.failed ? t('searchFailed') : t('noMatch')}
+              {s.failed ? t('searchFailed') : none}
             </p>
           )}
         </div>

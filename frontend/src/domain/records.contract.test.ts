@@ -22,7 +22,7 @@ describe('record registry', () => {
   for (const [kind, r] of Object.entries(RECORDS)) it(`${kind} satisfies the contract`, () => {
     expect(checkRecord(r!)).toEqual([]); expect(recordByPath(r!.basePath)).toBe(r);
   });
-  it('M1 registers customers and vendors', () => expect(Object.keys(RECORDS).sort()).toEqual(['customer', 'vendor']));
+  it('registers customers, vendors and items', () => expect(Object.keys(RECORDS).sort()).toEqual(['customer', 'item', 'vendor']));
   it('the checker reports a broken record (can fail)', () => {
     expect(checkRecord({ ...RECORDS.customer!, permissions: { read: 'nope', manage: 'party.manage' }, titleKey: 'no.such' }))
       .toEqual(expect.arrayContaining(['read perm', 'msg:no.such']));
