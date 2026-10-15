@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { Doc } from '@/domain/types';
 import { assertBalanced, type Actor, type DocLine, type MockStateLike } from './test-helpers';
 import { seed } from '../store';
-import { cancel, convert, createDraft, issue, revise } from './commands';
+import { cancel, convert, createDraft, deleteDraft, issue, revise } from './commands';
 import { remainingOf, setMark } from './marks';
 
 const me: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
@@ -79,6 +79,44 @@ describe('marks (S1)', () => {
     const a = setMark(st, q.id, 'accepted', q.version, me);
     convert(st, q.id, 'SO', [{ sourceLineId: 'l1', qty: '1' }], me);
     expect(get(q.id).marks?.accepted).toEqual(a.marks?.accepted);
+  });
+  it('the stamp from a conversion leaves the same trail as a manual accept (activity + audit with before/after)', () => {
+    const q = qt();
+    const acts = st.activity.filter((a) => a.docId === q.id).length;
+    convert(st, q.id, 'SO', [{ sourceLineId: 'l1', qty: '1' }], me);
+    const log = st.activity.filter((a) => a.docId === q.id).slice(acts);
+    const acc = log.find((a) => a.action === 'accept')!;
+    expect(acc.detail).toMatch(/แปลง/);
+    expect(acc.actor).toEqual(me);
+    const aud = st.audit.filter((a) => a.command === 'doc.mark' && a.target === q.id);
+    expect(aud).toHaveLength(1);
+    expect(aud[0].before).toEqual({ marks: undefined });
+    expect((aud[0].after as { marks: { accepted: unknown } }).marks.accepted).toEqual(get(q.id).marks?.accepted);
+    convert(st, q.id, 'SO', [{ sourceLineId: 'l1', qty: '1' }], me); // already accepted: no second trail
+    expect(st.audit.filter((a) => a.command === 'doc.mark' && a.target === q.id)).toHaveLength(1);
+    expect(st.activity.filter((a) => a.docId === q.id && a.action === 'accept')).toHaveLength(1);
+  });
+  it('the stamp keeps the stored row intact (company, number, lines) and a held stale version is then refused', () => {
+    const q = qt();
+    const before = get(q.id);
+    convert(st, q.id, 'SO', [{ sourceLineId: 'l1', qty: '1' }], me);
+    const after = get(q.id);
+    expect(after.version).toBe(q.version + 1);
+    expect([after.companyId, after.number, after.status, after.lines, after.totals]).toEqual([before.companyId, before.number, before.status, before.lines, before.totals]);
+    expect(() => setMark(st, q.id, 'rejected', q.version, me, 'x')).toThrow(/doc.version_conflict/);
+    expect(() => cancel(st, q.id, q.version, 'OTHER', 'x', me)).toThrow(/doc.version_conflict/);
+  });
+  it('quantity comes back when the target draft is deleted or the target is cancelled', () => {
+    const q = qt();
+    const so = convert(st, q.id, 'SO', [{ sourceLineId: 'l1', qty: '4' }], me);
+    expect(remainingOf(st, q.id)[0].remaining).toBe('6');
+    deleteDraft(st, so.id, so.version, me);
+    expect(remainingOf(st, q.id)[0]).toMatchObject({ converted: '0', remaining: '10' });
+    const so2 = convert(st, q.id, 'SO', [{ sourceLineId: 'l1', qty: '10' }], me);
+    expect(remainingOf(st, q.id)[0].remaining).toBe('0');
+    const issued = issue(st, so2.id, so2.version, me);
+    cancel(st, so2.id, issued.version, 'OTHER', 'x', me);
+    expect(remainingOf(st, q.id)[0]).toMatchObject({ converted: '0', remaining: '10' });
   });
   it('marks never create a revision and never change totals', () => {
     const q = qt();

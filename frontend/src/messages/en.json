@@ -15,11 +15,11 @@
       "title": "Convert {doc}", "body": "Pick the target document and the quantity of each line. Enter 0 to leave a line out.", "target": "Target document",
       "colItem": "Item", "colUnit": "Unit", "colOrdered": "Total", "colConverted": "Converted", "colRemaining": "Remaining", "colQty": "Quantity to convert",
       "qty": "Quantity to convert, line {n}", "create": "Create {target}", "creating": "Creating…", "close": "Close",
-      "noTarget": "No target document is available to this company and permitted to you", "loadFailed": "Could not load the remaining quantities"
+      "noTarget": "No target document is available to this company and permitted to you", "badQty": "Invalid quantity: enter a number from 0 up (0 = leave this line out)", "loadFailed": "Could not load the remaining quantities"
     },
     "actions": {
       "label": "Actions", "issueDraft": "Save and issue…", "edit": "Edit", "print": "Print", "copy": "Copy as new",
-      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted"
+      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you"
     },
     "paper": { "notPrintable": "No paper form is available for this document type", "notIssued": "This document has not been issued, so it cannot be printed as a tax invoice. Issue it first.", "stub": "The document paper preview appears here", "snapshot": "Revision {n}" },
     "chain": {

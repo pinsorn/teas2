@@ -72,6 +72,55 @@ describe('I6 correction-plan needs the create permission', () => {
   });
 });
 
+describe('marks and remaining endpoints', () => {
+  const qt = (company = 'co-vat') => loadState().docs.find((x) => x.type === 'QT' && x.companyId === company && x.status === 'issued' && !x.marks)!;
+  const withoutPerm = async (role: 'operator' | 'accountant', perm: string, fn: () => Promise<void>) => {
+    const saved = PERMISSIONS_BY_ROLE[role];
+    PERMISSIONS_BY_ROLE[role] = saved.filter((p) => p !== perm);
+    try { setSettings({ role }); await fn(); } finally { PERMISSIONS_BY_ROLE[role] = saved; }
+  };
+  it('POST /marks: 403 naming doc.QT.issue without it, and nothing is written', async () => {
+    const q = qt();
+    await withoutPerm('accountant', 'doc.QT.issue', async () => {
+      const r = await call('POST', `/docs/QT/${q.id}/marks`, { mark: 'accepted', version: q.version });
+      expect(r.status).toBe(403);
+      expect(JSON.stringify(await r.json())).toContain('doc.QT.issue');
+    });
+    expect(loadState().docs.find((x) => x.id === q.id)!.marks).toBeUndefined();
+  });
+  it('GET /remaining: 403 naming doc.QT.read without it', async () => {
+    const q = qt();
+    await withoutPerm('accountant', 'doc.QT.read', async () => {
+      const r = await call('GET', `/docs/QT/${q.id}/remaining`);
+      expect(r.status).toBe(403);
+      expect(JSON.stringify(await r.json())).toContain('doc.QT.read');
+    });
+  });
+  it('a document of another company is 404 on both endpoints', async () => {
+    const other = qt('co-vat');
+    setSettings({ companyKey: 'nonvat', role: 'operator' });
+    expect((await call('POST', `/docs/QT/${other.id}/marks`, { mark: 'accepted', version: other.version })).status).toBe(404);
+    expect((await call('GET', `/docs/QT/${other.id}/remaining`)).status).toBe(404);
+    expect(loadState().docs.find((x) => x.id === other.id)!.marks).toBeUndefined();
+  });
+  it('POST /marks: a missing version is 422 doc.version_required, a stale one 409 doc.version_conflict', async () => {
+    const q = qt();
+    const none = await call('POST', `/docs/QT/${q.id}/marks`, { mark: 'accepted' });
+    expect([none.status, (await none.json()).code]).toEqual([422, 'doc.version_required']);
+    const stale = await call('POST', `/docs/QT/${q.id}/marks`, { mark: 'accepted', version: q.version + 3 });
+    expect([stale.status, (await stale.json()).code]).toEqual([409, 'doc.version_conflict']);
+  });
+  it('POST /marks: an unknown or foreign mark is 422 mark.not_allowed; a reject without reason 422', async () => {
+    const q = qt();
+    for (const mark of ['bogus', 'delivered', 'closed']) {
+      const r = await call('POST', `/docs/QT/${q.id}/marks`, { mark, version: q.version });
+      expect([r.status, (await r.json()).code]).toEqual([422, 'mark.not_allowed']);
+    }
+    const r = await call('POST', `/docs/QT/${q.id}/marks`, { mark: 'rejected', version: q.version });
+    expect([r.status, (await r.json()).code]).toEqual([422, 'mark.reason_required']);
+  });
+});
+
 describe('paper endpoint', () => {
   const paper = async (id: string, q = '') => (await call('GET', `/docs/TI/${id}/paper${q}`)).json();
   const issuedTi = () => loadState().docs.find((x) => x.type === 'TI' && x.companyId === 'co-vat' && x.status === 'issued' && x.party?.taxId)!;

@@ -136,7 +136,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
         <LockBanner locks={doc.locks} exitAction={exitAction} />
       </header>
 
-      <ActionBar descriptor={d as ConvertibleDescriptor} doc={doc} permissions={permissions} onCancel={() => { cancel.reset(); setCancelOpen(true); }} onConvert={() => setConvertOpen(true)}
+      <ActionBar descriptor={d as ConvertibleDescriptor} doc={doc} permissions={permissions} vatRegistered={me!.vatRegistered} onCancel={() => { cancel.reset(); setCancelOpen(true); }} onConvert={() => setConvertOpen(true)}
         onMark={(m) => { mark.reset(); setMarkOpen(m); }} />
       {d.type === 'QT' && doc.marks?.rejected ? (
         <Alert role="status"><AlertTitle>{t('rejectedQt')}</AlertTitle><AlertDescription>{t('marks.rejectedWhy', { reason: doc.marks.rejected.reason })}</AlertDescription></Alert>

@@ -409,5 +409,9 @@ export function convert(st: MockState, id: string, targetType: DocType, lines: {
   logActivity(st, d.id, actor, 'create', `แปลงจาก ${src.number}`);
   logActivity(st, src.id, actor, 'convert', `สร้าง ${targetType} ฉบับร่าง`);
   logAudit(st, actor, src.companyId, 'doc.convert', src.id, undefined, { target: d.id, type: targetType });
+  if (accepted !== src.marks) { // the customer's acceptance is recorded like a manual one: activity + audit with the marks before / after
+    logActivity(st, src.id, actor, 'accept', `จากการแปลงเป็น ${targetType}`);
+    logAudit(st, actor, src.companyId, 'doc.mark', src.id, { marks: src.marks }, { marks: accepted });
+  }
   return publicDoc(d);
 }

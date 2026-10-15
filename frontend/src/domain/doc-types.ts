@@ -41,3 +41,7 @@ export const SETTLES: Partial<Record<DocType, DocType[]>> = { RC: ['TI', 'IV'], 
 
 /** Marks a document type can carry (SP1c S1). Only on a live document; a QT's rejection needs a reason. */
 export const MARKS: Partial<Record<DocType, MarkKey[]>> = { QT: ['accepted', 'rejected'], DO: ['delivered'], PO: ['sent'] };
+
+/** The conversion targets a user may actually use: offered by the type, available to the company, and creatable by the role (one filter for the action bar and the dialog). */
+export const convertTargets = (offered: DocType[] | undefined, vatRegistered: boolean, permissions: string[]): DocType[] =>
+  (offered ?? []).filter((x) => isTypeAvailable(x, vatRegistered) && permissions.includes(`doc.${x}.create`));

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Doc, DocType } from '@/domain/types';
@@ -70,6 +70,23 @@ describe('ConvertDialog', () => {
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     const created = onDone.mock.calls[0][0] as Doc;
     expect([created.type, created.status, created.lines.map((l) => [l.sourceLineId, l.qty])]).toEqual(['SO', 'draft', [['qt-acc-l1', '3']]]);
+  });
+  it('an invalid quantity (negative, exponent) shows a field error and blocks the button; 0 still just drops the line', async () => {
+    const user = userEvent.setup();
+    const { onDone } = open('qt-acc');
+    const dlg = await screen.findByRole('dialog', { name: /แปลงใบเสนอราคา/ });
+    await within(dlg).findAllByRole('spinbutton');
+    const qty = within(dlg).getAllByRole('spinbutton') as HTMLInputElement[];
+    for (const bad of ['-1', '1e3']) {
+      fireEvent.change(qty[0], { target: { value: bad } });
+      expect(within(dlg).getByRole('alert')).toHaveTextContent('จำนวนไม่ถูกต้อง');
+      expect(qty[0]).toHaveAttribute('aria-invalid', 'true');
+      expect(within(dlg).getByRole('button', { name: 'สร้างใบสั่งขาย' })).toBeDisabled();
+    }
+    await user.clear(qty[0]); await user.type(qty[0], '0');
+    expect(within(dlg).queryByRole('alert')).toBeNull();
+    expect(within(dlg).getByRole('button', { name: 'สร้างใบสั่งขาย' })).toBeEnabled(); // line 2 still converts
+    expect(onDone).not.toHaveBeenCalled();
   });
   it('all quantities 0: nothing to convert, the button is disabled', async () => {
     const user = userEvent.setup();

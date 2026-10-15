@@ -50,6 +50,18 @@ describe('DocView: quotation marks and conversion', () => {
     await user.click(within(dlg).getByRole('button', { name: 'สร้างใบสั่งขาย' }));
     await waitFor(() => expect(useRouter().push).toHaveBeenCalledWith(expect.stringMatching(/^\/sales\/sales-orders\/doc-so-\d+\/edit$/)));
   });
+  it('"convert to…" is disabled with the reason when no target is both available to the company and permitted', async () => {
+    setSettings({ role: 'operator', companyKey: 'nonvat' });
+    const { PERMISSIONS_BY_ROLE } = await import('@/mocks/permissions');
+    const saved = PERMISSIONS_BY_ROLE.operator;
+    PERMISSIONS_BY_ROLE.operator = saved.filter((p) => !['doc.SO.create', 'doc.IV.create'].includes(p)).concat('doc.TI.create'); // TI is VAT-only: not available here
+    try {
+      ui('nqt-1');
+      const btn = await screen.findByRole('button', { name: 'แปลงเป็น…' });
+      expect(btn).toBeDisabled();
+      expect(btn).toHaveAccessibleDescription(/ไม่มีเอกสารปลายทาง/);
+    } finally { PERMISSIONS_BY_ROLE.operator = saved; }
+  });
   it('a viewer without doc.QT.issue sees the mark buttons disabled with the reason', async () => {
     setSettings({ role: 'operator', companyKey: 'nonvat' });
     const { PERMISSIONS_BY_ROLE } = await import('@/mocks/permissions');
