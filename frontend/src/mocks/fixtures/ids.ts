@@ -16,7 +16,7 @@ type DocFixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssuedUnpa
   | 'pvMultiWt' | 'pvGrossUp' | 'pvForeign' | 'pvCancelled' | 'wtIssued' | 'wtCancelled'
   | 'exDraft' | 'exPending' | 'exApproved' | 'exUnpaid' | 'exPaid' | 'exForfeit' | 'nexIssued'
   | 'tiDeposit' | 'rcDepositApplied' | 'pvPrepayment'
-  | 'jvDraftUnbalanced' | 'jvAccrual' | 'jvIssued' | 'jvReversal' | 'njvIssued'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
+  | 'jvDraftUnbalanced' | 'jvAccrual' | 'jvIssued' | 'jvReversal' | 'njvIssued' | 'obIssued' | 'obDraft'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
 
 /** FN1 bank accounts: not documents, so no predicate - a fixed record id that must exist in the seed. `bankEmpty` is the VAT company's account with no imports. */
 export const BANK_FIXTURES = { bankKbank: 'ba-kbank', bankEmpty: 'ba-scb', nbankKbank: 'nba-kbank' } as const;
@@ -120,6 +120,9 @@ export const FIXTURE_PREDICATES: Record<DocFixtureKey, (d: D, st: MockState) => 
   jvIssued: byId('jv-2', (d) => d.status === 'issued'),
   jvReversal: byId('jv-rev', (d) => d.status === 'issued' && d.header.reversalOf === 'jv-2'),
   njvIssued: byId('njv-1', (d) => d.status === 'issued' && d.companyId === 'co-nonvat'),
+  // AC3 opening balances: the non-VAT company "started" in 2026 (issued at 2025-12-31); the VAT company has a draft for the wizard demo (a bank step, a plug)
+  obIssued: byId('nob-1', (d) => d.status === 'issued' && d.companyId === 'co-nonvat'),
+  obDraft: byId('ob-d1', (d) => d.status === 'draft' && d.companyId === 'co-vat'),
 };
 
 /** Lowest id (string order) matching each predicate in the active seed; throws listing every unresolved key. */

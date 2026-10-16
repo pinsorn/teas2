@@ -34,6 +34,7 @@ import { MarksChips } from './MarksChips';
 import { docEditHref, docViewHref } from '@/descriptors';
 import { CLOSEABLE, LIVE } from '@/domain/doc-types';
 import { LedgerTab } from './LedgerTab';
+import { ObSummary } from '../opening/ObSummary';
 import { LockBanner, type ExitAction } from './LockBanner';
 import { PAPERS } from '../paper/registry';
 import { PaperView } from '../paper/PaperView';
@@ -93,7 +94,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
   const [notice, setNotice] = useState<string>();
   // A dead document opens on its chain: the pointer to the replacement is what the reader needs first.
   // A type with no paper (a vendor's document is recorded, not printed) opens on its chain as well.
-  const [tab, setTab] = useState(doc.status === 'replaced' || doc.status === 'cancelled' || !PAPERS[doc.type] ? 'chain' : 'paper');
+  const [tab, setTab] = useState(doc.status === 'replaced' || doc.status === 'cancelled' || (!PAPERS[doc.type] && doc.type !== 'OB') ? 'chain' : 'paper');
   const refresh = () => qc.invalidateQueries({ queryKey: [me!.activeCompanyId] });
 
   const cancel = useMutation({
@@ -182,7 +183,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
         ) : <TabsTrigger key={k} value={k} className="h-8 flex-auto">{t(`tabs.${k}`)}</TabsTrigger>)}</TabsList>
         <TabsContent value="paper">
           <section role="region" aria-label={t('tabs.paper')} tabIndex={0} className="overflow-x-auto">
-            {doc.status === 'pending' || doc.status === 'approved' ? <DocLinesPreview doc={doc} /> : PAPERS[doc.type] ? <PaperView type={doc.type} id={doc.id} /> : <PaperStub doc={doc} />}
+            {doc.type === 'OB' ? <ObSummary doc={doc} /> : doc.status === 'pending' || doc.status === 'approved' ? <DocLinesPreview doc={doc} /> : PAPERS[doc.type] ? <PaperView type={doc.type} id={doc.id} /> : <PaperStub doc={doc} />}
           </section>
         </TabsContent>
         <TabsContent value="chain"><ChainPanel type={d.type} id={doc.id} /></TabsContent>

@@ -4,7 +4,7 @@ import type { MockState } from '../store';
 import {
   type Body, LIVE, approvalOnRevise, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, keepNoteLines, keepOmitted, markReplaced, refuseBelowSettled, refuseNonPositive, refusePartyChange, refuseUnissuableReceipt, refuseUnrevisablePurchase, reissue, revise, reviseNeedsApprover, stableJson, totalsOf,
 } from './commands';
-import { refuseReconciled, refuseSettled } from './locks';
+import { refuseObLocked, refuseReconciled, refuseSettled } from './locks';
 import { MockError, today } from './log';
 import { fromSatang, toSatang } from './money';
 import { isNote, noteProblem } from './notes';
@@ -89,7 +89,8 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
   let explanation: string;
 
   const sameBody = JSON.stringify({ header: d.header, lines: d.lines }) === JSON.stringify({ header: proposed.header, lines: proposed.lines })
-    && (proposed.allocations === undefined || JSON.stringify(d.allocations ?? []) === JSON.stringify(proposed.allocations));
+    && (proposed.allocations === undefined || JSON.stringify(d.allocations ?? []) === JSON.stringify(proposed.allocations))
+    && (proposed.opening === undefined || JSON.stringify(d.opening ?? null) === JSON.stringify(proposed.opening)); // AC3: the steps behind an opening balance are part of its body
   if (!sameBody && d.type === 'RC') refuseUnissuableReceipt(st, d, proposed); // a plan that could not be issued is never shown
   if (sameBody) {
     explanation = 'ไม่มีการเปลี่ยนแปลง';
@@ -101,6 +102,7 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
     if (reviseNeedsApprover(st, d, proposed) && !PERMISSIONS_BY_ROLE[role].includes(`doc.${d.type}.approve`)) throw approvalOnRevise(); // C1: more money than was approved - a plan nobody here may run is never shown
     refuseReconciled(st, d, { header: proposed.header, totals: totalsOf(st, d.companyId, d.type, proposed, d.id) }); // FN2: a plan that would move a matched document's cash, account or date is never shown
     refuseSettled(st, d, { header: proposed.header, totals: totalsOf(st, d.companyId, d.type, proposed, d.id) }); // FN3: the same for a leg of a posted settlement
+    if (d.type === 'OB') refuseObLocked(st, d, { header: proposed.header, lines: proposed.lines, opening: proposed.opening ?? d.opening }); // AC3: a settled / matched opening item keeps the batch as it is
     add('revise', d, `แก้ไข ${label} (เลขที่เดิม เพิ่มรุ่นแก้ไข)`, `doc.${d.type}.correct`);
     explanation = 'การแก้ไขนี้ไม่กระทบภาษี แก้ไขในเอกสารเดิมและเก็บประวัติการแก้ไข';
   } else {

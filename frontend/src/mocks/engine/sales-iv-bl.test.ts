@@ -98,7 +98,7 @@ describe('IV settlement, revise (L-class) and cancel', () => {
     for (const co of [NV, VAT]) {
       const gl = [...st.journals.filter((j) => get(j.docId).companyId === co).flatMap((j) => j.preview.entries.flatMap((e) => e.lines)), ...st.settlements.filter((s) => s.companyId === co).flatMap((s) => s.journal.flatMap((e) => e.lines))] // FN3: settlements post to AR too
         .filter((l) => l.accountCode === '1130').reduce((a, l) => a + sat(l.debit) - sat(l.credit), 0);
-      const sub = st.docs.filter((d) => d.companyId === co && ['TI', 'IV'].includes(d.type) && ['issued', 'partly_settled', 'settled'].includes(d.status)).reduce((a, d) => a + sat(d.outstanding!), 0);
+      const sub = st.docs.filter((d) => d.companyId === co && (['TI', 'IV'].includes(d.type) || (d.type === 'OB' && d.header.obSide === 'AR')) && ['issued', 'partly_settled', 'settled'].includes(d.status)).reduce((a, d) => a + sat(d.outstanding!), 0);
       expect(gl).toBe(sub);
     }
     expect(checkInvariants(st)).toEqual([]);

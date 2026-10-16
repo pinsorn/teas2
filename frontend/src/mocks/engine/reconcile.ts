@@ -16,6 +16,8 @@ type Stored = MockState['docs'][number];
 type StoredLine = MockState['bankLines'][number];
 const fail = (status: number, code: string, title: string) => new MockError(status, code, title);
 const abs = (n: number) => Math.abs(n);
+/** Which way a document's cash moves on a bank line: a receipt is money in, a voucher money out; AC3: a deposit in transit of an opening balance is money in, an outstanding payment money out. */
+export const cashSide = (d: { type: string; header: { obKind?: 'DIT' | 'OP' } }): 'RC' | 'PV' | undefined => (d.type === 'OB' ? (d.header.obKind === 'DIT' ? 'RC' : d.header.obKind === 'OP' ? 'PV' : undefined) : d.type === 'RC' || d.type === 'PV' ? d.type : undefined);
 
 /** SP0 G4 + I1: an inline journal posts only to accounts no subledger or document owns. The roles a document writes (tax, receivable / payable, deposits, prepayments, payroll payables, cash / bank, equity) are refused. */
 const TAX_ROLES: AccountingRole[] = ['OutputVat', 'InputVat', 'InputVatUnclaimed', 'Pnd36VatPayable', 'WhtReceivable', 'WhtPayable', 'WhtExpense'];
@@ -65,6 +67,7 @@ export const matchedPortion = (st: MockState, docId: string): number =>
   st.bankLines.reduce((n, l) => n + (l.matches ?? []).filter((m) => m.docId === docId).reduce((x, m) => x + toSatang(m.amount), 0), 0);
 /** R2-m1: what of a document's cash a bank line may match. After the account's go-live that is the NET bank effect of its entries on or after it (a document older than the go-live has none, unless a correction changed its amount); earlier entries are inside the opening balance. */
 const matchableCash = (st: MockState, d: Stored): number => {
+  if (d.type === 'OB') return docCash(d); // AC3: an in-transit item of the opening balance: all of it (no journal behind it; the batch's bank line already carries it)
   const acct = st.bankAccounts.find((b) => b.id === resolvedBankId(st, d.companyId, d.type, d.header) && b.companyId === d.companyId), live = goLiveOf(st, d.companyId, acct?.id);
   if (!acct || !live) return docCash(d);
   const net = (st.journals.find((j) => j.docId === d.id)?.preview.entries ?? []).filter((e) => e.date >= live)
@@ -103,10 +106,10 @@ export function suggest(st: MockState, companyId: string, lineId: string, q?: st
   const l = lineOf(st, companyId, lineId);
   const want = toSatang(l.amount) > 0 ? 'RC' : 'PV', needle = (q ?? '').trim().toLowerCase();
   const docs = st.docs
-    .filter((d) => d.companyId === companyId && d.type === want && LIVE.includes(d.status) && resolvedBankId(st, companyId, d.type, d.header) === l.accountId && remainingOf(st, d) > 0)
+    .filter((d) => d.companyId === companyId && cashSide(d) === want && LIVE.includes(d.status) && resolvedBankId(st, companyId, d.type, d.header) === l.accountId && remainingOf(st, d) > 0)
     .map((d) => ({ d, exact: matchedPortion(st, d.id) === 0 && matchableCash(st, d) === abs(toSatang(l.amount)) && docCash(d) === abs(toSatang(l.amount)), days: daysBetween(d.header.documentDate, l.date) }))
     .filter((x) => (needle ? `${x.d.number ?? ''} ${x.d.party?.name ?? ''}`.toLowerCase().includes(needle) : x.exact && x.days <= DAYS))
-    .map(({ d, exact, days }) => ({ days, exact, n: d.number ?? '', c: { docId: d.id, type: want, number: d.number ?? d.id, documentDate: d.header.documentDate, partyName: d.party?.name ?? '', cash: fromSatang(docCash(d)), remaining: fromSatang(remainingOf(st, d)), exact } as BankCandidate }));
+    .map(({ d, exact, days }) => ({ days, exact, n: d.number ?? '', c: { docId: d.id, type: want, number: d.number ?? d.id, documentDate: d.header.documentDate, partyName: d.party?.name ?? d.header.reference ?? '', cash: fromSatang(docCash(d)), remaining: fromSatang(remainingOf(st, d)), exact } as BankCandidate }));
   const trs = transferCandidates(st, companyId, l, needle).map((c) => ({ days: daysBetween(c.documentDate, l.date), exact: c.exact, n: c.docId, c }));
   return [...docs, ...trs].sort((a, b) => Number(b.exact) - Number(a.exact) || a.days - b.days || a.n.localeCompare(b.n)).map((x) => x.c);
 }
@@ -173,7 +176,7 @@ export function match(st: MockState, companyId: string, lineId: string, req: Mat
     const d = st.docs.find((x) => x.id === id && x.companyId === companyId);
     if (!d) throw fail(422, 'bank.match_doc_not_found', 'ไม่พบเอกสารที่เลือก');
     const no = d.number ?? d.id;
-    if (d.type !== want) throw fail(422, 'bank.match_direction', `${no} เป็น${d.type === 'RC' ? 'ใบเสร็จรับเงิน (เงินเข้า)' : 'ใบสำคัญจ่าย (เงินออก)'} จับคู่กับรายการ${s > 0 ? 'เงินเข้า' : 'เงินออก'}ไม่ได้`);
+    if (cashSide(d) !== want) throw fail(422, 'bank.match_direction', `${no} เป็น${cashSide(d) === 'RC' ? 'ใบเสร็จรับเงิน (เงินเข้า)' : 'ใบสำคัญจ่าย (เงินออก)'} จับคู่กับรายการ${s > 0 ? 'เงินเข้า' : 'เงินออก'}ไม่ได้`);
     if (!LIVE.includes(d.status)) throw fail(422, 'bank.match_doc_status', `${no} ไม่อยู่ในสถานะที่จับคู่ได้`);
     const live = goLiveOf(st, companyId, l.accountId);
     if (live && matchableCash(st, d) === 0) throw fail(422, 'bank.match_history', `${no} ลงวันที่ ${formatDateBE(d.header.documentDate)} ก่อนวันเริ่มใช้ระบบกับ statement (${formatDateBE(live!)}) อยู่ในยอดยกมาแล้ว จับคู่ไม่ได้`);
@@ -196,7 +199,7 @@ export function match(st: MockState, companyId: string, lineId: string, req: Mat
   if (diff) dateGuards(st, companyId, l.date); // the fee journal is dated at the line: a closed month refuses
 
   // all judged - write
-  const matches: BankMatch[] = docs.map((d, i) => ({ docId: d.id, type: d.type as 'RC' | 'PV', number: d.number ?? d.id, amount: fromSatang(portions[i]), docCash: fromSatang(docCash(d)), accountId: l.accountId, docDate: d.header.documentDate }));
+  const matches: BankMatch[] = docs.map((d, i) => ({ docId: d.id, type: cashSide(d)!, number: d.number ?? d.id, amount: fromSatang(portions[i]), docCash: fromSatang(docCash(d)), accountId: l.accountId, docDate: d.header.documentDate }));
   let stored: StoredLine['diff'];
   if (diff) {
     const counter = resolveRole(st, diff.role, { companyId, docType: 'JV' }).code, tag = diff.role === 'BankFee' ? 'ค่าธรรมเนียมจากการกระทบยอด' : 'ผลต่างจากการปัดเศษจากการกระทบยอด';

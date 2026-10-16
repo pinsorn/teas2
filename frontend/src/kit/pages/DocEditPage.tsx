@@ -10,6 +10,7 @@ import { routesOf } from '@/domain/descriptors';
 import { LIVE } from '@/domain/doc-types';
 import type { Doc } from '@/domain/types';
 import { DocEditor } from '@/kit/doc-editor/DocEditor';
+import { ObWizard } from '@/kit/opening/ObWizard';
 import { useCorrectionFlow } from '@/kit/doc-view/useCorrectionFlow';
 import { ErrorState } from '@/kit/states/ErrorState';
 import { ForbiddenState } from '@/kit/states/ForbiddenState';
@@ -26,7 +27,8 @@ function Revise({ doc, d, onLanding }: { doc: Doc; d: DocDescriptor; onLanding: 
   const flow = useCorrectionFlow(d, doc, onLanding);
   return (
     <>
-      <DocEditor descriptor={d} mode="revise" initial={doc} onIssued={() => undefined} onRevisionRequested={(p) => void flow.request(p)} />
+      {d.type === 'OB' ? <ObWizard mode="revise" initial={doc} onRevisionRequested={(p) => void flow.request(p)} />
+        : <DocEditor descriptor={d} mode="revise" initial={doc} onIssued={() => undefined} onRevisionRequested={(p) => void flow.request(p)} />}
       {flow.ui}
     </>
   );
@@ -52,7 +54,8 @@ function Edit({ id, d }: { id: string; d: DocDescriptor }) {
   if (q.isError) return isForbidden(q.error) ? <ForbiddenState permission={d.permissions.read} /> : <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
   if (!doc || !editable) return <LoadingState />;
   if (DRAFTABLE.includes(doc.status)) {
-    return <DocEditor key={doc.id} descriptor={d} mode="edit-draft" initial={doc} onIssued={(d) => router.replace(routes.view(d.id))} />;
+    return d.type === 'OB' ? <ObWizard key={doc.id} mode="edit-draft" initial={doc} onIssued={(x) => router.replace(routes.view(x.id))} /> // AC3: opening balances are a wizard, not the document editor
+      : <DocEditor key={doc.id} descriptor={d} mode="edit-draft" initial={doc} onIssued={(x) => router.replace(routes.view(x.id))} />;
   }
   return <Revise key={doc.id} doc={doc} d={d} onLanding={() => { landing.current = true; }} />;
 }

@@ -224,6 +224,8 @@ export function allocationError(st: MockState, companyId: string, type: DocType,
     if (seen.has(a.targetId)) return new MockError(422, 'settle.duplicate_target', `เลือก ${label} ซ้ำ รวมยอดเป็นรายการเดียว`);
     seen.add(a.targetId);
     if (!settles.includes(target.type) || a.targetType !== target.type) return new MockError(422, 'settle.wrong_type', `${label} ชำระด้วยเอกสารนี้ไม่ได้`);
+    // AC3: an opening item belongs to one side (a receipt settles receivables, a voucher payables / employee claims): the ledger would otherwise post the cash with nothing cleared
+    if (target.type === 'OB' && !(type === 'RC' ? ['AR'] : ['AP', 'EMP']).includes(target.header.obSide ?? '')) return new MockError(422, 'settle.wrong_type', `${label} ชำระด้วยเอกสารนี้ไม่ได้ (ยอดยกมาประเภทนี้ใช้ ${type === 'RC' ? 'ใบสำคัญจ่ายหรือการหักกลบ' : 'ใบเสร็จรับเงิน'})`);
     if (!LIVE.includes(target.status)) return new MockError(422, 'settle.target_not_open', `${label} ไม่อยู่ในสถานะที่ชำระได้`);
     const was = opts.prior?.find((p) => p.targetId === a.targetId);
     // recorded when it was legitimately created / moved - and exempt only while the document's own party is still the one it was issued to
@@ -255,6 +257,7 @@ export function cashBankId(st: MockState, companyId: string, header: DocHeader):
 
 /** The account an RC / PV really uses (the cash box when paid in cash), for the rules that judge it. Other types have none. */
 export const resolvedBankId = (st: MockState, companyId: string, type: DocType, header: DocHeader | undefined): string | undefined =>
+  type === 'OB' ? header?.bankAccountId : // AC3: an in-transit item of an opening balance sits on the account it was listed under
   header && SETTLES[type] ? (header.paymentMethod === 'cash' ? cashBankId(st, companyId, header) : header.bankAccountId) : undefined;
 
 /** Frozen at issue and at every revise (CLAUDE.md money rule): an RC / PV keeps the account's name, number and kind as they were then, and the paper reads only this. Server-owned: whatever a caller sent is replaced. */
@@ -271,7 +274,7 @@ export function payError(st: MockState, companyId: string, type: DocType, body: 
   const h = body.header;
   if (h.bankAccountId && !st.bankAccounts.some((b) => b.id === h.bankAccountId && b.companyId === companyId)) return new MockError(422, 'pay.invalid_bank_account', 'บัญชีธนาคารที่เลือกไม่ใช่ของบริษัทนี้');
   // I1: money to an employee is a reimbursement of claims only - no own lines (their WHT would be a ภ.ง.ด.3 certificate to an employee, and no approval stands behind them)
-  if (type === 'PV' && payeeOf(st, companyId, h.partyId).kind === 'employee' && (body.lines.length > 0 || !body.allocations?.length || body.allocations.some((x) => x.targetType !== 'EX'))) {
+  if (type === 'PV' && payeeOf(st, companyId, h.partyId).kind === 'employee' && (body.lines.length > 0 || !body.allocations?.length || body.allocations.some((x) => x.targetType !== 'EX' && x.targetType !== 'OB'))) {
     return new MockError(422, 'pv.employee_claims_only', 'ใบสำคัญจ่ายถึงพนักงานจ่ายได้เฉพาะใบเบิกค่าใช้จ่ายที่อนุมัติแล้ว ไม่มีรายการของตัวเอง บันทึกเป็นใบเบิกค่าใช้จ่ายแล้วจ่ายจากใบเบิก');
   }
   if (type === 'RC' && money(h.depositAmount, 'rc.invalid_deposit') < 0) return new MockError(422, 'rc.invalid_deposit', 'เงินรับล่วงหน้าต้องไม่ติดลบ');

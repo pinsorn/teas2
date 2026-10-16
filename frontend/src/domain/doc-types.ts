@@ -27,6 +27,8 @@ export const DOC_TYPES: Record<DocType, DocTypeInfo> = {
   PR: { class: 'L', vat: 'both', ledger: true, outstanding: false, printable: true },
   OB: { class: 'L', vat: 'both', ledger: true, outstanding: false, printable: false },
 };
+/** A document that carries an outstanding balance: the types flagged above, and the frozen open items of an opening-balance batch (type OB with `obSide`; the batch itself carries none). */
+export const carriesBalance = (d: { type: DocType; header: { obSide?: string } }): boolean => DOC_TYPES[d.type].outstanding || (d.type === 'OB' && !!d.header.obSide);
 export const CLASS = Object.fromEntries(Object.entries(DOC_TYPES).map(([t, i]) => [t, i.class])) as Record<DocType, CorrectionClass>;
 export const isTypeAvailable = (t: DocType, vatRegistered: boolean) =>
   DOC_TYPES[t].vat === 'both' || (DOC_TYPES[t].vat === 'vat-only') === vatRegistered;
@@ -37,7 +39,7 @@ export const CONVERSIONS: Partial<Record<DocType, DocType[]>> = {
 };
 
 /** D-12 / D-17: the open-item types a document allocates to (RC settles TI / IV; PV settles PB and EX only). The engine refuses any other target. */
-export const SETTLES: Partial<Record<DocType, DocType[]>> = { RC: ['TI', 'IV'], PV: ['PB', 'EX'] };
+export const SETTLES: Partial<Record<DocType, DocType[]>> = { RC: ['TI', 'IV', 'OB'], PV: ['PB', 'EX', 'OB'] };
 
 /** SP0 7.8 Groups: the open-item types a billing statement lists (BL groups TI / IV). No ledger, no balance effect; the amounts are informational. */
 export const GROUPS: Partial<Record<DocType, DocType[]>> = { BL: ['TI', 'IV'] };

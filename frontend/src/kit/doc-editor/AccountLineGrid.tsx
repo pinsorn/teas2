@@ -31,6 +31,8 @@ export interface AccountLineGridProps {
   /** Σ debit / Σ credit / difference as the server computed them: shown, never summed here. */
   balance?: ComputeResult['balance'];
   computing?: boolean;
+  /** Opening balances (AC3): a difference is not an error - the server carries it to 3900 - so it is stated, not flagged. */
+  plug?: boolean;
 }
 
 function AccountCell({ line, label, cell, accounts, nameOf, onClear, onPick, onKey, onAdvance }: {
@@ -56,7 +58,7 @@ function AccountCell({ line, label, cell, accounts, nameOf, onClear, onPick, onK
 }
 
 /** The account-line editor of a journal voucher: account type-ahead, note, debit, credit. Tab and Enter walk account → note → debit → credit → the next row (Enter on the last cell adds a row). The balance under the rows is the server's. */
-export function AccountLineGrid({ lines, onChange, accounts, balance, computing }: AccountLineGridProps) {
+export function AccountLineGrid({ lines, onChange, accounts, balance, computing, plug }: AccountLineGridProps) {
   const t = useTranslations('docEditor.accountGrid');
   const root = useRef<HTMLDivElement>(null);
   const focusReq = useRef<{ row: number; cell: Cell } | null>(null);
@@ -130,7 +132,7 @@ export function AccountLineGrid({ lines, onChange, accounts, balance, computing 
         <div className="flex justify-between gap-4"><dt className="text-muted-foreground">{t('totalCredit')}</dt><dd className="tabular-nums" data-testid="jv-credit">{balance ? formatMoney(balance.credit) : computing ? '…' : ''}</dd></div>
         <div className="mt-1 flex justify-between gap-4 border-t border-foreground pt-2 font-semibold"><dt>{t('diff')}</dt><dd className="tabular-nums" data-testid="jv-diff">{balance ? formatMoney(balance.diff) : computing ? '…' : ''}</dd></div>
         </dl>
-        <p role="status" className={`text-small ${balance && !diffZero ? 'text-destructive' : 'text-muted-foreground'}`}>{computing ? t('computing') : balance ? (diffZero ? t('balanced') : t('unbalanced', { diff: formatMoney(balance.diff) })) : ''}</p>
+        <p role="status" className={`text-small ${balance && !diffZero && !plug ? 'text-destructive' : 'text-muted-foreground'}`}>{computing ? t('computing') : balance ? (diffZero ? t('balanced') : t(plug ? 'plugNote' : 'unbalanced', { diff: formatMoney(balance.diff) })) : ''}</p>
       </section>
     </div>
   );

@@ -22,6 +22,16 @@ Entry format — terse, greppable by symptom:
 
 <!-- entries below — newest on top -->
 
+## An invariant "GL(account X) = Σ of the documents" goes red after an opening balance (GL 1180 ... but the live receipts withheld; WHT payable credit movement ...)
+- **Root cause:** an issued OB posts plain trial-balance lines (VAT / WHT balances 1170, 2151, 2131-2135, 1180 have no sub-ledger yet [SP-R]) that no document owns, so the document-vs-GL ties see them as a difference.
+- **Fix:** `checkInvariants` keeps `obGl` / `obCredit` (what OB batches posted) and subtracts them in 8b (1180) and 11 (WHT payable credit movement). A NEW document-vs-GL tie must do the same. Sub-ledger accounts (1130 / 2110 / 2180 / 2140 / 1140) need no exemption: the OB open items are sub-ledger rows (type OB with `header.obSide`, `carriesBalance`).
+- **Seen:** 2026-10-17, SP1c AC3
+
+## A seeded OB (or any seed doc with a frozen item) breaks a seed-wide test: "number matches `NUMBER-YYYYMM-NNNN` format", "every non-draft document passes missingOf", or GL(1130) = Σ outstanding(TI ∪ IV)
+- **Root cause:** an OB batch creates item documents (type OB, `header.obBatchId`) numbered `<old number> (ยกมา)`, with no journal of their own; AR items are sub-ledger rows of 1130.
+- **Fix:** skip `header.obBatchId` docs in tests that walk every document (numbering, journal presence, `missingOf`) and count `type === 'OB' && header.obSide === 'AR'` in the AR identity.
+- **Seen:** 2026-10-17, SP1c AC3
+
 ## Component test: MISSING_MESSAGE for a key you just added to th.json (the key IS in the file)
 - **Root cause:** the same key already exists LATER in the same JSON object (e.g. docEditor.account as a string); JSON allows duplicate keys and the last one wins, so your object is silently replaced.
 - **Fix:** use a unique key (docEditor.accountGrid); detect with json.load(..., object_pairs_hook=) printing repeated keys per object.

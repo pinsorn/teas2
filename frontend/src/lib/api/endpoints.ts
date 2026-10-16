@@ -1,13 +1,13 @@
 import type {
   ActivityEntry, Allocation, Attachment, AttachmentCategory, BankImport, BankLine, ChainGraph, ComputeResult, CorrectionPlan, CorrectionResult, Doc, DocHeader, DocLine, DocSummary,
   DocType, HomeInbox, MarkKey, Money, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, RemainingLine, Revision, SearchHit,
-  DepositRow, SettlementDifferenceRole, SettlementKind, SettlementRecord,
+  DepositRow, DocOpening, SettlementDifferenceRole, SettlementKind, SettlementRecord,
 } from '@/domain/types';
 import type { RecordKind, RecordRow } from '@/domain/records';
 import type { ReportKind, ReportModel } from '@/domain/reports';
 import { api, ApiError, normalizeProblem } from './client';
 
-export type DocInput = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] };
+export type DocInput = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[]; /** OB (AC3): the steps behind the trial balance */ opening?: DocOpening };
 /** A postable current-asset account a bank / cash account can be bound to; `taken` = another bank account of the company already owns it. */
 export interface BankGlAccount { code: string; nameTh: string; subClass: 'cash' | 'bank'; taken: boolean }
 /** FN2: a receipt / voucher the line could match (`exact` = the suggestion: same cash, within 7 days). */
@@ -89,6 +89,8 @@ export const endpoints = {
   postableAccounts: () => api<PostableAccount[]>('GET', '/finance/postable-accounts'),
   /** JV: the accounts a journal voucher may post to. */
   journalAccounts: () => api<PostableAccount[]>('GET', '/accounting/journal-accounts'),
+  /** AC3: the accounts an opening balance may post to (controlled ones included; the 3900 plug is the system's). */
+  openingAccounts: () => api<PostableAccount[]>('GET', '/accounting/journal-accounts?for=OB'),
   /** JV "กลับรายการ": a reversing JV of this one (dated the first open date or later, never in the future); any other document type is refused. */
   reverseDoc: (type: DocType, id: string, body: { date?: string; reason?: string } = {}) => api<Doc>('POST', `${d(type, id)}/reverse`, body),
   getReconciliation: (accountId: string) => api<Reconciliation>('GET', `/finance/bank-accounts/${encodeURIComponent(accountId)}/reconciliation`),

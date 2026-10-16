@@ -38,7 +38,7 @@ export const NAV: NavGroup[] = [
     item('journals', '/accounting/journals', LEDGER),
     doc('journalVouchers', '/accounting/journal-vouchers', 'JV'),
     item('chartOfAccounts', '/accounting/chart-of-accounts', LEDGER),
-    item('openingBalances', '/accounting/opening-balances', LEDGER),
+    doc('openingBalances', '/accounting/opening-balances', 'OB'),
     item('schedules', '/accounting/schedules', LEDGER),
     item('fixedAssets', '/accounting/fixed-assets', LEDGER),
     item('periodClose', '/accounting/period-close', LEDGER),

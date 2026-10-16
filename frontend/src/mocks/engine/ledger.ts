@@ -5,6 +5,7 @@ import { MockError } from './log';
 import { type AccountingRole, type PostingContext, resolveRole } from './posting';
 import { categoryOf, exForfeited, isRecoverable } from './purchase-vat';
 import { jvEntryLines } from './journal';
+import { obEntryLines } from './opening';
 import { cashBankId, freezeWht, frozenFigures } from './settlement';
 import { computeDoc, vatBasisOf, vatOf } from './vat';
 
@@ -38,8 +39,8 @@ const purchase: Rows = (t, d, st, co) => [...purchaseRows(d, st, co), ['AP', 0, 
 /** EX: the same cost side as a bill; what is owed goes to the EMPLOYEE (2180, under their name), not to a vendor. */
 const expenseClaim: Rows = (t, d, st, co) => [...purchaseRows(d, st, co), ['EmployeePayable', 0, t.total]];
 /** One row per allocation, under the TARGET's party: the AR / AP subledger of each customer / vendor stays right when one document settles several parties. */
-const perTarget = (d: Doc, st: MockState, role: 'AR' | 'AP' | 'EmployeePayable', types: DocType[], side: 'Dr' | 'Cr'): RolePosting =>
-  (d.allocations ?? []).filter((a) => types.includes(a.targetType)).map((a): RolePosting[number] => {
+const perTarget = (d: Doc, st: MockState, role: 'AR' | 'AP' | 'EmployeePayable', types: DocType[], side: 'Dr' | 'Cr', obSide: 'AR' | 'AP' | 'EMP'): RolePosting =>
+  (d.allocations ?? []).filter((a) => types.includes(a.targetType) && (a.targetType !== 'OB' || st.docs.find((x) => x.id === a.targetId)?.header.obSide === obSide)).map((a): RolePosting[number] => {
     const n = toSatang(a.amount), name = st.docs.find((x) => x.id === a.targetId)?.party?.name;
     return [role, side === 'Dr' ? n : 0, side === 'Cr' ? n : 0, name ? { partyName: name } : undefined];
   });
@@ -49,7 +50,7 @@ export const POST: Partial<Record<DocType, Rows>> = {
   TI: sales('Revenue'), IV: sales('Revenue'), DN: sales('Revenue'), CN: mirror(sales('SalesReturn')),
   PB: purchase, PDN: purchase, PCN: mirror(purchase), EX: expenseClaim,
   // RC: cash received + WHT withheld by the customer = what it clears from AR + the deposit remainder + a non-VAT cash bill (net + output VAT)
-  RC: (t, d, st, co) => [['Cash', t.cash, 0, { bankAccountId: cashBankId(st, co, d.header) }], ['WhtReceivable', t.wht, 0], ...perTarget(d, st, 'AR', ['TI', 'IV'], 'Cr'),
+  RC: (t, d, st, co) => [['Cash', t.cash, 0, { bankAccountId: cashBankId(st, co, d.header) }], ['WhtReceivable', t.wht, 0], ...perTarget(d, st, 'AR', ['TI', 'IV', 'OB'], 'Cr', 'AR'),
     ['CustomerDeposit', 0, toSatang(d.header.depositAmount ?? '0.00')], ...netRows(d, 'Revenue', 'Cr', vatOf(st, co)), ['OutputVat', 0, t.vat]],
   // PV: payables cleared + expense lines (+ their input VAT) + the WHT we bear (gross-up) = cash paid + WHT payable per return
   // a voucher's own line is a payment with no tax invoice (EX, D-16): per line its category's expense account, or the asset on a capex category - never input VAT (1170), whoever we are (A.4)
@@ -61,7 +62,7 @@ export const POST: Partial<Record<DocType, Rows>> = {
       const cost = toSatang(rs[i].net) + toSatang(rs[i].vat); // a voucher line carries no claimable VAT: any VAT on it is cost
       return [cat?.capex ? ['FixedAsset', cost, 0, { ...ctx, assetClass: cat.assetClass }] : ['Expense', cost, 0, ctx]];
     });
-    return [...perTarget(d, st, 'AP', ['PB'], 'Dr'), ...perTarget(d, st, 'EmployeePayable', ['EX'], 'Dr'), ...own, ['VendorPrepayment', toSatang(d.header.depositAmount ?? '0.00'), 0], // FN3: paid in advance, kept as a prepayment
+    return [...perTarget(d, st, 'AP', ['PB', 'OB'], 'Dr', 'AP'), ...perTarget(d, st, 'EmployeePayable', ['EX', 'OB'], 'Dr', 'EMP'), ...own, ['VendorPrepayment', toSatang(d.header.depositAmount ?? '0.00'), 0], // FN3: paid in advance, kept as a prepayment
       ['WhtExpense', w.expense, 0], ...w.lines.map((l): RolePosting[number] => ['WhtPayable', 0, toSatang(l.tax), { whtForm: l.form }]),
       ['Cash', 0, t.cash, { bankAccountId: cashBankId(st, companyId, d.header) }]];
   },
@@ -86,9 +87,10 @@ function withReversal(doc: Doc, lines: JournalLinePreview[]): JournalPreview {
  *  Types without a ledger effect (N-class, ...) return no entries. A JV (AC1) posts its account lines verbatim. */
 export function ledgerFor(st: MockState, doc: Doc & { companyId?: string }): JournalPreview {
   const post = POST[doc.type];
-  if (!post && doc.type !== 'JV') return { entries: [] };
+  if (!post && doc.type !== 'JV' && doc.type !== 'OB') return { entries: [] };
   const companyId = doc.companyId ?? st.docs.find((d) => d.id === doc.id)?.companyId;
   if (!companyId) throw new MockError(500, 'engine.invariant', 'ledgerFor: document has no company');
+  if (!post && doc.type === 'OB') return withReversal(doc, obEntryLines(st, companyId, doc)); // AC3: the steps, per party, plus the 3900 plug
   if (!post) return withReversal(doc, jvEntryLines(st, companyId, doc.lines));
   const partyName = doc.party?.name ?? st.parties.find((p) => p.id === doc.header.partyId)?.name;
   const t: Totals = { net: toSatang(doc.totals.net), vat: toSatang(doc.totals.vat), total: toSatang(doc.totals.total), wht: toSatang(doc.totals.wht ?? '0.00'),

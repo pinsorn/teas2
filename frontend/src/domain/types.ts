@@ -63,8 +63,19 @@ export interface DocHeader { partyId?: string; documentDate: IsoDate; dueDate?: 
   /** PB / PCN / PDN: the vendor's VAT status when the document was ISSUED (M2; a PCN inherits its bill's). Server-owned: the ม.82/5 check judges against it, not the live party master. */ vendorVatRegistered?: boolean;
   /** WT (50 ทวิ, server-written when its PV is issued): the return the tax falls on, the WHT type, its income type and the tax withheld. */ whtForm?: 'PND2' | 'PND3' | 'PND53' | 'PND54'; whtTypeCode?: string; whtIncomeType?: string; whtTax?: Money;
   /** PB: the vendor paperwork is complete (เอกสารครบ). Absent = complete; `false` still issues but the Home inbox counts it (HC1). */ complete?: boolean;
+  /** OB, server-owned (never accepted from a caller): a frozen open item (`obSide`) or in-transit bank item (`obKind`) of the opening-balance batch `obBatchId`. */ obBatchId?: string; obSide?: ObSide; obKind?: 'DIT' | 'OP';
   /** JV (accrual): on issue the system posts the reversing entry on day 1 of the next month. */ autoReverse?: boolean;
   /** JV, server-owned (never accepted from a caller): the JV this one reverses; `autoReversal` = the system's own reversal of an `autoReverse` accrual. */ reversalOf?: string; autoReversal?: true }
+/** AC3 opening balances. `side`: AR / AP = customer / vendor invoices, EMP = owed to an employee (2180), DEP = customer deposit (2140), PRE = vendor prepayment (1140). */
+export type ObSide = 'AR' | 'AP' | 'EMP' | 'DEP' | 'PRE';
+export interface ObOpenItem { side: ObSide; partyId: string; docNumber: string; docDate: IsoDate; dueDate?: IsoDate; amount: Money }
+export interface ObAsset { name: string; assetClass: string; cost: Money; accumulated: Money; acquired: IsoDate; lifeMonths: number }
+export interface ObPayrollYtd { employeeId: string; income: Money; pit: Money; sso: Money }
+/** One bank / cash account: the statement balance at the cut-off (signed) and its in-transit items (deposits in transit / outstanding payments). GL line = statement + deposits - payments. */
+export interface ObBank { accountId: string; statement: Money; inTransit: { kind: 'deposit' | 'payment'; date: IsoDate; description: string; amount: Money }[] }
+export interface DocOpening { openItems: ObOpenItem[]; assets: ObAsset[]; payrollYtd: ObPayrollYtd[]; bank: ObBank[] }
+/** What the opening-balance check says (compute): each controlled account against its step (`tb` = the trial-balance line, `sub` = the step total, both debit-normal), and the 3900 plug. */
+export interface ObCheck { debit: Money; credit: Money; plug: Money; plugSide: 'Dr' | 'Cr' | null; ties: { key: string; label: string; code: string; tb: Money; sub: Money; ok: boolean }[] }
 /** `cash` = money that moves: received (RC) / paid (PV). `wht` = withholding tax of the document. */
 export interface DocTotals { gross: Money; discount: Money; net: Money; vat: Money; total: Money; wht?: Money; cash?: Money;
   amountInWords: string }
@@ -81,7 +92,7 @@ export interface RemainingLine { lineId: string; description: string; unit: stri
 export interface WhtFrozen { bases: { targetId: string; whtTypeCode: string; base: Money; clamped?: true; full?: true; billBase?: Money }[]; lines: WhtLine[]; expense: Money; cashDelta: Money }
 export interface Doc { id: string; type: DocType; number?: string; status: DocStatus; correctionClass: CorrectionClass;
   revision: number; version: number; header: DocHeader; party?: PartySummary; lines: DocLine[]; totals: DocTotals;
-  outstanding?: Money; locks: Lock[]; createdBy: Actor; issuedAt?: string; allocations?: Allocation[]; whtFrozen?: WhtFrozen;
+  outstanding?: Money; locks: Lock[]; createdBy: Actor; issuedAt?: string; allocations?: Allocation[]; whtFrozen?: WhtFrozen; /** OB batch (AC3): the steps behind the trial balance. */ opening?: DocOpening;
   /** CN / DN (ม.86/10): the invoice's net, the correct value after this note, the difference and its VAT, taken when the note is issued; the paper prints these. Server-written. */
   adjustSnapshot?: { originalNet: Money; correctNet: Money; diffNet: Money; vat: Money };
   cancel?: { reasonCode: string; reasonText: string; at: string }; replacedById?: string; replacesId?: string; marks?: DocMarks;
@@ -160,7 +171,7 @@ export interface WhtLine { code: string; nameTh: string; form: 'PND2' | 'PND3' |
 export interface OpenItem { id: string; type: DocType; number: string; documentDate: IsoDate; dueDate?: IsoDate; total: Money; outstanding: Money }
 export interface ComputeResult { lines: { id: string; net: Money; vat: Money; total: Money }[]; totals: DocTotals;
   missing: MissingItem[]; /** Omitted without ledger.read (D-09). */ journal?: JournalPreview; whtLines?: WhtLine[];
-  /** JV: the server's Σ debit, Σ credit and their difference (the grid shows these, it never sums). */ balance?: { debit: Money; credit: Money; diff: Money };
+  /** JV: the server's Σ debit, Σ credit and their difference (the grid shows these, it never sums). */ balance?: { debit: Money; credit: Money; diff: Money }; /** OB: the sub-ledger ties and the 3900 plug. */ opening?: ObCheck;
   /** The approval policy needs this document approved before it can be issued (server-decided on the computed total, §7.6). */ approvalRequired?: boolean;
   allocation?: { allocated: Money; unallocated: Money; suggestedWht: { targetId: string; wht: Money; whtTypeCode?: string }[] } }
 

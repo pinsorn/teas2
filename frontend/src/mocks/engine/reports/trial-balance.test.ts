@@ -29,7 +29,7 @@ describe('trial balance', () => {
     for (const company of s.companies) {
       const report = trialBalance(s, company.id, { asOf: '2099-12-31', includeZero: 'true' });
       const ar = report.rows.find((r) => r.cells.code === '1130')!;
-      const outstanding = s.docs.filter((d) => d.companyId === company.id && ['TI', 'IV'].includes(d.type) && LIVE.includes(d.status)
+      const outstanding = s.docs.filter((d) => d.companyId === company.id && (['TI', 'IV'].includes(d.type) || (d.type === 'OB' && d.header.obSide === 'AR')) && LIVE.includes(d.status)
         ).reduce((n, d) => n + toSatang(d.outstanding ?? '0.00'), 0);
       expect(toSatang(ar.cells.debit) - toSatang(ar.cells.credit)).toBe(outstanding);
     }

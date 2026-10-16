@@ -10,7 +10,7 @@ export const homeHandlers = [
     const gate = await screenGate('item');
     if (gate) return gate;
     const { st, s, company, perms } = ctx();
-    const docs = s.screenState === 'empty' ? [] : st.docs.filter((d) => d.companyId === company.id && perms.includes(`doc.${d.type}.read`));
+    const docs = s.screenState === 'empty' ? [] : st.docs.filter((d) => d.companyId === company.id && !d.header.obBatchId && perms.includes(`doc.${d.type}.read`)); // an opening item is shown through its batch
     const open = docs.filter((d) => d.status === 'issued' || d.status === 'partly_settled');
     const agent = docs.filter((d) => d.createdBy.kind === 'agent');
     const month = ANCHOR.slice(0, 7);

@@ -26,6 +26,7 @@ export const stripOverrides = <T extends Body>(b0: T): T => {
   // the shape of the request, refused where it enters (create, update, compute, correction plan): an unknown withholding mode would otherwise be read as "deduct" by some paths and as a gross-up by others
   if (b?.header?.whtMode != null && !WHT_MODES.includes(b.header.whtMode)) throw new MockError(422, 'wht.mode_invalid', `โหมดภาษีหัก ณ ที่จ่าย “${String(b.header.whtMode)}” ไม่ถูกต้อง ใช้ได้เฉพาะ: ${WHT_MODES.join(', ')}`);
   if (b?.header && ('reversalOf' in b.header || 'autoReversal' in b.header)) { const { reversalOf, autoReversal, ...h } = b.header; void reversalOf; void autoReversal; b = { ...b, header: h }; } // JV: a reversal's link is engine-set (reverse / auto-reverse), never accepted from a caller
+  if (b?.header && ('obBatchId' in b.header || 'obSide' in b.header || 'obKind' in b.header)) { const { obBatchId, obSide, obKind, ...h } = b.header; void obBatchId; void obSide; void obKind; b = { ...b, header: h }; } // OB: the frozen items are engine-made, never accepted from a caller
   if (b?.header && 'bankSnapshot' in b.header) { const { bankSnapshot, ...h } = b.header; void bankSnapshot; b = { ...b, header: h }; } // engine-set at issue (I3): never accepted from a caller
   if (!Array.isArray(b?.lines)) return b;
   const lines = b.lines.map((l) => { if (!l || typeof l !== 'object') return l; const { vatOverride, ...r } = l; void vatOverride; return r; });
@@ -167,8 +168,9 @@ export const docsWriteHandlers = [
     return HttpResponse.json(publicDoc(r), { status: 201 });
   })),
   // the accounts a journal voucher may post to: postable, none a document owns (the server refuses the others at issue)
-  http.get('*/bff/v1/accounting/journal-accounts', () => guarded('JV', P('create'), (c) => HttpResponse.json(
-    c.st.accounts.filter((a) => a.companyId === c.company.id && a.postable && a.active !== false && !controlExit(c.st, c.company.id, a.code, 'jv')).map((a) => ({ code: a.code, nameTh: a.nameTh, class: a.class }))))),
+  // AC3 (?for=OB): the opening balance posts to controlled accounts too (it ties them to their steps); only 3900, the system's plug, is left out
+  http.get('*/bff/v1/accounting/journal-accounts', ({ request }) => guarded(new URL(request.url).searchParams.get('for') === 'OB' ? 'OB' : 'JV', P('create'), (c) => HttpResponse.json(
+    c.st.accounts.filter((a) => a.companyId === c.company.id && a.postable && a.active !== false && (new URL(request.url).searchParams.get('for') === 'OB' ? a.subClass !== 'opening' : !controlExit(c.st, c.company.id, a.code, 'jv'))).map((a) => ({ code: a.code, nameTh: a.nameTh, class: a.class }))))),
 
   http.post('*/bff/v1/docs/:type/:id/correction-plan', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
     const orig = own(c, t, params.id);

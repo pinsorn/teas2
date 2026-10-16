@@ -139,10 +139,10 @@ settles an OB open item, `GL(1130) = Σ outstanding(TI ∪ IV ∪ OB AR items)` 
 
 **Permissions:** accountant `doc.OB.*`.
 
-- [ ] **Step 1: Failing tests** — subledger mismatch refused with both numbers; 3900 plug equals the imbalance; RC
+- [x] **Step 1: Failing tests** — subledger mismatch refused with both numbers; 3900 plug equals the imbalance; RC
   settling an OB AR item reduces it and keeps the AR identity; cancel reverses. e2e: `screenContract` OB list
   (`both`, forbiddenRole operator); wizard walk-through on the VAT draft ending at step 5 showing the 3900 difference.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.** (AC3: engine written before `opening.test.ts` for the first slice - not red-first; the tests were then mutation-checked, see task-AC3-report.md)
 - [ ] **Step 6: Controller commits** — `feat(accounting): opening balances wizard`.
 
 ---

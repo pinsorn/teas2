@@ -1,7 +1,7 @@
 import type {
-  Actor, Allocation, ComputeResult, Doc, DocHeader, DocLine, DocTotals, DocType, IsoDate, JournalEntryPreview, JournalPreview, Lock, MissingItem, Money, PartySummary, Qty, WhtFrozen,
+  Actor, Allocation, ComputeResult, Doc, DocHeader, DocLine, DocOpening, DocTotals, DocType, IsoDate, JournalEntryPreview, JournalPreview, Lock, MissingItem, Money, PartySummary, Qty, WhtFrozen,
 } from '@/domain/types';
-import { ADJUSTS, CLASS, CONVERSIONS, DOC_TYPES, GROUPS, LIVE, SETTLES, isTypeAvailable } from '@/domain/doc-types';
+import { ADJUSTS, CLASS, CONVERSIONS, DOC_TYPES, GROUPS, LIVE, SETTLES, carriesBalance, isTypeAvailable } from '@/domain/doc-types';
 import type { MockState } from '../store';
 import { approvalRequired, refuseSelfApproval, refuseUnapprovedIssue, reviseNeedsApproval, submit } from './approval';
 import { dropAttachmentsOf } from './attachments';
@@ -13,14 +13,15 @@ import { MockError, diffBody, isPinned, logActivity, logAudit, stamp, today } fr
 import { fromSatang, toSatang } from './money';
 import { adjustSnapshot, hasSnapshot, isNote, noteHeader, noteMissing, noteProblem, withNoteVat } from './notes';
 import { SeriesAllocator } from './numbering';
-import { refuseReconciled, refuseSettled } from './locks';
+import { refuseObLocked, refuseReconciled, refuseSettled } from './locks';
+import { buildOb, cancelObItems, obCalc, obMissing, obProblem, obTotals, syncObItems } from './opening';
 import { firstOpenDate, isClosed, monthLabelTh } from './periods';
 import { balanceOf, certError, cleanAllocations, fiscalAllocations, freezeWht, groupTotals, payDefaults, payLines, payoutOf, resolvedBankId, settleExtras, settleProblem, settleTotals, withBankSnapshot } from './settlement';
 import { syncWts } from './wht-certificates';
 import { cleanInvoices, isVendorBill, issueVendorStatus, purchaseProblem, snapshotCategories, snapshotWhtTypes, withClaimPeriod, withForfeit, withVendorStatus } from './purchase-vat';
 import { computeDoc, vatBasisOf, vatOf } from './vat';
 
-export type Body = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[]; whtFrozen?: WhtFrozen };
+export type Body = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[]; whtFrozen?: WhtFrozen; /** OB (AC3): the steps behind the trial balance */ opening?: DocOpening };
 type Stored = MockState['docs'][number];
 
 export { LIVE };
@@ -46,7 +47,7 @@ const reverseEntry = (st: MockState, companyId: string, e: JournalEntryPreview):
 
 /** The first statement date of a bank account = its go-live: the opening balance carries everything before it (I4). */
 export const goLiveOf = (st: MockState, companyId: string, accountId: string | undefined): IsoDate | undefined =>
-  st.bankImports.filter((i) => i.companyId === companyId && i.accountId === accountId).map((i) => i.from).sort()[0];
+  [...st.bankImports.filter((i) => i.companyId === companyId && i.accountId === accountId).map((i) => i.from), st.bankAccounts.find((b) => b.id === accountId && b.companyId === companyId)?.goLive].filter((x): x is IsoDate => !!x).sort()[0]; // AC3: an opening-balance batch sets it too
 /** R1-2: go-live is a closed boundary for the bank's GL. An entry touching it posts no earlier than go-live: a reversal or correction of an older document is late-posted on that date (like a closed period), so the reconciliation shows it. */
 const bankFloor = (st: MockState, companyId: string, e: JournalEntryPreview): JournalEntryPreview => {
   let floor: IsoDate | undefined;
@@ -93,6 +94,7 @@ export function calc(body: Body, vatRegistered: boolean) {
 }
 /** Document totals: the lines' totals, plus for an RC / PV the settlement money (total, WHT, cash). One seam for create / update / issue / revise / compute. */
 export function totalsOf(st: MockState, companyId: string, type: DocType, body: Body, selfId?: string): DocTotals {
+  if (type === 'OB') return obTotals(st, companyId, body); // AC3: the total of an opening balance is its debit side after the 3900 plug
   if (type === 'JV') return jvTotals(body.lines); // AC1: the total of a journal voucher is the sum of its debits; no VAT, no tax code
   const t = calc(withNoteVat(st, companyId, type, body, selfId), vatBasisOf(st, companyId, type)).totals; // a note: each line's VAT is its original line's VAT change (rule B); a vendor's invoice carries the VAT of its tax code (A.4)
   return SETTLES[type] ? settleTotals(st, companyId, type, body, t, selfId) : GROUPS[type] ? groupTotals(body, t) : t;
@@ -126,7 +128,7 @@ export function missingOf(st: MockState, companyId: string, type: DocType, body:
   if (!isTypeAvailable(type, !!company?.vatRegistered)) out.push({ field: 'type', message: unavailableTh(type) });
   if (!body.header.documentDate) out.push({ field: 'header.documentDate', message: 'ต้องระบุวันที่เอกสาร' });
   if (isNote(type)) out.push(...noteMissing(type, body.header)); // a note's customer is its invoice's: the server fills it (stored)
-  if (!body.header.partyId) { if (!isNote(type) && type !== 'JV') out.push({ field: 'header.partyId', message: 'ต้องเลือกคู่ค้า' }); }
+  if (!body.header.partyId) { if (!isNote(type) && type !== 'JV' && type !== 'OB') out.push({ field: 'header.partyId', message: 'ต้องเลือกคู่ค้า' }); }
   else {
     const p = partyOf(st, companyId, body.header.partyId);
     if (!p) out.push({ field: 'header.partyId', message: 'ไม่พบคู่ค้า' });
@@ -144,6 +146,7 @@ export function missingOf(st: MockState, companyId: string, type: DocType, body:
   } else if (GROUPS[type]) { // BL: the grouped invoices are the content
     if (!body.allocations?.length) out.push({ field: 'allocations', message: 'ต้องเลือกใบแจ้งหนี้หรือใบกำกับภาษีที่ต้องการวางบิล' });
   } else if (type === 'JV') out.push(...jvMissing(body.lines));
+  else if (type === 'OB') out.push(...obMissing(st, companyId, body));
   else if (!body.lines.length) out.push({ field: 'lines', message: 'ต้องมีรายการอย่างน้อย 1 รายการ' });
   return out;
 }
@@ -197,7 +200,7 @@ export function isFiscalChange(d: Doc, b: Body): boolean {
 /** SP0 §7.11: outstanding = total - active credit notes + active debit notes - active settlements (active links only). */
 export function recomputeSettlement(st: MockState, id: string): void {
   const d = st.docs.find((x) => x.id === id);
-  if (!d || !hasOut(d.type) || !LIVE.includes(d.status)) return;
+  if (!d || !carriesBalance(d) || !LIVE.includes(d.status)) return;
   const { out, paid, settled } = balanceOf(st, d);
   // I5: 'settled' needs settlements; a TI credited to 0 by CNs alone stays 'issued' with outstanding 0.00
   const locks = [...d.locks.filter((l) => l.kind !== 'settlement'), ...(settled ? [SETTLEMENT_LOCK] : [])];
@@ -224,7 +227,7 @@ function stored(st: MockState, companyId: string, type: DocType, body: Body, kee
   // D-12: a VAT company's receipt settles tax invoices, it never sells (a cash bill is the non-VAT company's). Shape of the request, so it is refused where the body enters.
   if (type === 'RC' && body.lines.length && vatOf(st, companyId)) throw new MockError(422, 'rc.lines_need_invoice', 'บริษัทที่จดทะเบียน VAT ต้องออกใบกำกับภาษีก่อนรับชำระ');
   const allocations = cleanAllocations(st, companyId, type, body.allocations, keep);
-  return { header: withForfeit(st, companyId, type, withVendorStatus(st, companyId, type, noteHeader(st, companyId, type, payDefaults(st, companyId, type, body.header), body.lines), prev)), lines: GROUPS[type] ? [] : payLines(st, companyId, type, body.header, vendorNoteLines(st, companyId, type, body)), ...(allocations ? { allocations } : {}) };
+  return { ...(type === 'OB' && body.opening ? { opening: body.opening } : {}), header: withForfeit(st, companyId, type, withVendorStatus(st, companyId, type, noteHeader(st, companyId, type, payDefaults(st, companyId, type, body.header), body.lines), prev)), lines: GROUPS[type] ? [] : payLines(st, companyId, type, body.header, vendorNoteLines(st, companyId, type, body)), ...(allocations ? { allocations } : {}) };
 }
 
 /** C1: every PB / PCN / PDN line stores its resolved expense category (the item's, when the line names none). A PCN / PDN line takes the category (and item) of the bill line it adjusts,
@@ -249,7 +252,7 @@ function insertDraft(st: MockState, companyId: string, type: DocType, raw: Body,
   const d: Stored = {
     companyId, id: id ?? newId(st, type), type, status: 'draft', correctionClass: CLASS[type], revision: 0, version: 1,
     header: body.header, party: partyOf(st, companyId, body.header.partyId), lines: body.lines, totals, locks: [], createdBy: actor,
-    ...(body.allocations ? { allocations: body.allocations } : {}),
+    ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.opening ? { opening: body.opening } : {}),
   };
   st.docs.push(d);
   return d;
@@ -285,12 +288,12 @@ function withWht(st: MockState, companyId: string, type: DocType, body: Body, ow
 export function compute(st: MockState, companyId: string, type: DocType, raw: Body, opts?: { docId?: string }): ComputeResult {
   const own0 = opts?.docId ? st.docs.find((x) => x.id === opts.docId) : undefined;
   const body = withWht(st, companyId, type, withNoteVat(st, companyId, type, stored(st, companyId, type, raw, own0?.allocations, own0?.header), opts?.docId), own0);
-  const c = type === 'JV' ? jvCalc(body.lines) : calc(body, vatBasisOf(st, companyId, type));
+  const c = type === 'OB' ? obCalc(body.lines) : type === 'JV' ? jvCalc(body.lines) : calc(body, vatBasisOf(st, companyId, type));
   const totals = totalsOf(st, companyId, type, body, opts?.docId);
   const doc: Doc = {
     id: 'preview', type, status: 'draft', correctionClass: CLASS[type], revision: 0, version: 1, header: body.header,
     party: partyOf(st, companyId, body.header.partyId), lines: body.lines, totals, locks: [], createdBy: { kind: 'user', id: '', name: '' },
-    ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}),
+    ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), ...(body.opening ? { opening: body.opening } : {}),
   };
   const missing = missingOf(st, companyId, type, body);
   const own = opts?.docId ? st.docs.find((x) => x.id === opts.docId) : undefined;
@@ -298,11 +301,11 @@ export function compute(st: MockState, companyId: string, type: DocType, raw: Bo
   if (bad) missing.push(bad.code === 'pv.input_vat_needs_bill' ? { field: 'lines', message: bad.title, code: bad.code } : { field: 'allocations', message: bad.title });
   const np = noteProblem(st, companyId, type, body, opts?.docId);
   if (np) missing.push({ field: 'lines', message: np.title }); // the cap, the invoice's lines: shown before issue
-  const jp = journalProblem(st, companyId, type, body); // JV: the account and auto-reverse rules, shown before issue too
+  const jp = type === 'OB' ? obProblem(st, companyId, body, opts?.docId) : journalProblem(st, companyId, type, body); // JV: the account and auto-reverse rules; OB: cut-off, steps and sub-ledger ties - shown before issue too
   if (jp) missing.push({ field: 'lines', message: jp.title, code: jp.code });
   const pp = purchaseProblem(st, companyId, type, body); // input VAT rules of a vendor's invoice: shown before issue too
   if (pp) missing.push({ field: ({ 'pb.claim_period_out_of_range': 'header.claimPeriod', 'pcn.claim_period_fixed': 'header.claimPeriod', 'pb.vendor_invoice_after_document': 'header.vendorDocDate' } as Record<string, string>)[pp.code] ?? 'lines', message: pp.title });
-  return { lines: c.lines, totals, missing, journal: ledgerFor(st, { ...doc, companyId }), ...settleExtras(st, companyId, type, body), ...(type === 'JV' ? { balance: jvBalance(body.lines) } : {}),
+  return { lines: c.lines, totals, missing, journal: ledgerFor(st, { ...doc, companyId }), ...settleExtras(st, companyId, type, body), ...(type === 'JV' || type === 'OB' ? { balance: jvBalance(body.lines) } : {}), ...(type === 'OB' ? { opening: buildOb(st, companyId, body).check } : {}),
     ...((opts?.docId ? !!own0 && LIVE.includes(own0.status) && reviseNeedsApproval(st, own0, payoutOf(st, companyId, { ...doc, id: opts.docId }), doc.allocations) : approvalRequired(st, companyId, type, payoutOf(st, companyId, doc))) ? { approvalRequired: true } : {}) }; // the editor swaps issue for submit / approve-and-issue (§7.6), and a revise that raises the money above what was approved asks for the approver (C1)
 }
 
@@ -328,10 +331,10 @@ export function updateDraft(st: MockState, id: string, raw: Body, version: numbe
   if (d.status !== 'draft' && d.status !== 'approved') throw new MockError(409, 'doc.not_draft', 'แก้ไขได้เฉพาะเอกสารฉบับร่าง');
   checkVersion(d, version);
   const body = stored(st, d.companyId, d.type, raw, undefined, d.header);
-  const { allocations: _a, approval: _ap, ...rest } = d; void _a; void _ap; // editing an approved document returns it to draft (§7.6): the approval goes, it must be sent again
+  const { allocations: _a, approval: _ap, opening: _op, ...rest } = d; void _a; void _ap; void _op; // editing an approved document returns it to draft (§7.6): the approval goes, it must be sent again
   const totals = totalsOf(st, d.companyId, d.type, body);
   const next: Stored = { ...rest, status: 'draft', header: body.header, lines: body.lines, totals, party: partyOf(st, d.companyId, body.header.partyId),
-    version: d.version + 1, ...(body.allocations ? { allocations: body.allocations } : {}), ...(moneyChanged(d, totals.total, body) ? { moneyBy: actor } : {}) }; // I2: the one who changed the money
+    version: d.version + 1, ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.opening ? { opening: body.opening } : {}), ...(moneyChanged(d, totals.total, body) ? { moneyBy: actor } : {}) }; // I2: the one who changed the money
   put(st, next);
   if (d.status === 'approved') logActivity(st, id, actor, 'send_back', 'แก้ไขหลังอนุมัติ ต้องส่งอนุมัติใหม่');
   logActivity(st, id, actor, 'update');
@@ -396,10 +399,11 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   checkVersion(d, version);
   if (!opts?.approver) refuseUnapprovedIssue(st, d); // a document the policy wants approved issues only from `approved`: nothing below has run, so a refusal leaves no number, link or journal
   const header0 = issueVendorStatus(st, d.companyId, d.type, d.header); // R1-M2: the vendor's VAT status as of issue
-  let body: Body = { header: header0, lines: vendorNoteLines(st, d.companyId, d.type, { header: header0, lines: d.lines }), ...(d.allocations ? { allocations: d.allocations } : {}) }; // C1: categories as of now
+  let body: Body = { header: header0, lines: vendorNoteLines(st, d.companyId, d.type, { header: header0, lines: d.lines }), ...(d.allocations ? { allocations: d.allocations } : {}), ...(d.opening ? { opening: d.opening } : {}) }; // C1: categories as of now
   const missing = missingOf(st, d.companyId, d.type, body);
   if (missing.length) throw incomplete(missing);
-  if (!opts?.keepDate) dateGuards(st, d.companyId, d.header.documentDate); // D-10
+  if (d.type === 'OB') { const op = obProblem(st, d.companyId, body); if (op) throw op; } // AC3: the cut-off, the steps and the ties; the closed-period refusal of D-10 does not apply to an opening balance (D-10 exemption)
+  else if (!opts?.keepDate) dateGuards(st, d.companyId, d.header.documentDate); // D-10
   if (!opts?.keepDate && !isPinned() && (d.type === 'RC' || d.type === 'PV')) { // R1-2: a new receipt / voucher cannot put an entry on a bank GL before its go-live
     const live = goLiveOf(st, d.companyId, resolvedBankId(st, d.companyId, d.type, d.header));
     if (live && d.header.documentDate < live) throw new MockError(422, 'bank.before_go_live', `บัญชีธนาคารนี้เริ่มกระทบยอดกับ statement ตั้งแต่ ${live} ออกเอกสารลงวันที่ก่อนนั้นไม่ได้ ให้เปลี่ยนวันที่เป็น ${live} เป็นต้นไป`);
@@ -421,7 +425,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   body = withNoteVat(st, d.companyId, d.type, body); // a CN / DN keeps the VAT its lines carry at issue
   const totals = totalsOf(st, d.companyId, d.type, body);
   const next: Stored = {
-    ...d, header: body.header, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', totals, party: partyOf(st, d.companyId, d.header.partyId),
+    ...d, header: body.header, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), ...(body.opening ? { opening: body.opening } : {}), number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', totals, party: partyOf(st, d.companyId, d.header.partyId),
     version: d.version + 1, issuedAt: stamp(), ...(hasOut(d.type) ? { outstanding: totals.total } : {}),
     ...(opts?.approver ? { approval: { submittedBy: d.approval?.submittedBy ?? actor, submittedAt: d.approval?.submittedAt ?? stamp(), approvedBy: opts.approver, approvedAt: stamp(), amount: payoutOf(st, d.companyId, { ...d, ...body, totals }) } } : {}),
   };
@@ -429,7 +433,8 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   put(st, next);
   settleTargets(st, next, body.allocations);
   if (isNote(d.type)) adjustTarget(st, next, totals.total);
-  setJournal(st, id, postedNow(st, d.companyId, ledgerFor(st, next)));
+  setJournal(st, id, d.type === 'OB' ? ledgerFor(st, next) : postedNow(st, d.companyId, ledgerFor(st, next))); // an opening balance posts at its cut-off, whatever the period
+  if (d.type === 'OB') syncObItems(st, next, actor); // AC3: the frozen open items and in-transit items, and the bank accounts' go-live
   if (d.type === 'JV' && next.header.autoReverse) postAutoReversal(st, next); // AC1: the system's reversing entry on day 1 of the next month, in the same command
   if (d.type === 'PV') { syncWts(st, id, actor); settlePaidUpRecords(st, id, (next.allocations ?? []).map((a) => a.targetId)); } // the 50 tawi, one per WHT type, in the same command (one state write)
   st.revisions.push({ docId: id, revision: 0, at: next.issuedAt!, actor, snapshot: publicDoc(next), diff: [] });
@@ -472,6 +477,7 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
   if (blockingLocks(d).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ยกเลิกไม่ได้');
   refuseReconciled(st, d); // FN2: matched to a bank line - the exit is to unmatch it first
   refuseSettled(st, d); // FN3: a leg of a posted settlement - the exit is to reverse the settlement
+  if (d.type === 'OB') refuseObLocked(st, d); // AC3: an item settled or matched - the exit is to cancel the RC / PV or unmatch
   if (d.type === 'JV') beforeJvCancel(st, d, actor, !!opts?.system); // AC1: a reversed JV and a reversal are final; a pending auto-reversal goes with its accrual
   // SP0 §7.4: an applied receipt (TI) or settlements (IV) block a cancel; N-class documents and a CN / DN being cancelled do not. S5 adds: a TI with a live CN / DN against it (below).
   if (st.links.some((l) => l.to === id && l.active && l.kind === 'settles')) throw new MockError(409, 'doc.has_dependents', 'มีใบเสร็จ/การชำระที่ผูกอยู่ ต้องยกเลิกหรือถอนการชำระก่อน');
@@ -480,6 +486,7 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
   const { outstanding: _o, ...rest } = d; void _o;
   const next: Stored = { ...rest, status: 'cancelled', version: d.version + 1, cancel: { reasonCode, reasonText, at: stamp() } };
   put(st, next);
+  if (d.type === 'OB') cancelObItems(st, id);
   if (d.type === 'PV') syncWts(st, id, actor); // a cancelled voucher withholds nothing: its certificates are cancelled with it
   const released = st.links.filter((l) => l.from === id && l.active);
   st.links = st.links.map((l) => (l.from === id && l.active ? { ...l, active: false } : l)); // returns converted quantity, un-settles receipts
@@ -487,7 +494,7 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
   if (d.type === 'PV') settlePaidUpRecords(st, id, (d.allocations ?? []).map((a) => a.targetId)); // the bills it paid are open again: their paid-up record goes
   const j = st.journals.find((x) => x.docId === id);
   const last = j?.preview.entries[j.preview.entries.length - 1];
-  if (j && last && last.kind !== 'reversal') j.preview = { entries: [...j.preview.entries, (opts?.correction || opts?.system ? correctionReversal : reverseEntry)(st, d.companyId, last)] };
+  if (j && last && last.kind !== 'reversal') j.preview = { entries: [...j.preview.entries, d.type === 'OB' ? reversalOf(last, last.date, stamp()) : (opts?.correction || opts?.system ? correctionReversal : reverseEntry)(st, d.companyId, last)] };
   logActivity(st, id, actor, 'cancel', reasonText);
   logAudit(st, actor, d.companyId, 'doc.cancel', id, { status: d.status }, { status: 'cancelled', reasonCode });
   return publicDoc(next);
@@ -588,7 +595,8 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   }
   if (d.correctionClass === 'L' && blockingLocks(d).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก แก้ไขไม่ได้');
   if (d.correctionClass !== 'T') { const m = missingOf(st, d.companyId, d.type, body); if (m.length) throw incomplete(m); }
-  if (body.header.documentDate !== d.header.documentDate) dateGuards(st, d.companyId, body.header.documentDate); // a moved date follows the issue rules
+  if (d.type === 'OB') { refuseObLocked(st, d, { header: body.header, lines: body.lines, opening: body.opening }); const op = obProblem(st, d.companyId, body, d.id); if (op) throw op; } // AC3: settled / matched items keep the batch as it is (a notes-only edit passes); then the cut-off, the steps and the ties (D-10 exemption)
+  else if (body.header.documentDate !== d.header.documentDate) dateGuards(st, d.companyId, body.header.documentDate); // a moved date follows the issue rules
   refusePartyChange(st, d, body);
   refuseNonPositive(st, d.companyId, d.type, body, d.id);
   refuseBelowSettled(st, d, body);
@@ -621,7 +629,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   }
   const next: Stored = {
     ...rest, header: fin.header, lines: fin.lines, totals, party: partyOf(st, d.companyId, fin.header.partyId),
-    revision: d.revision + 1, version: d.version + 1, ...(fin.allocations ? { allocations: fin.allocations } : {}), ...(fin.whtFrozen ? { whtFrozen: fin.whtFrozen } : {}),
+    revision: d.revision + 1, version: d.version + 1, ...(fin.allocations ? { allocations: fin.allocations } : {}), ...(fin.whtFrozen ? { whtFrozen: fin.whtFrozen } : {}), ...(fin.opening ? { opening: fin.opening } : {}),
     ...(moneyChanged(d, totals.total, fin) ? { moneyBy: actor } : {}),
     ...(reapprove ? { approval: { submittedBy: actor, submittedAt: stamp(), approvedBy: opts!.approver, approvedAt: stamp(), amount: payout } } : {}),
   };
@@ -644,9 +652,11 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
     const prev = st.journals.find((j) => j.docId === id)?.preview.entries ?? [];
     const live = prev[prev.length - 1];
     const fresh = ledgerFor(st, getDoc(st, id)).entries[0];
-    setJournal(st, id, { entries: [...prev, ...(live && live.kind !== 'reversal' ? [correctionReversal(st, d.companyId, live)] : []),
-      ...(fresh ? [placed(st, d.companyId, { ...fresh, kind: 'correction' as const, postedAt: stamp() })] : [])] });
+    const ob = d.type === 'OB'; // an opening balance reverses and reposts at its cut-off, never shifted by a period or a go-live
+    setJournal(st, id, { entries: [...prev, ...(live && live.kind !== 'reversal' ? [ob ? reversalOf(live, live.date, stamp()) : correctionReversal(st, d.companyId, live)] : []),
+      ...(fresh ? [ob ? { ...fresh, kind: 'correction' as const, postedAt: stamp() } : placed(st, d.companyId, { ...fresh, kind: 'correction' as const, postedAt: stamp() })] : [])] });
   }
+  if (d.type === 'OB' && (stableJson(d.opening ?? null) !== stableJson(next.opening ?? null) || d.header.documentDate !== next.header.documentDate)) syncObItems(st, getDoc(st, id), actor); // the frozen items follow the steps (a notes-only edit leaves them, and what settled them, alone)
   if (d.type === 'JV') syncAutoReversal(st, getDoc(st, id), actor); // the pending auto-reversal follows the accrual, so the pair always nets to zero
   if (d.type === 'PV') { syncWts(st, id, actor); settlePaidUpRecords(st, id, [...(d.allocations ?? []), ...(next.allocations ?? [])].map((a) => a.targetId)); } // changed WHT: the old certificates are cancelled and new ones issued; unchanged WHT keeps them (§7.3 L)
   const at = stamp();

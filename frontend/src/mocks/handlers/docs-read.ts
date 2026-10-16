@@ -34,13 +34,17 @@ export const docsReadHandlers = [
     const u = new URL(request.url);
     const partyId = u.searchParams.get('partyId');
     const asked = (u.searchParams.get('types') ?? '').split(',').filter(Boolean);
-    if (!partyId || !asked.length || asked.some((t) => !Object.hasOwn(DOC_TYPES, t) || !DOC_TYPES[t as DocType].outstanding)) {
+    if (!partyId || !asked.length || asked.some((t) => !Object.hasOwn(DOC_TYPES, t) || (t !== 'OB' && !DOC_TYPES[t as DocType].outstanding))) { // OB = the frozen opening items (AC3)
       return problem(422, 'doc.open_items_query', 'ต้องระบุคู่ค้าและประเภทเอกสารที่มียอดค้างชำระ');
     }
     const types = (asked as DocType[]).filter((t) => isTypeAvailable(t, company.vatRegistered));
-    for (const t of types) if (!perms.includes(`doc.${t}.read`)) return forbidden(`doc.${t}.read`);
+    for (const t of types) if (t !== 'OB' && !perms.includes(`doc.${t}.read`)) return forbidden(`doc.${t}.read`);
+    // AC3: the opening items ride along with the types they stand in for (AR: TI / IV, AP: PB, employee: EX); a role that cannot read OB but can create the receipt / voucher still settles them
+    const obOk = types.includes('OB' as DocType) && (perms.includes('doc.OB.read') || perms.includes('doc.RC.create') || perms.includes('doc.PV.create'));
+    const sides = new Set<string>(asked.flatMap((t) => (t === 'TI' || t === 'IV' ? ['AR'] : t === 'PB' ? ['AP'] : t === 'EX' ? ['EMP'] : [])));
+    if (!sides.size) ['AR', 'AP', 'EMP'].forEach((x) => sides.add(x));
     const rows = st.docs
-      .filter((d) => d.companyId === company.id && d.header.partyId === partyId && types.includes(d.type) && LIVE.includes(d.status) && balanceOf(st, d).out !== 0)
+      .filter((d) => d.companyId === company.id && d.header.partyId === partyId && (d.type === 'OB' ? obOk && !!d.header.obSide && sides.has(d.header.obSide) : types.includes(d.type)) && LIVE.includes(d.status) && balanceOf(st, d).out !== 0)
       .sort((a, b) => a.header.documentDate.localeCompare(b.header.documentDate) || (a.number ?? '').localeCompare(b.number ?? ''));
     const items = rows.map((d): OpenItem => ({ id: d.id, type: d.type, number: d.number ?? '', documentDate: d.header.documentDate, ...(d.header.dueDate ? { dueDate: d.header.dueDate } : {}),
         total: d.totals.total, outstanding: fromSatang(balanceOf(st, d).out) }));
@@ -55,7 +59,7 @@ export const docsReadHandlers = [
     if (!st.parties.some((p) => p.id === params.partyId && p.companyId === company.id)) return problem(404, 'record.not_found', 'ไม่พบข้อมูลนี้');
     // a type the company cannot use or the role cannot read is skipped, not a failure: the tab shows what the role may see
     const rows = st.docs
-      .filter((d) => d.companyId === company.id && d.header.partyId === params.partyId && isTypeAvailable(d.type, company.vatRegistered) && perms.includes(`doc.${d.type}.read`))
+      .filter((d) => d.companyId === company.id && !d.header.obBatchId && d.header.partyId === params.partyId && isTypeAvailable(d.type, company.vatRegistered) && perms.includes(`doc.${d.type}.read`))
       .sort((a, b) => b.header.documentDate.localeCompare(a.header.documentDate) || (a.number ?? '').localeCompare(b.number ?? ''));
     return HttpResponse.json({ items: rows.map(toSummary), total: rows.length } satisfies Page<DocSummary>);
   }),
@@ -75,7 +79,7 @@ export const docsReadHandlers = [
     const limit = Math.min(Number(u.searchParams.get('limit')) || 25, 100);
     const offset = u.searchParams.get('cursor') ? Number(atob(u.searchParams.get('cursor')!)) || 0 : 0;
     const rows = st.docs
-      .filter((d) => d.companyId === company.id && d.type === type && (!statuses?.length || statuses.includes(d.status))
+      .filter((d) => d.companyId === company.id && d.type === type && !d.header.obBatchId && (!statuses?.length || statuses.includes(d.status))
         && (!owing || Number(d.outstanding ?? 0) > 0)
         && (!overdue || (!!d.header.dueDate && d.header.dueDate < now && Number(d.outstanding ?? 0) > 0)) && (!agent || d.createdBy.kind === 'agent') && (!from || d.header.documentDate >= from) && (!to || d.header.documentDate <= to)
         && (!q || `${d.number ?? ''} ${d.party?.name ?? ''} ${d.header.vendorDocNumber ?? ''}`.toLowerCase().includes(q)))
