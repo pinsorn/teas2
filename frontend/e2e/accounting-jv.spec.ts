@@ -63,6 +63,10 @@ test('create a 2-line JV with Tab / Enter only, issue it, then กลับร�
   await shot(page, 'jv-editor');
   await axeClean(page);
   await page.getByRole('button', { name: 'บันทึกและออกใบสำคัญทั่วไป' }).click();
+  const issueDlg = page.getByRole('alertdialog');
+  await expect(issueDlg).toContainText('เดบิตรวม');
+  await expect(issueDlg).toContainText('เครดิตรวม');
+  await expect(issueDlg).not.toContainText('มูลค่าก่อนภาษี');
   await page.getByRole('alertdialog').getByRole('button', { name: /^ออก/ }).click();
   await expect(page.getByTestId('doc-number')).toHaveText(/^JV-\d{6}-\d{4}$/);
   const id = page.url().split('/').pop()!;
@@ -204,14 +208,12 @@ test('revise an accrual from its edit page: reverse + repost, and its pending au
   expect(lines(await api<Ledger>(page, '/docs/JV/jv-1-auto/ledger'), 2)).toEqual([['5120', '0.00', '9000.00'], ['2120', '9000.00', '0.00']]);
 });
 
-test('a reversed JV cannot be revised: the edit page says so (final), nothing is posted', async ({ page }) => {
+test('a reversed JV is final: the edit button is disabled with the reason, no party row, nothing posted', async ({ page }) => {
   await page.goto('/'); const id = await fixtureId(page, 'jvIssued');
   const before = await api<Ledger>(page, `/docs/JV/${id}/ledger`);
   await page.goto(`${BASE}/${id}`);
-  await page.getByRole('link', { name: 'แก้ไข' }).click();
-  await page.locator('[data-cell="0:debit"]').fill('4600');
-  await page.locator('[data-cell="1:credit"]').fill('4600');
-  await page.getByRole('button', { name: 'บันทึกการแก้ไข' }).click();
-  await expect(page.getByRole('alert').filter({ hasText: 'ถูกกลับรายการโดย' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'แก้ไข' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'แก้ไข' })).toBeDisabled();
+  await expect(page.getByText('คู่ค้า')).toHaveCount(0);
   expect(await api<Ledger>(page, `/docs/JV/${id}/ledger`)).toEqual(before);
 });

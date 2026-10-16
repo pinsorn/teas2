@@ -56,7 +56,7 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, comp
             {(p) => <Button {...p} asChild={!p.disabled}>{p.disabled ? <span>{t('issueDraft')}</span> : <Link href={routes.edit(doc.id)}>{t('issueDraft')}</Link>}</Button>}
           </Guarded>
         ) : (
-          <Guarded why={live ? missing(d.permissions.create) : doc.status === 'replaced' ? t('whyReplaced') : t('whyCancelled')}>
+          <Guarded why={live ? (doc.locks.some((l) => l.kind === 'reversal') ? t('whyFinal') : missing(d.permissions.create)) : doc.status === 'replaced' ? t('whyReplaced') : t('whyCancelled')}>
             {(p) => <Button {...p} asChild={!p.disabled}>{p.disabled ? <span>{t('edit')}</span> : <Link href={routes.edit(doc.id)}>{t('edit')}</Link>}</Button>}
           </Guarded>
         )}

@@ -25,7 +25,7 @@ export function rolesOf(st: MockState, companyId: string, code: string): Account
   const a = st.accounts.find((x) => x.companyId === companyId && x.code === code);
   return [...new Set([...(a?.controlRole ? [a.controlRole] : []), ...st.postingRules.filter((r) => r.companyId === companyId && r.accountCode === code).map((r) => r.role)])];
 }
-/** Why an account is not for an inline journal and what to use instead; undefined = free to post. `scope` 'jv' (AC1): the same list for the journal voucher, where the equity accounts, sales revenue and the payroll accruals
+/** Why an account is not for an inline journal and what to use instead; undefined = free to post. `scope` 'jv' (AC1): the same list for the journal voucher, where the equity accounts and sales revenue
  *  are the accountant's to post and only 3900 (opening balances) stays with its own screen; every account an invariant ties to documents is refused in both. */
 export function controlExit(st: MockState, companyId: string, code: string, scope: 'inline' | 'jv' = 'inline'): string | undefined {
   const a = st.accounts.find((x) => x.companyId === companyId && x.code === code);
@@ -37,7 +37,7 @@ export function controlExit(st: MockState, companyId: string, code: string, scop
   if (!jv && (has('Revenue', 'SalesReturn', 'SalesDiscount') || sub === 'sales' || sub === 'contra-sales')) return 'บัญชีรายได้จากการขาย ลงจากใบกำกับภาษี/ใบลดหนี้เท่านั้น (ต้องมีภาษีขาย)';
   if (has('FixedAsset', 'AccumulatedDepreciation') || sub === 'fixed-asset' || sub === 'accumulated-depreciation') return 'บัญชีสินทรัพย์ถาวร/ค่าเสื่อมราคาสะสม ลงจากทะเบียนสินทรัพย์และใบสำคัญจ่ายเท่านั้น';
   if ((jv ? has('OutputVat', 'InputVat', 'Pnd36VatPayable', 'WhtReceivable', 'WhtPayable') : has(...TAX_ROLES)) || sub === 'tax-asset' || sub === 'tax-liability') return 'บัญชีควบคุมภาษี ภาษีลงจากเอกสารเท่านั้น';
-  if (!jv && (has('SalaryPayable', 'PitPayable', 'SsoPayable') || sub === 'payroll-liability')) return 'บัญชีเจ้าหนี้เงินเดือน ลงจากเอกสารเงินเดือนเท่านั้น';
+  if ((has('SalaryPayable', 'PitPayable', 'SsoPayable') || sub === 'payroll-liability')) return jv ? 'บัญชีเจ้าหนี้เงินเดือน/ภาษี-ประกันสังคมหัก ณ ที่จ่าย ลงจากรอบเงินเดือนเท่านั้น (ตั้งค้างจ่ายเงินเดือนที่ 2120 ไปก่อน)' : 'บัญชีเจ้าหนี้เงินเดือน ลงจากเอกสารเงินเดือนเท่านั้น';
   return undefined;
 }
 

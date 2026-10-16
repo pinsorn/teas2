@@ -395,7 +395,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
       )}
       <JournalDrawer open={journalOpen} onOpenChange={setJournalOpen} journal={compute.data?.journal} pending={compute.pending} error={compute.error} onRetry={compute.retry} />
       {compute.data && (
-        <ConfirmIssueDialog open={dialogOpen} title={submitMode ? t('submitApproval') : t('confirm.title', { title })} body={submitMode ? t('confirmSubmit.body') : approveIssueMode ? t('confirmApprove.body') : undefined} totals={compute.data.totals}
+        <ConfirmIssueDialog open={dialogOpen} title={submitMode ? t('submitApproval') : t('confirm.title', { title })} body={submitMode ? t('confirmSubmit.body') : approveIssueMode ? t('confirmApprove.body') : undefined} totals={compute.data.totals} journalVoucher={d.type === 'JV'}
           onConfirm={() => void confirmIssue()} onCancel={() => { setConfirmOpen(false); setWant(undefined); }} />
       )}
     </div>

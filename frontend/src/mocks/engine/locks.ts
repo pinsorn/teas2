@@ -16,7 +16,7 @@ export function derivedLocks(st: MockState, d: { id?: string; type?: DocType; lo
   const r = live && d.id ? reconciliationLock(st, d.id) : undefined;
   const s = live && d.id ? settlementLock(st, d.id) : undefined;
   const v = live ? jvLock(st, d) : undefined; // AC1: a reversed JV, and a reversal, are final
-  return [...(s ? d.locks.filter((l) => l.kind !== 'settlement') : d.locks), ...(r ? [r] : []), ...(s ? [s] : []), ...(v ? [v] : []), ...(p ? [p] : [])];
+  return [...(s ? d.locks.filter((l) => l.kind !== 'settlement') : d.locks), ...(r ? [r] : []), ...(s ? [s] : []), ...(v ? [v] : []), ...(p && !v ? [p] : [])];
 }
 
 /** The cash an RC / PV moves (satang): `totals.cash`, or total - WHT for a document stored without it. */

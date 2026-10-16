@@ -198,7 +198,7 @@ export function jvLock(st: MockState, d: { id?: string; type?: string; status: s
 
 // ---------------------------------------------------------------- invariants
 
-const sig = (ls: { accountCode?: string; debit?: string; credit?: string; partyId?: string }[]) => ls.map((l) => `${l.accountCode}|${satOf(l.debit)}|${satOf(l.credit)}|${l.partyId ?? ''}`).join(',');
+const sig = (ls: { accountCode?: string; debit?: string; credit?: string; partyId?: string; partyName?: string }[]) => ls.map((l) => `${l.accountCode}|${satOf(l.debit)}|${satOf(l.credit)}|${l.partyName ?? l.partyId ?? ''}`).join(',');
 
 /** AC1 invariants of the journal vouchers: no line on an account a document owns, the journal IS the lines, a reversal is the exact mirror of a live original (one live reversal each), and an accrual with
  *  `autoReverse` has its one live system reversal dated day 1 of the next month - so the pair nets to zero. */
@@ -216,7 +216,7 @@ export function jvInvariants(st: MockState): string[] {
     if (dr !== cr) out.push(`${d.id}: JV lines do not balance (Dr ${fromSatang(dr)} / Cr ${fromSatang(cr)})`);
     if (fromSatang(dr) !== d.totals.total) out.push(`${d.id}: JV total ${d.totals.total} is not its lines' debit ${fromSatang(dr)}`);
     const es = st.journals.find((j) => j.docId === d.id)?.preview.entries ?? [], cur = [...es].reverse().find((e) => e.kind !== 'reversal');
-    if (!cur || sig(cur.lines) !== sig(used)) out.push(`${d.id}: JV journal is not its lines`);
+    if (!cur || sig(cur.lines) !== sig(jvEntryLines(st, d.companyId, used))) out.push(`${d.id}: JV journal is not its lines`);
     if (d.header.reversalOf) {
       const o = st.docs.find((x) => x.id === d.header.reversalOf);
       if (!o || o.type !== 'JV' || o.companyId !== d.companyId || !LIVE.includes(o.status)) { out.push(`${d.id}: reversal of ${d.header.reversalOf}, which is not a live JV of its company`); continue; }

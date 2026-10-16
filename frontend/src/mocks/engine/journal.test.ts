@@ -81,11 +81,25 @@ describe('JV money rules (ruling 4)', () => {
     }
     expect(checkInvariants(st)).toEqual([]);
   });
-  it('accounts that are free for a JV post (expense, accrual, equity, revenue, prepaid, payroll accrual)', () => {
-    for (const code of ['5110', '5160', '5120', '2120', '3100', '3200', '4100', '1150', '2170']) {
+  it('accounts that are free for a JV post (expense, accrual, equity, revenue, prepaid)', () => {
+    for (const code of ['5110', '5160', '5120', '2120', '3100', '3200', '4100', '1150']) {
       const d = post(pair(code, code === '5110' ? '2120' : '5110'));
       expect(d.status, code).toBe('issued');
     }
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('payroll payables 2160 and 2170 belong to the payroll run: a JV is refused with the payroll exit', () => {
+    for (const code of ['2160', '2170']) {
+      const d = draft(pair(code, '5110'));
+      const c = err(() => issue(st, d.id, d.version, ME));
+      expect(c.code, code).toBe('ledger.control_account');
+      expect(c.title, code).toContain('รอบเงินเดือน');
+    }
+  });
+  it('a JV line with a party keeps the journal = its lines invariant clean (F1)', () => {
+    const p = st.parties.find((x) => x.companyId === CO)!;
+    const d = post([L('5110', '1000.00', '0.00', { partyId: p.id }), L('2120', '0.00', '1000.00')]);
+    expect(d.status).toBe('issued');
     expect(checkInvariants(st)).toEqual([]);
   });
   it('an unknown or non-postable account is refused: ledger.account_invalid', () => {
@@ -165,6 +179,13 @@ describe('กลับรายการ (reverse): JV only (ruling 2)', () => {
     expect(err(() => revise(st, r.id, { header: doc(r.id).header, lines: doc(r.id).lines }, doc(r.id).version, 'x', ME)).code).toBe('ledger.reversal_final');
     expect(err(() => cancel(st, r.id, doc(r.id).version, 'OTHER', 'x', ME)).code).toBe('ledger.reversal_final');
     expect(derivedLocks(st, doc(o.id)).some((l) => l.kind === 'reversal')).toBe(true);
+  });
+  it('a reversed JV in a closed month reads with ONE banner: the reversal-final lock replaces the period lock (M1)', () => {
+    const o = post(pair('5110', '5160'), { documentDate: '2026-09-20' });
+    closeMonth('2026-09');
+    expect(derivedLocks(st, doc(o.id)).map((l) => l.kind)).toEqual(['period']);
+    reverseJv(st, o.id, ME);
+    expect(derivedLocks(st, doc(o.id)).map((l) => l.kind)).toEqual(['reversal']);
   });
   it('a reversal can itself be reversed once (re-instates the entry)', () => {
     const o = post(pair('5110', '5160', '300.00'));

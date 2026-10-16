@@ -149,7 +149,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
         </div>
         <h1 className="text-h1 font-semibold tabular-nums" data-testid="doc-number">{doc.number ?? (doc.status === 'pending' || doc.status === 'approved' ? tst(doc.status) : tc('draftNoNumber'))}</h1>
         <dl className="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-x-6 gap-y-2 text-body">
-          <div><dt className="text-small text-muted-foreground">{t(d.partyKind === 'employee' ? 'header.employee' : 'header.party')}</dt><dd>{doc.party?.name ?? '-'}</dd></div>
+          {d.type === 'JV' && !doc.lines.some((l) => l.partyId) ? null : <div><dt className="text-small text-muted-foreground">{t(d.partyKind === 'employee' ? 'header.employee' : 'header.party')}</dt><dd>{doc.party?.name ?? '-'}</dd></div>}
           <div><dt className="text-small text-muted-foreground">{t('header.date')}</dt><dd className="tabular-nums">{formatDateBE(doc.header.documentDate)}</dd></div>
           <div><dt className="text-small text-muted-foreground">{t('header.total')}</dt><dd className="tabular-nums">{formatTHB(doc.totals.total)}</dd></div>
           {doc.header.vendorDocNumber ? <div><dt className="text-small text-muted-foreground">{t('header.vendorDoc')}</dt><dd className="tabular-nums">{doc.header.vendorDocNumber}</dd></div> : null}
