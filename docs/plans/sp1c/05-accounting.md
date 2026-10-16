@@ -173,6 +173,15 @@ Missing runs show on the period-close checklist (AC6).
 
 **Money invariants:** Σ amortisation plan = total exactly; after all runs `GL(1150)` contribution of the schedule = 0.
 
+**Source and run rules (AC4 reviews):** a run is refused until its month has ended (`schedule.not_due`; nothing is posted ahead, a run
+reversal follows the plain AC1 date rules). A schedule cannot start before its source document's month (`schedule.before_source`) and
+its total is capped by what the source line still holds (line + live PDN − live PCN − live runs of every schedule on the line).
+While a schedule is not stopped (done ones are released) the source line's money / account / date, a PCN / PDN on it, and the
+source's cancel / JV reversal are refused (`schedule.source_locked`, exit "หยุดตารางตัดจ่าย <name>"); there is no cascade: cancelling the
+source never stops its schedules. After the stop (or when done) the line may shrink only down to Σ live runs, and the source date
+cannot move while any run is live (`schedule.source_consumed`, exit: reverse the runs). The expense / prepaid account of a schedule that is
+not stopped cannot be deactivated (`account.scheduled`).
+
 **Fixtures:** VAT: recurring monthly TI to pc-04 "ดูแลเว็บไซต์รายเดือน" (next run 2026-11-01); recurring JV accrual;
 amortisation of an annual insurance PB line 12,000.00 over 12 months from 2026-07 (3 runs done). Non-VAT: recurring IV.
 Keys `schedRecurringTi`, `schedAmortisation`.

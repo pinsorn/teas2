@@ -123,6 +123,7 @@ export function createAmortisation(st: MockState, companyId: string, input: Amor
   const src = st.docs.find((d) => d.id === input.docId && d.companyId === companyId);
   const line = src && LIVE.includes(src.status) ? sourceLine(st, src, input.lineId) : undefined;
   if (!src || !line || !isPrepaid(st, companyId, line.account)) throw fail(422, 'schedule.source_invalid', 'ตัดจ่ายได้เฉพาะรายการในใบแจ้งหนี้ซื้อ (PB) หรือใบสำคัญทั่วไป (JV) ที่ออกแล้วและลงบัญชีค่าใช้จ่ายจ่ายล่วงหน้า (1150 หรือบัญชีหมวดเดียวกัน)');
+  if (input.startMonth < src.header.documentDate.slice(0, 7)) throw fail(422, 'schedule.before_source', `เริ่มตัดจ่ายก่อนเดือนของเอกสารต้นทาง (${monthLabelTh(src.header.documentDate.slice(0, 7))}) ไม่ได้`);
   const room = lineCapacity(st, src.id, input.lineId, line.account) - runsTaken(st, onLine(st, src.id, input.lineId)); // what the line still holds after every schedule's live runs (a stopped one keeps its own)
   if (sat(input.total) > room) throw fail(422, 'schedule.over_source', `ยอดตัดจ่ายเกินยอดคงเหลือของรายการต้นทาง (${fromSatang(Math.max(room, 0))}) ยอดที่ตารางอื่นตัดจ่ายไปแล้วหักออกแล้ว`);
   const taken = liveOnLine(st, src.id, input.lineId)[0];
@@ -286,7 +287,9 @@ function runRecurring(st: MockState, s: ScheduleRecord, actor: Actor): ScheduleR
 // ---------------------------------------------------------------- locks and hooks (called from the document commands)
 
 /** The schedules that still own their source line: not stopped (done ones too: their runs stand on the line). */
-const heldSchedulesOn = (st: MockState, docId: string) => st.schedules.filter((s) => s.kind === 'amortisation' && !s.stopped && s.source?.docId === docId);
+/** A finished schedule (every month run) is released: it no longer owns its source's money, account or cancel; its runs still set the floor (and the date lock). */
+const isHeld = (st: MockState, s: ScheduleRecord) => !s.stopped && liveRuns(st, s).length < s.plan!.length;
+const heldSchedulesOn = (st: MockState, docId: string) => st.schedules.filter((s) => s.kind === 'amortisation' && s.source?.docId === docId && isHeld(st, s));
 const scheduleHref = (s: ScheduleRecord) => `/accounting/schedules/${s.id}`;
 const exitOf = (s: ScheduleRecord) => `หยุดตารางตัดจ่าย ${s.name}`;
 const lockedBy = (s: ScheduleRecord, what: string) => fail(409, 'schedule.source_locked', `ตารางตัดจ่าย "${s.name}" ยังใช้รายการนี้อยู่ — ${what} ทางออก: ${exitOf(s)}`);
@@ -310,6 +313,10 @@ export function refuseScheduleSource(st: MockState, d: { id: string; header: Doc
   const held = heldSchedulesOn(st, d.id).find((s) => lineChanged(s.source!.lineId!));
   if (held) throw lockedBy(held, next ? 'แก้ไขยอด บัญชี หรือวันที่ของรายการที่ตัดจ่ายไม่ได้' : 'ยกเลิกหรือกลับรายการเอกสารนี้ไม่ได้');
   const doc = st.docs.find((x) => x.id === d.id);
+  if (next && next.header.documentDate !== d.header.documentDate) { // F1b: a run is dated after its source: with a live run on any line the date stays (schedule stopped or done; a live one was refused above)
+    const ss = st.schedules.filter((s) => s.kind === 'amortisation' && s.source?.docId === d.id && runsTaken(st, [s]) > 0)[0];
+    if (ss) throw fail(409, 'schedule.source_consumed', `ตารางตัดจ่าย "${ss.name}" ตัดจ่ายจากรายการนี้ไปแล้ว เปลี่ยนวันที่ของเอกสารต้นทางไม่ได้ ทางออก: กลับรายการใบสำคัญตัดจ่ายของตารางนั้นก่อน`);
+  }
   for (const lineId of new Set(st.schedules.filter((s) => s.kind === 'amortisation' && s.source?.docId === d.id).map((s) => s.source!.lineId!))) {
     const ss = onLine(st, d.id, lineId), taken = runsTaken(st, ss);
     if (!taken || !lineChanged(lineId)) continue;
@@ -325,7 +332,7 @@ export function refuseScheduleNote(st: MockState, d: Stored, change: 'issue' | '
   for (const lineId of new Set([...d.lines, ...(next?.lines ?? [])].map((l) => l.sourceLineId).filter((x): x is string => !!x))) {
     const ss = onLine(st, ref, lineId);
     if (!ss.length) continue;
-    const held = ss.find((s) => !s.stopped);
+    const held = ss.find((s) => isHeld(st, s));
     if (held) throw lockedBy(held, d.type === 'PCN' ? 'ออกหรือแก้ไขใบลดหนี้ซื้อ (PCN) ของรายการที่ตัดจ่ายไม่ได้' : 'ออกหรือแก้ไขใบเพิ่มหนี้ซื้อ (PDN) ของรายการที่ตัดจ่ายไม่ได้');
     const taken = runsTaken(st, ss), account = ss[0].prepaidAccount!;
     const now = change === 'issue' ? 0 : noteMove(st, d, lineId, account), later = change === 'cancel' ? 0 : noteMove(st, { ...d, header: next?.header ?? d.header, lines: next?.lines ?? d.lines }, lineId, account);
@@ -385,6 +392,8 @@ export function scheduleInvariants(st: MockState): string[] {
       if (r.month !== plan[i]?.month) out.push(`${s.id}: live runs are not a prefix of the plan (run ${i + 1} is ${r.month}, expected ${plan[i]?.month})`);
       if (jv.type !== 'JV' || jv.companyId !== s.companyId) out.push(`${s.id}: run ${jv.id} is not a JV of the company`);
       if (jv.header.scheduleId !== s.id || jv.header.scheduleMonth !== r.month) out.push(`${jv.id}: run JV is not linked to schedule ${s.id} month ${r.month}`);
+      const sd = docOf(st, s.source?.docId)?.header.documentDate;
+      if (sd && jv.header.documentDate < sd) out.push(`${jv.id}: run JV dated ${jv.header.documentDate} precedes its source document (${sd})`);
       if (jv.header.documentDate !== lastDayOf(r.month!)) out.push(`${jv.id}: run JV date ${jv.header.documentDate} is not the last day of ${r.month}`);
       const ls = jv.lines.filter(isUsed);
       if (ls.length !== 2 || ls[0].accountCode !== s.expenseAccount || sat(ls[0].debit) !== sat(row.amount) || sat(ls[0].credit) !== 0 || ls[1].accountCode !== s.prepaidAccount || sat(ls[1].credit) !== sat(row.amount) || sat(ls[1].debit) !== 0 || sat(r.amount) !== sat(row.amount)) out.push(`${jv.id}: run JV is not its plan row (${row.amount} ${s.expenseAccount} / ${s.prepaidAccount})`);

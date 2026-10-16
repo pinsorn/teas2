@@ -506,3 +506,55 @@ describe('a scheduled account stays (fix1: ruling 3)', () => {
     expect(code('5120')).not.toBe('account.scheduled');
   });
 });
+
+// ---------------------------------------------------------------- AC4 fix round 2: F1 start before the source, F1b date lock once runs exist, done = released for the money lock
+describe('source date (fix2: F1, F1b)', () => {
+  const reviseDate = (b: ReturnType<typeof prepaidBill>, date: string) => { const d = doc(b.bill.id); return revise(st, d.id, { header: { ...d.header, documentDate: date, vendorDocDate: date, claimPeriod: date.slice(0, 7) }, lines: d.lines }, d.version, 'x', ME); };
+  it('F1: a schedule cannot start before the month of its source document', () => {
+    const b = prepaidBill('12000.00', '2026-09-01');
+    expect(err(() => amort({ startMonth: '2026-07' }, b)).code).toBe('schedule.before_source');
+    expect(amort({ startMonth: '2026-09' }, b).startMonth).toBe('2026-09');
+  });
+  it('F1b: with any live run on the line the source date cannot move, whatever the schedule state (exit: reverse the runs)', () => {
+    const b = prepaidBill(); const s = amort({}, b); runSchedule(st, CO, s.id, ME);
+    expect(err(() => reviseDate(b, '2026-08-15')).code).toBe('schedule.source_locked'); // live
+    stopSchedule(st, CO, s.id, ME, 'x');
+    const e = err(() => reviseDate(b, '2026-08-15')); // stopped
+    expect(e.code).toBe('schedule.source_consumed');
+    expect(e.title).toContain('กลับรายการ');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('F1b: a done schedule keeps the date lock', () => {
+    const b = prepaidBill('3000.00'); const s = amort({ total: '3000.00', months: 3 }, b); runSchedule(st, CO, s.id, ME); runSchedule(st, CO, s.id, ME); runSchedule(st, CO, s.id, ME);
+    expect(sched(s.id).active).toBe(false);
+    expect(err(() => reviseDate(b, '2026-08-15')).code).toBe('schedule.source_consumed');
+  });
+  it('invariant (single fault): every live run is dated on or after its source document', () => {
+    const b = prepaidBill(); const s = amort({}, b); runSchedule(st, CO, s.id, ME);
+    expect(checkInvariants(st)).toEqual([]);
+    doc(b.bill.id).header.documentDate = '2026-08-15';
+    expect(checkInvariants(st).join('|')).toContain('precedes its source');
+  });
+});
+
+describe('done = released for the source lock (fix2)', () => {
+  const lineRevise = (b: ReturnType<typeof prepaidBill>, price: string) => { const d = doc(b.bill.id); return revise(st, d.id, { header: d.header, lines: d.lines.map((l) => ({ ...l, unitPrice: price })) }, d.version, 'x', ME); };
+  it('a done schedule no longer locks money / cancel, but the line cannot go below the runs; a PCN too; no lock banner', () => {
+    const b = prepaidBill(); const s = amort({ total: '3000.00', months: 3 }, b);
+    for (let i = 0; i < 3; i++) runSchedule(st, CO, s.id, ME);
+    expect(sched(s.id)).toMatchObject({ active: false });
+    expect(sched(s.id).stopped).toBeUndefined();
+    expect(derivedLocks(st, doc(b.bill.id)).some((l) => l.kind === 'schedule')).toBe(false);
+    expect(err(() => lineRevise(b, '2900.00')).code).toBe('schedule.source_consumed');
+    expect(err(() => cancel(st, b.bill.id, doc(b.bill.id).version, 'OTHER', 'x', ME)).code).toBe('schedule.source_consumed');
+    expect(lineRevise(b, '5000.00').revision).toBe(1);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('the account guard stays on not-stopped: a done schedule still guards its accounts', () => {
+    stopSchedule(st, CO, 'sch-amort', ME, 'x');
+    const b = prepaidBill(); const s = amort({ total: '3000.00', months: 3 }, b);
+    for (let i = 0; i < 3; i++) runSchedule(st, CO, s.id, ME);
+    let c: string | undefined; try { accountImpl.canDeactivate!(st, CO, '5120'); } catch (e) { c = (e as MockError).code; }
+    expect(c).toBe('account.scheduled');
+  });
+});
