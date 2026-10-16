@@ -223,6 +223,7 @@
       "taxSummary": "Monthly tax summary",
       "vat": "VAT return and registers",
       "wht": "Withholding tax",
+      "whtCertificates": "Withholding certificates (50 tawi)",
       "cit": "Corporate income tax",
       "employees": "Employees",
       "payrollRuns": "Payroll runs",
@@ -332,6 +333,17 @@
       "pdnList": "Vendor debit notes: list",
       "pdnIssued": "Vendor debit note: extra entertainment, references a purchase bill",
       "npbVatToCost": "Purchase bill (non-VAT): the vendor's VAT is cost",
+      "pvList": "Payment vouchers: list",
+      "pvNew": "Payment voucher: new",
+      "pvMultiWt": "Payment voucher: two bills and two WHT types (2 certificates)",
+      "pvGrossUp": "Payment voucher: tax borne by us every time (freelance photographer)",
+      "pvForeign": "Payment voucher: foreign payee (PND.54 and PP.36)",
+      "pvCancelled": "Payment voucher: cancelled",
+      "pvPrint": "Print: payment voucher",
+      "wtList": "Withholding certificates: list",
+      "wtIssued": "Withholding certificate: issued",
+      "wtCancelled": "Withholding certificate: cancelled with its voucher",
+      "wtPrint": "Print: withholding certificate (2 copies)",
       "poList": "Purchase orders: list",
       "poNew": "Purchase order: new",
       "poDraft": "Purchase order: draft",
@@ -556,6 +568,22 @@
       "pick": "Select {number}",
       "total": "Billing statement total"
     },
+    "quickBill": {
+      "open": "Record purchase (with tax invoice)",
+      "title": "Record a purchase from the vendor's tax invoice",
+      "body": "A purchase bill (PB) is recorded and issued for you, then its total is paid by this voucher. The input VAT lives on the bill, not on the voucher.",
+      "vendor": "Vendor",
+      "vendorDocNumber": "Vendor document number",
+      "vendorDocDate": "Vendor document date",
+      "description": "Item",
+      "amount": "Amount before tax",
+      "taxCode": "Tax code",
+      "category": "Expense category",
+      "categoryNone": "None",
+      "back": "Back",
+      "save": "Save and use on this voucher",
+      "saving": "Saving…"
+    },
     "settlement": {
       "title": "Documents settled",
       "pickParty": "Pick the party to see their open items",
@@ -656,7 +684,8 @@
     "RC": {"title": "Receipt", "issue": "Save and issue receipt", "create": "Create receipt", "empty": "No receipts yet"},
     "CN": {"title": "Credit note", "issue": "Save and issue credit note", "create": "Create credit note", "empty": "No credit notes yet"},
     "DN": {"title": "Debit note", "issue": "Save and issue debit note", "create": "Create debit note", "empty": "No debit notes yet"},
-    "PV": {"title": "Payment voucher", "issue": "Save and issue payment voucher", "create": "Create payment voucher", "empty": "No payment vouchers yet"}
+    "PV": {"title": "Payment voucher", "issue": "Save and issue payment voucher", "create": "Create payment voucher", "empty": "No payment vouchers yet"},
+    "WT": {"title": "Withholding tax certificate", "issue": "Issue withholding certificate", "create": "Create withholding certificate", "empty": "No withholding certificates yet"}
   },
   "reports": {
     "total": "Total",

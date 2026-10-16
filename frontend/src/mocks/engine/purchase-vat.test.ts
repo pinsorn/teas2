@@ -323,12 +323,12 @@ describe('the P2 seed (hand-checked)', () => {
   it('pb-1 / pcn-1: rent 25,000.00 + 1,750.00; the vendor gives 2,500.00 + 175.00 back', () => {
     expect(j('pb-1')).toBe(['5110 25000.00/0.00', '1170 1750.00/0.00', '2110 0.00/26750.00'].sort().join(' | '));
     expect(j('pcn-1')).toBe(['5110 0.00/2500.00', '1170 0.00/175.00', '2110 2675.00/0.00'].sort().join(' | '));
-    expect(get('pb-1').outstanding).toBe('24075.00');
+    expect(get('pb-1').outstanding).toBe('0.00'); // 24,075.00 after pcn-1, paid in full by pv-pay1 (P3)
   });
   it('pb-2 / pdn-1: the entertainment VAT 315.00 (and the debit\'s 35.00) is cost on 5170, never on 1170', () => {
     expect(j('pb-2')).toBe(['5120 18000.00/0.00', '5150 4500.00/0.00', '1170 1260.00/0.00', '5170 315.00/0.00', '2110 0.00/24075.00'].sort().join(' | '));
     expect(j('pdn-1')).toBe(['5150 500.00/0.00', '5170 35.00/0.00', '2110 0.00/535.00'].sort().join(' | '));
-    expect(get('pb-2').outstanding).toBe('24610.00');
+    expect(get('pb-2').outstanding).toBe('12305.00'); // 24,610.00 with pdn-1, half paid by pv-multi (P3)
   });
   it('npb-1 / npb-2: the non-VAT company books the vendor VAT as cost; GL 1170 stays 0', () => {
     expect(j('npb-1')).toBe(['5120 1000.00/0.00', '5170 70.00/0.00', '2110 0.00/1070.00'].sort().join(' | '));
@@ -342,7 +342,7 @@ describe('the P2 seed (hand-checked)', () => {
     expect(buildChain(st, 'po-part').nodes.find((x) => x.id === 'po-part')!.progress).toBe('รับวางบิลแล้ว 70/140');
     expect(period(VAT, '2026-10')).toBe(sat('5369.00'));
     expect(period(VAT, '2026-12')).toBe(sat('595.00'));
-    expect(gl(VAT, '2110')).toBe(-sat('96514.00')); // Σ outstanding of the live bills: 24,075 + 24,610 + 2,033 + 34,240 + 9,095 + 2,461
+    expect(gl(VAT, '2110')).toBe(-sat('59134.00')); // Σ outstanding of the live bills: 0 (pb-1, paid) + 12,305 (pb-2, half paid) + 1,033 (pb-po, 1,000 paid) + 34,240 + 9,095 + 2,461
   });
   it('pb-incomplete issued with its paperwork flag off; the pb-d1 draft posts nothing', () => {
     expect(get('pb-incomplete')).toMatchObject({ status: 'issued', header: { complete: false } });

@@ -26,6 +26,7 @@ import { isBlankLine, LineGrid, newLine } from './LineGrid';
 import { MissingSummary } from './MissingSummary';
 import { PartyField } from './PartyField';
 import { PreviewDrawer } from './PreviewDrawer';
+import { QuickBillDialog } from './QuickBillDialog';
 import { SettlementPanel } from './SettlementPanel';
 import { TotalsPanel } from './TotalsPanel';
 import { useAutosave } from './useAutosave';
@@ -97,6 +98,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   const [draftId, setDraftId] = useState<string | undefined>(initial?.id || undefined); // attachments belong to the saved draft: known from the start when editing, after the first save when creating
   const [partyBusy, setPartyBusy] = useState(false); // a party lookup / pick (with its usual-item prefill) is still landing
   const [picking, setPicking] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false); // PV: the quick-bill dialog (D-16)
 
   const [header, setHeader] = useState<DocHeader>(initial?.header ?? { documentDate: me?.businessDate ?? '' });
   // /me can land after the first render (tests, direct mounts): a blank new document takes the server's business date as soon as it is known
@@ -165,6 +167,12 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   const amountEditor = d.lineEditor === 'amount';
   const withholds = d.headerFields.includes('whtMode'); // only a document that pays out withholds tax from its lines
   const whtTypes = useQuery({ queryKey: qk.whtTypes(me?.activeCompanyId ?? ''), queryFn: endpoints.whtTypes, enabled: !!me && amountEditor && withholds });
+  const isVoucher = d.type === 'PV';
+  const needsBill = isVoucher ? compute.last?.missing.find((m) => m.code === 'pv.input_vat_needs_bill') : undefined; // D-16: the server refused a taxed line; the exit is the quick bill
+  const taxedLine = isVoucher ? lines.find((l) => l.taxCode !== 'EX' && !isBlankLine(l)) : undefined;
+  // a SERVICE line paid to a foreign payee defaults to FOR-SVC and feeds PP.36 (A.5, `[SP-R]`); applied once per line, editable (the server applies the same rule to a line that has not been defaulted)
+  const foreignLine = (l: DocLine): DocLine => (isBlankLine(l) || l.pnd36 !== undefined ? l : { ...l, pnd36: true, whtTypeCode: l.whtTypeCode ?? 'FOR-SVC' });
+  const changeLines = (ls: DocLine[]) => setLines(withholds && party?.entityKind === 'foreign' ? ls.map(foreignLine) : ls);
   const missing = compute.data?.missing; // gates the actions: only a settled answer to the current input counts
   const canAct = !!me?.permissions.includes(mode === 'revise' ? d.permissions.create : d.permissions.issue);
   const why = me && !canAct ? 'permission'
@@ -217,13 +225,15 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
     setPicking(false);
     if (p.id !== header.partyId) setAllocations([]); // the ticked open items belong to the previous party
     setParty(p);
-    setHeader((h) => ({ ...h, partyId: p.id, dueDate: addDays(h.documentDate, p.paymentTermDays) }));
+    const foreign = withholds && p.entityKind === 'foreign';
+    setHeader((h) => ({ ...h, partyId: p.id, dueDate: addDays(h.documentDate, p.paymentTermDays), ...(foreign ? { whtMode: h.whtMode ?? 'grossup_always' } : {}) }));
     if (item && showLines) {
       setLines((ls) => ls.length > 0 && isBlankLine(ls[0])
         ? [{ ...ls[0], itemId: item.id, description: item.name, unit: item.unit, unitPrice: moneyText(item.unitPrice), taxCode: exemptOnly ? 'EX' : item.taxCode,
           ...(amountEditor && withholds && item.whtTypeCode ? { whtTypeCode: item.whtTypeCode } : {}), ...(amountEditor && item.expenseCategory ? { expenseCategory: item.expenseCategory } : {}) }, ...ls.slice(1)]
         : ls);
     }
+    if (foreign) setLines((ls) => ls.map(foreignLine));
   };
 
   const onKeyDownCapture = (e: KeyboardEvent) => {
@@ -275,6 +285,15 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
             <SettlementPanel descriptor={d} partyId={header.partyId} value={allocations} onChange={setAllocations} allocation={compute.last?.allocation} />
           )}
 
+          {isVoucher && header.partyId && (
+            needsBill ? (
+              <Alert variant="destructive" role="alert" data-testid="pv-needs-bill">
+                <AlertTitle>{needsBill.message}</AlertTitle>
+                <AlertAction><Button type="button" onClick={() => setQuickOpen(true)}>{t('quickBill.open')}</Button></AlertAction>
+              </Alert>
+            ) : <div className="flex justify-end"><Button type="button" variant="outline" onClick={() => setQuickOpen(true)}>{t('quickBill.open')}</Button></div>
+          )}
+
           {d.type === 'RC' && ( // the part of the money no document takes: the server keeps it as a customer deposit
             <section className="grid gap-1.5 rounded-xl bg-card p-4 ring-1 ring-foreground/10 md:max-w-md">
               <Label htmlFor={`${ids}-deposit`}>{ts('deposit')}</Label>
@@ -293,7 +312,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
           {showLines && (
             <section aria-labelledby={`${ids}-lines`} className="grid gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
               <h2 id={`${ids}-lines`} className="text-section font-semibold">{t('lines.title')}</h2>
-              <LineGrid lines={lines} onChange={setLines} searchItems={searchItems} amounts={amounts} computing={compute.pending}
+              <LineGrid lines={lines} onChange={changeLines} searchItems={searchItems} amounts={amounts} computing={compute.pending}
                 variant={amountEditor ? 'amount' : 'item'} showCategory={partyKind === 'vendor' || partyKind === 'employee'} whtTypes={withholds ? (whtTypes.data ?? []) : undefined}
                 whtError={withholds && whtTypes.isError ? whtTypes.error : undefined} onWhtRetry={() => void whtTypes.refetch()} exemptOnly={exemptOnly} />
             </section>
@@ -334,6 +353,16 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
         </div>
       </div>
 
+      {quickOpen && isVoucher && header.partyId && party && (
+        <QuickBillDialog open onClose={() => setQuickOpen(false)} partyId={header.partyId} partyName={party.name}
+          seed={taxedLine ? { description: taxedLine.description, amount: taxedLine.unitPrice, taxCode: taxedLine.taxCode, category: taxedLine.expenseCategory, whtTypeCode: taxedLine.whtTypeCode } : undefined}
+          onCreated={(bill) => { // the bill replaces the taxed line it was made from; the voucher pays it
+            setAllocations((a) => [...a, { targetId: bill.id, targetType: 'PB', targetNumber: bill.number, amount: bill.outstanding ?? bill.totals.total }]);
+            setLines((ls) => { const rest = taxedLine ? ls.filter((l) => l.id !== taxedLine.id) : ls; return rest.length ? rest : [newLine('EX')]; });
+            setQuickOpen(false);
+            if (me) void qc.invalidateQueries({ queryKey: [me.activeCompanyId, 'open-items'] });
+          }} />
+      )}
       <JournalDrawer open={journalOpen} onOpenChange={setJournalOpen} journal={compute.data?.journal} pending={compute.pending} error={compute.error} onRetry={compute.retry} />
       {compute.data && (
         <ConfirmIssueDialog open={dialogOpen} title={t('confirm.title', { title })} totals={compute.data.totals}

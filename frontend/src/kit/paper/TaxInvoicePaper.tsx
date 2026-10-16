@@ -13,6 +13,7 @@ const L = {
   total: 'จำนวนเงินรวมทั้งสิ้น', baht: 'บาท', discountOn: 'ส่วนลด', z0: 'อัตราภาษีร้อยละ 0', ex: 'ได้รับยกเว้นภาษี',
   adjRef: 'อ้างอิงใบกำกับภาษีเดิม', adjNo: 'เลขที่', adjReason: 'เหตุผล', adjOriginal: 'มูลค่าตามใบกำกับภาษีเดิม', adjCorrect: 'มูลค่าที่ถูกต้อง', adjDiff: 'ผลต่าง',
   wht: 'ภาษีถูกหัก ณ ที่จ่าย', cash: 'รับเงินสุทธิ', paid: 'รวมรับชำระ', payment: 'วิธีรับชำระ',
+  vWht: 'ภาษีหัก ณ ที่จ่าย', vCash: 'จ่ายเงินสุทธิ', vPaid: 'รวมจ่ายชำระ', vPayment: 'วิธีจ่ายเงิน',
 };
 
 /** px; the real sheet (794 x 1123, 42 px top/bottom padding) minus a safety margin so print never clips a row. */
@@ -49,7 +50,7 @@ function Head({ m }: { m: PaperModel }) {
       </div>
       <div className="paper-parties">
         <section className="paper-box paper-buyer">
-          <div className="paper-box-h">{L.customer}</div>
+          <div className="paper-box-h">{m.partyLabel ?? L.customer}</div>
           <h3>{m.buyer.name}</h3>
           {m.buyer.address ? <p>{m.buyer.address}</p> : null}
           {partyIds(m.buyer) ? <p>{partyIds(m.buyer)}</p> : null}
@@ -92,8 +93,8 @@ function Thead({ receipt }: { receipt?: boolean }) {
   );
 }
 
-function Row({ l, receipt }: { l: PaperModel['lines'][number]; receipt?: boolean }) {
-  const sub = receipt ? '' : [l.discountPct ? `${L.discountOn} ${l.discountPct}%` : '', l.taxCode === 'Z0' ? L.z0 : l.taxCode === 'EX' ? L.ex : ''].filter(Boolean).join(' · ');
+function Row({ l, receipt, plain }: { l: PaperModel['lines'][number]; receipt?: boolean; plain?: boolean }) {
+  const sub = receipt || plain ? '' : [l.discountPct ? `${L.discountOn} ${l.discountPct}%` : '', l.taxCode === 'Z0' ? L.z0 : l.taxCode === 'EX' ? L.ex : ''].filter(Boolean).join(' · ');
   return (
     <tr data-probe="row">
       <td className="c paper-no">{l.no}</td>
@@ -105,20 +106,26 @@ function Row({ l, receipt }: { l: PaperModel['lines'][number]; receipt?: boolean
   );
 }
 
-function Foot({ m, receipt }: { m: PaperModel; receipt?: boolean }) {
+function Foot({ m, receipt, voucher }: { m: PaperModel; receipt?: boolean; voucher?: boolean }) {
   const t = m.totals;
   return (
     <footer className="paper-ft" data-probe="foot">
       <div className="paper-sum">
         <div>
           <div className="paper-words"><div className="l">{L.words}</div><div className="v">({t.amountInWords})</div></div>
-          {receipt && m.payment ? <div className="paper-notes"><h4>{L.payment}</h4><p>{m.payment}</p></div> : null}
+          {receipt && m.payment ? <div className="paper-notes"><h4>{voucher ? L.vPayment : L.payment}</h4><p>{m.payment}</p></div> : null}
           {m.notes ? <div className="paper-notes"><h4>{L.notes}</h4><p>{m.notes}</p></div> : null}
         </div>
         <div>
           <table className="paper-tot">
             <tbody>
-              {receipt ? ( // the server's three figures: cash received + tax withheld = what the receipt clears
+              {voucher ? ( // the server's figures: the tax withheld per WHT type, then cash paid; cash + tax = what the voucher clears
+                <>
+                  {m.whtLines?.map((w) => <tr key={w.label}><td>{w.label}</td><td>{formatMoney(w.tax)}</td></tr>)}
+                  <tr><td>{L.vWht}</td><td>{formatMoney(t.wht ?? '0.00')}</td></tr>
+                  <tr><td>{L.vCash}</td><td>{formatMoney(t.cash ?? '0.00')}</td></tr>
+                </>
+              ) : receipt ? ( // the server's three figures: cash received + tax withheld = what the receipt clears
                 <>
                   <tr><td>{L.cash}</td><td>{formatMoney(t.cash ?? '0.00')}</td></tr>
                   <tr><td>{L.wht}</td><td>{formatMoney(t.wht ?? '0.00')}</td></tr>
@@ -133,7 +140,7 @@ function Foot({ m, receipt }: { m: PaperModel; receipt?: boolean }) {
               )}
             </tbody>
           </table>
-          <div className="paper-grand"><span className="l">{receipt ? L.paid : L.total}<span className="paper-en">{L.baht}</span></span><span className="v">{formatMoney(t.total)}</span></div>
+          <div className="paper-grand"><span className="l">{voucher ? L.vPaid : receipt ? L.paid : L.total}<span className="paper-en">{L.baht}</span></span><span className="v">{formatMoney(t.total)}</span></div>
         </div>
       </div>
       <div className="paper-sign">
@@ -151,7 +158,9 @@ const fontsReady = () => (typeof document !== 'undefined' && document.fonts ? do
 const h = (e: Element | null) => (e ? Math.ceil(e.getBoundingClientRect().height) : 0);
 
 /** The printed tax invoice, and (via CommercialPaper) every other sales / purchase paper: the server-built model decides titles, VAT rows and revision wording. Rows are measured once in a hidden probe (real layout, after fonts load); `measure` replaces that in tests. */
-export function TaxInvoicePaper({ model, measure, onReady, receipt }: { model: PaperModel; measure?: (rowIndex: number) => number; onReady?: () => void; /** The receipt layout (ReceiptPaper): a WHT column and the received / withheld / total footer. */ receipt?: boolean }) {
+export function TaxInvoicePaper({ model, measure, onReady, receipt, voucher }: { model: PaperModel; measure?: (rowIndex: number) => number; onReady?: () => void; /** The receipt layout (ReceiptPaper): a WHT column and the received / withheld / total footer. */ receipt?: boolean;
+  /** The payment-voucher layout (PaymentVoucherPaper): the receipt footer reworded for money paid out, the WHT per type instead of a WHT column. */ voucher?: boolean }) {
+  const wcol = receipt && !voucher; // the WHT column belongs to a receipt (the customer withheld per settled invoice)
   const probe = useRef<HTMLDivElement>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
 
@@ -185,8 +194,8 @@ export function TaxInvoicePaper({ model, measure, onReady, receipt }: { model: P
       {!measure ? (
         <div className="paper-probe" ref={probe} aria-hidden="true">
           <Head m={model} />
-          <table className="paper-lines"><Cols receipt={receipt} /><Thead receipt={receipt} /><tbody>{model.lines.map((l) => <Row key={l.no} l={l} receipt={receipt} />)}</tbody></table>
-          <Foot m={model} receipt={receipt} />
+          <table className="paper-lines"><Cols receipt={wcol} /><Thead receipt={wcol} /><tbody>{model.lines.map((l) => <Row key={l.no} l={l} receipt={wcol} plain={voucher} />)}</tbody></table>
+          <Foot m={model} receipt={receipt} voucher={voucher} />
           <PageFoot m={model} n={1} total={1} />
         </div>
       ) : null}
@@ -196,9 +205,9 @@ export function TaxInvoicePaper({ model, measure, onReady, receipt }: { model: P
             <PaperPage key={p} stamp={stamp}>
               <Head m={model} />
               <div className="paper-items">
-                <table className="paper-lines"><Cols receipt={receipt} /><Thead receipt={receipt} /><tbody>{rows.map((i) => <Row key={model.lines[i].no} l={model.lines[i]} receipt={receipt} />)}</tbody></table>
+                <table className="paper-lines"><Cols receipt={wcol} /><Thead receipt={wcol} /><tbody>{rows.map((i) => <Row key={model.lines[i].no} l={model.lines[i]} receipt={wcol} plain={voucher} />)}</tbody></table>
               </div>
-              {p === pages.length - 1 ? <Foot m={model} receipt={receipt} /> : null}
+              {p === pages.length - 1 ? <Foot m={model} receipt={receipt} voucher={voucher} /> : null}
               <PageFoot m={model} n={p + 1} total={pages.length} />
             </PaperPage>
           ))}

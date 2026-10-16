@@ -44,6 +44,7 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCa
   const blocker = doc.locks.find((l) => l.kind !== 'period');
   const locked = blocker ? t('locked', { reason: blocker.reason }) : undefined;
   const live = LIVE.includes(doc.status);
+  const system = d.type === 'WT'; // a withholding certificate is written by its voucher: the only thing a person does with it is print it
   const targets = convertTargets(d.convertsTo, vatRegistered, permissions);
   // A receipt is made from open items, never by conversion: a TI / IV with something owed opens it on ?settle=, a billing statement on ?fromBl= (the editor reads the server's outstanding)
   const receiveHref = d.groups && live ? `/sales/receipts/new?fromBl=${doc.id}`
@@ -53,7 +54,7 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCa
   return (
     <TooltipProvider>
       <div role="group" aria-label={t('label')} className="flex flex-wrap items-center gap-2">
-        {doc.status === 'draft' ? (
+        {system ? null : doc.status === 'draft' ? (
           <Guarded why={missing(d.permissions.issue)}>
             {(p) => <Button {...p} asChild={!p.disabled}>{p.disabled ? <span>{t('issueDraft')}</span> : <Link href={routes.edit(doc.id)}>{t('issueDraft')}</Link>}</Button>}
           </Guarded>
@@ -75,9 +76,9 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCa
               : <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t('print')}</span> : <Link href={routes.print(doc.id)}>{t('print')}</Link>}</Button>}
           </Guarded>
         ) : null}
-        <Guarded why={missing(d.permissions.create)}>
+        {system ? null : <Guarded why={missing(d.permissions.create)}>
           {(p) => <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t('copy')}</span> : <Link href={`${routes.create}?copyFrom=${doc.id}`}>{t('copy')}</Link>}</Button>}
-        </Guarded>
+        </Guarded>}
         {d.convertsTo?.length && live ? (
           <Guarded why={d.type === 'QT' && doc.marks?.rejected ? t('whyRejected') : doc.marks?.closed ? t('whyClosed') : targets.length ? undefined : t('whyNoTarget')}>
             {(p) => <Button {...p} variant="outline" onClick={onConvert}>{t('convert')}</Button>}
@@ -103,7 +104,7 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCa
             {(p) => <Button {...p} variant="outline" onClick={() => onMark?.(m)}>{t(MARK_LABEL[m])}</Button>}
           </Guarded>
         )) : null}
-        {live ? (
+        {live && !system ? (
           <Guarded why={missing(d.permissions.cancel) ?? locked}>
             {(p) => <Button {...p} variant="outline" onClick={onCancel}>{t('cancel')}</Button>}
           </Guarded>

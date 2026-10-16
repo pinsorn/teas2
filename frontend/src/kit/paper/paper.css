@@ -119,3 +119,19 @@
 .paper-void > div { transform: rotate(-24deg); text-align: center; color: var(--paper-void); border: 3pt solid var(--paper-void); border-radius: 3mm; padding: 2mm 10mm; opacity: 0.6; }
 .paper-void b { display: block; font-size: 44pt; font-weight: 700; line-height: 1.7; }
 .paper-void span { display: block; margin-bottom: 1mm; font-size: 12pt; font-weight: 600; }
+
+/* ---------- WT (50 ทวิ) ---------- */
+.paper-wht-seq { display: grid; grid-template-columns: auto 1fr auto; gap: 4mm; align-items: start; padding-top: 4mm; }
+.paper-wht-seqbox { display: flex; gap: 2mm; align-items: baseline; padding: 1.5mm 3mm; min-width: 36mm; }
+.paper-wht-seqbox b { flex: 1; min-width: 12mm; border-bottom: 0.5pt solid var(--paper-hair); }
+.paper-wht-forms { display: flex; flex-wrap: wrap; gap: 1mm 4mm; margin: 0; padding: 0; list-style: none; font-size: 8.5pt; }
+.paper-check { display: inline-grid; place-items: center; width: 3.2mm; height: 3.2mm; border: 0.75pt solid var(--paper-ink); font-size: 8pt; line-height: 1; vertical-align: middle; }
+.paper-wht-no { display: grid; grid-template-columns: auto auto; gap: 0.8mm 3mm; font-size: 8.8pt; }
+.paper-wht-no dt { color: var(--paper-muted); }
+.paper-wht-party { margin-top: 3mm; }
+.paper-wht-party h3 { font-size: 10.5pt; font-weight: 700; }
+.paper-wht-party p { font-size: 8.8pt; line-height: 1.45; }
+.paper-wht-table { margin-top: 4mm; }
+.paper-wht-total td { font-weight: 700; background: var(--paper-tint); }
+.paper-root .paper-wht-cond { margin-top: 3mm; }
+.paper-root .paper-wht-cert { margin-top: 3mm; font-size: 8.8pt; }

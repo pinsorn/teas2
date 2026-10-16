@@ -6,8 +6,9 @@ import { consumed, q4 } from './chain';
 import { divRoundHalfAway, fromSatang, toSatang } from './money';
 import { resolveRole } from './posting';
 import { claimPeriodOf, forfeitedOf, isRecoverable } from './purchase-vat';
-import { whtOf } from './settlement';
-import { computeDoc, vatOf } from './vat';
+import { allocationBases, whtOf } from './settlement';
+import { computeDoc, vatBasisOf } from './vat';
+import { wtsOfPv } from './wht-certificates';
 
 type Stored = MockState['docs'][number];
 
@@ -44,33 +45,36 @@ export function whtLineProblems(l: WhtLine, base: number, bp: bigint, mode: WhtM
   return out;
 }
 
-/** WHT of a PV recomputed from its lines and the fixture rate table with its own bigint formulas (not `computeWht`), and the engine's lines checked against it. */
-function expectedWht(st: MockState, d: Stored): { tax: number; expense: number; cashDelta: number; bad?: string } {
-  const nets = computeDoc(d.lines, !!d.header.priceIncludesVat, vatOf(st, d.companyId)).lines;
+/** WHT of a PV recomputed from its lines and the bills it pays (the bases: its own typed lines + `allocationBases`) and the fixture rate table with its own bigint formulas (not `computeWht`),
+ *  and the engine's lines checked against it. */
+function expectedWht(st: MockState, d: Stored): { tax: number; expense: number; cashDelta: number; lines: { code: string; tax: bigint }[]; bad?: string } {
+  const nets = computeDoc(d.lines, !!d.header.priceIncludesVat, vatBasisOf(st, d.companyId, 'PV')).lines;
   const base = new Map<string, bigint>();
   d.lines.forEach((l, i) => { if (l.whtTypeCode) base.set(l.whtTypeCode, (base.get(l.whtTypeCode) ?? 0n) + BigInt(toSatang(nets[i].net))); });
+  for (const b of allocationBases(st, d.companyId, d.allocations)) base.set(b.whtTypeCode, (base.get(b.whtTypeCode) ?? 0n) + BigInt(b.net));
   const mode = d.header.whtMode ?? 'deduct';
   let tax = 0n, expense = 0n, cashDelta = 0n;
-  const want: [string, bigint, bigint][] = [];
+  const want: [string, bigint, bigint][] = [], perType: { code: string; tax: bigint }[] = [];
   for (const [code, b] of base) {
     if (b <= 0n) continue; // the engine skips a non-positive base before it looks the type up, so does this check
     const t = st.whtTypes.filter((x) => x.companyId === d.companyId && x.code === code && x.effectiveFrom <= d.header.documentDate).sort((x, y) => y.effectiveFrom.localeCompare(x.effectiveFrom))[0];
-    if (!t) return { tax: 0, expense: 0, cashDelta: 0, bad: `unknown WHT type ${code}` };
+    if (!t) return { tax: 0, expense: 0, cashDelta: 0, lines: [], bad: `unknown WHT type ${code}` };
     const r = BigInt(t.rateBp);
     const income = mode === 'deduct' ? b : mode === 'grossup_always' ? divRoundHalfAway(b * 10000n, 10000n - r) : divRoundHalfAway(b * (10000n + r), 10000n);
     const lt = divRoundHalfAway(income * r, 10000n);
     const paid = mode === 'deduct' ? b - lt : mode === 'grossup_always' ? b : income - lt; // what the payee receives
+    perType.push({ code, tax: lt });
     tax += lt; cashDelta += paid - b; expense += mode === 'deduct' ? 0n : mode === 'grossup_always' ? lt : income - b;
     want.push([code, b, r]);
   }
   let engine: WhtLine[];
-  try { engine = whtOf(st, d.companyId, d.header, d.lines).lines; } catch (e) { return { tax: 0, expense: 0, cashDelta: 0, bad: e instanceof Error ? e.message : String(e) }; }
+  try { engine = whtOf(st, d.companyId, d.header, d.lines, d.allocations).lines; } catch (e) { return { tax: 0, expense: 0, cashDelta: 0, lines: [], bad: e instanceof Error ? e.message : String(e) }; }
   const problems = want.flatMap(([code, b, r]) => {
     const l = engine.find((x) => x.code === code);
     return l ? whtLineProblems(l, Number(b), r, mode) : [`WHT ${code}: the engine produced no line`];
   });
-  if (problems.length) return { tax: 0, expense: 0, cashDelta: 0, bad: problems.join('; ') };
-  return { tax: Number(tax), expense: Number(expense), cashDelta: Number(cashDelta) };
+  if (problems.length) return { tax: 0, expense: 0, cashDelta: 0, lines: [], bad: problems.join('; ') };
+  return { tax: Number(tax), expense: Number(expense), cashDelta: Number(cashDelta), lines: perType };
 }
 
 /** Every violation in the state, as readable strings; [] = all hold (money invariants 1-7, numbering, derived locks). */
@@ -81,6 +85,7 @@ export function checkInvariants(st: MockState): string[] {
     try { return toSatang(m); } catch { out.push(`${where}: bad money "${m}"`); return 0; }
   };
   const gl = new Map<string, number>(); // `${companyId}|${code}` -> debit - credit
+  const credit = new Map<string, number>(); // the same, credit - debit (WHT payable accounts)
   const arByParty = new Map<string, number>(); // `${companyId}|${party}` -> debit - credit on 1130
   const apByParty = new Map<string, number>(); // the same on 2110 (payables)
   const inputVat = new Map<string, number>(); // `${companyId}|${claim period}` -> debit - credit on 1170 posted by PB / PCN / PDN (reversals and corrections included)
@@ -101,6 +106,7 @@ export function checkInvariants(st: MockState): string[] {
         else if (!acc.postable) out.push(`${where}: account ${l.accountCode} is not postable`);
         const k = `${d.companyId}|${l.accountCode}`;
         gl.set(k, (gl.get(k) ?? 0) + a - b);
+        credit.set(k, (credit.get(k) ?? 0) + b - a);
         if (l.accountCode === '1130') { const pk = `${d.companyId}|${l.partyName ?? ''}`; arByParty.set(pk, (arByParty.get(pk) ?? 0) + a - b); }
         if (l.accountCode === '2110') { const pk = `${d.companyId}|${l.partyName ?? ''}`; apByParty.set(pk, (apByParty.get(pk) ?? 0) + b - a); }
         if (l.accountCode === '1170' && (d.type === 'PB' || ADJUSTS[d.type] === 'PB')) { const pk = `${d.companyId}|${claimPeriodOf(d.type, d.header)}`; inputVat.set(pk, (inputVat.get(pk) ?? 0) + a - b); }
@@ -327,6 +333,49 @@ export function checkInvariants(st: MockState): string[] {
     const own = computeDoc([line], !!ti.header.priceIncludesVat, true).lines[0];
     if (c.net > sat(own.net, tiId)) out.push(`${tiId} line ${lineId}: credit notes take net ${fromSatang(c.net)}, which exceeds the line's net ${own.net} (cap)`);
     else if (c.net === sat(own.net, tiId) && !c.debit && c.vat !== sat(own.vat, tiId)) out.push(`${tiId} line ${lineId}: fully credited but the credit notes' VAT is ${fromSatang(c.vat)} and the line's VAT is ${own.vat} (rule B)`);
+  }
+
+  // 11. withholding certificates (50 tawi, D-14 / I7): a live PV has exactly one live WT per WHT type it withholds on (its active `issues` links), whose tax sums to the PV's wht and whose figures are the
+  //     recomputed ones; a WT is live only through a live PV (the one that issues it); and per return the credit on its WHT-payable account = the tax of the live WTs of that return
+  const wtTax = new Map<string, number>(); // company|account -> Σ tax of live WTs
+  for (const d of st.docs) {
+    if (d.type !== 'PV') continue;
+    const live = LIVE.includes(d.status);
+    const issued = wtsOfPv(st, d.id);
+    if (!live) { for (const { wt } of issued) if (LIVE.includes(wt.status)) out.push(`${wt.id}: live WT of ${d.id}, which is ${d.status}`); continue; }
+    const exp = expectedWht(st, d);
+    if (exp.bad) continue; // check 8 reports it
+    const liveWts = issued.filter(({ wt }) => LIVE.includes(wt.status));
+    for (const x of issued) if (!LIVE.includes(x.wt.status)) out.push(`${x.wt.id}: an active issues link of ${d.id} points at a ${x.wt.status} WT`);
+    for (const e of exp.lines) {
+      const mine = liveWts.filter(({ wt }) => wt.header.whtTypeCode === e.code);
+      if (mine.length !== 1) { out.push(`${d.id}: ${mine.length} active WT for WHT type ${e.code} (exactly one is issued per type)`); continue; }
+      if (sat(mine[0].wt.header.whtTax ?? 'x', mine[0].wt.id) !== Number(e.tax) || sat(mine[0].wt.totals.wht ?? 'x', mine[0].wt.id) !== Number(e.tax)) {
+        out.push(`${mine[0].wt.id}: tax ${mine[0].wt.header.whtTax} but ${d.id} withholds ${fromSatang(Number(e.tax))} on ${e.code}`);
+      }
+      if (mine[0].wt.header.partyId !== d.header.partyId || mine[0].wt.header.documentDate !== d.header.documentDate) out.push(`${mine[0].wt.id}: payee or date differs from ${d.id}`);
+    }
+    for (const { wt } of liveWts) if (!exp.lines.some((e) => e.code === wt.header.whtTypeCode)) out.push(`${wt.id}: live WT of type ${wt.header.whtTypeCode} that ${d.id} does not withhold on`);
+    const sum = liveWts.reduce((n, { wt }) => n + sat(wt.header.whtTax ?? '0.00', wt.id), 0);
+    if (sum !== sat(d.totals.wht ?? '0.00', d.id)) out.push(`${d.id}: Σ active WT tax ${fromSatang(sum)} but the voucher withholds ${d.totals.wht}`);
+    for (const { wt } of liveWts) {
+      let acct = '';
+      try { acct = resolveRole(st, 'WhtPayable', { companyId: d.companyId, docType: 'PV', whtForm: wt.header.whtForm }).code; } catch (e) { out.push(`${wt.id}: WhtPayable does not resolve (${(e as Error).message})`); continue; }
+      const k = `${d.companyId}|${acct}`;
+      wtTax.set(k, (wtTax.get(k) ?? 0) + sat(wt.header.whtTax ?? '0.00', wt.id));
+    }
+  }
+  for (const wt of st.docs) {
+    if (wt.type !== 'WT' || !LIVE.includes(wt.status)) continue;
+    const from = st.links.filter((l) => l.active && l.kind === 'issues' && l.to === wt.id);
+    if (from.length !== 1 || !LIVE.includes(doc(from[0].from)?.status ?? 'cancelled')) out.push(`${wt.id}: a live WT needs exactly one active issues link from a live PV (has ${from.length})`);
+  }
+  for (const c of st.companies) {
+    const accounts = new Set<string>();
+    for (const form of ['PND1', 'PND2', 'PND3', 'PND53', 'PND54'] as const) { try { accounts.add(resolveRole(st, 'WhtPayable', { companyId: c.id, docType: 'PV', whtForm: form }).code); } catch { /* not in this chart */ } }
+    for (const a of accounts) if ((credit.get(`${c.id}|${a}`) ?? 0) !== (wtTax.get(`${c.id}|${a}`) ?? 0)) {
+      out.push(`${c.id}: GL ${a} (WHT payable) credit movement ${fromSatang(credit.get(`${c.id}|${a}`) ?? 0)} but the live WTs of that return carry ${fromSatang(wtTax.get(`${c.id}|${a}`) ?? 0)}`);
+    }
   }
 
   // numbering: gap-free per company x type x month, and the series counter agrees

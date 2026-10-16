@@ -12,7 +12,8 @@ import { fromSatang, toSatang } from './money';
 import { adjustSnapshot, hasSnapshot, isNote, noteHeader, noteMissing, noteProblem, withNoteVat } from './notes';
 import { SeriesAllocator } from './numbering';
 import { firstOpenDate, isClosed, monthLabelTh } from './periods';
-import { balanceOf, certError, cleanAllocations, fiscalAllocations, groupTotals, payDefaults, settleExtras, settleProblem, settleTotals } from './settlement';
+import { balanceOf, certError, cleanAllocations, fiscalAllocations, groupTotals, payDefaults, payLines, settleExtras, settleProblem, settleTotals } from './settlement';
+import { syncWts } from './wht-certificates';
 import { isVendorBill, issueVendorStatus, purchaseProblem, snapshotCategories, withClaimPeriod, withForfeit, withVendorStatus } from './purchase-vat';
 import { computeDoc, vatBasisOf, vatOf } from './vat';
 
@@ -184,13 +185,13 @@ function stored(st: MockState, companyId: string, type: DocType, body: Body, kee
   // D-12: a VAT company's receipt settles tax invoices, it never sells (a cash bill is the non-VAT company's). Shape of the request, so it is refused where the body enters.
   if (type === 'RC' && body.lines.length && vatOf(st, companyId)) throw new MockError(422, 'rc.lines_need_invoice', 'บริษัทที่จดทะเบียน VAT ต้องออกใบกำกับภาษีก่อนรับชำระ');
   const allocations = cleanAllocations(st, companyId, type, body.allocations, keep);
-  return { header: withForfeit(st, companyId, type, withVendorStatus(st, companyId, type, noteHeader(st, companyId, type, payDefaults(st, companyId, type, body.header), body.lines), prev)), lines: GROUPS[type] ? [] : vendorNoteLines(st, companyId, type, body), ...(allocations ? { allocations } : {}) };
+  return { header: withForfeit(st, companyId, type, withVendorStatus(st, companyId, type, noteHeader(st, companyId, type, payDefaults(st, companyId, type, body.header), body.lines), prev)), lines: GROUPS[type] ? [] : payLines(st, companyId, type, body.header, vendorNoteLines(st, companyId, type, body)), ...(allocations ? { allocations } : {}) };
 }
 
 /** C1: every PB / PCN / PDN line stores its resolved expense category (the item's, when the line names none). A PCN / PDN line takes the category (and item) of the bill line it adjusts,
  *  server-side, at save, revise AND issue: the VAT it gives back is claimable exactly when the bill's was, whatever the draft carried. */
 function vendorNoteLines(st: MockState, companyId: string, type: DocType, body: Body): DocLine[] {
-  const lines = isVendorBill(type) ? snapshotCategories(st, companyId, body.lines) : body.lines;
+  const lines = isVendorBill(type) || type === 'PV' ? snapshotCategories(st, companyId, body.lines) : body.lines; // a voucher's own lines too: the category stays what was chosen
   const pb = ADJUSTS[type] === 'PB' ? st.docs.find((d) => d.id === body.header.refDocId && d.companyId === companyId && d.type === 'PB') : undefined;
   if (!pb) return lines;
   return lines.map((l) => {
@@ -231,7 +232,7 @@ export function compute(st: MockState, companyId: string, type: DocType, raw: Bo
   const missing = missingOf(st, companyId, type, body);
   const own = opts?.docId ? st.docs.find((x) => x.id === opts.docId) : undefined;
   const bad = settleProblem(st, companyId, type, body, ownBack(st, outstandingNow(st), opts?.docId), { prior: own?.allocations, priorParty: own?.header.partyId });
-  if (bad) missing.push({ field: 'allocations', message: bad.title });
+  if (bad) missing.push(bad.code === 'pv.input_vat_needs_bill' ? { field: 'lines', message: bad.title, code: bad.code } : { field: 'allocations', message: bad.title });
   const np = noteProblem(st, companyId, type, body, opts?.docId);
   if (np) missing.push({ field: 'lines', message: np.title }); // the cap, the invoice's lines: shown before issue
   const pp = purchaseProblem(st, companyId, type, body); // input VAT rules of a vendor's invoice: shown before issue too
@@ -305,6 +306,7 @@ export function refuseNonPositive(st: MockState, companyId: string, type: DocTyp
 /** A document that receipts / vouchers (`settles`), a billing statement (`groups`) or a note (`adjusts`) point at keeps its customer / vendor: their AR / AP and the note's own party belong to it. */
 export function refusePartyChange(st: MockState, d: Stored, body: Body): void {
   if (body.header.partyId === d.header.partyId) return;
+  if (d.type === 'PV') throw new MockError(422, 'doc.party_locked', 'เปลี่ยนผู้รับเงินของใบสำคัญจ่ายที่ออกแล้วไม่ได้ เพราะหนังสือรับรองหัก ณ ที่จ่ายออกในนามผู้รับเงินเดิม ยกเลิกใบสำคัญจ่ายแล้วออกใบใหม่');
   if (st.links.some((l) => l.active && l.to === d.id && (l.kind === 'settles' || l.kind === 'groups' || l.kind === 'adjusts'))) {
     const notes = !st.links.some((l) => l.active && l.to === d.id && (l.kind === 'settles' || l.kind === 'groups'));
     throw new MockError(422, 'doc.party_locked', notes ? 'เปลี่ยนผู้ขายไม่ได้ เพราะมีใบลดหนี้/ใบเพิ่มหนี้จากผู้ขายอ้างถึงอยู่ ยกเลิกใบลดหนี้/ใบเพิ่มหนี้ก่อน หรือยกเลิกบันทึกซื้อแล้วบันทึกใหม่'
@@ -344,6 +346,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   settleTargets(st, next, body.allocations);
   if (isNote(d.type)) adjustTarget(st, next, totals.total);
   setJournal(st, id, postedNow(st, d.companyId, ledgerFor(st, next)));
+  if (d.type === 'PV') syncWts(st, id, actor); // the 50 tawi, one per WHT type, in the same command (one state write)
   st.revisions.push({ docId: id, revision: 0, at: next.issuedAt!, actor, snapshot: publicDoc(next), diff: [] });
   logActivity(st, id, actor, 'issue', next.number);
   logAudit(st, actor, d.companyId, 'doc.issue', id, { status: 'draft' }, { status: 'issued', number: next.number });
@@ -364,6 +367,7 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
   const { outstanding: _o, ...rest } = d; void _o;
   const next: Stored = { ...rest, status: 'cancelled', version: d.version + 1, cancel: { reasonCode, reasonText, at: stamp() } };
   put(st, next);
+  if (d.type === 'PV') syncWts(st, id, actor); // a cancelled voucher withholds nothing: its certificates are cancelled with it
   const released = st.links.filter((l) => l.from === id && l.active);
   st.links = st.links.map((l) => (l.from === id && l.active ? { ...l, active: false } : l)); // returns converted quantity, un-settles receipts
   for (const l of released) if (l.kind === 'settles' || l.kind === 'adjusts') recomputeSettlement(st, l.to);
@@ -502,6 +506,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
     setJournal(st, id, { entries: [...prev, ...(live && live.kind !== 'reversal' ? [correctionReversal(st, d.companyId, live)] : []),
       ...(fresh ? [{ ...fresh, kind: 'correction' as const, postedAt: stamp(), ...(!isPinned() && isClosed(st, d.companyId, fresh.date) ? { date: firstOpenDate(st, d.companyId), late: true } : {}) }] : [])] });
   }
+  if (d.type === 'PV') syncWts(st, id, actor); // changed WHT: the old certificates are cancelled and new ones issued; unchanged WHT keeps them (§7.3 L)
   const at = stamp();
   st.revisions.push({ docId: id, revision: next.revision, at, actor, reason, snapshot: publicDoc(getDoc(st, id)), diff: diffBody(d, fin) });
   logActivity(st, id, actor, 'revise', certNote(d, body) ?? reason);

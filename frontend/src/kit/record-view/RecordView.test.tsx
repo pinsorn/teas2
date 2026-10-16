@@ -70,7 +70,7 @@ describe('RecordView', () => {
     expect(await within(panel).findAllByRole('link', { name: /^PB-\d{6}-\d{4}$/ })).toHaveLength(2);
     const server = (await (await fetch('http://localhost/bff/v1/docs/open-items?partyId=pv-03&types=PB')).json()) as { items: { outstanding: string }[]; total: string };
     expect(server.items).toHaveLength(2);
-    expect(server.total).toBe('26643.00'); // pb-2 24,075.00 + 535.00 (pdn-1) + pb-po 2,033.00
+    expect(server.total).toBe('13338.00'); // pb-2 24,075.00 + 535.00 (pdn-1) - 12,305.00 paid by pv-multi + pb-po 2,033.00 - 1,000.00 paid
     await waitFor(() => expect(within(panel).getAllByRole('row')).toHaveLength(3));
     expect(within(panel).getByRole('status')).toHaveTextContent(formatTHB(server.total));
   }, 10_000);

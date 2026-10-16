@@ -1,10 +1,10 @@
-import { GROUPS, LIVE, SETTLES, isTypeAvailable } from '@/domain/doc-types';
+import { ADJUSTS, CREDIT_NOTES, GROUPS, LIVE, SETTLES, isTypeAvailable } from '@/domain/doc-types';
 import type { Allocation, ComputeResult, DocHeader, DocLine, DocTotals, DocType, PartySummary, WhtLine } from '@/domain/types';
 import type { MockState } from '../store';
 import { bahtText } from './bahtText';
 import { MockError } from './log';
 import { divRoundHalfAway, fromSatang, toSatang } from './money';
-import { computeDoc, vatOf } from './vat';
+import { computeDoc, vatBasisOf, vatOf } from './vat';
 import { computeWht, whtTypeOf } from './wht';
 
 type Stored = MockState['docs'][number];
@@ -94,24 +94,64 @@ export const certError = (a: Allocation, label: string, wht: number): MockError 
 export const fiscalAllocations = (a: Allocation[] | undefined) =>
   JSON.stringify((a ?? []).map((x) => [x.targetId, x.targetType, toSatang(x.amount), toSatang(x.wht ?? '0.00'), x.whtTypeCode ?? '']));
 
-/** RC / PV header defaults the engine fills when absent, so "ยังขาดอะไร" never asks for them (D-15). */
+/** RC / PV header defaults the engine fills when absent, so "ยังขาดอะไร" never asks for them (D-15). A foreign payee is grossed up every time unless the user chose otherwise (A.5, `[SP-R]`). */
 export function payDefaults(st: MockState, companyId: string, type: DocType, header: DocHeader): DocHeader {
   if (!SETTLES[type]) return header;
   const bank = st.bankAccounts.find((b) => b.companyId === companyId && b.default)?.id;
+  const foreign = st.parties.find((p) => p.id === header.partyId && p.companyId === companyId)?.entityKind === 'foreign';
   return {
     ...header, paymentMethod: header.paymentMethod ?? 'transfer', ...(header.bankAccountId ?? bank ? { bankAccountId: header.bankAccountId ?? bank } : {}),
-    ...(type === 'PV' ? { whtMode: header.whtMode ?? 'deduct' } : {}),
+    ...(type === 'PV' ? { whtMode: header.whtMode ?? (foreign ? 'grossup_always' : 'deduct') } : {}),
   };
+}
+
+/** PV lines paid to a foreign payee: a SERVICE line (a service item, or a line with no item) is used in Thailand - it gets `pnd36` (feeds TX2) and the FOR-SVC type unless one was chosen. Editable: the
+ *  defaults are applied ONCE (a line whose `pnd36` is already set - true or false - was defaulted before, so a later "no WHT" stays). */
+export function payLines(st: MockState, companyId: string, type: DocType, header: DocHeader, lines: DocLine[]): DocLine[] {
+  if (type !== 'PV' || st.parties.find((p) => p.id === header.partyId && p.companyId === companyId)?.entityKind !== 'foreign') return lines;
+  return lines.map((l) => {
+    const item = l.itemId ? st.items.find((i) => i.id === l.itemId && i.companyId === companyId) : undefined;
+    if (l.pnd36 !== undefined) return l;
+    return !item || item.kind === 'service' ? { ...l, pnd36: true, ...(l.whtTypeCode ? {} : { whtTypeCode: 'FOR-SVC' }) } : { ...l, pnd36: false };
+  });
 }
 
 const placeholderPayee = (): PartySummary => ({ id: '', kind: 'vendor', code: '', name: '', vatRegistered: false, paymentTermDays: 0, entityKind: 'juristic' });
 const payeeOf = (st: MockState, companyId: string, partyId?: string): PartySummary =>
   st.parties.find((p) => p.id === partyId && p.companyId === companyId) ?? placeholderPayee();
 
-/** WHT of a PV from its lines (D-14): one line per WHT type, rates from `st.whtTypes`. */
-export function whtOf(st: MockState, companyId: string, header: DocHeader, lines: DocLine[]) {
-  const nets = computeDoc(lines, !!header.priceIncludesVat, vatOf(st, companyId)).lines;
-  return computeWht(lines.map((l, i) => ({ net: toSatang(nets[i].net), whtTypeCode: l.whtTypeCode })), header.whtMode ?? 'deduct',
+/** The WHT bases the bills a voucher pays bring (D-14). A bill's typed lines (its own WHT type, else its item's) stand at their net AFTER the live vendor credit / debit notes that adjust that line
+ *  (rule B: a PCN lowers it, a PDN raises it); the payment covers a share of the bill as adjusted (the bill's total less its credits plus its debits), and each line's base is its adjusted net x that
+ *  share, rounded half away per line - so a part payment withholds on the part paid and a credit that touched a typed line is not withheld on. Only a PB carries typed lines (EX is P4). */
+export function allocationBases(st: MockState, companyId: string, allocs: Allocation[] | undefined): { net: number; whtTypeCode: string }[] {
+  const out: { net: number; whtTypeCode: string }[] = [];
+  const basis = vatBasisOf(st, companyId, 'PB');
+  for (const a of allocs ?? []) {
+    const bill = st.docs.find((d) => d.id === a.targetId && d.companyId === companyId && d.type === 'PB');
+    if (!bill) continue;
+    const notes = st.docs.filter((n) => LIVE.includes(n.status) && n.companyId === companyId && ADJUSTS[n.type] === 'PB' && n.header.refDocId === bill.id);
+    const sign = (n: { type: DocType }) => (CREDIT_NOTES.includes(n.type) ? -1n : 1n);
+    const adjusted = BigInt(toSatang(bill.totals.total)) + notes.reduce((x, n) => x + sign(n) * BigInt(toSatang(n.totals.total)), 0n);
+    if (adjusted <= 0n) continue;
+    const nets = computeDoc(bill.lines, !!bill.header.priceIncludesVat, basis).lines;
+    bill.lines.forEach((l, i) => {
+      const code = l.whtTypeCode ?? st.items.find((it) => it.id === l.itemId && it.companyId === companyId)?.whtTypeCode;
+      if (!code) return;
+      let net = BigInt(toSatang(nets[i].net));
+      for (const n of notes) {
+        const nn = computeDoc(n.lines, !!n.header.priceIncludesVat, basis).lines;
+        n.lines.forEach((nl, j) => { if (nl.sourceLineId === l.id) net += sign(n) * BigInt(toSatang(nn[j].net)); });
+      }
+      out.push({ net: Number(divRoundHalfAway(net * BigInt(money(a.amount, 'settle.invalid_amount')), adjusted)), whtTypeCode: code });
+    });
+  }
+  return out;
+}
+
+/** WHT of a PV (D-14): one line per WHT type over its own lines AND the bills it pays, rates from `st.whtTypes`; the vendor basis for VAT (A.4), the formula is `computeWht` (F5). */
+export function whtOf(st: MockState, companyId: string, header: DocHeader, lines: DocLine[], allocations?: Allocation[]) {
+  const nets = computeDoc(lines, !!header.priceIncludesVat, vatBasisOf(st, companyId, 'PV')).lines;
+  return computeWht([...lines.map((l, i) => ({ net: toSatang(nets[i].net), whtTypeCode: l.whtTypeCode })), ...allocationBases(st, companyId, allocations)], header.whtMode ?? 'deduct',
     payeeOf(st, companyId, header.partyId), header.documentDate, st);
 }
 
@@ -130,7 +170,7 @@ export function settleTotals(st: MockState, companyId: string, type: DocType, bo
     cash = total - wht;
   } else {
     total = alloc + lines;
-    const w = whtOf(st, companyId, body.header, body.lines);
+    const w = whtOf(st, companyId, body.header, body.lines, body.allocations);
     wht = w.tax;
     cash = total + w.cashDelta; // deduct: -tax; gross-up always: 0; gross-up once: income - tax - B per type
   }
@@ -192,9 +232,9 @@ export function payError(st: MockState, companyId: string, type: DocType, body: 
   if (h.bankAccountId && !st.bankAccounts.some((b) => b.id === h.bankAccountId && b.companyId === companyId)) return new MockError(422, 'pay.invalid_bank_account', 'บัญชีธนาคารที่เลือกไม่ใช่ของบริษัทนี้');
   if (type === 'RC' && money(h.depositAmount, 'rc.invalid_deposit') < 0) return new MockError(422, 'rc.invalid_deposit', 'เงินรับล่วงหน้าต้องไม่ติดลบ');
   if (type === 'PV' && body.lines.some((l) => l.taxCode !== 'EX')) {
-    return new MockError(422, 'pv.input_vat_needs_bill', 'ใบสำคัญจ่ายไม่มีภาษีซื้อ ภาษีซื้อต้องบันทึกผ่านใบรับวางบิล (PB) แล้วจึงจ่ายชำระ');
+    return new MockError(422, 'pv.input_vat_needs_bill', 'ใบสำคัญจ่ายไม่มีภาษีซื้อ รายการที่มีภาษีซื้อต้องมีใบกำกับภาษี กด “บันทึกซื้อ (มีใบกำกับภาษี)” เพื่อบันทึกเป็นบันทึกซื้อแล้วจ่ายชำระ');
   }
-  if (toSatang(settleTotals(st, companyId, type, body, computeDoc(body.lines, !!h.priceIncludesVat, vatOf(st, companyId)).totals).cash!) < 0) return new MockError(422, 'pay.negative_cash', 'ยอดเงินที่รับ/จ่ายสุทธิติดลบ ตรวจจำนวนเงินและภาษีหัก ณ ที่จ่าย');
+  if (toSatang(settleTotals(st, companyId, type, body, computeDoc(body.lines, !!h.priceIncludesVat, vatBasisOf(st, companyId, type)).totals).cash!) < 0) return new MockError(422, 'pay.negative_cash', 'ยอดเงินที่รับ/จ่ายสุทธิติดลบ ตรวจจำนวนเงินและภาษีหัก ณ ที่จ่าย');
   return undefined;
 }
 
@@ -232,7 +272,7 @@ export function suggestWht(st: MockState, companyId: string, header: DocHeader, 
 export function settleExtras(st: MockState, companyId: string, type: DocType, body: Part): Pick<ComputeResult, 'whtLines' | 'allocation'> {
   if (!SETTLES[type]) return {};
   const allocated = sum((body.allocations ?? []).map((a) => money(a.amount, 'settle.invalid_amount')));
-  const whtLines: WhtLine[] | undefined = type === 'PV' ? whtOf(st, companyId, body.header, body.lines).lines : undefined;
+  const whtLines: WhtLine[] | undefined = type === 'PV' ? whtOf(st, companyId, body.header, body.lines, body.allocations).lines : undefined;
   return {
     ...(whtLines?.length ? { whtLines } : {}),
     allocation: {

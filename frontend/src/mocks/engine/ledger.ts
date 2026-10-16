@@ -5,7 +5,7 @@ import { MockError } from './log';
 import { type AccountingRole, type PostingContext, resolveRole } from './posting';
 import { categoryOf, isRecoverable } from './purchase-vat';
 import { cashBankId, whtOf } from './settlement';
-import { computeDoc, vatOf } from './vat';
+import { computeDoc, vatBasisOf, vatOf } from './vat';
 
 export interface Totals { net: number; vat: number; total: number; wht: number; cash: number }
 /** [role, debit, credit, context additions] in satang; the account behind each role comes from the posting profile (SP0 §5.5). */
@@ -50,9 +50,16 @@ export const POST: Partial<Record<DocType, Rows>> = {
   RC: (t, d, st, co) => [['Cash', t.cash, 0, { bankAccountId: cashBankId(st, co, d.header) }], ['WhtReceivable', t.wht, 0], ...perTarget(d, st, 'AR', ['TI', 'IV'], 'Cr'),
     ['CustomerDeposit', 0, toSatang(d.header.depositAmount ?? '0.00')], ...netRows(d, 'Revenue', 'Cr', vatOf(st, co)), ['OutputVat', 0, t.vat]],
   // PV: payables cleared + expense lines (+ their input VAT) + the WHT we bear (gross-up) = cash paid + WHT payable per return
+  // a voucher's own line is a payment with no tax invoice (EX, D-16): per line its category's expense account, or the asset on a capex category - never input VAT (1170), whoever we are (A.4)
   PV: (t, d, st, companyId) => {
-    const w = whtOf(st, companyId, d.header, d.lines); // expense = the part of the tax / gross-up we bear
-    return [...perTarget(d, st, 'AP', ['PB'], 'Dr'), ['EmployeePayable', allocTo(d, ['EX']), 0], ...netRows(d, 'Expense', 'Dr', vatOf(st, companyId)), ['InputVat', t.vat, 0],
+    const w = whtOf(st, companyId, d.header, d.lines, d.allocations); // expense = the part of the tax / gross-up we bear
+    const rs = computeDoc(d.lines, !!d.header.priceIncludesVat, vatBasisOf(st, companyId, 'PV')).lines;
+    const own = d.lines.flatMap((l, i): RolePosting => {
+      const cat = categoryOf(st, companyId, l), ctx = { itemId: l.itemId, expenseCategory: cat?.code ?? l.expenseCategory, dimensions: l.dimensions };
+      const cost = toSatang(rs[i].net) + toSatang(rs[i].vat); // a voucher line carries no claimable VAT: any VAT on it is cost
+      return [cat?.capex ? ['FixedAsset', cost, 0, { ...ctx, assetClass: cat.assetClass }] : ['Expense', cost, 0, ctx]];
+    });
+    return [...perTarget(d, st, 'AP', ['PB'], 'Dr'), ['EmployeePayable', allocTo(d, ['EX']), 0], ...own,
       ['WhtExpense', w.expense, 0], ...w.lines.map((l): RolePosting[number] => ['WhtPayable', 0, toSatang(l.tax), { whtForm: l.form }]),
       ['Cash', 0, t.cash, { bankAccountId: cashBankId(st, companyId, d.header) }]];
   },

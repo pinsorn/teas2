@@ -56,7 +56,7 @@ test('PB mixed VAT (pb-2 + its debit note): services VAT is input VAT, entertain
   await page.goto(`${BASE}/${id}`);
   await expect(page.getByTestId('claim-period')).toHaveText('2026-10');
   await expect(page.getByText('TX-88/0412')).toBeVisible();
-  await expect(page.getByText('฿24,610.00')).toBeVisible(); // 24,075.00 + the vendor's debit note 535.00, the server's figure
+  await expect(page.getByText('฿12,305.00')).toBeVisible(); // 24,075.00 + the vendor's debit note 535.00 - 12,305.00 paid by pv-multi: the server's outstanding
   const ledger = await api<Ledger>(page, `/docs/PB/${id}/ledger`);
   expect(accounts(ledger)).toEqual([['1170', '1260.00', '0.00'], ['2110', '0.00', '24075.00'], ['5120', '18000.00', '0.00'], ['5150', '4500.00', '0.00'], ['5170', '315.00', '0.00']]);
   await page.getByRole('tab', { name: 'ผลต่อบัญชี' }).click();
@@ -120,19 +120,14 @@ test('PB view -> บันทึกใบลดหนี้จากผู้ข
   expect(pcn.header).toMatchObject({ refDocId: pbId, partyId: 'pv-03' });
   expect(sat((await doc(page, 'PB', pbId)).outstanding!)).toBe(sat(before) - sat(pcn.totals.total));
   await page.getByRole('tab', { name: 'เอกสารที่เกี่ยวข้อง' }).click();
-  await expect(page.getByRole('link', { name: /PB-\d{6}-\d{4}/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /PB-\d{6}-\d{4}/ }).first()).toBeVisible(); // the chain also reaches pb-po through pv-multi
 });
 
-test('a bill with a live vendor credit note cannot be cancelled; the operator cannot cancel or record vendor notes at all', async ({ page }) => {
+test('a bill with a live vendor credit note and a payment voucher cannot be cancelled (pv-pay1 pays pb-1 after pcn-1); the operator cannot cancel or record vendor notes at all', async ({ page }) => {
   await page.goto('/'); const id = await fixtureId(page, 'pbIssuedUnpaid'); // pb-1 has pcn-1
   await page.goto(`${BASE}/${id}`);
-  await page.getByRole('button', { name: 'ยกเลิกเอกสาร' }).click();
-  const dlg = page.getByRole('alertdialog');
-  await dlg.getByRole('combobox').click();
-  await page.getByRole('option').first().click();
-  await dlg.getByRole('button', { name: 'ยืนยันยกเลิก' }).click();
-  await expect(dlg.getByText(/มีใบลดหนี้\/ใบเพิ่มหนี้อ้างอิงอยู่/)).toBeVisible();
-  expect((await doc(page, 'PB', id)).status).toBe('issued');
+  await expect(page.getByRole('button', { name: 'ยกเลิกเอกสาร' })).toBeDisabled(); // pv-pay1 paid it: the settlement lock stops the cancel (cancel the voucher first)
+  expect((await doc(page, 'PB', id)).status).toBe('settled');
   await page.goto(`${BASE}/${id}?role=operator`);
   await expect(page.getByRole('button', { name: 'ยกเลิกเอกสาร' })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'บันทึกใบลดหนี้จากผู้ขาย' })).toBeDisabled();
@@ -174,7 +169,7 @@ test('the vendor open-items tab lists the vendor\'s bills with the server total'
   await page.getByRole('tab', { name: 'ยอดค้าง' }).click();
   const panel = page.getByRole('tabpanel', { name: 'ยอดค้าง' });
   await expect(panel.getByRole('link', { name: /PB-\d{6}-\d{4}/ })).toHaveCount(2); // pb-2 and pb-po
-  await expect(panel.getByRole('status')).toContainText('฿26,643.00'); // 24,610.00 + 2,033.00
+  await expect(panel.getByRole('status')).toContainText('฿13,338.00'); // pb-2 24,610.00 - 12,305.00 paid by pv-multi + pb-po 2,033.00 - 1,000.00 paid
 });
 
 test('non-VAT company: a new bill with the vendor\'s 7 % VAT shows AP 1,070.00 in the totals before issue and posts the VAT as cost', async ({ page }) => {

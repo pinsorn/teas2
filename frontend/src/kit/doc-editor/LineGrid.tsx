@@ -133,7 +133,7 @@ export function LineGrid({ lines, onChange, searchItems, amounts, computing, var
               <label className="grid gap-1">
                 <span aria-hidden className="text-small text-muted-foreground md:hidden">{t('colTax')}</span>
                 <select aria-label={t('tax', { n })} className={select} value={l.taxCode} onChange={(e) => patch(i, { taxCode: e.target.value as TaxCode })}>
-                  {(exemptOnly ? (['EX'] as TaxCode[]) : TAX_CODES).map((c) => <option key={c} value={c}>{t(`taxCode.${c}`)}</option>)}
+                  {TAX_CODES.map((c) => <option key={c} value={c}>{t(`taxCode.${c}`)}</option>)}
                 </select>
               </label>
               {whtTypes && (

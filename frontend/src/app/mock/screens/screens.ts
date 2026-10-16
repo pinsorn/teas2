@@ -21,6 +21,8 @@ export const PO_BASE = '/purchases/purchase-orders';
 export const PB_BASE = '/purchases/bills';
 export const PCN_BASE = '/purchases/vendor-notes';
 export const PDN_BASE = '/purchases/vendor-debit-notes';
+export const PV_BASE = '/purchases/payment-vouchers';
+export const WT_BASE = '/tax/wht-certificates';
 // names are keys of messages `screens.name.*`; fixture keys live in src/mocks/fixtures/ids.ts (later tasks append their screens here)
 export const SCREENS: Screen[] = [
   { name: 'home', route: '/', company: 'both', states: true },
@@ -73,6 +75,17 @@ export const SCREENS: Screen[] = [
   { name: 'pcnIssued', route: { fixture: 'pcnIssued', base: PCN_BASE }, company: 'vat', states: true },
   { name: 'pdnList', route: PDN_BASE, company: 'both', states: true },
   { name: 'pdnIssued', route: { fixture: 'pdnIssued', base: PDN_BASE }, company: 'vat', states: true },
+  { name: 'pvList', route: PV_BASE, company: 'both', states: true },
+  { name: 'pvNew', route: `${PV_BASE}/new`, company: 'both', states: true },
+  { name: 'pvMultiWt', route: { fixture: 'pvMultiWt', base: PV_BASE }, company: 'vat', states: true },
+  { name: 'pvGrossUp', route: { fixture: 'pvGrossUp', base: PV_BASE }, company: 'vat', states: true },
+  { name: 'pvForeign', route: { fixture: 'pvForeign', base: PV_BASE }, company: 'vat', states: true },
+  { name: 'pvCancelled', route: { fixture: 'pvCancelled', base: PV_BASE }, company: 'vat', states: true },
+  { name: 'pvPrint', route: { fixture: 'pvMultiWt', base: '/print/PV' }, company: 'vat', states: false },
+  { name: 'wtList', route: WT_BASE, company: 'both', states: true },
+  { name: 'wtIssued', route: { fixture: 'wtIssued', base: WT_BASE }, company: 'vat', states: true },
+  { name: 'wtCancelled', route: { fixture: 'wtCancelled', base: WT_BASE }, company: 'vat', states: true },
+  { name: 'wtPrint', route: { fixture: 'wtIssued', base: '/print/WT' }, company: 'vat', states: false },
   { name: 'ivList', route: IV_BASE, company: 'nonvat', states: true },
   { name: 'ivNew', route: `${IV_BASE}/new`, company: 'nonvat', states: true },
   { name: 'ivDraft', route: { fixture: 'ivDraft', base: IV_BASE }, company: 'nonvat', states: true },

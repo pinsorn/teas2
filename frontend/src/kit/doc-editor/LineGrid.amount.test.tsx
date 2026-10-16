@@ -86,10 +86,10 @@ describe('LineGrid amount editor (RC / PV)', () => {
     expect(wht).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByRole('option', { name: 'ไม่พบประเภท GONE' })).toBeInTheDocument();
   });
-  it('a voucher grid (exemptOnly) offers only the no-VAT tax code and forces it on a picked item', async () => {
+  it('a voucher grid (exemptOnly) still offers every tax code (S7 is refused by the server with the quick-bill exit, D-16) but forces the no-VAT code on a picked item', async () => {
     const spy = vi.fn();
     render(<Host exemptOnly whtTypes={WHT} lines={[{ ...blank, taxCode: 'EX' }]} spy={spy} />);
-    expect(within(screen.getByRole('combobox', { name: 'ภาษีรายการ 1' })).getAllByRole('option').map((o) => o.textContent)).toEqual(['ไม่มี VAT / ยกเว้น']);
+    expect(within(screen.getByRole('combobox', { name: 'ภาษีรายการ 1' })).getAllByRole('option').map((o) => o.textContent)).toEqual(['VAT 7%', 'VAT 0%', 'ไม่มี VAT / ยกเว้น']);
     await userEvent.type(screen.getByRole('combobox', { name: 'รายการ 1' }), 'ถ');
     await userEvent.keyboard('{Enter}');
     await waitFor(() => expect(spy.mock.lastCall![0][0].itemId).toBe('SV-01'));

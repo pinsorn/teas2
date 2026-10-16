@@ -66,4 +66,25 @@ export const PURCHASE_SPECS: SeedSpec[] = [
     lines: [line('npb-1', 1, 'ค่าซ่อมแซมอุปกรณ์โรงสี', '1', 'งาน', '1000.00', 'S7', { expenseCategory: 'services' })] },
   { id: 'npb-2', type: 'PB', companyId: NV, date: '2026-10-08', partyId: 'nv-01', status: 'issued', header: vendorDoc('R-204', '2026-10-08'),
     lines: [exp('npb-2', 1, 'ข้าวเปลือก', 'กก.', '12.00', 'nv-EXP-02', 'cost-of-sales', 'EX', '500')] },
+
+  // ---- P3: payment vouchers and the 50 tawi they issue (WHT from the typed lines of the bills paid, and from the voucher's own lines) ----
+  // pv-pay1: pb-1 paid in full (24,075.00 after pcn-1); RENT 5 % deduct of the net 22,500.00 = 1,125.00 -> cash 22,950.00, one WT
+  { id: 'pv-pay1', type: 'PV', companyId: VAT, date: '2026-10-14', partyId: 'pv-01', status: 'issued', header: { reference: 'ชำระค่าเช่า ต.ค. 2569' }, lines: [],
+    allocations: [{ targetId: 'pb-1', targetType: 'PB', amount: '24075.00' }] },
+  // pv-multi: half of pb-2 (12,305.00 of 24,610.00: the services share, SVC 3 % of 9,000.00 = 270.00), 1,000.00 of pb-po (no typed line) and a transport line TRANS 1 % of 1,800.00 = 18.00 -> two WTs
+  { id: 'pv-multi', type: 'PV', companyId: VAT, date: '2026-10-14', partyId: 'pv-03', status: 'issued', header: {},
+    allocations: [{ targetId: 'pb-2', targetType: 'PB', amount: '12305.00' }, { targetId: 'pb-po', targetType: 'PB', amount: '1000.00' }],
+    lines: [line('pv-multi', 1, 'ค่าขนส่งเอกสาร', '1', 'เที่ยว', '1800.00', 'EX', { expenseCategory: 'transport', whtTypeCode: 'TRANS' })] },
+  // pv-gross: the freelance photographer, grossed up every time: income 5,154.64, the tax 154.64 is ours, cash = 5,000.00
+  { id: 'pv-gross', type: 'PV', companyId: VAT, date: '2026-10-13', partyId: 'pv-09', status: 'issued', header: { whtMode: 'grossup_always' },
+    lines: [line('pv-gross', 1, 'ค่าถ่ายภาพสินค้า', '1', 'งาน', '5000.00', 'EX', { itemId: 'EXP-05', expenseCategory: 'services', whtTypeCode: 'SVC' })] },
+  // pv-foreign: a software service from Ireland, FOR-SVC grossed up (PND54); the service line feeds PP.36
+  { id: 'pv-foreign', type: 'PV', companyId: VAT, date: '2026-10-13', partyId: 'pv-12', status: 'issued', header: { whtMode: 'grossup_always' },
+    lines: [line('pv-foreign', 1, 'ค่าบริการซอฟต์แวร์ (ไอร์แลนด์)', '1', 'งาน', '10000.00', 'EX', { expenseCategory: 'services', whtTypeCode: 'FOR-SVC', pnd36: true })] },
+  // pv-can: a voucher cancelled after issue - its certificate is cancelled with it
+  { id: 'pv-can', type: 'PV', companyId: VAT, date: '2026-10-12', partyId: 'pv-09', status: 'cancelled', header: {},
+    lines: [line('pv-can', 1, 'ค่าถ่ายภาพงานอีเวนต์', '1', 'งาน', '3000.00', 'EX', { itemId: 'EXP-05', expenseCategory: 'services', whtTypeCode: 'SVC' })] },
+  // non-VAT company: npb-1 (1,070.00, the vendor's VAT is cost) paid in full, no tax withheld
+  { id: 'npv-1', type: 'PV', companyId: NV, date: '2026-10-14', partyId: 'nv-03', status: 'issued', header: {}, lines: [],
+    allocations: [{ targetId: 'npb-1', targetType: 'PB', amount: '1070.00' }] },
 ];

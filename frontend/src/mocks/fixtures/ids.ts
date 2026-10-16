@@ -1,4 +1,5 @@
 import type { MockState } from '../store';
+import { LIVE } from '@/domain/doc-types';
 import { derivedLocks } from '../engine/locks';
 
 type D = MockState['docs'][number];
@@ -11,7 +12,8 @@ export type FixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssued
   | 'ivDraft' | 'ivIssuedUnpaid' | 'ivPartly' | 'ivSettled' | 'blVat' | 'blNonVat'
   | 'poDraft' | 'poSent' | 'poPartlyBilled' | 'poClosed' | 'npoIssued'
   | 'rcMulti' | 'rcNoCert' | 'rcDeposit' | 'nrcCashBill' | 'cnIssued' | 'dnIssued' | 'tiCreditedToZero'
-  | 'pbDraft' | 'pbIssuedUnpaid' | 'pbMixedVat' | 'pbFromPo' | 'pbCapex' | 'pbClaimLate' | 'pbIncomplete' | 'pcnIssued' | 'pdnIssued' | 'npbVatToCost'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
+  | 'pbDraft' | 'pbIssuedUnpaid' | 'pbMixedVat' | 'pbFromPo' | 'pbCapex' | 'pbClaimLate' | 'pbIncomplete' | 'pcnIssued' | 'pdnIssued' | 'npbVatToCost'
+  | 'pvMultiWt' | 'pvGrossUp' | 'pvForeign' | 'pvCancelled' | 'wtIssued' | 'wtCancelled'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
 
 /** An issued, untouched TI of pc-01 (the multi-target receipt vector settles two of them). */
 const rcTarget = (d: D, st: MockState) => isTi(d) && d.status === 'issued' && d.party?.id === 'pc-01' && d.outstanding === d.totals.total
@@ -19,7 +21,7 @@ const rcTarget = (d: D, st: MockState) => isTi(d) && d.status === 'issued' && d.
 const firstRcTarget = (st: MockState) => st.docs.filter((x) => rcTarget(x, st)).map((x) => x.id).sort()[0];
 
 /** A fixture that is one explicit seed document (fixtures/specs/<group>.ts), still in the state the fixture promises. */
-const byId = (id: string, ok: (d: D) => boolean = () => true) => (d: D) => d.id === id && ok(d);
+const byId = (id: string, ok: (d: D, st: MockState) => boolean = () => true) => (d: D, st: MockState) => d.id === id && ok(d, st);
 
 /** Predicates evaluate the READ model (derivedLocks), never the stored row alone. */
 export const FIXTURE_PREDICATES: Record<FixtureKey, (d: D, st: MockState) => boolean> = {
@@ -75,15 +77,22 @@ export const FIXTURE_PREDICATES: Record<FixtureKey, (d: D, st: MockState) => boo
   tiCreditedToZero: byId('ti-046', (d) => d.status === 'issued' && d.outstanding === '0.00'), // credited in full by cn-full, never settled
   // P2 purchase bills / vendor notes
   pbDraft: byId('pb-d1', (d) => d.status === 'draft'),
-  pbIssuedUnpaid: byId('pb-1', (d) => d.status === 'issued'), // rent with a vendor credit (pcn-1) against it
-  pbMixedVat: byId('pb-2', (d) => d.status === 'issued'), // services + non-claimable entertainment, with a debit (pdn-1)
-  pbFromPo: byId('pb-po', (d) => d.status === 'issued' && !!d.lines[0]?.sourceLineId),
+  pbIssuedUnpaid: byId('pb-1', (d) => LIVE.includes(d.status)), // rent with a vendor credit (pcn-1) against it; paid by pv-pay1 (P3)
+  pbMixedVat: byId('pb-2', (d) => LIVE.includes(d.status)), // services + non-claimable entertainment, with a debit (pdn-1)
+  pbFromPo: byId('pb-po', (d) => LIVE.includes(d.status) && !!d.lines[0]?.sourceLineId),
   pbCapex: byId('pb-capex', (d) => d.status === 'issued'),
   pbClaimLate: byId('pb-claim-late', (d) => d.status === 'issued' && d.header.claimPeriod === '2026-12'),
   pbIncomplete: byId('pb-incomplete', (d) => d.status === 'issued' && d.header.complete === false),
   pcnIssued: byId('pcn-1', (d) => d.status === 'issued'),
   pdnIssued: byId('pdn-1', (d) => d.status === 'issued'),
-  npbVatToCost: byId('npb-1', (d) => d.status === 'issued' && d.companyId === 'co-nonvat'),
+  npbVatToCost: byId('npb-1', (d) => LIVE.includes(d.status) && d.companyId === 'co-nonvat'), // settled by npv-1 (P3)
+  // P3 payment vouchers / withholding certificates
+  pvMultiWt: byId('pv-multi', (d, st) => d.status === 'issued' && st.links.filter((l) => l.active && l.kind === 'issues' && l.from === d.id).length === 2),
+  pvGrossUp: byId('pv-gross', (d) => d.status === 'issued' && d.header.whtMode === 'grossup_always'),
+  pvForeign: byId('pv-foreign', (d) => d.status === 'issued' && d.lines.some((l) => l.pnd36)),
+  pvCancelled: byId('pv-can', (d) => d.status === 'cancelled'),
+  wtIssued: (d, st) => d.type === 'WT' && d.status === 'issued' && st.links.some((l) => l.kind === 'issues' && l.from === 'pv-pay1' && l.to === d.id),
+  wtCancelled: (d, st) => d.type === 'WT' && d.status === 'cancelled' && st.links.some((l) => l.kind === 'issues' && l.from === 'pv-can' && l.to === d.id),
 };
 
 /** Lowest id (string order) matching each predicate in the active seed; throws listing every unresolved key. */

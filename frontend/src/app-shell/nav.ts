@@ -45,6 +45,7 @@ export const NAV: NavGroup[] = [
     item('taxSummary', '/tax/summary', LEDGER),
     item('vat', '/tax/vat', LEDGER, { vatOnly: true }),
     item('wht', '/tax/wht', LEDGER),
+    doc('whtCertificates', '/tax/wht-certificates', 'WT'),
     item('cit', '/tax/cit', LEDGER),
   ]),
   group('payroll', [

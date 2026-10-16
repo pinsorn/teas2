@@ -209,7 +209,8 @@ export const docsWriteHandlers = [
     own(c0, t, params.id);
     const body = (await request.json().catch(() => ({}))) as { copy?: boolean };
     const c = ctx(); // the body was awaited: read the state again so two quick prints (two tabs) see each other and only one is the original
-    const r = markPrinted(c.st, own(c, t, params.id), body.copy === true, ACTOR);
+    const doc = own(c, t, params.id);
+    const r = markPrinted(c.st, doc, body.copy === true, ACTOR, t === 'WT' && PAPER_BUILDERS.WT && !['draft', 'pending', 'approved'].includes(doc.status) ? PAPER_BUILDERS.WT(c, publicDoc(doc), false) : undefined); // 50 tawi: frozen at the first print (I7)
     done(c);
     return HttpResponse.json(r);
   })),

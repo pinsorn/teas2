@@ -79,10 +79,15 @@ const extras = (): SeedParty[] => [
 /** Party fixtures the master-data screens and tests name. `vendorForeign` is pv-12: pv-10 exists in the seed and pv-11 is reserved by plan 04 (netting). */
 export const PARTY_FIXTURES = { customerVat: 'pc-01', customerIndividual: 'pc-09', customerInactive: 'pc-13', customerInactiveNonVat: 'nc-09', vendorForeign: 'pv-12' } as const;
 
+/** pv-09 is the S3 payment-voucher payee (D-15): an individual who is not VAT-registered, paid 5,000.00 for a photo shoot with 3 % withheld. */
+const photographer = (p: SeedParty): SeedParty => ({
+  ...p, name: 'คุณอนันต์ ภาพดี (ช่างภาพอิสระ)', taxId: tin('310060011122'), entityKind: 'individual', vatRegistered: false, defaultWhtTypeCode: 'SVC', usualItemIds: ['EXP-05'],
+});
+
 export const vatParties = (): SeedParty[] => [
   ...build('co-vat', 'pc', 'customer', VAT_CUSTOMERS, (i) =>
     i === 0 ? ['SV-01'] : [`SV-${pad((i % 9) + 2)}`, `GD-${pad((i % 10) + 1)}`]),
-  ...build('co-vat', 'pv', 'vendor', VAT_VENDORS, undefined, 8),
+  ...build('co-vat', 'pv', 'vendor', VAT_VENDORS, undefined, 8).map((p) => (p.id === 'pv-09' ? photographer(p) : p)),
   ...extras().filter((p) => p.companyId === 'co-vat'),
 ];
 export const nonVatParties = (): SeedParty[] => [

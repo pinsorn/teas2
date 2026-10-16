@@ -33,7 +33,8 @@ export interface DocLine { id: string; itemId?: string; description: string; qty
   /** Engine-set only (CN / DN from a correction): this signed amount IS the line's VAT instead of rate x net. Stripped from API input. */
   vatOverride?: Money;
   /** PV lines: the WHT type of this line's income (fixture `[SP-R]`); `expenseCategory` picks the expense account (SP0 5.5). */
-  whtTypeCode?: string; expenseCategory?: string }
+  whtTypeCode?: string; expenseCategory?: string;
+  /** PV service line paid to a foreign payee: the service is used in Thailand, so PP.36 reverse-charge VAT applies (feeds TX2). Engine-defaulted for a foreign payee. */ pnd36?: boolean }
 export type WhtMode = 'deduct' | 'grossup_once' | 'grossup_always';
 /** One settled open item of an RC / PV: `amount` clears the target, `wht` is what the customer withheld (RC) on that part. */
 export interface Allocation { targetId: string; targetType: DocType; targetNumber?: string; amount: Money; wht?: Money;
@@ -50,6 +51,7 @@ export interface DocHeader { partyId?: string; documentDate: IsoDate; dueDate?: 
   /** PB / PCN / PDN (VAT company): the month 'YYYY-MM' the input VAT is claimed in, the month of the vendor's tax invoice .. +6 (I6, ม.82/3); the server fills that month at issue. A PCN has none: it is filed in the month of its document date. */ claimPeriod?: string;
   /** PB / PDN of a VAT company: the claim window of the vendor's tax invoice had closed when the document was recorded (ม.82/3), so its VAT is cost; a PCN follows its bill. Server-derived at issue and revise. */ inputVatForfeited?: boolean;
   /** PB / PCN / PDN: the vendor's VAT status when the document was ISSUED (M2; a PCN inherits its bill's). Server-owned: the ม.82/5 check judges against it, not the live party master. */ vendorVatRegistered?: boolean;
+  /** WT (50 ทวิ, server-written when its PV is issued): the return the tax falls on, the WHT type, its income type and the tax withheld. */ whtForm?: 'PND2' | 'PND3' | 'PND53' | 'PND54'; whtTypeCode?: string; whtIncomeType?: string; whtTax?: Money;
   /** PB: the vendor paperwork is complete (เอกสารครบ). Absent = complete; `false` still issues but the Home inbox counts it (HC1). */ complete?: boolean }
 /** `cash` = money that moves: received (RC) / paid (PV). `wht` = withholding tax of the document. */
 export interface DocTotals { gross: Money; discount: Money; net: Money; vat: Money; total: Money; wht?: Money; cash?: Money;
@@ -99,7 +101,7 @@ export interface JournalEntryPreview { number?: string; date: IsoDate; kind: 'or
   lines: JournalLinePreview[] }
 export interface JournalPreview { entries: JournalEntryPreview[] }
 
-export interface MissingItem { field: string; message: string }
+export interface MissingItem { field: string; message: string; /** Set when the editor offers a specific exit for the refusal (`pv.input_vat_needs_bill` → the quick-bill dialog). */ code?: string }
 export interface WhtLine { code: string; nameTh: string; form: 'PND2' | 'PND3' | 'PND53' | 'PND54'; base: Money; rate: string; tax: Money; income: Money; /** What the payee actually receives for this type: income - tax. */ net: Money }
 export interface OpenItem { id: string; type: DocType; number: string; documentDate: IsoDate; dueDate?: IsoDate; total: Money; outstanding: Money }
 export interface ComputeResult { lines: { id: string; net: Money; vat: Money; total: Money }[]; totals: DocTotals;
@@ -141,6 +143,11 @@ export interface PaperModel {
   /** Receipt only: how the money came in (method, bank account or cheque), one line printed by the server. */ payment?: string;
   /** CN / DN (ม.86/10): the tax invoice adjusted, its value, the correct value and the difference (this note's net; its VAT is totals.vat), all server-computed. */
   adjusts?: { number: string; date: IsoDate; originalNet: Money; correctNet: Money; diffNet: Money; reason: string };
+  /** PV: the tax withheld per WHT type (income type + rate, the base and the tax), as the server computed it. */ whtLines?: { label: string; base: Money; tax: Money }[];
+  /** Label of the party block when it is not the customer (PV: 'ผู้รับเงิน'). */ partyLabel?: string;
+  /** WT (50 ทวิ, D-21): everything the certificate prints, server-built and frozen at the first print (I7). */
+  certificate?: { form: 'PND2' | 'PND3' | 'PND53' | 'PND54'; sequence?: string; incomeType: string; incomeLabel: string; paidOn: IsoDate; income: Money; tax: Money; taxInWords: string;
+    condition: 'withhold' | 'forever' | 'once'; voucher?: string };
   replacementNote?: string;                    // 'ยกเลิกและออกแทนฉบับเดิม เลขที่ … ลงวันที่ …' (on the NEW document)
   voidMark?: { label: string; note?: string }; // cancelled / replaced originals: diagonal stamp on every page
   signatures: string[];                        // ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม']

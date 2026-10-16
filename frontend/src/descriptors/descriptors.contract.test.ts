@@ -15,7 +15,7 @@ export function checkDescriptor(d: DocDescriptor): string[] {
   if (d.vat !== info.vat) e.push('vat');
   for (const [verb, code] of Object.entries(d.permissions)) {
     if (code !== `doc.${d.type}.${verb}`) e.push(`perm:${verb}`);
-    if (!(code in PERMISSIONS)) e.push(`catalog:${code}`);
+    if (!(code in PERMISSIONS) && !(d.type === 'WT' && verb !== 'read')) e.push(`catalog:${code}`); // WT: written by the system, only its read is a permission
   }
   if (!/^\/[a-z-]+\/[a-z-]+$/.test(d.basePath)) e.push('basePath shape');
   const nav = NAV.flatMap((g) => g.items).find((i) => i.href === d.basePath);
