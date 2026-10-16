@@ -17,6 +17,7 @@ export const BL_BASE = '/sales/billing-statements';
 export const RC_BASE = '/sales/receipts';
 export const CN_BASE = '/sales/credit-notes';
 export const DN_BASE = '/sales/debit-notes';
+export const PO_BASE = '/purchases/purchase-orders';
 // names are keys of messages `screens.name.*`; fixture keys live in src/mocks/fixtures/ids.ts (later tasks append their screens here)
 export const SCREENS: Screen[] = [
   { name: 'home', route: '/', company: 'both', states: true },
@@ -50,6 +51,14 @@ export const SCREENS: Screen[] = [
   { name: 'doPrint', route: { fixture: 'doDelivered', base: '/print/DO' }, company: 'vat', states: false },
   { name: 'nsoIssued', route: { fixture: 'nsoIssued', base: SO_BASE }, company: 'nonvat', states: true },
   { name: 'ndoDelivered', route: { fixture: 'ndoDelivered', base: DO_BASE }, company: 'nonvat', states: true },
+  { name: 'poList', route: PO_BASE, company: 'both', states: true },
+  { name: 'poNew', route: `${PO_BASE}/new`, company: 'both', states: true },
+  { name: 'poDraft', route: { fixture: 'poDraft', base: PO_BASE }, company: 'vat', states: true },
+  { name: 'poSent', route: { fixture: 'poSent', base: PO_BASE }, company: 'vat', states: true },
+  { name: 'poPartlyBilled', route: { fixture: 'poPartlyBilled', base: PO_BASE }, company: 'vat', states: true },
+  { name: 'poClosed', route: { fixture: 'poClosed', base: PO_BASE }, company: 'vat', states: true },
+  { name: 'poPrint', route: { fixture: 'poSent', base: '/print/PO' }, company: 'vat', states: false },
+  { name: 'npoIssued', route: { fixture: 'npoIssued', base: PO_BASE }, company: 'nonvat', states: true },
   { name: 'ivList', route: IV_BASE, company: 'nonvat', states: true },
   { name: 'ivNew', route: `${IV_BASE}/new`, company: 'nonvat', states: true },
   { name: 'ivDraft', route: { fixture: 'ivDraft', base: IV_BASE }, company: 'nonvat', states: true },

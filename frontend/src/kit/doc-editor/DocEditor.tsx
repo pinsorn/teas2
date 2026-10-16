@@ -56,8 +56,8 @@ const addDays = (iso: string, n: number) => {
   const [y, m, d] = iso.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
 };
-/** Customer documents sell, everything else buys: the type-ahead offers only the items usable on that side. */
-type Usage = 'sales' | 'purchase';
+/** Customer documents sell, vendor / employee documents buy: the type-ahead offers only the items usable on that side. A document with no party kind offers every item. */
+type Usage = 'sales' | 'purchase' | undefined;
 async function itemById(id: string, usage: Usage): Promise<ItemSummary | undefined> {
   const hit = (await endpoints.searchItems({ q: id, limit: 5, usage })).items.find((i) => i.id === id);
   return hit ?? (await endpoints.searchItems({ limit: 200, usage })).items.find((i) => i.id === id);
@@ -127,6 +127,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   const invalidate = () => {
     if (!me) return;
     void qc.invalidateQueries({ queryKey: [me.activeCompanyId, 'docs', d.type] });
+    void qc.invalidateQueries({ queryKey: [me.activeCompanyId, 'doc', d.type] }); // the view of a just-issued draft must not show the cached draft
     if (d.settles) void qc.invalidateQueries({ queryKey: [me.activeCompanyId, 'open-items'] }); // the targets' balances just changed
   };
   const compute = useCompute(d.type, payload, mode === 'revise' ? initial?.id : undefined); // revising: the document's own settlements are not 'used up'
@@ -158,7 +159,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
 
   const title = locale === 'en' ? d.titleEn : d.titleTh;
   const partyKind = d.partyKind;
-  const usage: Usage = partyKind === 'customer' ? 'sales' : 'purchase';
+  const usage: Usage = partyKind === 'customer' ? 'sales' : partyKind ? 'purchase' : undefined;
   const searchItems = useCallback((q: string) => endpoints.searchItems({ q, limit: 8, usage }).then((p) => p.items), [usage]);
   const showLines = d.lineEditor !== 'none' && !(d.linesWhen === 'non-vat' && me?.vatRegistered !== false); // D-12: a VAT company's receipt settles invoices, it has no line grid
   const amountEditor = d.lineEditor === 'amount';

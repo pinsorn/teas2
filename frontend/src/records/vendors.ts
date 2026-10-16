@@ -12,7 +12,7 @@ export const vendor: RecordDescriptor = {
     { key: 'bankName', kind: 'text', labelKey: f('bankName') },
     { key: 'bankAccountNo', kind: 'text', labelKey: f('bankAccountNo') },
     { key: 'bankAccountName', kind: 'text', labelKey: f('bankAccountName') },
-    { key: 'usualItemIds', kind: 'item', labelKey: f('usualItemIds'), multiple: true },
+    { key: 'usualItemIds', kind: 'item', itemUsage: 'purchase', labelKey: f('usualItemIds'), multiple: true },
     partyFields[partyFields.length - 1],
   ],
 };

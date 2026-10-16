@@ -22,6 +22,11 @@ Entry format — terse, greppable by symptom:
 
 <!-- entries below — newest on top -->
 
+## After issuing a draft from its edit page the view still shows "ฉบับร่าง" (cached draft)
+- **Root cause:** `DocEditor.invalidate()` invalidated `[company, 'docs', type]` (the lists) but the document query is `qk.doc` = `[company, 'doc', type, id]`; the view mounted straight from the cached draft and never refetched. A NEW document (create flow) has no cache entry, so only edit-draft showed it.
+- **Fix:** `invalidate()` also invalidates `[company, 'doc', type]`. e2e: `purchases-po.spec.ts` "PO draft" issues from the edit page and reads the numbered view.
+- **Seen:** 2026-10-16, SP1c P1
+
 ## Unit: `DocEditor.settle.test.tsx` "a deposit alone completes a VAT-company receipt" fails at 5180 ms in the FULL `vitest run` only
 - **Root cause:** NOT vitest's 5 s default (the `it` has an explicit 15 s timeout). The failure is `expect(element).toHaveTextContent()` from an inner `waitFor({ timeout: 4000 })` (the server total, or "ครบแล้ว") expiring while 79 test files run in parallel; alone the test takes ~1.2 s. A second cause showed under load once the timeouts were raised: the test moved focus to the deposit field while the customer pick (`{Enter}` on the combobox) was still pending, and a blur drops a pending Enter, so "เลือกลูกค้า" stayed missing. Pre-existing: it reproduces on the S4 base commit b514b87.
 - **Fix:** done in S5 fix round 1 - the two inner `waitFor` timeouts are 12 s, the `it` timeout 30 s, and the test waits for the customer field to show the picked name before it continues. If another async test flakes only in the full run, look for a short inner `waitFor` timeout first. Never weaken the assertions.

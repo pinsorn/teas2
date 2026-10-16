@@ -25,8 +25,8 @@ export function Guarded({ why, children }: { why?: string; children: (p: { disab
   );
 }
 
-/** Marks that have a button today (delivered / sent land with their own screens). */
-const MARK_BUTTONS: MarkKey[] = ['accepted', 'rejected', 'delivered'];
+/** Marks that have a button. */
+const MARK_BUTTONS: MarkKey[] = ['accepted', 'rejected', 'delivered', 'sent'];
 const MARK_LABEL = { accepted: 'markAccepted', rejected: 'markRejected', delivered: 'markDelivered', sent: 'markSent' } as const;
 
 export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCancel, onConvert, onMark, onCloseRemainder, nothingRemaining, onReprint }: {

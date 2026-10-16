@@ -9,6 +9,7 @@ export type FixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssued
   | 'qtDraft' | 'qtIssued' | 'qtRejected' | 'qtCancelled' | 'qtRevised' | 'nqtIssued'
   | 'soPartlyDelivered' | 'soClosed' | 'doDelivered' | 'nsoIssued' | 'ndoDelivered'
   | 'ivDraft' | 'ivIssuedUnpaid' | 'ivPartly' | 'ivSettled' | 'blVat' | 'blNonVat'
+  | 'poDraft' | 'poSent' | 'poPartlyBilled' | 'poClosed' | 'npoIssued'
   | 'rcMulti' | 'rcNoCert' | 'rcDeposit' | 'nrcCashBill' | 'cnIssued' | 'dnIssued' | 'tiCreditedToZero'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
 
 /** An issued, untouched TI of pc-01 (the multi-target receipt vector settles two of them). */
@@ -49,6 +50,12 @@ export const FIXTURE_PREDICATES: Record<FixtureKey, (d: D, st: MockState) => boo
   doDelivered: byId('do-dlv', (d) => !!d.marks?.delivered),
   nsoIssued: byId('nso-1', (d) => d.status === 'issued'),
   ndoDelivered: byId('ndo-1', (d) => !!d.marks?.delivered),
+  // P1 purchase orders
+  poDraft: byId('po-d1', (d) => d.status === 'draft'),
+  poSent: byId('po-1', (d) => d.status === 'issued' && !!d.marks?.sent),
+  poPartlyBilled: byId('po-part', (d) => d.status === 'issued'),
+  poClosed: byId('po-closed', (d) => !!d.marks?.closed),
+  npoIssued: byId('npo-1', (d) => d.status === 'issued'),
   // S3 non-VAT invoices / billing statements
   ivDraft: byId('iv-d1', (d) => d.status === 'draft'),
   ivIssuedUnpaid: byId('iv-1', (d) => d.status === 'issued' && d.outstanding === d.totals.total),

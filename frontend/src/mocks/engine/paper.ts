@@ -20,6 +20,7 @@ const LOOK: Partial<Record<DocType, Look>> = {
   RC: { titleTh: 'ใบเสร็จรับเงิน', titleEn: 'RECEIPT', signatures: ['ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'] },
   CN: { titleTh: 'ใบลดหนี้', titleEn: 'CREDIT NOTE', signatures: ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'] },
   DN: { titleTh: 'ใบเพิ่มหนี้', titleEn: 'DEBIT NOTE', signatures: ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'] },
+  PO: { titleTh: 'ใบสั่งซื้อ', titleEn: 'PURCHASE ORDER', signatures: ['ผู้สั่งซื้อ', 'ผู้อนุมัติ'], dueLabel: 'กำหนดรับของ' },
   QT: { titleTh: 'ใบเสนอราคา', titleEn: 'QUOTATION', signatures: ['ผู้เสนอราคา', 'ผู้อนุมัติ', 'ลูกค้ายืนยันสั่งซื้อ'], dueLabel: 'ยืนราคาถึง' },
 };
 
@@ -99,4 +100,4 @@ function adjustmentPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
   return { ...m, adjusts: { number: ti.number ?? '-', date: ti.header.documentDate, originalNet: ti.totals.net, correctNet: fromSatang(correct), diffNet: d.totals.net, reason: reasonTh(d.header) } };
 }
 
-export const PAPER_BUILDERS: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf, QT: paperOf, SO: paperOf, DO: paperOf, IV: paperOf, BL: billingPaper, RC: receiptPaper, CN: adjustmentPaper, DN: adjustmentPaper };
+export const PAPER_BUILDERS: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf, QT: paperOf, SO: paperOf, DO: paperOf, IV: paperOf, BL: billingPaper, RC: receiptPaper, CN: adjustmentPaper, DN: adjustmentPaper, PO: paperOf };

@@ -18,7 +18,7 @@ test('corrupted journal displays a non-zero tie-out banner', async ({ page }) =>
   const id = await fixtureId(page, 'tiIssuedUnpaid');
   await page.evaluate(async (id) => {
     await fetch('/bff/v1/mock/persist', { method: 'POST' });
-    const key = 'teas2.mock.state.v14';
+    const key = 'teas2.mock.state.v15';
     const state = JSON.parse(localStorage.getItem(key)!);
     const journal = state.journals.find((j: { docId: string }) => j.docId === id);
     const line = journal.preview.entries.flatMap((e: { lines: { accountCode: string; debit: string }[] }) => e.lines).find((l: { accountCode: string }) => l.accountCode === '1130');

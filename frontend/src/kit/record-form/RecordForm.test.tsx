@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse, http } from 'msw';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -85,6 +85,15 @@ describe('RecordForm', () => {
     await u.click(screen.getByRole('button', { name: 'บันทึก' }));
     await waitFor(() => expect(screen.getAllByText('ต้องระบุ')).toHaveLength(3));
     expect(label('เลขประจำตัวผู้เสียภาษี')).toHaveAccessibleDescription('ต้องระบุ');
+  });
+
+  it('the vendor usual-items picker offers only purchase items (sales-only items are not offered)', async () => {
+    mount(<RecordForm descriptor={vendor} onSaved={vi.fn()} onCancel={vi.fn()} />);
+    const group = await screen.findByRole('group', { name: 'สินค้าและบริการที่ซื้อบ่อย' });
+    await waitFor(() => expect(within(group).getAllByRole('checkbox').length).toBeGreaterThan(0));
+    expect(within(group).getByText(/EXP-06 · /)).toBeInTheDocument(); // a purchase item
+    expect(within(group).queryByText(/SV-01 · /)).toBeNull(); // a sales-only item
+    expect(within(group).queryByText(/GD-01 · /)).toBeNull();
   });
 
   it('hides fields whose showWhen does not hold and does not send them', async () => {

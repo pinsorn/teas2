@@ -187,7 +187,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
 
       {reprintOpen ? <ReprintDialog docLabel={label} onCancel={() => setReprintOpen(false)} onConfirm={() => router.push(`${routesOf(d).print(doc.id)}?copy=1`)} /> : null}
       {convertOpen ? <ConvertDialog source={doc} targets={d.convertsTo ?? []} onDone={converted} onClose={() => setConvertOpen(false)} /> : null}
-      {markOpen === 'accepted' || markOpen === 'rejected' || markOpen === 'delivered' ? (
+      {markOpen === 'accepted' || markOpen === 'rejected' || markOpen === 'delivered' || markOpen === 'sent' ? (
         <MarkDialog mark={markOpen} docLabel={label} busy={mark.isPending} error={mark.error} onCancel={() => setMarkOpen(undefined)}
           onConfirm={(reason) => mark.mutate({ mark: markOpen, reason })} />
       ) : null}

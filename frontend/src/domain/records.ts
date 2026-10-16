@@ -10,7 +10,7 @@ export interface FieldSpec { key: string; kind: FieldKind; labelKey: string; req
   /** Options the server owns: the form loads them from that endpoint. */ optionsFrom?: 'wht-types';
   showWhen?: FieldCondition; readOnlyAfterUse?: boolean; vat?: VatScope;
   /** Required when ANY of these holds. The server decides; the form only mirrors the shape. */ requiredWhen?: FieldCondition[];
-  /** kind 'item': pick several. */ multiple?: boolean; defaultValue?: string | boolean }
+  /** kind 'item': pick several. */ multiple?: boolean; /** kind 'item': only the items usable on this side are offered (all when absent). */ itemUsage?: 'sales' | 'purchase'; defaultValue?: string | boolean }
 export interface RecordColumn { key: string; labelKey: string; align?: 'start' | 'end'; kind?: 'text' | 'money' | 'bool' | 'date';
   /** The value is a code: show the label `records.options.<optionKey>.<value>`. */ optionKey?: string }
 export interface RecordDescriptor { kind: RecordKind; basePath: string; titleKey: string; permissions: { read: string; manage: string };

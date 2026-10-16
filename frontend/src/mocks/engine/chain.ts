@@ -32,13 +32,13 @@ export function progressOf(st: MockState, d: Doc): string | undefined {
   if (d.type === 'QT' || d.type === 'SO' || d.type === 'DO' || d.type === 'PO') {
     const ordered = d.lines.reduce((a, l) => a + q4(l.qty), 0);
     // only issued targets count: a draft DO has delivered nothing, a draft TI / IV has billed nothing (they only reserve the quantity)
-    const kinds: DocType[] | undefined = d.type === 'SO' ? ['DO'] : d.type === 'DO' ? ['TI', 'IV'] : undefined;
+    const kinds: DocType[] | undefined = d.type === 'SO' ? ['DO'] : d.type === 'DO' ? ['TI', 'IV'] : d.type === 'PO' ? ['PB'] : undefined;
     const only = kinds ? (t: Doc) => kinds.includes(t.type) && LIVE.includes(t.status) : undefined;
     const done = d.lines.reduce((a, l) => a + consumed(st, d, l, only), 0);
     const x = `${fmtQ(done)}/${fmtQ(ordered)}`;
     if (d.type === 'QT') return x;
     if (d.type === 'SO' && done >= ordered) return 'ส่งครบ';
-    return `${{ SO: 'ส่งแล้ว', DO: 'วางบิลแล้ว', PO: 'รับแล้ว' }[d.type]} ${x}${d.marks?.closed ? ' (ปิดยอดคงเหลือ)' : ''}`;
+    return `${{ SO: 'ส่งแล้ว', DO: 'วางบิลแล้ว', PO: 'รับวางบิลแล้ว' }[d.type]} ${x}${d.marks?.closed ? ' (ปิดยอดคงเหลือ)' : ''}`;
   }
   if ((d.type === 'TI' || d.type === 'IV') && d.outstanding !== undefined) {
     const paid = st.links.filter((l) => l.kind === 'settles' && l.to === d.id && l.active).reduce((a, l) => a + toSatang(l.amount ?? '0.00'), 0);

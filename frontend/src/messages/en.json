@@ -12,6 +12,7 @@
       "acceptedTitle": "Customer accepted {doc}", "acceptedBody": "Records that the customer accepted this quotation. Totals do not change and no revision is made.",
       "rejectedTitle": "Customer rejected {doc}", "rejectedBody": "Records that the customer rejected this quotation. It cannot be converted until it is revised or copied as a new one.",
       "deliveredTitle": "Delivered {doc}", "deliveredBody": "Records that the goods on this order were delivered. A status only: no other document is issued and totals do not change.",
+      "sentTitle": "Sent {doc} to the vendor", "sentBody": "Records that this purchase order was sent to the vendor. A status only: no other document is issued and totals do not change.",
       "reason": "Why the customer rejected it", "confirm": "Save", "back": "Back"
     },
     "convertDialog": {
@@ -23,7 +24,7 @@
     },
     "actions": {
       "label": "Actions", "issueDraft": "Save and issue…", "edit": "Edit", "print": "Print", "copy": "Copy as new",
-      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "receive": "Receive payment", "whyInclusiveNote": "This invoice is priced VAT-inclusive, so a credit / debit note cannot be issued directly. Use Edit (a correction plan) instead.", "issueCn": "Issue credit note", "issueDn": "Issue debit note", "markDelivered": "Delivered", "markSent": "Sent to vendor", "whyNothingRemaining": "Every line is already converted in full; there is nothing to close", "whyClosed": "The remainder is closed, so it cannot be converted; revise the document to reopen it"
+      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "receive": "Receive payment", "whyInclusiveNote": "This invoice is priced VAT-inclusive, so a credit / debit note cannot be issued directly. Use Edit (a correction plan) instead.", "issueCn": "Issue credit note", "issueDn": "Issue debit note", "markDelivered": "Delivered", "markSent": "Mark as sent to vendor", "whyNothingRemaining": "Every line is already converted in full; there is nothing to close", "whyClosed": "The remainder is closed, so it cannot be converted; revise the document to reopen it"
     },
     "print": { "reprintTitle": "Reprint {doc}", "reprintBody": "A reprint is printed as a 'COPY'. The original has already been printed.", "reprintConfirm": "Print a copy", "back": "Back", "logFailed": "The print could not be logged, so nothing was printed. Try again." },
     "agent": { "draftBy": "Drafted by {name} for {owner}", "draftByNoOwner": "Drafted by {name}", "createdBy": "Created by {name} for {owner}", "createdByNoOwner": "Created by {name}", "report": "View the check report" },
@@ -317,6 +318,14 @@
       "doList": "Delivery orders: list",
       "doDelivered": "Delivery order: delivered",
       "doPrint": "Print delivery order",
+      "poList": "Purchase orders: list",
+      "poNew": "Purchase order: new",
+      "poDraft": "Purchase order: draft",
+      "poSent": "Purchase order: sent to the vendor (3 lines)",
+      "poPartlyBilled": "Purchase order: awaiting vendor bills",
+      "poClosed": "Purchase order: remainder closed",
+      "poPrint": "Print purchase order",
+      "npoIssued": "Purchase order (non-VAT)",
       "nsoIssued": "Sales order (non-VAT)",
       "ndoDelivered": "Delivery order: delivered (non-VAT)",
       "ivList": "Invoices: list (non-VAT)",
@@ -456,7 +465,7 @@
     "noTaxId": "No tax ID",
     "documentDate": "Document date",
     "dueDate": "Due date",
-    "dueDateByType": { "QT": "Valid until", "SO": "Delivery due" },
+    "dueDateByType": { "QT": "Valid until", "SO": "Delivery due", "PO": "Expected on" },
     "reference": "Reference",
     "refDoc": "Tax invoice adjusted",
     "refDocNone": "No tax invoice chosen yet",
@@ -611,6 +620,7 @@
   "docTypes": {
     "QT": {"title": "Quotation", "issue": "Save and issue quotation", "create": "Create quotation", "empty": "No quotations yet"},
     "SO": {"title": "Sales order", "issue": "Save and issue sales order", "create": "Create sales order", "empty": "No sales orders yet"},
+    "PO": {"title": "Purchase order", "issue": "Save and issue purchase order", "create": "Create purchase order", "empty": "No purchase orders yet"},
     "DO": {"title": "Delivery order", "issue": "Save and issue delivery order", "create": "Create delivery order", "empty": "No delivery orders yet"},
     "BL": {"title": "Billing statement", "issue": "Save and issue billing statement", "create": "Create billing statement", "empty": "No billing statements yet"},
     "IV": {"title": "Invoice", "issue": "Save and issue invoice", "create": "Create invoice", "empty": "No invoices yet"},

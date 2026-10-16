@@ -74,7 +74,7 @@ export function Field({ spec, form, values, error, locked }: { spec: FieldSpec; 
   const common = { id, 'aria-invalid': !!error, 'aria-describedby': describedBy, 'aria-required': isRequired(spec, values) || undefined, readOnly: locked };
 
   const wht = useQuery({ queryKey: qk.whtTypes(c), queryFn: endpoints.whtTypes, enabled: !!me && spec.optionsFrom === 'wht-types' });
-  const items = useQuery({ queryKey: qk.itemOptions(c), queryFn: () => endpoints.searchItems({ limit: 200 }), enabled: !!me && spec.kind === 'item' });
+  const items = useQuery({ queryKey: [...qk.itemOptions(c), spec.itemUsage], queryFn: () => endpoints.searchItems({ limit: 200, usage: spec.itemUsage }), enabled: !!me && spec.kind === 'item' });
 
   let control: ReactNode;
   if (spec.kind === 'bool') {
