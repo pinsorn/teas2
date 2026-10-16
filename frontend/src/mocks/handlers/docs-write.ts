@@ -16,7 +16,10 @@ import { ctx, forbidden, persist, problem, screenGate } from './common';
 const ACTOR: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
 
 /** vatOverride (correction notes) and allocation targetNumber are engine-set only: never accepted from an API caller. */
+const WHT_MODES = ['deduct', 'grossup_once', 'grossup_always'];
 export const stripOverrides = <T extends Body>(b: T): T => {
+  // the shape of the request, refused where it enters (create, update, compute, correction plan): an unknown withholding mode would otherwise be read as "deduct" by some paths and as a gross-up by others
+  if (b?.header?.whtMode != null && !WHT_MODES.includes(b.header.whtMode)) throw new MockError(422, 'wht.mode_invalid', `โหมดภาษีหัก ณ ที่จ่าย “${String(b.header.whtMode)}” ไม่ถูกต้อง ใช้ได้เฉพาะ: ${WHT_MODES.join(', ')}`);
   if (!Array.isArray(b?.lines)) return b;
   const lines = b.lines.map((l) => { if (!l || typeof l !== 'object') return l; const { vatOverride, ...r } = l; void vatOverride; return r; });
   // `targetNumber` is engine-set (the engine re-reads it from the target); only the user's own figures and the certificate number come from the caller

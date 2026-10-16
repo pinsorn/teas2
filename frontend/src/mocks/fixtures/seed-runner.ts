@@ -1,5 +1,6 @@
 import type { Actor, Allocation, DocHeader, DocLine, DocType, IsoDate, Qty } from '@/domain/types';
 import { approve, approvalRequired, submit } from '../engine/approval';
+import { payoutOf } from '../engine/settlement';
 import { approveAndIssue, cancel, convert, createDraft, issue, updateDraft } from '../engine/commands';
 import { withFixedClock } from '../engine/log';
 import type { MockState } from '../store';
@@ -39,7 +40,7 @@ function runOne(st: MockState, s: SeedSpec): void {
   if (s.status === 'pending' || s.status === 'approved') { // waiting for (or past) approval: sent through the real commands, never written as a status
     d = submit(st, d.id, d.version, actor);
     if (s.status === 'approved') d = approve(st, d.id, d.version, actor);
-  } else if (s.status !== 'draft') d = approvalRequired(st, s.companyId, s.type, d.totals.total) ? approveAndIssue(st, d.id, d.version, actor) : issue(st, d.id, d.version, actor); // a document the policy wants approved is approved by the seed's own user (self-approval is on)
+  } else if (s.status !== 'draft') d = approvalRequired(st, s.companyId, s.type, payoutOf(st, s.companyId, d)) ? approveAndIssue(st, d.id, d.version, actor) : issue(st, d.id, d.version, actor); // a document the policy wants approved is approved by the seed's own user (self-approval is on)
   if (s.status === 'cancelled') cancel(st, d.id, d.version, 'OTHER', 'ยกเลิกในข้อมูลตั้งต้น', actor);
   s.after?.(st);
 }

@@ -13,7 +13,7 @@ import { fromSatang, toSatang } from './money';
 import { adjustSnapshot, hasSnapshot, isNote, noteHeader, noteMissing, noteProblem, withNoteVat } from './notes';
 import { SeriesAllocator } from './numbering';
 import { firstOpenDate, isClosed, monthLabelTh } from './periods';
-import { balanceOf, certError, cleanAllocations, fiscalAllocations, freezeWht, groupTotals, payDefaults, payLines, settleExtras, settleProblem, settleTotals } from './settlement';
+import { balanceOf, certError, cleanAllocations, fiscalAllocations, freezeWht, groupTotals, payDefaults, payLines, payoutOf, settleExtras, settleProblem, settleTotals } from './settlement';
 import { syncWts } from './wht-certificates';
 import { cleanInvoices, isVendorBill, issueVendorStatus, purchaseProblem, snapshotCategories, snapshotWhtTypes, withClaimPeriod, withForfeit, withVendorStatus } from './purchase-vat';
 import { computeDoc, vatBasisOf, vatOf } from './vat';
@@ -276,7 +276,7 @@ export function compute(st: MockState, companyId: string, type: DocType, raw: Bo
   const pp = purchaseProblem(st, companyId, type, body); // input VAT rules of a vendor's invoice: shown before issue too
   if (pp) missing.push({ field: ({ 'pb.claim_period_out_of_range': 'header.claimPeriod', 'pcn.claim_period_fixed': 'header.claimPeriod', 'pb.vendor_invoice_after_document': 'header.vendorDocDate' } as Record<string, string>)[pp.code] ?? 'lines', message: pp.title });
   return { lines: c.lines, totals, missing, journal: ledgerFor(st, { ...doc, companyId }), ...settleExtras(st, companyId, type, body),
-    ...((opts?.docId ? !!own0 && LIVE.includes(own0.status) && reviseNeedsApproval(st, own0, totals.total) : approvalRequired(st, companyId, type, totals.total)) ? { approvalRequired: true } : {}) }; // the editor swaps issue for submit / approve-and-issue (§7.6), and a revise that raises the money above what was approved asks for the approver (C1)
+    ...((opts?.docId ? !!own0 && LIVE.includes(own0.status) && reviseNeedsApproval(st, own0, payoutOf(st, companyId, { ...doc, id: opts.docId }), doc.allocations) : approvalRequired(st, companyId, type, payoutOf(st, companyId, doc))) ? { approvalRequired: true } : {}) }; // the editor swaps issue for submit / approve-and-issue (§7.6), and a revise that raises the money above what was approved asks for the approver (C1)
 }
 
 /** `opts.id` is used verbatim (seed runner only; handlers never pass it). */
@@ -389,7 +389,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   const next: Stored = {
     ...d, header: body.header, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', totals, party: partyOf(st, d.companyId, d.header.partyId),
     version: d.version + 1, issuedAt: stamp(), ...(hasOut(d.type) ? { outstanding: totals.total } : {}),
-    ...(opts?.approver ? { approval: { submittedBy: d.approval?.submittedBy ?? actor, submittedAt: d.approval?.submittedAt ?? stamp(), approvedBy: opts.approver, approvedAt: stamp(), amount: totals.total } } : {}),
+    ...(opts?.approver ? { approval: { submittedBy: d.approval?.submittedBy ?? actor, submittedAt: d.approval?.submittedAt ?? stamp(), approvedBy: opts.approver, approvedAt: stamp(), amount: payoutOf(st, d.companyId, { ...d, ...body, totals }) } } : {}),
   };
   if (hasSnapshot(d.type)) next.adjustSnapshot = adjustSnapshot(st, getDoc(st, d.header.refDocId!), next); // the ม.86/10 values as of now: the paper reads them, never recomputes
   put(st, next);
@@ -423,7 +423,7 @@ export function approveAndIssue(st: MockState, id: string, version: number, acto
   const d = getDoc(st, id);
   if (d.status !== 'draft' && d.status !== 'pending') throw new MockError(409, 'approval.not_approvable', 'อนุมัติและออกได้เฉพาะเอกสารฉบับร่างหรือที่รออนุมัติ');
   checkVersion(d, version);
-  if (d.status === 'draft' && !approvalRequired(st, d.companyId, d.type, d.totals.total)) return issue(st, id, version, actor);
+  if (d.status === 'draft' && !approvalRequired(st, d.companyId, d.type, payoutOf(st, d.companyId, d))) return issue(st, id, version, actor);
   refuseSelfApproval(st, d, actor);
   return issue(st, id, version, actor, { approver: actor });
 }
@@ -533,7 +533,10 @@ function reviseBody(st: MockState, d: Stored, raw: Body): Body {
 }
 
 /** C1: would revising `d` to `raw` need an approver? (A correction plan asks before it is shown.) Throws what the revise itself would on a malformed body. */
-export const reviseNeedsApprover = (st: MockState, d: Stored, raw: Body): boolean => reviseNeedsApproval(st, d, totalsOf(st, d.companyId, d.type, reviseBody(st, d, raw), d.id).total);
+export const reviseNeedsApprover = (st: MockState, d: Stored, raw: Body): boolean => {
+  const b = reviseBody(st, d, raw);
+  return reviseNeedsApproval(st, d, payoutOf(st, d.companyId, { id: d.id, type: d.type, ...b, totals: totalsOf(st, d.companyId, d.type, b, d.id) }), b.allocations);
+};
 export const approvalOnRevise = () => new MockError(422, 'approval.required_on_revise', 'การแก้ไขนี้ทำให้ยอดสูงกว่ายอดที่ได้รับอนุมัติ ต้องได้รับอนุมัติใหม่ ให้ผู้มีสิทธิ์อนุมัติเป็นผู้แก้ไข (หรือยกเลิกแล้วสร้างใหม่และส่งอนุมัติ)');
 
 /** `opts.approver`: the person who also approves this revise (C1) - the caller passes one only if they hold the approve right. */
@@ -569,7 +572,8 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   const fin = { ...fin0, header: withClaimPeriod(st, d.companyId, d.type, fin0.header) }; // a bill is always filed in a claim period: the vendor invoice month unless one was chosen; a PCN keeps none
   const { allocations: _a, ...rest } = d; void _a;
   const totals = totalsOf(st, d.companyId, d.type, fin, d.id);
-  const reapprove = reviseNeedsApproval(st, d, totals.total); // C1: more money than was approved needs an approver in the same command
+  const payout = payoutOf(st, d.companyId, { id: d.id, type: d.type, ...fin, totals });
+  const reapprove = reviseNeedsApproval(st, d, payout, fin.allocations); // C1: more money than was approved needs an approver in the same command
   if (reapprove) {
     if (!opts?.approver) throw approvalOnRevise();
     refuseSelfApproval(st, { ...d, moneyBy: actor }, opts.approver); // the person making this change is now the one who set the money
@@ -578,7 +582,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
     ...rest, header: fin.header, lines: fin.lines, totals, party: partyOf(st, d.companyId, fin.header.partyId),
     revision: d.revision + 1, version: d.version + 1, ...(fin.allocations ? { allocations: fin.allocations } : {}), ...(fin.whtFrozen ? { whtFrozen: fin.whtFrozen } : {}),
     ...(moneyChanged(d, totals.total, fin) ? { moneyBy: actor } : {}),
-    ...(reapprove ? { approval: { submittedBy: actor, submittedAt: stamp(), approvedBy: opts!.approver, approvedAt: stamp(), amount: totals.total } } : {}),
+    ...(reapprove ? { approval: { submittedBy: actor, submittedAt: stamp(), approvedBy: opts!.approver, approvedAt: stamp(), amount: payout } } : {}),
   };
   const marks = afterRevision(d); // a quotation's customer answer is void once it is revised
   if (marks) next.marks = marks; else delete next.marks;
@@ -606,7 +610,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   const at = stamp();
   st.revisions.push({ docId: id, revision: next.revision, at, actor, reason, snapshot: publicDoc(getDoc(st, id)), diff: diffBody(d, fin) });
   logActivity(st, id, actor, 'revise', certNote(d, body) ?? reason);
-  if (reapprove) { logActivity(st, id, opts!.approver!, 'approve', 'อนุมัติการแก้ไข'); logAudit(st, opts!.approver!, d.companyId, 'doc.approve', id, { amount: d.approval?.amount }, { amount: totals.total }); }
+  if (reapprove) { logActivity(st, id, opts!.approver!, 'approve', 'อนุมัติการแก้ไข'); logAudit(st, opts!.approver!, d.companyId, 'doc.approve', id, { amount: d.approval?.amount }, { amount: payout }); }
   logAudit(st, actor, d.companyId, 'doc.revise', id, { revision: d.revision }, { revision: next.revision, reason });
   return publicDoc(getDoc(st, id));
 }
@@ -629,7 +633,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   if (isNote(old.type)) { const np = noteProblem(st, old.companyId, old.type, body, old.id); if (np) throw np; }
   body = withWht(st, old.companyId, old.type, withNoteVat(st, old.companyId, old.type, body, old.id), old);
   const totals = totalsOf(st, old.companyId, old.type, body, old.id);
-  if (approvalRequired(st, old.companyId, old.type, totals.total)) throw new MockError(422, 'approval.required', 'เอกสารประเภทนี้ต้องได้รับอนุมัติก่อนออก ออกใหม่โดยตรงไม่ได้ ให้ยกเลิกเอกสารเดิมแล้วสร้างฉบับร่างใหม่และส่งอนุมัติ'); // a reissue is an issue path too: the NEW total is judged (M1)
+  if (approvalRequired(st, old.companyId, old.type, payoutOf(st, old.companyId, { id: old.id, type: old.type, ...body, totals }))) throw new MockError(422, 'approval.required', 'เอกสารประเภทนี้ต้องได้รับอนุมัติก่อนออก ออกใหม่โดยตรงไม่ได้ ให้ยกเลิกเอกสารเดิมแล้วสร้างฉบับร่างใหม่และส่งอนุมัติ'); // a reissue is an issue path too: the NEW total is judged (M1)
   if (dated && totals.total !== old.totals.total) {
     throw new MockError(422, 'doc.reissue_total_changed', 'ออกใหม่ต้องใช้ยอดเดิม ยอดต่างต้องใช้ใบลดหนี้/ใบเพิ่มหนี้');
   }

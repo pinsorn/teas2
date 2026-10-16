@@ -97,7 +97,7 @@ describe('C1: the approval covers the amount', () => {
     expect(g(st, d.id).approval?.amount).toBe('3000.00');
     expect(checkInvariants(st)).toEqual([]);
     g(st, d.id).approval!.amount = '1.00';
-    expect(checkInvariants(st).join('\n')).toContain(`${d.id}: EX total 3000.00 needs approval but the approval covers only 1.00`);
+    expect(checkInvariants(st).join('\n')).toContain(`${d.id}: EX payout 3000.00 needs approval but the approval covers only 1.00`);
   });
 
   it('a correction plan that raises the money for a role without the approve right is refused when built', () => {

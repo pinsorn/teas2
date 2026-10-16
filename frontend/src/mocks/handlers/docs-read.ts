@@ -5,6 +5,7 @@ import { ctx, forbidden, problem, screenGate } from './common';
 
 import { recomputeSettlement, unavailableTh } from '../engine/commands';
 import { approvalRequired } from '../engine/approval';
+import { payoutOf } from '../engine/settlement';
 import { printCountOf } from '../engine/attachments';
 import { progressOf } from '../engine/chain';
 import { today } from '../engine/log';
@@ -102,6 +103,6 @@ export const docsReadHandlers = [
     const progress = progressOf(st, cur);
     const printCount = printCountOf(st, cur.id);
     return HttpResponse.json({ ...doc, locks, ...(progress && ['SO', 'DO', 'PO'].includes(cur.type) ? { progress } : {}), ...(printCount ? { printCount } : {}),
-      ...(cur.status === 'draft' && approvalRequired(st, company.id, cur.type, cur.totals.total) ? { approvalRequired: true } : {}) } satisfies Doc);
+      ...(cur.status === 'draft' && approvalRequired(st, company.id, cur.type, payoutOf(st, company.id, cur)) ? { approvalRequired: true } : {}) } satisfies Doc);
   }),
 ];

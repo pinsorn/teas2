@@ -160,12 +160,22 @@ export function freezeWht(st: MockState, companyId: string, body: Part, selfId?:
     for (const [code, B] of billBases(st, bill)) {
       if (B <= 0n) continue;
       const raw = (paid >= adjusted ? B : divRoundHalfAway(B * paid, adjusted)) - others.filter((x) => x.whtTypeCode === code).reduce((n, x) => n + BigInt(toSatang(x.base)), 0n);
-      bases.push({ targetId: bill.id, whtTypeCode: code, base: fromSatang(Number(raw < 0n ? 0n : raw)), ...(raw < 0n ? { clamped: true as const } : {}), ...(paid >= adjusted ? { full: true as const, billBase: fromSatang(Number(B)) } : {}) });
+      // R2-M2: a voucher that does not pay the bill up withholds on no more than its own pre-VAT share of the typed lines (the rest waits for the voucher that pays it up, so the sum stays B)
+      const own = divRoundHalfAway(B * BigInt(money(a.amount, 'settle.invalid_amount')), adjusted);
+      const base = raw < 0n ? 0n : paid >= adjusted || raw <= own ? raw : own;
+      bases.push({ targetId: bill.id, whtTypeCode: code, base: fromSatang(Number(base)), ...(raw < 0n ? { clamped: true as const } : {}), ...(paid >= adjusted ? { full: true as const, billBase: fromSatang(Number(B)) } : {}) });
     }
   }
   const w = computeWht([...body.lines.map((l, i) => ({ net: toSatang(nets[i].net), whtTypeCode: l.whtTypeCode })), ...bases.map((b) => ({ net: toSatang(b.base), whtTypeCode: b.whtTypeCode }))],
     body.header.whtMode ?? 'deduct', payeeOf(st, companyId, body.header.partyId), body.header.documentDate, st);
   return { bases, lines: w.lines, expense: fromSatang(w.expense), cashDelta: fromSatang(w.cashDelta) };
+}
+
+/** What the company pays out on a document (P4 m1): its settled total plus, for a voucher, the WHT it bears (gross-up). The approval policy and the approved amount are judged on this figure. */
+export function payoutOf(st: MockState, companyId: string, d: { id?: string; type: DocType; header: DocHeader; lines: DocLine[]; allocations?: Allocation[]; totals: { total: string }; whtFrozen?: WhtFrozen }): string {
+  if (d.type !== 'PV') return d.totals.total;
+  const f = d.whtFrozen ?? freezeWht(st, companyId, { header: d.header, lines: d.lines, ...(d.allocations ? { allocations: d.allocations } : {}) }, d.id);
+  return fromSatang(toSatang(d.totals.total) + toSatang(f.expense));
 }
 
 /** The stored withholding of a voucher as satang figures: tax, the part we bear (WhtExpense) and what the payee receives less the base (cash delta). */
