@@ -3,7 +3,7 @@ import type { Actor, BankLine, Page } from '@/domain/types';
 import { discardAttachment } from '../engine/attachments';
 import { importStatement, type StatementInput } from '../engine/bank-import';
 import { MockError } from '../engine/log';
-import { bankGlAccounts } from '../records/bank-accounts';
+import { bankGlAccounts, glClaim } from '../records/bank-accounts';
 import { ctx, forbidden, persist, problem, screenGate } from './common';
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
@@ -30,9 +30,9 @@ const accountOf = (c: Ctx, id: unknown) => {
 };
 
 export const bankHandlers = [
-  // the postable current-asset accounts a bank / cash account can be bound to; `taken` = another bank account already owns it (one GL account each, §5.13)
+  // the postable current-asset accounts a bank / cash account can be bound to; `taken` = another bank account owns it (one GL account each, §5.13) or a posting rule / journal line already uses it for something else (M1)
   http.get('*/bff/v1/finance/bank-gl-accounts', () => guarded('item', 'bank.read', (c) => HttpResponse.json(
-    bankGlAccounts(c.st, c.company.id).map((a) => ({ code: a.code, nameTh: a.nameTh, subClass: a.subClass, taken: c.st.bankAccounts.some((b) => b.companyId === c.company.id && b.accountCode === a.code) }))))),
+    bankGlAccounts(c.st, c.company.id).map((a) => ({ code: a.code, nameTh: a.nameTh, subClass: a.subClass, taken: c.st.bankAccounts.some((b) => b.companyId === c.company.id && b.accountCode === a.code) || glClaim(c.st, c.company.id, a.code) !== undefined }))))),
 
   http.post('*/bff/v1/finance/bank-accounts/:id/imports', ({ request, params }) => guarded('item', 'bank.manage', async (c) => {
     const acct = accountOf(c, params.id);

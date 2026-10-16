@@ -17,15 +17,30 @@ export const bankGlAccounts = (st: MockState, companyId: string): CompanyAccount
 
 /** Read-only-after-use (M1): any journal line of the company already posts to the account. History carries the code itself, so a later edit could never move it - this only refuses the edit. */
 export function glUsed(st: MockState, companyId: string, accountCode: string): boolean {
-  const own = new Set(st.docs.filter((d) => d.companyId === companyId).map((d) => d.id));
-  return st.journals.some((j) => own.has(j.docId) && j.preview.entries.some((e) => e.lines.some((l) => l.accountCode === accountCode)));
+  return glPoster(st, companyId, accountCode) !== undefined;
+}
+/** The first document of the company whose journal posts to the account. */
+function glPoster(st: MockState, companyId: string, accountCode: string): string | undefined {
+  const own = new Map(st.docs.filter((d) => d.companyId === companyId).map((d) => [d.id, d.number ?? d.id]));
+  return st.journals.find((j) => own.has(j.docId) && j.preview.entries.some((e) => e.lines.some((l) => l.accountCode === accountCode)))?.docId;
+}
+
+/** M1: who else claims a GL account that no bank account is bound to - a posting rule that is not a bank's own Cash rule (the keyless Cash default included), or journal lines already posted to it for something else.
+ *  Binding a bank to it would show those postings as the bank's own balance. Returns the reason, naming the user. */
+export function glClaim(st: MockState, companyId: string, accountCode: string): string | undefined {
+  const banks = new Set(mine(st, companyId).map((b) => b.id));
+  const rule = st.postingRules.find((r) => r.companyId === companyId && r.accountCode === accountCode && !(r.role === 'Cash' && r.key && banks.has(r.key)));
+  if (rule) return `บัญชีแยกประเภทนี้ถูกใช้โดยกฎการลงบัญชี “${rule.role}”${rule.key ? ` (${rule.key})` : ' (ค่าเริ่มต้น)'} แล้ว`;
+  const docId = glPoster(st, companyId, accountCode);
+  if (docId) return `มีรายการบัญชีลงที่บัญชีแยกประเภทนี้แล้ว (เอกสาร ${st.docs.find((d) => d.id === docId)?.number ?? docId}) ผูกกับบัญชีธนาคารไม่ได้`;
+  return undefined;
 }
 
 /** A new document may not pick an inactive account; an old one keeps showing its own (the caller passes the document's stored account as `kept`). */
 export function refuseInactiveBank(st: MockState, companyId: string, bankAccountId: string | undefined, kept?: string): void {
   if (!bankAccountId || bankAccountId === kept) return;
   const b = st.bankAccounts.find((x) => x.id === bankAccountId && x.companyId === companyId);
-  if (b && b.active === false) throw new MockError(422, 'pay.inactive_bank_account', `บัญชี ${b.nameTh} ปิดใช้งานแล้ว เลือกใช้กับเอกสารใหม่ไม่ได้`);
+  if (b && b.active === false) throw new MockError(422, 'pay.inactive_bank_account', `บัญชี ${b.nameTh} ปิดใช้งานแล้ว เลือกใช้กับเอกสารใหม่ไม่ได้ เปิดใช้งานอีกครั้งได้ที่หน้าบัญชีธนาคารและเงินสด`);
 }
 
 function toRow(st: MockState, b: BankAccount): RecordRow {
@@ -53,6 +68,7 @@ export const bankAccountImpl: RecordKindImpl = {
       if (!no) add('accountNo', 'ต้องระบุเลขที่บัญชี');
       else if (!/^[\d-]+$/.test(no) || digits(no).length < 10 || digits(no).length > 15) add('accountNo', 'เลขที่บัญชีต้องเป็นตัวเลข 10–15 หลัก (ใส่ขีดได้)');
       else if (mine(st, companyId).some((b) => b.id !== id && b.accountNo && digits(b.accountNo) === digits(no))) add('accountNo', 'เลขที่บัญชีนี้ใช้แล้ว');
+      else if (prev?.accountNo && digits(no) !== digits(prev.accountNo) && st.bankImports.some((i) => i.companyId === companyId && i.accountId === prev.id)) add('accountNo', 'แก้เลขที่บัญชีไม่ได้หลังจากนำเข้ารายการเดินบัญชีแล้ว (รายการเดิมตรวจกับเลขที่เดิม)');
     }
     const code = str(v.accountCode);
     const gl = code ? st.accounts.find((a) => a.companyId === companyId && a.code === code) : undefined;
@@ -60,6 +76,7 @@ export const bankAccountImpl: RecordKindImpl = {
     else if (!gl || !bankGlAccounts(st, companyId).some((a) => a.code === code)) add('accountCode', 'ต้องเป็นบัญชีสินทรัพย์หมุนเวียนที่ลงรายการได้ (เงินสด/เงินฝากธนาคาร)');
     else if (gl.subClass !== sub(kind) && (kind === 'bank' || kind === 'cash')) add('accountCode', kind === 'cash' ? 'บัญชีเงินสดต้องใช้บัญชีหมวดเงินสด' : 'บัญชีธนาคารต้องใช้บัญชีหมวดเงินฝากธนาคาร');
     else if (mine(st, companyId).some((b) => b.id !== id && b.accountCode === code)) add('accountCode', 'บัญชีแยกประเภทนี้ผูกกับบัญชีอื่นแล้ว (หนึ่งบัญชีธนาคารต่อหนึ่งบัญชีแยกประเภท)');
+    else if (code !== prev?.accountCode && glClaim(st, companyId, code)) add('accountCode', glClaim(st, companyId, code)!);
     else if (prev && code !== prev.accountCode && glUsed(st, companyId, prev.accountCode)) add('accountCode', 'แก้ไม่ได้หลังจากมีรายการบัญชีแล้ว');
     return e;
   },

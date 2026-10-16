@@ -13,7 +13,7 @@ import { fromSatang, toSatang } from './money';
 import { adjustSnapshot, hasSnapshot, isNote, noteHeader, noteMissing, noteProblem, withNoteVat } from './notes';
 import { SeriesAllocator } from './numbering';
 import { firstOpenDate, isClosed, monthLabelTh } from './periods';
-import { balanceOf, certError, cleanAllocations, fiscalAllocations, freezeWht, groupTotals, payDefaults, payLines, payoutOf, settleExtras, settleProblem, settleTotals } from './settlement';
+import { balanceOf, certError, cleanAllocations, fiscalAllocations, freezeWht, groupTotals, payDefaults, payLines, payoutOf, settleExtras, settleProblem, settleTotals, withBankSnapshot } from './settlement';
 import { syncWts } from './wht-certificates';
 import { cleanInvoices, isVendorBill, issueVendorStatus, purchaseProblem, snapshotCategories, snapshotWhtTypes, withClaimPeriod, withForfeit, withVendorStatus } from './purchase-vat';
 import { computeDoc, vatBasisOf, vatOf } from './vat';
@@ -127,7 +127,7 @@ export function missingOf(st: MockState, companyId: string, type: DocType, body:
 const satOf = (m: string | undefined): number | string => { try { return toSatang(m ?? '0.00'); } catch { return m ?? ''; } };
 export const stableJson = (o: unknown) => JSON.stringify(o, (_k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : 1))) : v));
 /** A receipt's header without the fields an in-place edit may change (notes, reference): everything else - dimensions, cheque, ... - is evidence the books must follow. */
-const rcHeaderKey = ({ notes: _n, reference: _r, depositAmount, paymentMethod, ...rest }: DocHeader) => { void _n; void _r; return stableJson({ ...rest, paymentMethod: paymentMethod ?? 'transfer', depositAmount: satOf(depositAmount) }); };
+const rcHeaderKey = ({ notes: _n, reference: _r, bankSnapshot: _b, depositAmount, paymentMethod, ...rest }: DocHeader) => { void _n; void _r; void _b; return stableJson({ ...rest, paymentMethod: paymentMethod ?? 'transfer', depositAmount: satOf(depositAmount) }); };
 
 /** Fiscal = changes who/when/how much is taxed; only those need a chain-aware correction on a T-class document.
  *  A receipt takes ONLY certificate numbers, notes and reference in place: any other change is a correction (M1). */
@@ -381,6 +381,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   refuseOverConversion(st, d, body);
   body = { ...body, header: withClaimPeriod(st, d.companyId, d.type, body.header) }; // the document month unless a period was chosen
   body = withWht(st, d.companyId, d.type, body); // a voucher: the WHT as of now, fixed from here on (C1)
+  body = { ...body, header: withBankSnapshot(st, d.companyId, d.type, body.header) }; // an RC / PV: the account as it is now, fixed from here on (I3)
   const bad = settleProblem(st, d.companyId, d.type, body, outstandingNow(st), { partyExempt: opts?.partyExempt, prior: opts?.prior, priorParty: opts?.priorParty });
   if (bad) throw bad; // nothing has been written yet: a refused issue leaves no number, link or journal behind
   if (GROUPS[d.type]) body = { ...body, allocations: cleanAllocations(st, d.companyId, d.type, body.allocations) }; // BL: each target's outstanding AS OF ISSUE, server-read
@@ -569,7 +570,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
     }
   }
   const fin0 = isNote(d.type) ? withNoteVat(st, d.companyId, d.type, body, d.id) : body; // a revised vendor note: rule B again, the note itself not among its own predecessors
-  const fin = { ...fin0, header: withClaimPeriod(st, d.companyId, d.type, fin0.header) }; // a bill is always filed in a claim period: the vendor invoice month unless one was chosen; a PCN keeps none
+  const fin = { ...fin0, header: withBankSnapshot(st, d.companyId, d.type, withClaimPeriod(st, d.companyId, d.type, fin0.header)) }; // a bill is always filed in a claim period: the vendor invoice month unless one was chosen; a PCN keeps none
   const { allocations: _a, ...rest } = d; void _a;
   const totals = totalsOf(st, d.companyId, d.type, fin, d.id);
   const payout = payoutOf(st, d.companyId, { id: d.id, type: d.type, ...fin, totals });
@@ -632,6 +633,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   if (missing.length) throw incomplete(missing);
   if (isNote(old.type)) { const np = noteProblem(st, old.companyId, old.type, body, old.id); if (np) throw np; }
   body = withWht(st, old.companyId, old.type, withNoteVat(st, old.companyId, old.type, body, old.id), old);
+  body = { ...body, header: withBankSnapshot(st, old.companyId, old.type, body.header) };
   const totals = totalsOf(st, old.companyId, old.type, body, old.id);
   if (approvalRequired(st, old.companyId, old.type, payoutOf(st, old.companyId, { id: old.id, type: old.type, ...body, totals }))) throw new MockError(422, 'approval.required', 'เอกสารประเภทนี้ต้องได้รับอนุมัติก่อนออก ออกใหม่โดยตรงไม่ได้ ให้ยกเลิกเอกสารเดิมแล้วสร้างฉบับร่างใหม่และส่งอนุมัติ'); // a reissue is an issue path too: the NEW total is judged (M1)
   if (dated && totals.total !== old.totals.total) {

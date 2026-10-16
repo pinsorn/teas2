@@ -71,9 +71,9 @@ function billingPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
   return { ...m, lines };
 }
 
-/** How the money came in, as the server words it: method + the account (or the cheque). */
+/** How the money came in, as the server words it: method + the account (or the cheque). An issued document prints the account as frozen at issue (I3); a draft reads the live one. */
 function paymentLine(c: Ctx, d: Doc): string {
-  const h = d.header, bank = c.st.bankAccounts.find((b) => b.id === cashBankId(c.st, c.company.id, h));
+  const h = d.header, bank = h.bankSnapshot ? { nameTh: h.bankSnapshot.accountName, accountNo: h.bankSnapshot.accountNo } : c.st.bankAccounts.find((b) => b.id === cashBankId(c.st, c.company.id, h));
   const acct = bank ? `${bank.nameTh}${bank.accountNo ? ` ${bank.accountNo}` : ''}` : '';
   if (h.paymentMethod === 'cheque' && h.cheque) return `เช็ค ${h.cheque.number} ลงวันที่ ${formatDateBE(h.cheque.date)} ${h.cheque.bank}`.trim();
   return `${h.paymentMethod === 'cash' ? 'เงินสด' : h.paymentMethod === 'cheque' ? 'เช็ค' : 'โอนเงิน'}${acct ? ` · ${acct}` : ''}`;

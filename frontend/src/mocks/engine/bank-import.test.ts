@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Actor } from '@/domain/types';
+import { formatDateBE } from '@/lib/format';
 import { KBIZ_2026_10, KBIZ_OCT_LINES, KBIZ_OCT_NAME, kbizCsv } from '../fixtures/statements/kbiz-2026-10.csv';
 import { KBANK_ACCOUNT_NO, KBANK_SEP_CLOSING, KPLUS_SAMPLE_BASE64, KPLUS_SAMPLE_NAME } from '../fixtures/statements/kplus-2026-09';
 import { buildSeedState, type MockState } from '../store';
-import { MAX_STATEMENT_BYTES, importStatement } from './bank-import';
+import { MAX_STATEMENT_BYTES, importStatement, utf8Base64 } from './bank-import';
 import type { MockError } from './log';
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
@@ -11,7 +12,7 @@ const VAT = 'co-vat';
 let st: MockState;
 beforeEach(() => { localStorage.clear(); st = buildSeedState(); st.bankImports = []; st.bankLines = []; st.attachments = []; });
 
-const csv = (content: string, fileName = KBIZ_OCT_NAME) => ({ fileName, format: 'kbiz-csv' as const, content });
+const csv = (content: string, fileName = KBIZ_OCT_NAME) => ({ fileName, format: 'kbiz-csv' as const, content: utf8Base64(content) }); // the client sends the file's own bytes, base64 (M4)
 const fail = (fn: () => unknown): MockError => {
   try { fn(); } catch (e) { return e as MockError; }
   throw new Error('expected the import to be refused');
@@ -65,12 +66,39 @@ describe('KBiz CSV import', () => {
     expect(importStatement(st, VAT, 'ba-kbank', csv(ok), ACTOR).closing).toBe(KBIZ_OCT_LINES[11].balance);
   });
 
-  it('a second file over the same period imports with a warning, not an error', () => {
+  // a different file over part of the same period (a re-export of the first week)
+  const partial = () => kbizCsv({ accountNo: KBANK_ACCOUNT_NO, accountName: 'x', from: '2026-10-01', opening: KBANK_SEP_CLOSING, lines: KBIZ_OCT_LINES.slice(0, 5) });
+
+  it('a different file over the same period imports with a warning, not an error', () => {
     importStatement(st, VAT, 'ba-kbank', csv(KBIZ_2026_10), ACTOR);
-    const again = importStatement(st, VAT, 'ba-kbank', csv(KBIZ_2026_10, 'again.csv'), ACTOR);
+    const again = importStatement(st, VAT, 'ba-kbank', csv(partial(), 'again.csv'), ACTOR);
     expect(again.warnings).toHaveLength(1);
     expect(again.warnings[0]).toContain(KBIZ_OCT_NAME);
-    expect(st.bankLines.filter((l) => l.accountId === 'ba-kbank')).toHaveLength(24);
+    expect(st.bankLines.filter((l) => l.accountId === 'ba-kbank')).toHaveLength(17);
+  });
+
+  it('M3: the same file again (same bytes, any name) is refused 409 naming the earlier import, and writes nothing', () => {
+    const first = importStatement(st, VAT, 'ba-kbank', csv(KBIZ_2026_10), ACTOR);
+    const before = state();
+    const e = fail(() => importStatement(st, VAT, 'ba-kbank', csv(KBIZ_2026_10, 'renamed.csv'), ACTOR));
+    expect(e).toMatchObject({ status: 409, code: 'bank.duplicate_import' });
+    expect(e.title).toContain(KBIZ_OCT_NAME);
+    expect(e.title).toContain(formatDateBE(first.from));
+    expect(state()).toBe(before);
+    // the hash is per account: the same bytes against another account is that account's own business (refused for its own reason here)
+    expect(fail(() => importStatement(st, VAT, 'ba-scb', csv(KBIZ_2026_10), ACTOR)).code).toBe('bank.account_mismatch');
+  });
+
+  it('M4: the stored file is the bytes that were sent - BOM and all', () => {
+    const imp = importStatement(st, VAT, 'ba-kbank', csv(KBIZ_2026_10), ACTOR);
+    const att = st.attachments.find((a) => a.docId === imp.id)!;
+    expect(localStorage.getItem(`teas2.mock.att.${att.id}`)).toBe(`data:text/csv;base64,${utf8Base64(KBIZ_2026_10)}`);
+    expect(atob(utf8Base64(KBIZ_2026_10)).startsWith('\xEF\xBB\xBF')).toBe(true); // EF BB BF survives
+    expect(att.size).toBe(new TextEncoder().encode(KBIZ_2026_10).length);
+  });
+
+  it('M4: bytes that are not valid base64 are refused', () => {
+    expect(fail(() => importStatement(st, VAT, 'ba-kbank', { fileName: 'x.csv', format: 'kbiz-csv', content: '"not base64"' }, ACTOR))).toMatchObject({ status: 422 });
   });
 
   it('a row with both a withdrawal and a deposit is refused', () => {

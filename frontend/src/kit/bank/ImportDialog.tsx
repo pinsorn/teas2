@@ -13,6 +13,7 @@ import { ApiError } from '@/lib/api/client';
 import { endpoints } from '@/lib/api/endpoints';
 import { formatDateBE } from '@/lib/format';
 
+const MAX_BYTES = 2 * 1024 * 1024;
 const formatOf = (name: string): BankImport['format'] | undefined => (/\.csv$/i.test(name) ? 'kbiz-csv' : /\.pdf$/i.test(name) ? 'kplus-pdf' : undefined);
 const toBase64 = (buf: ArrayBuffer): string => {
   const bytes = new Uint8Array(buf);
@@ -21,7 +22,7 @@ const toBase64 = (buf: ArrayBuffer): string => {
   return btoa(bin);
 };
 
-/** FN1: upload a KBiz CSV (text) or a K PLUS PDF (base64 + the file's password). The password lives in this form only: it is sent once and cleared the moment the request leaves. */
+/** FN1: upload a KBiz CSV or a K PLUS PDF, both as base64 of the file's bytes (the PDF with its password). The password lives in this form only: it is sent once and cleared the moment the request leaves. */
 export function ImportDialog({ accountId, onClose }: { accountId: string; onClose: () => void }) {
   const t = useTranslations('bank.import');
   const qc = useQueryClient();
@@ -36,9 +37,8 @@ export function ImportDialog({ accountId, onClose }: { accountId: string; onClos
   const run = useMutation({
     mutationFn: async () => {
       const f = file!;
-      const body = format === 'kplus-pdf'
-        ? { fileName: f.name, format, content: toBase64(await f.arrayBuffer()), ...(password ? { password } : {}) }
-        : { fileName: f.name, format: 'kbiz-csv' as const, content: await f.text() };
+      const content = toBase64(await f.arrayBuffer()); // the file's own bytes for both formats: what is stored is what was picked
+      const body = format === 'kplus-pdf' ? { fileName: f.name, format, content, ...(password ? { password } : {}) } : { fileName: f.name, format: 'kbiz-csv' as const, content };
       setPassword(''); // gone from the form before the request is even sent
       return endpoints.importStatement(accountId, body);
     },
@@ -49,6 +49,7 @@ export function ImportDialog({ accountId, onClose }: { accountId: string; onClos
     setFormError(undefined);
     if (!file) { setFormError(t('chooseFile')); return; }
     if (!format) { setFormError(t('unsupported')); return; }
+    if (file.size > MAX_BYTES) { setFormError(t('tooLarge')); return; } // before the file is read into memory
     run.mutate();
   };
 

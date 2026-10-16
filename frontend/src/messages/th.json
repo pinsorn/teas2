@@ -787,7 +787,7 @@
       "open": "นำเข้า statement", "title": "นำเข้า statement", "needManage": "ต้องมีสิทธิ์ bank.manage",
       "file": "ไฟล์ statement (CSV จาก K BIZ หรือ PDF จาก K PLUS)", "password": "รหัสผ่านไฟล์ PDF (ถ้ามี)",
       "passwordHint": "ใช้เปิดไฟล์ครั้งนี้เท่านั้น ระบบไม่เก็บรหัสผ่าน", "submit": "นำเข้า", "submitting": "กำลังนำเข้า", "close": "ปิด",
-      "chooseFile": "เลือกไฟล์ statement ก่อน", "unsupported": "รองรับเฉพาะไฟล์ .csv หรือ .pdf", "failed": "นำเข้าไม่สำเร็จ",
+      "chooseFile": "เลือกไฟล์ statement ก่อน", "unsupported": "รองรับเฉพาะไฟล์ .csv หรือ .pdf", "failed": "นำเข้าไม่สำเร็จ", "tooLarge": "ไฟล์ใหญ่เกิน 2 MB",
       "success": "นำเข้าสำเร็จ {count} รายการ", "period": "ช่วงวันที่ {from} – {to}", "warnings": "คำเตือน"
     },
     "lines": {

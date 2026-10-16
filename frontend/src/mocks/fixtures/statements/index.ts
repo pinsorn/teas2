@@ -1,5 +1,5 @@
 import type { Actor } from '@/domain/types';
-import { importStatement } from '../../engine/bank-import';
+import { importStatement, utf8Base64 } from '../../engine/bank-import';
 import { withFixedClock } from '../../engine/log';
 import type { MockState } from '../../store';
 import { NBANK_SEP_CSV, NBANK_SEP_NAME } from './kbiz-2026-10.csv';
@@ -12,6 +12,6 @@ const USER: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญ�
 export function seedBankStatements(st: MockState): void {
   withFixedClock('2026-10-01T09:00:00+07:00', () => {
     importStatement(st, 'co-vat', 'ba-kbank', { fileName: KPLUS_SAMPLE_NAME, format: 'kplus-pdf', content: KPLUS_SAMPLE_BASE64 }, USER, { seed: true });
-    importStatement(st, 'co-nonvat', 'nba-kbank', { fileName: NBANK_SEP_NAME, format: 'kbiz-csv', content: NBANK_SEP_CSV }, USER, { seed: true });
+    importStatement(st, 'co-nonvat', 'nba-kbank', { fileName: NBANK_SEP_NAME, format: 'kbiz-csv', content: utf8Base64(NBANK_SEP_CSV) }, USER, { seed: true });
   });
 }

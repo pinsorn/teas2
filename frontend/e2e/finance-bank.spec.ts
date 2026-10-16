@@ -78,6 +78,18 @@ test('the sample K PLUS PDF imports behind the seeded September file: 18 lines a
   await expect(dialog.getByText(/ทับซ้อนกับไฟล์ที่นำเข้าแล้ว/)).toBeVisible();
 });
 
+test('the same CSV again is refused as already imported, naming the earlier file (M3)', async ({ page }) => {
+  await page.goto(await bankPath(page, 'bankKbank'));
+  for (const round of [1, 2]) {
+    await page.getByRole('button', { name: 'นำเข้า statement' }).click();
+    const dialog = page.getByRole('dialog', { name: 'นำเข้า statement' });
+    await dialog.getByLabel(/ไฟล์ statement/).setInputFiles(csvFile());
+    await dialog.getByRole('button', { name: 'นำเข้า', exact: true }).click();
+    if (round === 1) { await expect(dialog.getByText('นำเข้าสำเร็จ 12 รายการ')).toBeVisible(); await dialog.getByRole('button', { name: 'ปิด' }).click(); }
+    else await expect(dialog.getByRole('alert')).toContainText(`ไฟล์นี้นำเข้าแล้ว: ${KBIZ_OCT_NAME}`);
+  }
+});
+
 test('an operator reads the account but can neither edit nor import', async ({ page }) => {
   await page.goto(`${await bankPath(page, 'bankKbank')}?role=operator`);
   await expect(page.getByRole('heading', { level: 1, name: 'กสิกรไทย กระแสรายวัน' })).toBeVisible();
@@ -110,11 +122,11 @@ test('one source: a new account shows in the receipt editor; a closed one is not
   await dialog.getByLabel('ธนาคาร').selectOption('bbl');
   await dialog.getByLabel('เลขที่บัญชี').fill('999-9-99999-9');
   await dialog.getByLabel('ชื่อบัญชี').fill('กรุงเทพ ออมทรัพย์');
-  await dialog.getByLabel('บัญชีแยกประเภท').selectOption('1120');
+  await dialog.getByLabel('บัญชีแยกประเภท').selectOption('1123');
   await shot(page, 'bank-form');
   await dialog.getByRole('button', { name: 'บันทึก' }).click();
   await expect(dialog).toBeHidden();
-  await expect(page.getByRole('row', { name: /กรุงเทพ ออมทรัพย์/ })).toContainText('1120');
+  await expect(page.getByRole('row', { name: /กรุงเทพ ออมทรัพย์/ })).toContainText('1123');
   await page.goto('/sales/receipts/new');
   const picker = page.getByRole('combobox', { name: 'บัญชีรับ/จ่ายเงิน' });
   await expect(picker.getByRole('option', { name: /กรุงเทพ ออมทรัพย์ 999-9-99999-9/ })).toHaveCount(1);

@@ -48,6 +48,8 @@ export interface Allocation { targetId: string; targetType: DocType; targetNumbe
 export interface DocHeader { partyId?: string; documentDate: IsoDate; dueDate?: IsoDate; reference?: string;
   notes?: string; dimensions?: Record<string, string>; priceIncludesVat?: boolean;
   whtMode?: WhtMode; bankAccountId?: string; paymentMethod?: 'transfer' | 'cash' | 'cheque';
+  /** RC / PV: the account the money moved through, as it was when the document was issued / last revised (frozen at issue: a later rename or re-number of the account never changes a reprint). Server-owned; a draft has none and prints the live account. */
+  bankSnapshot?: { kind: 'bank' | 'cash'; bankName?: string; accountNo?: string; accountName: string };
   cheque?: { number: string; date: IsoDate; bank: string };
   /** RC: the unallocated remainder kept as a customer deposit (Cr CustomerDeposit); S4 owns the editor field. */ depositAmount?: Money;
   /** CN / DN: the tax invoice this note adjusts. Server-owned: the note's customer and reference follow it. */ refDocId?: string;

@@ -253,6 +253,18 @@ export function cashBankId(st: MockState, companyId: string, header: DocHeader):
   return header.bankAccountId;
 }
 
+/** The account an RC / PV really uses (the cash box when paid in cash), for the rules that judge it. Other types have none. */
+export const resolvedBankId = (st: MockState, companyId: string, type: DocType, header: DocHeader | undefined): string | undefined =>
+  header && SETTLES[type] ? (header.paymentMethod === 'cash' ? cashBankId(st, companyId, header) : header.bankAccountId) : undefined;
+
+/** Frozen at issue and at every revise (CLAUDE.md money rule): an RC / PV keeps the account's name, number and kind as they were then, and the paper reads only this. Server-owned: whatever a caller sent is replaced. */
+export function withBankSnapshot(st: MockState, companyId: string, type: DocType, header: DocHeader): DocHeader {
+  if (!SETTLES[type]) return header;
+  const { bankSnapshot: _s, ...rest } = header; void _s;
+  const b = st.bankAccounts.find((x) => x.id === cashBankId(st, companyId, header));
+  return b ? { ...rest, bankSnapshot: { kind: b.kind, ...(b.bankName ? { bankName: b.bankName } : {}), ...(b.accountNo ? { accountNo: b.accountNo } : {}), accountName: b.nameTh } } : rest;
+}
+
 /** Rules about the money that moves, not the open items: bank account of this company, no negative deposit, no input VAT on a voucher line, no negative cash. */
 export function payError(st: MockState, companyId: string, type: DocType, body: Part): MockError | undefined {
   if (!SETTLES[type]) return undefined;

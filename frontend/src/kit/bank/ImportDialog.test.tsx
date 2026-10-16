@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { utf8Base64 } from '@/mocks/engine/bank-import';
 import { KBIZ_2026_10, KBIZ_OCT_NAME } from '@/mocks/fixtures/statements/kbiz-2026-10.csv';
 import { KPLUS_SAMPLE_BASE64, KPLUS_SAMPLE_NAME } from '@/mocks/fixtures/statements/kplus-2026-09';
 import { setSettings } from '@/mocks/settings';
@@ -65,12 +66,38 @@ describe('ImportDialog', () => {
     expect(JSON.stringify(localStorage)).not.toContain('S3cr3t-pw-9');
   });
 
-  it('the sample K PLUS PDF imports; a second import of the same period comes back with the overlap warning', async () => {
+  it('the sample K PLUS PDF is already imported (seed): the same file again is refused, and the dialog says which import it is', async () => {
     mount();
     await userEvent.upload(await screen.findByLabelText(FILE_LABEL), new File([atob(KPLUS_SAMPLE_BASE64)], KPLUS_SAMPLE_NAME, { type: 'application/pdf' }));
     await userEvent.click(screen.getByRole('button', { name: 'นำเข้า' }));
-    expect(await screen.findByText('นำเข้าสำเร็จ 18 รายการ')).toBeVisible();
-    expect(screen.getByText('คำเตือน')).toBeVisible(); // September is already imported (seed)
-    expect(screen.getByText(/ทับซ้อนกับไฟล์ที่นำเข้าแล้ว/)).toBeVisible();
+    expect(await screen.findByRole('alert')).toHaveTextContent(KPLUS_SAMPLE_NAME);
+    expect(loadState().bankLines.filter((l) => l.accountId === 'ba-kbank')).toHaveLength(18);
+  });
+
+  it('M4: the CSV goes up as the file own bytes (base64), BOM included', async () => {
+    const bodies: { content: string }[] = [];
+    testServer.use(http.post('*/bff/v1/finance/bank-accounts/ba-kbank/imports', async ({ request }) => {
+      bodies.push((await request.json()) as { content: string });
+      return HttpResponse.json({ id: 'bi-x', accountId: 'ba-kbank', fileName: KBIZ_OCT_NAME, format: 'kbiz-csv', from: '2026-10-01', to: '2026-10-13', opening: '0.00', closing: '0.00', lines: 12, at: 'x', warnings: [] }, { status: 201 });
+    }));
+    mount();
+    await userEvent.upload(await screen.findByLabelText(FILE_LABEL), csv());
+    await userEvent.click(screen.getByRole('button', { name: 'นำเข้า' }));
+    await screen.findByText('นำเข้าสำเร็จ 12 รายการ');
+    expect(bodies[0].content).toBe(utf8Base64(KBIZ_2026_10));
+    expect(atob(bodies[0].content).startsWith('ï»¿')).toBe(true);
+  });
+
+  it('M4: a file over 2 MB is refused before it is read', async () => {
+    const seen = vi.fn();
+    testServer.events.on('request:start', ({ request }) => { if (request.method === 'POST') seen(request.url); });
+    mount();
+    const big = new File(['x'], 'big.csv', { type: 'text/csv' });
+    Object.defineProperty(big, 'size', { value: 2 * 1024 * 1024 + 1 });
+    await userEvent.upload(await screen.findByLabelText(FILE_LABEL), big);
+    await userEvent.click(screen.getByRole('button', { name: 'นำเข้า' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('2 MB');
+    expect(seen).not.toHaveBeenCalled();
+    testServer.events.removeAllListeners();
   });
 });

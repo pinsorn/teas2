@@ -787,7 +787,7 @@
       "open": "Import statement", "title": "Import statement", "needManage": "Requires bank.manage",
       "file": "Statement file (CSV from K BIZ or PDF from K PLUS)", "password": "PDF password (if any)",
       "passwordHint": "Used to open this file only; the password is never stored", "submit": "Import", "submitting": "Importing", "close": "Close",
-      "chooseFile": "Choose a statement file first", "unsupported": "Only .csv or .pdf files are supported", "failed": "Import failed",
+      "chooseFile": "Choose a statement file first", "unsupported": "Only .csv or .pdf files are supported", "failed": "Import failed", "tooLarge": "The file is over 2 MB",
       "success": "Imported {count} lines", "period": "Period {from} – {to}", "warnings": "Warnings"
     },
     "lines": {

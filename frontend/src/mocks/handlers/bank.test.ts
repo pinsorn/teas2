@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { BankImport, BankLine, Page } from '@/domain/types';
 import type { RecordRow } from '@/domain/records';
 import { KBIZ_2026_10, KBIZ_OCT_NAME } from '../fixtures/statements/kbiz-2026-10.csv';
+import { utf8Base64 } from '../engine/bank-import';
 import { fixtureIds } from '../fixtures/ids';
 import { setSettings } from '../settings';
 import { loadState, resetState } from '../store';
@@ -16,7 +17,7 @@ beforeEach(() => { localStorage.clear(); resetState(); setSettings({ companyKey:
 const call = (method: string, p: string, body?: unknown, headers: Record<string, string> = {}) =>
   fetch(`http://localhost/bff/v1${p}`, { method, body: body ? JSON.stringify(body) : undefined, headers: { 'content-type': 'application/json', ...headers } });
 const rows = async (q = '') => ((await (await call('GET', `/records/bank-account?active=all${q}`)).json()) as Page<RecordRow>).items;
-const NEW = { kind: 'bank', bankName: 'bbl', accountNo: '999-9-99999-9', accountName: 'กรุงเทพ ออมทรัพย์', accountCode: '1120' };
+const NEW = { kind: 'bank', bankName: 'bbl', accountNo: '999-9-99999-9', accountName: 'กรุงเทพ ออมทรัพย์', accountCode: '1123' };
 const rc = (bank: string, ids = fixtureIds(loadState())) => ({ header: { partyId: 'pc-01', documentDate: '2026-10-14', paymentMethod: 'transfer', bankAccountId: bank }, lines: [],
   allocations: [{ targetId: ids.rcTargetsA, targetType: 'TI', amount: '1000.00' }] });
 
@@ -56,14 +57,14 @@ describe('create / validate (§5.13: its own GL account)', () => {
     const r = await post(NEW);
     expect(r.status).toBe(201);
     const row = (await r.json()) as RecordRow;
-    expect(row).toMatchObject({ id: 'ba-4', accountCode: '1120', inUse: false, active: true });
-    expect(loadState().postingRules).toContainEqual({ companyId: 'co-vat', level: 'default', key: 'ba-4', role: 'Cash', accountCode: '1120' });
-    // a receipt into it: the journal's cash line is on 1120, and the account is frozen from then on
+    expect(row).toMatchObject({ id: 'ba-4', accountCode: '1123', inUse: false, active: true });
+    expect(loadState().postingRules).toContainEqual({ companyId: 'co-vat', level: 'default', key: 'ba-4', role: 'Cash', accountCode: '1123' });
+    // a receipt into it: the journal's cash line is on 1123, and the account is frozen from then on
     const d = await (await call('POST', '/docs/RC', rc('ba-4'))).json();
     const done = await (await call('POST', `/docs/RC/${d.id}/issue`, { version: d.version })).json();
     expect(done.status).toBe('issued');
     const st = loadState();
-    expect(st.journals.find((j) => j.docId === d.id)!.preview.entries[0].lines.some((l) => l.accountCode === '1120' && l.debit !== '0.00')).toBe(true);
+    expect(st.journals.find((j) => j.docId === d.id)!.preview.entries[0].lines.some((l) => l.accountCode === '1123' && l.debit !== '0.00')).toBe(true);
     expect((await rows()).find((x) => x.id === 'ba-4')!.inUse).toBe(true);
   });
   it('one GL account per bank account; postable current-asset of the matching type', async () => {
@@ -72,10 +73,10 @@ describe('create / validate (§5.13: its own GL account)', () => {
     expect(await errors({ ...NEW, accountCode: '1100' })).toHaveProperty('accountCode'); // a header, not postable
     expect(await errors({ ...NEW, accountCode: '4100' })).toHaveProperty('accountCode'); // revenue
     expect(await errors({ ...NEW, accountCode: '9999' })).toHaveProperty('accountCode'); // unknown
-    expect(await errors({ ...NEW, kind: 'cash', accountCode: '1120' })).toHaveProperty('accountCode'); // a cash box on a bank GL account
+    expect(await errors({ ...NEW, kind: 'cash', accountCode: '1123' })).toHaveProperty('accountCode'); // a cash box on a bank GL account
   });
   it('bank needs bank, number (10-15 digits, dashes allowed, unique) and name; a cash box needs neither bank nor number', async () => {
-    expect(Object.keys(await errors({ kind: 'bank', accountCode: '1120' })).sort()).toEqual(['accountName', 'accountNo', 'bankName']);
+    expect(Object.keys(await errors({ kind: 'bank', accountCode: '1123' })).sort()).toEqual(['accountName', 'accountNo', 'bankName']);
     expect(await errors({ ...NEW, accountNo: '12345' })).toHaveProperty('accountNo');
     expect(await errors({ ...NEW, accountNo: 'abc-1234567' })).toHaveProperty('accountNo');
     expect(await errors({ ...NEW, accountNo: '0123456789' })).toHaveProperty('accountNo'); // = ba-kbank's, digits compared
@@ -95,7 +96,7 @@ describe('the GL account is frozen once a journal line posts to it', () => {
 
   it('a used account keeps its code (the name may change); an unused one may move, and its posting rule follows', async () => {
     const kbank = (await rows()).find((r) => r.id === 'ba-kbank')!;
-    const refused = await put('ba-kbank', { ...base(kbank), accountCode: '1120' });
+    const refused = await put('ba-kbank', { ...base(kbank), accountCode: '1123' });
     expect(refused.status).toBe(422);
     expect((await refused.json()).fieldErrors.accountCode[0]).toContain('หลังจากมีรายการบัญชี');
     expect((await put('ba-kbank', { ...base(kbank), accountName: 'กสิกรไทย (หลัก)' })).status).toBe(200);
@@ -103,19 +104,19 @@ describe('the GL account is frozen once a journal line posts to it', () => {
 
     const journals = JSON.stringify(loadState().journals);
     const scb = (await rows()).find((r) => r.id === 'ba-scb')!;
-    expect((await put('ba-scb', { ...base(scb), accountCode: '1120' })).status).toBe(200);
+    expect((await put('ba-scb', { ...base(scb), accountCode: '1123' })).status).toBe(200);
     const st = loadState();
-    expect(st.postingRules.find((r) => r.key === 'ba-scb' && r.role === 'Cash')!.accountCode).toBe('1120');
+    expect(st.postingRules.find((r) => r.key === 'ba-scb' && r.role === 'Cash')!.accountCode).toBe('1123');
     expect(JSON.stringify(st.journals)).toBe(journals); // history carries its codes: a later edit cannot move it
   });
   it('after the first posting the account is frozen: move it, post once, move it again', async () => {
     const scb = (await rows()).find((r) => r.id === 'ba-scb')!;
-    expect((await put('ba-scb', { ...base(scb), accountCode: '1120' })).status).toBe(200);
+    expect((await put('ba-scb', { ...base(scb), accountCode: '1123' })).status).toBe(200);
     const d = await (await call('POST', '/docs/RC', rc('ba-scb'))).json();
     await call('POST', `/docs/RC/${d.id}/issue`, { version: d.version });
     const moved = await put('ba-scb', { ...base(scb), accountCode: '1122' });
     expect(moved.status).toBe(422);
-    expect(loadState().journals.find((j) => j.docId === d.id)!.preview.entries[0].lines.some((l) => l.accountCode === '1120')).toBe(true);
+    expect(loadState().journals.find((j) => j.docId === d.id)!.preview.entries[0].lines.some((l) => l.accountCode === '1123')).toBe(true);
   });
 });
 
@@ -164,7 +165,7 @@ describe('POST /finance/bank-accounts/:id/imports and GET .../lines', () => {
   });
   it('imports the October CSV: 201, lines appended, nothing posted, one audit entry, the raw file attached', async () => {
     const before = loadState();
-    const r = await upload('ba-kbank', { fileName: KBIZ_OCT_NAME, format: 'kbiz-csv', content: KBIZ_2026_10 });
+    const r = await upload('ba-kbank', { fileName: KBIZ_OCT_NAME, format: 'kbiz-csv', content: utf8Base64(KBIZ_2026_10) });
     expect(r.status).toBe(201);
     const imp = (await r.json()) as BankImport;
     expect(imp).toMatchObject({ lines: 12, from: '2026-10-01', to: '2026-10-13', warnings: [] });
@@ -177,13 +178,13 @@ describe('POST /finance/bank-accounts/:id/imports and GET .../lines', () => {
   });
   it('a refused file leaves the state untouched; operator may not import; a cash box has no statements', async () => {
     const before = JSON.stringify(loadState().bankLines);
-    const bad = await upload('ba-kbank', { fileName: 'x.csv', format: 'kbiz-csv', content: KBIZ_2026_10.replace('012-3-45678-9', '111-1-11111-1') });
+    const bad = await upload('ba-kbank', { fileName: 'x.csv', format: 'kbiz-csv', content: utf8Base64(KBIZ_2026_10.replace('012-3-45678-9', '111-1-11111-1')) });
     expect(bad.status).toBe(422);
     expect((await bad.json()).code).toBe('bank.account_mismatch');
     expect(JSON.stringify(loadState().bankLines)).toBe(before);
-    expect((await upload('ba-cash', { fileName: 'x.csv', format: 'kbiz-csv', content: KBIZ_2026_10 })).status).toBe(422);
+    expect((await upload('ba-cash', { fileName: 'x.csv', format: 'kbiz-csv', content: utf8Base64(KBIZ_2026_10) })).status).toBe(422);
     setSettings({ role: 'operator' });
-    const denied = await upload('ba-kbank', { fileName: KBIZ_OCT_NAME, format: 'kbiz-csv', content: KBIZ_2026_10 });
+    const denied = await upload('ba-kbank', { fileName: KBIZ_OCT_NAME, format: 'kbiz-csv', content: utf8Base64(KBIZ_2026_10) });
     expect(denied.status).toBe(403);
     expect((await lines('ba-kbank')).total).toBe(18); // reading is allowed
   });
@@ -191,7 +192,7 @@ describe('POST /finance/bank-accounts/:id/imports and GET .../lines', () => {
     const real = Storage.prototype.setItem;
     Storage.prototype.setItem = function (k: string, v: string) { if (k.startsWith('teas2.mock.state.')) throw new DOMException('full', 'QuotaExceededError'); return real.call(this, k, v); };
     try {
-      const r = await upload('ba-kbank', { fileName: KBIZ_OCT_NAME, format: 'kbiz-csv', content: KBIZ_2026_10 });
+      const r = await upload('ba-kbank', { fileName: KBIZ_OCT_NAME, format: 'kbiz-csv', content: utf8Base64(KBIZ_2026_10) });
       expect(r.status).toBe(507);
     } finally { Storage.prototype.setItem = real; }
     expect(loadState().bankLines.filter((l) => l.accountId === 'ba-kbank')).toHaveLength(18);

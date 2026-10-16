@@ -27,7 +27,7 @@ describe('bank account form', () => {
     const u = userEvent.setup();
     const gl = await screen.findByLabelText('บัญชีแยกประเภท');
     await waitFor(() => expect(within(gl).getAllByRole('option').length).toBeGreaterThan(1));
-    expect(within(gl).getAllByRole('option').map((o) => o.textContent)).toEqual(['— เลือกบัญชีแยกประเภท —', '1120 · เงินฝากธนาคาร']); // 1121 / 1122 belong to the two existing banks
+    expect(within(gl).getAllByRole('option').map((o) => o.textContent)).toEqual(['— เลือกบัญชีแยกประเภท —', '1123 · เงินฝากธนาคาร (สำรอง)']); // 1121 / 1122 belong to the two existing banks
     await u.selectOptions(label('ประเภทบัญชี'), 'cash');
     expect(screen.queryByLabelText('ธนาคาร')).toBeNull();
     expect(screen.queryByLabelText('เลขที่บัญชี')).toBeNull();
@@ -36,10 +36,10 @@ describe('bank account form', () => {
     await u.selectOptions(label('ธนาคาร'), 'bbl');
     await u.type(label('เลขที่บัญชี'), '999-9-99999-9');
     await u.type(label('ชื่อบัญชี'), 'กรุงเทพ ออมทรัพย์');
-    await u.selectOptions(label('บัญชีแยกประเภท'), '1120');
+    await u.selectOptions(label('บัญชีแยกประเภท'), '1123');
     await u.click(screen.getByRole('button', { name: 'บันทึก' }));
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
-    expect(loadState().bankAccounts.find((b) => b.id === 'ba-4')).toMatchObject({ kind: 'bank', bankName: 'bbl', accountNo: '999-9-99999-9', accountCode: '1120' });
+    expect(loadState().bankAccounts.find((b) => b.id === 'ba-4')).toMatchObject({ kind: 'bank', bankName: 'bbl', accountNo: '999-9-99999-9', accountCode: '1123' });
   });
 
   it('shape errors show on the fields before anything is sent; a server error (taken number) lands on its field', async () => {
@@ -51,7 +51,7 @@ describe('bank account form', () => {
     await u.type(label('เลขที่บัญชี'), '0123456789'); // ba-kbank's number without dashes
     await u.type(label('ชื่อบัญชี'), 'ซ้ำ');
     await waitFor(() => expect(within(screen.getByLabelText('บัญชีแยกประเภท')).getAllByRole('option').length).toBeGreaterThan(1));
-    await u.selectOptions(label('บัญชีแยกประเภท'), '1120');
+    await u.selectOptions(label('บัญชีแยกประเภท'), '1123');
     await u.click(screen.getByRole('button', { name: 'บันทึก' }));
     expect(await screen.findByText('เลขที่บัญชีนี้ใช้แล้ว')).toBeVisible();
     expect(loadState().bankAccounts).toHaveLength(5);
@@ -70,7 +70,7 @@ describe('bank account form', () => {
     mount(<RecordForm descriptor={bank} row={fresh} onSaved={() => undefined} onCancel={() => undefined} />);
     const free = await screen.findByLabelText('บัญชีแยกประเภท');
     expect(free.tagName).toBe('SELECT');
-    await waitFor(() => expect(within(free).getAllByRole('option').map((o) => o.textContent)).toEqual(['— เลือกบัญชีแยกประเภท —', '1120 · เงินฝากธนาคาร', '1122 · ธ.ไทยพาณิชย์ ออมทรัพย์']));
+    await waitFor(() => expect(within(free).getAllByRole('option').map((o) => o.textContent)).toEqual(['— เลือกบัญชีแยกประเภท —', '1122 · ธ.ไทยพาณิชย์ ออมทรัพย์', '1123 · เงินฝากธนาคาร (สำรอง)']));
     expect(free).toHaveValue('1122');
   });
 });

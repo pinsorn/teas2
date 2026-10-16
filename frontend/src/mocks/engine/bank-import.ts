@@ -8,7 +8,7 @@ import { fromSatang, toSatang } from './money';
 
 /** Appendix A.8: the statement file is checked on its bytes before anything is parsed. */
 export const MAX_STATEMENT_BYTES = 2 * 1024 * 1024;
-export interface StatementInput { fileName: string; format: BankImport['format']; /** CSV text, or the PDF as base64. */ content: string; /** K PLUS only. Used to open the file and then forgotten: never stored, logged or echoed. */ password?: string }
+export interface StatementInput { fileName: string; format: BankImport['format']; /** The file's own bytes, base64 (CSV and PDF alike: what is stored is what was sent). */ content: string; /** K PLUS only. Used to open the file and then forgotten: never stored, logged or echoed. */ password?: string }
 
 const fail = (status: number, code: string, title: string) => new MockError(status, code, title);
 const digits = (s: string) => s.replace(/\D/g, '');
@@ -110,8 +110,16 @@ export function checkIntegrity(p: Parsed): void {
 
 // ---------------- the command ----------------
 
+/** A 53-bit string hash (cyrb53) of the file's bytes as sent: enough to tell "the same file again" in a mock without async crypto. */
+function contentHash(s: string): string {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < s.length; i++) { const ch = s.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return `${s.length}-${(4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16)}`;
+}
 const b64Bytes = (b64: string) => Math.floor((b64.length * 3) / 4) - (b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0);
-function toBase64(text: string): string {
+export function utf8Base64(text: string): string {
   const bytes = new TextEncoder().encode(text);
   let bin = '';
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -128,14 +136,20 @@ export function importStatement(st: MockState, companyId: string, accountId: str
     throw fail(422, 'bank.invalid_request', 'ข้อมูลการนำเข้าไม่ถูกต้อง');
   }
   const csv = input.format === 'kbiz-csv';
-  const b64 = csv ? '' : input.content.replace(/\s/g, '');
-  const bytes = csv ? new TextEncoder().encode(input.content).length : b64Bytes(b64);
+  const b64 = input.content.replace(/\s/g, '');
+  const bytes = b64Bytes(b64);
   if (bytes > MAX_STATEMENT_BYTES) throw fail(422, 'bank.file_too_large', 'ไฟล์ใหญ่เกิน 2 MB');
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64) || b64.length % 4 === 1) throw csv ? unreadable('ข้อมูลไฟล์ไม่ใช่ base64') : fail(422, 'bank.pdf_unreadable', 'อ่านไฟล์ PDF ไม่ได้ — ลองไฟล์ CSV จาก K BIZ');
+  const hash = contentHash(b64);
+  const earlier = st.bankImports.find((i) => i.companyId === companyId && i.accountId === accountId && i.hash === hash);
+  if (earlier) { // M3: the same bytes again (any file name) - a retried upload or a second click must not double the lines
+    throw fail(409, 'bank.duplicate_import', `ไฟล์นี้นำเข้าแล้ว: ${earlier.fileName} (รายการวันที่ ${formatDateBE(earlier.from)} – ${formatDateBE(earlier.to)}, นำเข้าเมื่อ ${formatDateBE(earlier.at.slice(0, 10))}) — ไม่นำเข้าซ้ำ`);
+  }
 
   let parsed: Parsed;
-  if (csv) parsed = parseKbizCsv(input.content);
+  if (csv) parsed = parseKbizCsv(new TextDecoder().decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))));
   else { // the mock does not parse PDFs: the sample name stands for a file whose extraction the fixture supplies
-    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64) || !b64.startsWith('JVBER') || input.fileName.trim().toLowerCase() !== KPLUS_SAMPLE_NAME.toLowerCase()) {
+    if (!b64.startsWith('JVBER') || input.fileName.trim().toLowerCase() !== KPLUS_SAMPLE_NAME.toLowerCase()) {
       throw fail(422, 'bank.pdf_unreadable', 'อ่านไฟล์ PDF ไม่ได้ — ลองไฟล์ CSV จาก K BIZ');
     }
     parsed = { ...KPLUS_SAMPLE, lines: KPLUS_SAMPLE.lines.map((l, i) => ({ ...l, row: i + 1 })) };
@@ -151,9 +165,9 @@ export function importStatement(st: MockState, companyId: string, accountId: str
 
   const id = `bi-${String(st.bankImports.length + 1).padStart(3, '0')}`;
   const mime = csv ? 'text/csv' : 'application/pdf';
-  addImportFile(st, companyId, id, { name: input.fileName.trim(), mime, size: bytes, dataUrl: `data:${mime};base64,${csv ? toBase64(input.content) : b64}` }, actor.name, opts.seed);
+  addImportFile(st, companyId, id, { name: input.fileName.trim(), mime, size: bytes, dataUrl: `data:${mime};base64,${b64}` }, actor.name, opts.seed);
   const imp: BankImport = { id, accountId, fileName: input.fileName.trim(), format: input.format, from: parsed.from, to: parsed.to, opening: parsed.opening, closing: parsed.closing, lines: parsed.lines.length, at: stamp(), warnings };
-  st.bankImports.push({ ...imp, companyId });
+  st.bankImports.push({ ...imp, companyId, hash });
   const lines: (BankLine & { companyId: string })[] = parsed.lines.map((l, i) => ({
     companyId, id: `${id}-${String(i + 1).padStart(3, '0')}`, accountId, importId: id, date: l.date, description: l.description, amount: l.amount, balance: l.balance, status: 'unmatched' as const,
   }));
