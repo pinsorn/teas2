@@ -58,7 +58,7 @@ e2e upload; `ba-scb` no imports; `ba-cash` cash box. Non-VAT `nba-kbank` 8 lines
   shows "ยังไม่มีรายการเดินบัญชี — นำเข้า statement"); upload the October CSV via `setInputFiles` (Buffer from the
   fixture text) → "นำเข้าสำเร็จ 12 รายการ" and the lines table.
 - [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.** (FN1 worker: tsc, eslint, unit 111 files / 1154 passed, e2e finance-bank + sales-rc + purchases-pv + screens + routes + 8 neighbouring specs green; full e2e run by the controller)
-- [ ] **Step 6: Controller commits** — `feat(finance): bank and cash accounts with statement import`.
+- [x] **Step 6: Controller commits** — `feat(finance): bank and cash accounts with statement import`.
 
 ---
 
@@ -100,7 +100,7 @@ journal Dr = Cr.
   money-in line → ค้นหารายการที่ตรงกัน → pick the RC → matched; open the RC → lock banner with ยกเลิกการจับคู่".
 - [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS**; invariants `[]`.
 - [x] **Step 5: Full gate.** (FN2 worker: tsc, eslint, unit 116 files / 1221 passed, e2e finance-reconcile + finance-bank + sales-rc + purchases-pv + screens + routes + reports-tb 134 passed; full e2e by the controller)
-- [ ] **Step 6: Controller commits** — `feat(finance): bank reconciliation with matching, inline journals and locks`.
+- [x] **Step 6: Controller commits** — `feat(finance): bank reconciliation with matching, inline journals and locks`.
 
 ---
 
@@ -144,14 +144,14 @@ links; `GL(2140) = Σ unapplied customer deposits`; `GL(1140) = Σ unapplied ven
   (`both`) and settlements list (`both`, forbiddenRole operator for create — list is read); flow apply `rcDeposit` to
   an unpaid TI of pc-08.
 - [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.** (FN3 worker: tsc, eslint, unit 122 files / 1336 passed, e2e finance-settlement + sales-rc + purchases-pv + purchases-pb + finance-reconcile + screens + routes 183 passed, then every other spec 332 passed = all 28 specs; report `.superpowers/sdd/04-finance/task-FN3-report.md`)
-- [ ] **Step 6: Controller commits** — `feat(finance): deposits, prepayments, netting and settlement differences`.
+- [x] **Step 6: Controller commits** — `feat(finance): deposits, prepayments, netting and settlement differences`.
 
 ---
 
 ### Task GFN: Ham gate — finance
 
-- [ ] Consolidated gate green; production build / staging.
-- [ ] Send Ham: bank accounts with own GL accounts; CSV import with integrity checks (and the PDF limitation: mock
+- [x] Consolidated gate green; production build / staging.
+- [x] Send Ham: bank accounts with own GL accounts; CSV import with integrity checks (and the PDF limitation: mock
   reads one sample); reconciliation (batch / split / fee); reconciliation lock + exit; deposits / netting as
   settlement records (**D-13 needs Ham's ruling**: record kind vs a new document type with a legal series).
-- [ ] AskUserQuestion "Finance approve?" — approve / approve with changes / rework. Record in `STATUS.md`.
+- [x] AskUserQuestion "Finance approve?" — approve / approve with changes / rework. Record in `STATUS.md`.
