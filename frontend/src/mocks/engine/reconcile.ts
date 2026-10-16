@@ -333,7 +333,7 @@ export function post(st: MockState, companyId: string, lineId: string, req: Post
   refuseIfTransferPending(st, companyId, l);
   const bank = bankOf(st, companyId, l.accountId);
   const acc = st.accounts.find((a) => a.companyId === companyId && a.code === req.accountCode);
-  if (!acc || !acc.postable) throw fail(422, 'ledger.account_invalid', 'เลือกบัญชีที่ลงรายการได้');
+  if (!acc || !acc.postable || acc.active === false) throw fail(422, 'ledger.account_invalid', acc?.active === false ? `บัญชี ${acc.code} ${acc.nameTh} ปิดใช้งานแล้ว เลือกใช้กับรายการใหม่ไม่ได้` : 'เลือกบัญชีที่ลงรายการได้');
   if (acc.code === bank.accountCode) throw fail(422, 'bank.post_same_account', 'บัญชีที่เลือกต้องไม่ใช่บัญชีธนาคารของรายการนี้');
   const exit = controlExit(st, companyId, acc.code);
   if (exit) throw fail(422, 'ledger.control_account', `${acc.code} ${acc.nameTh} ลงรายการเองไม่ได้: ${exit}`);

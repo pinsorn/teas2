@@ -76,6 +76,17 @@ export function Field({ spec, form, values, error, locked }: { spec: FieldSpec; 
   const wht = useQuery({ queryKey: qk.whtTypes(c), queryFn: endpoints.whtTypes, enabled: !!me && spec.optionsFrom === 'wht-types' });
   const items = useQuery({ queryKey: [...qk.itemOptions(c), spec.itemUsage], queryFn: () => endpoints.searchItems({ limit: 200, usage: spec.itemUsage }), enabled: !!me && spec.kind === 'item' });
 
+  // the header accounts a chart account can sit under (every page: a chart can be longer than one)
+  const headers = useQuery({ queryKey: [c, 'records', 'account', { headers: true }], enabled: !!me && spec.optionsFrom === 'account-headers', queryFn: async () => {
+    const out: { code: string; text: string }[] = [];
+    for (let cursor: string | undefined, n = 0; n < 50; n++) {
+      const p = await endpoints.listRecords('account', { active: 'true', limit: 100, cursor });
+      out.push(...p.items.filter((r) => r.postable === false).map((r) => ({ code: String(r.code), text: `${String(r.code)} · ${String(r.name)}` })));
+      cursor = p.nextCursor;
+      if (!cursor) break;
+    }
+    return out;
+  } });
   const gl = useQuery({ queryKey: qk.bankGlAccounts(c), queryFn: endpoints.bankGlAccounts, enabled: !!me && spec.kind === 'account' && !locked });
 
   let control: ReactNode;
@@ -87,7 +98,8 @@ export function Field({ spec, form, values, error, locked }: { spec: FieldSpec; 
     const current = String(values[spec.key] ?? '');
     const fixed = spec.options?.map((o) => ({ value: o.value, text: t(o.labelKey) }));
     const remote = spec.optionsFrom === 'wht-types' ? wht.data?.map((w) => ({ value: w.code, text: `${w.code} · ${w.nameTh} (${w.rate})` })) : undefined;
-    const opts = fixed ?? remote ?? [];
+    const hdr = spec.optionsFrom === 'account-headers' ? headers.data?.map((h) => ({ value: h.code, text: h.text })) : undefined;
+    const opts = fixed ?? remote ?? hdr ?? [];
     control = (
       <select {...register(spec.key)} id={id} aria-invalid={!!error} aria-describedby={describedBy} aria-required={common['aria-required']} className={select}>
         <option value="">{t('records.common.selectPlaceholder')}</option>
@@ -128,6 +140,8 @@ export function Field({ spec, form, values, error, locked }: { spec: FieldSpec; 
       maxLength={spec.kind === 'tin' ? 13 : spec.kind === 'branch' ? 5 : undefined} />;
   }
 
+  // frozen after use: a disabled fieldset blocks the control but (unlike `disabled` on the control itself) leaves its value in the form
+  if (locked && (spec.kind === 'bool' || spec.kind === 'select')) control = <fieldset disabled className="contents">{control}</fieldset>;
   const inline = spec.kind === 'bool';
   return (
     <div className={inline ? 'flex flex-wrap items-center gap-2' : 'grid gap-1.5'}>

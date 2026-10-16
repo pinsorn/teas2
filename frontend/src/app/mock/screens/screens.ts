@@ -153,5 +153,6 @@ export const SCREENS: Screen[] = [
   { name: 'jvPrint', route: { fixture: 'jvAccrual', base: '/print/JV' }, company: 'vat', states: false },
   { name: 'njvIssued', route: { fixture: 'njvIssued', base: JV_BASE }, company: 'nonvat', states: true },
   { name: 'journalsList', route: '/accounting/journals', company: 'both', states: true },
+  { name: 'coaList', route: '/accounting/chart-of-accounts', company: 'both', states: true },
   { name: 'styleGuide', route: '/style-guide', company: 'both', states: false },
 ];

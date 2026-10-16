@@ -74,7 +74,7 @@ export const bankHandlers = [
   })),
   // the accounts an inline journal can post to: postable and not a control account (tax, receivable / payable, deposits, payroll, cash / bank, equity); the page drops the bank's own
   http.get('*/bff/v1/finance/postable-accounts', () => guarded('item', RECONCILE, (c) => HttpResponse.json(
-    c.st.accounts.filter((a) => a.companyId === c.company.id && a.postable && !controlExit(c.st, c.company.id, a.code))
+    c.st.accounts.filter((a) => a.companyId === c.company.id && a.postable && a.active !== false && !controlExit(c.st, c.company.id, a.code))
       .map((a) => ({ code: a.code, nameTh: a.nameTh, class: a.class }))))),
   // I2: a statement line that is money moving to / from another own account; the way out of the journal
   http.post('*/bff/v1/finance/bank-lines/:id/transfer', ({ request, params }) => guarded('item', RECONCILE, async (c) => {

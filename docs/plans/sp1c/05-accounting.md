@@ -89,10 +89,10 @@ moving an account under a header of a different class refused.
 
 **Permissions:** accountant `ledger.coa.manage`.
 
-- [ ] **Step 1: Failing tests** — every rule above with its exit message; tree order and search keeping ancestors.
+- [x] **Step 1: Failing tests** — every rule above with its exit message; tree order and search keeping ancestors.
   e2e: `screenContract` COA (`both`, forbiddenRole operator); add account 5190 "ค่าใช้จ่ายเบ็ดเตล็ด" under 5000; try to
   deactivate 1130 → refusal names the posting rule.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
 - [ ] **Step 6: Controller commits** — `feat(accounting): chart of accounts management`.
 
 ---

@@ -1,15 +1,40 @@
+import type { AccountClass } from '@/records/accounts';
 import type { AccountingRole } from '../engine/posting';
 
 /** Thai SME chart of accounts (D-26): keeps every code the SP1ab ledger used (1120, 1130, 1170, 1180, 2110, 2151, 4100, 5100). */
 export interface Account {
-  code: string; nameTh: string; class: 'asset' | 'liability' | 'equity' | 'revenue' | 'expense'; subClass: string;
+  code: string; nameTh: string; class: AccountClass; subClass: string;
   parent?: string; postable: boolean; controlRole?: AccountingRole;
+  /** AC2 (all optional: absent = active, version 1, no mapping). `dimensionRules` is edited in ST2. */
+  nameEn?: string; active?: boolean; version?: number; dbdLine?: string; pnd50Box?: string; dimensionRules?: Record<string, 'required' | 'optional' | 'forbidden'>;
 }
 export type CompanyAccount = Account & { companyId: string };
 
 type Row = [code: string, nameTh: string, subClass: string, parent?: string, controlRole?: AccountingRole];
-const CLASS_OF = (code: string): Account['class'] =>
-  ({ '1': 'asset', '2': 'liability', '3': 'equity', '4': 'revenue', '5': 'expense' } as const)[code[0] as '1'];
+/** The §5.4 class of a seeded account: by code range and sub-class. A top header takes the main class of its group; its children may be any class of the group. */
+const CLASS_OF = (code: string, subClass: string, parent?: string): AccountClass => {
+  switch (code[0]) {
+    case '1': return parent === '1200' || code === '1200' ? 'non-current-asset' : 'current-asset';
+    case '2': return 'current-liability';
+    case '3': return 'equity';
+    case '4': return subClass === 'other-income' ? 'other-income' : 'sales-revenue';
+    default: return code === '5100' ? 'cost-of-sales' : ['5170', '5180', '5210', '5220', '5500'].includes(code) ? 'other-expense' : 'selling-admin-expense';
+  }
+};
+/** [SP-R] placeholder statutory mapping, by sub-class (balance sheet) and class (profit and loss). */
+const DBD: Record<string, string> = {
+  cash: 'bs-cash', bank: 'bs-cash', receivable: 'bs-receivables', prepayment: 'bs-prepaid', 'tax-asset': 'bs-tax-asset', 'current-asset': 'bs-other-current', 'fixed-asset': 'bs-ppe', 'accumulated-depreciation': 'bs-accum-dep',
+  payable: 'bs-payables', accrual: 'bs-accrued', 'tax-liability': 'bs-tax-payable', deposit: 'bs-deposits-received', 'payroll-liability': 'bs-payroll-payable', 'current-liability': 'bs-payables',
+  capital: 'bs-capital', retained: 'bs-retained', 'current-year': 'bs-retained', opening: 'bs-capital',
+};
+const PL: Partial<Record<AccountClass, [string, string]>> = {
+  'sales-revenue': ['pl-revenue', 'p50-revenue'], 'other-income': ['pl-other-income', 'p50-other-income'], 'cost-of-sales': ['pl-cost', 'p50-cost'],
+  'selling-admin-expense': ['pl-selling-admin', 'p50-expense'], 'other-expense': ['pl-other-expense', 'p50-expense'], 'finance-cost': ['pl-finance-cost', 'p50-expense'], 'income-tax': ['pl-income-tax', 'p50-nondeductible'],
+};
+const statutory = (cls: AccountClass, subClass: string): Pick<Account, 'dbdLine' | 'pnd50Box'> => {
+  const pl = PL[cls], dbd = pl?.[0] ?? DBD[subClass];
+  return { ...(dbd ? { dbdLine: dbd } : {}), ...(pl ? { pnd50Box: pl[1] } : {}) };
+};
 
 const HEADERS: [string, string, string, string?][] = [
   ['1000', 'สินทรัพย์', 'header'], ['1100', 'สินทรัพย์หมุนเวียน', 'current-asset', '1000'], ['1200', 'สินทรัพย์ไม่หมุนเวียน', 'fixed-asset', '1000'],
@@ -45,8 +70,9 @@ const POSTABLE: Row[] = [
 ];
 
 export const chartOfAccounts = (): Account[] => [
-  ...HEADERS.map(([code, nameTh, subClass, parent]) => ({ code, nameTh, class: CLASS_OF(code), subClass, ...(parent ? { parent } : {}), postable: false })),
-  ...POSTABLE.map(([code, nameTh, subClass, parent, controlRole]) => ({
-    code, nameTh, class: CLASS_OF(code), subClass, ...(parent ? { parent } : {}), postable: true, ...(controlRole ? { controlRole } : {}),
+  ...HEADERS.map(([code, nameTh, subClass, parent]): Account => ({ code, nameTh, class: CLASS_OF(code, subClass, parent), subClass, ...(parent ? { parent } : {}), postable: false })),
+  ...POSTABLE.map(([code, nameTh, subClass, parent, controlRole]): Account => ({
+    code, nameTh, class: CLASS_OF(code, subClass, parent), subClass, ...(parent ? { parent } : {}), postable: true, ...(controlRole ? { controlRole } : {}),
+    ...statutory(CLASS_OF(code, subClass, parent), subClass),
   })),
 ];

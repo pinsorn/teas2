@@ -168,7 +168,7 @@ export const docsWriteHandlers = [
   })),
   // the accounts a journal voucher may post to: postable, none a document owns (the server refuses the others at issue)
   http.get('*/bff/v1/accounting/journal-accounts', () => guarded('JV', P('create'), (c) => HttpResponse.json(
-    c.st.accounts.filter((a) => a.companyId === c.company.id && a.postable && !controlExit(c.st, c.company.id, a.code, 'jv')).map((a) => ({ code: a.code, nameTh: a.nameTh, class: a.class }))))),
+    c.st.accounts.filter((a) => a.companyId === c.company.id && a.postable && a.active !== false && !controlExit(c.st, c.company.id, a.code, 'jv')).map((a) => ({ code: a.code, nameTh: a.nameTh, class: a.class }))))),
 
   http.post('*/bff/v1/docs/:type/:id/correction-plan', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
     const orig = own(c, t, params.id);

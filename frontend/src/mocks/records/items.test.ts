@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { RecordRow } from '@/domain/records';
 import type { ItemSummary, Page } from '@/domain/types';
 import { RECORDS } from '@/records';
+import { GROUP_OF } from '@/records/accounts';
 import { chartOfAccounts } from '../fixtures/coa';
 import { EXPENSE_CATEGORIES } from '../fixtures/expense-categories';
 import { setSettings } from '../settings';
@@ -33,7 +34,8 @@ describe('expense-category fixture', () => {
     expect(Object.fromEntries(EXPENSE_CATEGORIES.filter((c) => c.accountCode).map((c) => [c.code, c.accountCode]))).toEqual({
       rent: '5110', services: '5120', advertising: '5130', transport: '5140', entertainment: '5150', supplies: '5160', 'cost-of-sales': '5100',
     });
-    for (const c of EXPENSE_CATEGORIES.filter((x) => x.accountCode)) expect(coa.get(c.accountCode!), c.code).toMatchObject({ postable: true, class: 'expense' });
+    for (const c of EXPENSE_CATEGORIES.filter((x) => x.accountCode)) expect(coa.get(c.accountCode!), c.code).toMatchObject({ postable: true });
+    for (const c of EXPENSE_CATEGORIES.filter((x) => x.accountCode)) expect(GROUP_OF[coa.get(c.accountCode!)!.class], c.code).toBe('expense');
     expect(EXPENSE_CATEGORIES.find((c) => c.code === 'entertainment')!.recoverableVat).toBe(false);
     expect(EXPENSE_CATEGORIES.filter((c) => c.code !== 'entertainment').every((c) => c.recoverableVat)).toBe(true);
     expect(EXPENSE_CATEGORIES.find((c) => c.code === 'capex-equipment')).toMatchObject({ capex: true, assetClass: 'equipment' });

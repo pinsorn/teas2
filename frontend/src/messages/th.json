@@ -435,6 +435,7 @@
       "jvPrint": "พิมพ์ใบสำคัญทั่วไป",
       "njvIssued": "ใบสำคัญทั่วไป (ไม่จด VAT)",
       "journalsList": "สมุดรายวัน ทุกรายการบัญชีของบริษัท",
+      "coaList": "ผังบัญชี",
       "styleGuide": "คู่มือการออกแบบ"
     },
     "state": { "normal": "ปกติ", "empty": "ไม่มีข้อมูล", "loading": "กำลังโหลด", "error": "เกิดข้อผิดพลาด", "forbidden": "ไม่มีสิทธิ์", "locked": "ถูกล็อก" },
@@ -797,6 +798,7 @@
     "vendor": { "title": "ผู้ขาย", "search": "ค้นหารหัส ชื่อ หรือเลขประจำตัวผู้เสียภาษี", "empty": "ยังไม่มีผู้ขาย" },
     "item": { "title": "สินค้า/บริการ", "search": "ค้นหารหัสหรือชื่อ", "empty": "ยังไม่มีสินค้าหรือบริการ" },
     "bank-account": { "title": "บัญชีธนาคารและเงินสด", "search": "ค้นหาชื่อบัญชีหรือรหัสบัญชี", "empty": "ยังไม่มีบัญชีธนาคารหรือเงินสด" },
+    "account": { "title": "ผังบัญชี", "search": "ค้นหารหัสหรือชื่อบัญชี", "empty": "ยังไม่มีบัญชีในผังบัญชี", "collapse": "ย่อ {code}", "expand": "ขยาย {code}", "actions": "ดำเนินการ" },
     "fields": {
       "entityKind": "ประเภทคู่ค้า", "code": "รหัส", "name": "ชื่อ", "nameEn": "ชื่อ (อังกฤษ)", "taxId": "เลขประจำตัวผู้เสียภาษี",
       "branchCode": "สาขา", "vatRegistered": "จดทะเบียนภาษีมูลค่าเพิ่ม (VAT)", "address": "ที่อยู่ตามทะเบียน", "phone": "โทรศัพท์",
@@ -805,7 +807,8 @@
       "bankAccountName": "ชื่อบัญชี", "usualItemIds": "สินค้าและบริการที่ซื้อบ่อย", "active": "สถานะ",
       "kind": "ประเภท", "unit": "หน่วย", "unitPrice": "ราคาต่อหน่วย", "taxCode": "ภาษีมูลค่าเพิ่ม", "whtTypeCode": "ประเภทภาษีหัก ณ ที่จ่าย",
       "usage": "การใช้งาน", "usageSales": "ใช้ในเอกสารขาย", "usagePurchase": "ใช้ในเอกสารซื้อ", "expenseCategory": "หมวดค่าใช้จ่าย",
-      "accountNo": "เลขที่บัญชี", "accountName": "ชื่อบัญชี", "accountCode": "บัญชีแยกประเภท", "bankKind": "ประเภทบัญชี"
+      "accountNo": "เลขที่บัญชี", "accountName": "ชื่อบัญชี", "accountCode": "บัญชีแยกประเภท", "bankKind": "ประเภทบัญชี",
+      "nameTh": "ชื่อบัญชี (ไทย)", "parent": "บัญชีหมวดที่อยู่ภายใต้", "postable": "ลงรายการได้ (ไม่ใช่บัญชีหมวด)", "accountClass": "หมวดบัญชี", "subClass": "ประเภทย่อย", "dbdLine": "บรรทัดงบการเงิน (DBD)", "pnd50Box": "ช่อง ภ.ง.ด.50", "dimensionRules": "กฎมิติ"
     },
     "options": {
       "entityKind": { "individual": "บุคคลธรรมดา", "juristic": "นิติบุคคล", "foreign": "ต่างประเทศ" },
@@ -815,7 +818,11 @@
       "itemUsage": { "sales": "ขาย", "purchase": "ซื้อ", "both": "ขายและซื้อ" },
       "expenseCategory": { "rent": "ค่าเช่า", "services": "ค่าบริการ", "advertising": "ค่าโฆษณา", "transport": "ค่าขนส่ง", "entertainment": "ค่ารับรอง (ภาษีซื้อขอคืนไม่ได้)", "supplies": "ค่าวัสดุสิ้นเปลือง", "capex-equipment": "ซื้อสินทรัพย์ (อุปกรณ์)", "cost-of-sales": "ต้นทุนขาย" },
       "bankKind": { "bank": "บัญชีธนาคาร", "cash": "เงินสด" },
-      "bankName": { "kbank": "กสิกรไทย", "scb": "ไทยพาณิชย์", "bbl": "กรุงเทพ", "ktb": "กรุงไทย", "bay": "กรุงศรี", "ttb": "ทหารไทยธนชาต", "gsb": "ออมสิน" }
+      "bankName": { "kbank": "กสิกรไทย", "scb": "ไทยพาณิชย์", "bbl": "กรุงเทพ", "ktb": "กรุงไทย", "bay": "กรุงศรี", "ttb": "ทหารไทยธนชาต", "gsb": "ออมสิน" },
+      "accountClass": {"current-asset": "สินทรัพย์หมุนเวียน", "non-current-asset": "สินทรัพย์ไม่หมุนเวียน", "current-liability": "หนี้สินหมุนเวียน", "non-current-liability": "หนี้สินไม่หมุนเวียน", "equity": "ส่วนของเจ้าของ", "sales-revenue": "รายได้จากการขาย/บริการ", "other-income": "รายได้อื่น", "cost-of-sales": "ต้นทุนขาย", "selling-admin-expense": "ค่าใช้จ่ายในการขายและบริหาร", "other-expense": "ค่าใช้จ่ายอื่น", "finance-cost": "ต้นทุนทางการเงิน", "income-tax": "ภาษีเงินได้"},
+      "accountSubClass": {"header": "บัญชีหมวด", "cash": "เงินสด", "bank": "เงินฝากธนาคาร", "receivable": "ลูกหนี้", "prepayment": "จ่ายล่วงหน้า", "tax-asset": "ภาษีเป็นสินทรัพย์", "current-asset": "สินทรัพย์หมุนเวียนอื่น", "fixed-asset": "สินทรัพย์ถาวร", "accumulated-depreciation": "ค่าเสื่อมราคาสะสม", "payable": "เจ้าหนี้", "accrual": "ค้างจ่าย", "tax-liability": "ภาษีค้างจ่าย", "deposit": "เงินรับล่วงหน้า", "payroll-liability": "เงินเดือน/ประกันสังคมค้างจ่าย", "current-liability": "หนี้สินหมุนเวียนอื่น", "capital": "ทุน", "retained": "กำไรสะสม", "current-year": "กำไรขาดทุนปีปัจจุบัน", "opening": "ยอดยกมา", "sales": "ขาย/บริการ", "contra-sales": "รับคืน/ส่วนลดขาย", "other-income": "รายได้อื่น", "expense": "ค่าใช้จ่าย", "payroll-expense": "ค่าใช้จ่ายเงินเดือน"},
+      "dbdLine": {"bs-cash": "เงินสดและเงินฝากธนาคาร", "bs-receivables": "ลูกหนี้การค้า", "bs-prepaid": "ค่าใช้จ่ายจ่ายล่วงหน้า", "bs-tax-asset": "ภาษีซื้อ/ภาษีหัก ณ ที่จ่ายรอรับ", "bs-other-current": "สินทรัพย์หมุนเวียนอื่น", "bs-ppe": "ที่ดิน อาคารและอุปกรณ์", "bs-accum-dep": "หัก ค่าเสื่อมราคาสะสม", "bs-payables": "เจ้าหนี้การค้า", "bs-accrued": "ค่าใช้จ่ายค้างจ่าย", "bs-tax-payable": "ภาษีค้างจ่าย", "bs-deposits-received": "เงินรับล่วงหน้า", "bs-payroll-payable": "เงินเดือนและประกันสังคมค้างจ่าย", "bs-capital": "ทุนเรือนหุ้น", "bs-retained": "กำไร(ขาดทุน)สะสม", "pl-revenue": "รายได้จากการขายหรือบริการ", "pl-other-income": "รายได้อื่น", "pl-cost": "ต้นทุนขายและบริการ", "pl-selling-admin": "ค่าใช้จ่ายในการขายและบริหาร", "pl-other-expense": "ค่าใช้จ่ายอื่น", "pl-finance-cost": "ต้นทุนทางการเงิน", "pl-income-tax": "ภาษีเงินได้"},
+      "pnd50Box": {"p50-revenue": "รายได้จากการขายและบริการ", "p50-other-income": "รายได้อื่น", "p50-cost": "ต้นทุนขาย", "p50-expense": "ค่าใช้จ่ายในการขายและบริหาร", "p50-nondeductible": "รายจ่ายต้องห้าม/ภาษี"}
     },
     "view": {
       "tabs": { "info": "ข้อมูล", "docs": "เอกสาร", "open": "ยอดค้าง" }, "tin": "เลขประจำตัวผู้เสียภาษี", "branch": "สาขา",
@@ -1039,6 +1046,7 @@
     "bank_manage": "จัดการบัญชีธนาคารและนำเข้า statement",
     "bank_reconcile": "กระทบยอดบัญชีธนาคาร",
     "ledger_read": "ดูบัญชีแยกประเภท",
+    "ledger_coa_manage": "จัดการผังบัญชี",
     "payroll_read": "ดูข้อมูลเงินเดือน",
     "audit_read": "ดูประวัติการตรวจสอบ",
     "settings_manage": "จัดการการตั้งค่า",
