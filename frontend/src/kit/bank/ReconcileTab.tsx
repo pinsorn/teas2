@@ -45,14 +45,16 @@ export function ReconcileTab({ accountId, accountCode, permissions, focusLine, o
   const [matching, setMatching] = useState<BankLine>();
   const [posting, setPosting] = useState<BankLine>();
   const [transferring, setTransferring] = useState<BankLine>();
-  const [asking, setAsking] = useState<{ line: BankLine; command: 'unmatch' | 'unignore' }>();
+  const [asking, setAsking] = useState<{ line: BankLine; command: 'unmatch' | 'unignore' | 'reverse' }>();
   const [reason, setReason] = useState('');
   const [lockDate, setLockDate] = useState('');
   const rec = useQuery({ queryKey: qk.bankReconciliation(company, accountId), queryFn: () => endpoints.getReconciliation(accountId), enabled: !!me && allowed });
 
   const refresh = () => qc.invalidateQueries({ queryKey: [company] });
   const command = useMutation({
-    mutationFn: (v: { line: BankLine; command: 'unmatch' | 'ignore' | 'unignore'; reason?: string }) => endpoints.bankLineCommand(v.line.id, v.command, v.reason),
+    mutationFn: (v: { line: BankLine; command: 'unmatch' | 'ignore' | 'unignore' | 'reverse'; reason?: string }) => (v.command === 'reverse'
+      ? endpoints.reverseBankTransfer((v.line.transfer?.journalId ?? v.line.transferPending)!, v.reason ?? '').then(() => undefined)
+      : endpoints.bankLineCommand(v.line.id, v.command, v.reason).then(() => undefined)),
     onSuccess: async () => { await refresh(); setAsking(undefined); setReason(''); },
   });
   const lock = useMutation({
@@ -67,12 +69,13 @@ export function ReconcileTab({ accountId, accountCode, permissions, focusLine, o
   const err = command.error ?? lock.error;
   const actions = (l: BankLine) => {
     const b = (label: string, fn: () => void, variant: 'default' | 'outline' = 'outline') => <Button key={label} size="sm" variant={variant} disabled={command.isPending} onClick={fn}>{label}</Button>;
-    if (l.status === 'unmatched') return [b(t('find'), () => setMatching(l), 'default'), b(t('post.open'), () => setPosting(l)), b(t('transfer.open'), () => setTransferring(l)), b(t('ignore'), () => command.mutate({ line: l, command: 'ignore' }))];
-    if (l.status === 'matched') return [b(t('unmatch'), () => { setReason(''); setAsking({ line: l, command: 'unmatch' }); })];
+    if (l.status === 'unmatched') return [b(t('find'), () => setMatching(l), 'default'), b(t('post.open'), () => setPosting(l)), b(t('transfer.open'), () => setTransferring(l)), b(t('ignore'), () => command.mutate({ line: l, command: 'ignore' })),
+      ...(l.transferPending ? [b(t('transfer.reverse'), () => { setReason(''); setAsking({ line: l, command: 'reverse' }); })] : [])];
+    if (l.status === 'matched') return [b(t('unmatch'), () => { setReason(''); setAsking({ line: l, command: 'unmatch' }); }), ...(l.transfer ? [b(t('transfer.reverse'), () => { setReason(''); setAsking({ line: l, command: 'reverse' }); })] : [])];
     if (l.status === 'ignored') return [b(t('unignore'), () => { setReason(''); setAsking({ line: l, command: 'unignore' }); })];
     return [<span key="p" className="text-small text-muted-foreground">{t('postedFinal')}</span>];
   };
-  const need = asking?.line.locked && !reason.trim();
+  const need = (asking?.line.locked || asking?.command === 'reverse') && !reason.trim();
 
   return (
     <div className="grid gap-6">
@@ -113,17 +116,17 @@ export function ReconcileTab({ accountId, accountCode, permissions, focusLine, o
         <AlertDialog open onOpenChange={(o) => { if (!o) { setAsking(undefined); command.reset(); } }}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>{t(`${asking.command}Title`)}</AlertDialogTitle>
-              <AlertDialogDescription>{asking.line.locked ? t('lockedReason') : t('reasonOptional')}</AlertDialogDescription>
+              <AlertDialogTitle>{asking.command === 'reverse' ? t('transfer.reverse') : t(`${asking.command}Title`)}</AlertDialogTitle>
+              <AlertDialogDescription>{asking.command === 'reverse' ? t('transfer.reverseDesc') : asking.line.locked ? t('lockedReason') : t('reasonOptional')}</AlertDialogDescription>
             </AlertDialogHeader>
             <div className="grid gap-1.5">
-              <Label htmlFor={`${id}-reason`}>{t('reason')}{asking.line.locked ? <span aria-hidden> *</span> : null}</Label>
+              <Label htmlFor={`${id}-reason`}>{t('reason')}{asking.line.locked || asking.command === 'reverse' ? <span aria-hidden> *</span> : null}</Label>
               <Input id={`${id}-reason`} value={reason} onChange={(e) => setReason(e.target.value)} />
             </div>
             {command.error ? <p role="alert" className="text-destructive">{problemOf(command.error, t('failed')).title}</p> : null}
             <AlertDialogFooter>
               <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-              <AlertDialogAction disabled={need || command.isPending} onClick={(e) => { e.preventDefault(); command.mutate({ line: asking.line, command: asking.command, reason: reason.trim() || undefined }); }}>{t(asking.command)}</AlertDialogAction>
+              <AlertDialogAction disabled={need || command.isPending} onClick={(e) => { e.preventDefault(); command.mutate({ line: asking.line, command: asking.command, reason: reason.trim() || undefined }); }}>{asking.command === 'reverse' ? t('transfer.reverse') : t(asking.command)}</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

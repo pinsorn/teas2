@@ -1,4 +1,3 @@
-import { LIVE } from '@/domain/doc-types';
 import type { ReportModel, ReportRow } from '@/domain/reports';
 import type { MockState } from '../../store';
 import { companyEntries } from '../ledger';
@@ -24,8 +23,8 @@ export function bankReconciliation(st: MockState, companyId: string, p: BankRecP
   let gl = 0;
   for (const e of companyEntries(st, companyId)) if (e.date <= to) for (const g of e.lines) if (g.accountCode === code) gl += toSatang(g.debit) - toSatang(g.credit);
 
-  // journal side: what the books carry by `to` that the statement has not shown yet (or the other way round): each live RC / PV of the account dated on or after its go-live (I4: earlier ones are inside the opening
-  // balance), and each transfer journal touching it. The journal is the source; its matched lines (dated <= to) are taken off. M1: the heading is the item's own kind, the sign is its amount.
+  // journal side: what the books carry by `to` that the statement has not shown yet (or the other way round): each live RC / PV of the account, by its journal ENTRIES dated on or after the account's go-live (R1-2: whatever the document date - earlier entries are inside the opening
+  // balance, a later reversal / correction of an old document shows as a row), and each transfer journal touching it. The journal is the source; its matched lines (dated <= to) are taken off. M1: the heading is the item's own kind, the sign is its amount.
   const first = st.bankImports.filter((i) => i.companyId === companyId && i.accountId === bank.id).sort((a, b) => a.from.localeCompare(b.from))[0];
   const goLive = first?.from;
   const matchedBy = new Map<string, number>(); // docId -> Σ shares on lines <= to
@@ -33,11 +32,10 @@ export function bankReconciliation(st: MockState, companyId: string, p: BankRecP
   type Item = { row: ReportRow; sat: number };
   const transit: Item[] = [], outstanding: Item[] = [];
   const effectOn = (entries: { date: string; lines: { accountCode: string; debit: string; credit: string }[] }[]) =>
-    entries.filter((e) => e.date <= to).reduce((n, e) => n + e.lines.filter((g) => g.accountCode === code).reduce((x, g) => x + toSatang(g.debit) - toSatang(g.credit), 0), 0);
+    entries.filter((e) => e.date <= to && (!goLive || e.date >= goLive)).reduce((n, e) => n + e.lines.filter((g) => g.accountCode === code).reduce((x, g) => x + toSatang(g.debit) - toSatang(g.credit), 0), 0);
   const lineSum = (pick: (l: (typeof st.bankLines)[number]) => boolean) => st.bankLines.filter((l) => l.companyId === companyId && l.accountId === bank.id && l.date <= to && pick(l)).reduce((n, l) => n + toSatang(l.amount), 0);
   for (const d of st.docs) {
-    if (d.companyId !== companyId || (d.type !== 'RC' && d.type !== 'PV') || !LIVE.includes(d.status) || resolvedBankId(st, companyId, d.type, d.header) !== bank.id) continue;
-    if (goLive && d.header.documentDate < goLive) continue;
+    if (d.companyId !== companyId || (d.type !== 'RC' && d.type !== 'PV') || resolvedBankId(st, companyId, d.type, d.header) !== bank.id) continue;
     const effect = effectOn(st.journals.find((x) => x.docId === d.id)?.preview.entries ?? []);
     const left = effect - (d.type === 'RC' ? 1 : -1) * (matchedBy.get(d.id) ?? 0);
     if (left === 0) continue;

@@ -78,6 +78,8 @@ export const endpoints = {
     api<BankLine>('POST', `/finance/bank-lines/${encodeURIComponent(lineId)}/${command}`, { reason }),
   /** I2: a line that is money moving to / from another own account. */
   transferBankLine: (lineId: string, toAccountId: string) => api<BankLine>('POST', `/finance/bank-lines/${encodeURIComponent(lineId)}/transfer`, { toAccountId }),
+  /** R1-1: reverse a transfer journal (both lines unmatched, a reason). */
+  reverseBankTransfer: (journalId: string, reason: string) => api<{ id: string; reversed: boolean }>('POST', `/finance/bank-journals/${encodeURIComponent(journalId)}/reverse`, { reason }),
   postBankLine: (lineId: string, body: { accountCode: string; description?: string }) =>
     api<BankLine>('POST', `/finance/bank-lines/${encodeURIComponent(lineId)}/post`, body),
   postableAccounts: () => api<PostableAccount[]>('GET', '/finance/postable-accounts'),

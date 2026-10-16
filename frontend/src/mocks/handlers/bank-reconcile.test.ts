@@ -117,7 +117,11 @@ describe('transfer between own accounts over HTTP', () => {
     const c = (await (await call('GET', '/finance/bank-lines/scb-1/candidates')).json()) as { items: { docId: string; type: string }[] };
     expect(c.items).toEqual([expect.objectContaining({ docId: j.id, type: 'TR' })]);
     expect((await call('POST', '/finance/bank-lines/scb-1/match', { docIds: [j.id] })).status).toBe(200);
-    expect(((await (await call('POST', `/finance/bank-journals/${j.id}/reverse`)).json()) as { code: string }).code).toBe('bank.transfer_matched');
+    expect(((await (await call('POST', `/finance/bank-journals/${j.id}/reverse`, { reason: 'x' })).json()) as { code: string }).code).toBe('bank.transfer_matched');
+    expect((await call('POST', '/finance/bank-lines/scb-1/unmatch', {})).status).toBe(200);
+    expect((await call('POST', '/finance/bank-lines/bi-001-001/unmatch', {})).status).toBe(200);
+    expect(((await (await call('POST', `/finance/bank-journals/${j.id}/reverse`, {})).json()) as { code: string }).code).toBe('bank.reason_required');
+    expect((await call('POST', `/finance/bank-journals/${j.id}/reverse`, { reason: 'ผิดบัญชี' })).status).toBe(200);
     const bad = await call('POST', '/finance/bank-lines/bi-001-002/transfer', { toAccountId: 'ba-kbank' });
     expect(((await bad.json()) as { code: string }).code).toBe('bank.transfer_same_account');
   });

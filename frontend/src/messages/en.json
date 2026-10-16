@@ -811,7 +811,7 @@
         "description": "Description", "final": "Once posted it cannot be edited; reverse the journal if it is wrong", "submit": "Book", "submitting": "Booking"
       },
       "transfer": {
-        "open": "Transfer between accounts", "title": "Transfer between the company's accounts", "account": "Account on the other side", "choose": "— choose an account —", "tag": "Transfer",
+        "reverse": "Reverse transfer", "reverseDesc": "Reverses this transfer's journal (both lines must be unmatched first). A reason is required and recorded.", "open": "Transfer between accounts", "title": "Transfer between the company's accounts", "account": "Account on the other side", "choose": "— choose an account —", "tag": "Transfer",
         "hint": "Booked once: debit the receiving account, credit the paying one, and this line is matched. The other account's line is offered the same journal when an equal amount shows on its statement", "submit": "Transfer", "submitting": "Booking"
       },
       "report": { "title": "Bank reconciliation report", "account": "Account" }

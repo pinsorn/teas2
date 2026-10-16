@@ -14,7 +14,7 @@ import { adjustSnapshot, hasSnapshot, isNote, noteHeader, noteMissing, noteProbl
 import { SeriesAllocator } from './numbering';
 import { refuseReconciled } from './locks';
 import { firstOpenDate, isClosed, monthLabelTh } from './periods';
-import { balanceOf, certError, cleanAllocations, fiscalAllocations, freezeWht, groupTotals, payDefaults, payLines, payoutOf, settleExtras, settleProblem, settleTotals, withBankSnapshot } from './settlement';
+import { balanceOf, certError, cleanAllocations, fiscalAllocations, freezeWht, groupTotals, payDefaults, payLines, payoutOf, resolvedBankId, settleExtras, settleProblem, settleTotals, withBankSnapshot } from './settlement';
 import { syncWts } from './wht-certificates';
 import { cleanInvoices, isVendorBill, issueVendorStatus, purchaseProblem, snapshotCategories, snapshotWhtTypes, withClaimPeriod, withForfeit, withVendorStatus } from './purchase-vat';
 import { computeDoc, vatBasisOf, vatOf } from './vat';
@@ -43,14 +43,30 @@ const reverseEntry = (st: MockState, companyId: string, e: JournalEntryPreview):
   isPinned() ? reversalOf(e, stamp().slice(0, 10), stamp()) // seed history: reversed on its own (pinned) date, in the period that was open then
     : isClosed(st, companyId, e.date) ? { ...reversalOf(e, firstOpenDate(st, companyId), stamp()), late: true } : reversalOf(e, today(), stamp());
 
-/** A correction's reversal (SP0 5.9): on the ORIGINAL entry's date while that period is open, else late on the first open date. Only a user cancel posts its reversal today. */
+/** The first statement date of a bank account = its go-live: the opening balance carries everything before it (I4). */
+export const goLiveOf = (st: MockState, companyId: string, accountId: string | undefined): IsoDate | undefined =>
+  st.bankImports.filter((i) => i.companyId === companyId && i.accountId === accountId).map((i) => i.from).sort()[0];
+/** R1-2: go-live is a closed boundary for the bank's GL. An entry touching it posts no earlier than go-live: a reversal or correction of an older document is late-posted on that date (like a closed period), so the reconciliation shows it. */
+const bankFloor = (st: MockState, companyId: string, e: JournalEntryPreview): JournalEntryPreview => {
+  let floor: IsoDate | undefined;
+  for (const b of st.bankAccounts) {
+    if (b.companyId !== companyId || !e.lines.some((g) => g.accountCode === b.accountCode)) continue;
+    const g = goLiveOf(st, companyId, b.id);
+    if (g && (!floor || g > floor)) floor = g;
+  }
+  return floor && e.date < floor ? { ...e, date: floor, late: true } : e;
+};
+
+/** A correction's reversal (SP0 5.9): on the ORIGINAL entry's date while that period is open, else late on the first open date (never before a bank GL's go-live). Only a user cancel posts its reversal today. */
 export const correctionReversal = (st: MockState, companyId: string, e: JournalEntryPreview): JournalEntryPreview =>
-  isPinned() || isClosed(st, companyId, e.date) ? reverseEntry(st, companyId, e) : reversalOf(e, e.date, stamp());
+  bankFloor(st, companyId, isPinned() || isClosed(st, companyId, e.date) ? reverseEntry(st, companyId, e) : reversalOf(e, e.date, stamp()));
 
 /** D-10: a NEW entry for a document dated in a closed month posts on the first open date, late; the document date is unchanged (I9). */
 const postedNow = (st: MockState, companyId: string, p: JournalPreview): JournalPreview => {
   const [first, ...rest] = p.entries;
-  return first && !isPinned() && isClosed(st, companyId, first.date) ? { entries: [{ ...first, date: firstOpenDate(st, companyId), late: true }, ...rest] } : p;
+  if (!first) return p;
+  const f = !isPinned() && isClosed(st, companyId, first.date) ? { ...first, date: firstOpenDate(st, companyId), late: true } : first;
+  return { entries: [bankFloor(st, companyId, f), ...rest] };
 };
 
 export const publicDoc = (d: Stored): Doc => { const { companyId, ...r } = d; void companyId; return structuredClone(r); };
@@ -374,6 +390,10 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   const missing = missingOf(st, d.companyId, d.type, body);
   if (missing.length) throw incomplete(missing);
   if (!opts?.keepDate) dateGuards(st, d.companyId, d.header.documentDate); // D-10
+  if (!opts?.keepDate && !isPinned() && (d.type === 'RC' || d.type === 'PV')) { // R1-2: a new receipt / voucher cannot put an entry on a bank GL before its go-live
+    const live = goLiveOf(st, d.companyId, resolvedBankId(st, d.companyId, d.type, d.header));
+    if (live && d.header.documentDate < live) throw new MockError(422, 'bank.before_go_live', `บัญชีธนาคารนี้เริ่มกระทบยอดกับ statement ตั้งแต่ ${live} ออกเอกสารลงวันที่ก่อนนั้นไม่ได้ ให้เปลี่ยนวันที่เป็น ${live} เป็นต้นไป`);
+  }
   refuseNonPositive(st, d.companyId, d.type, body);
   const np = noteProblem(st, d.companyId, d.type, body); // the invoice, its lines and the per-line cap, judged before anything is written
   if (np) throw np;
@@ -608,7 +628,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
     const live = prev[prev.length - 1];
     const fresh = ledgerFor(st, getDoc(st, id)).entries[0];
     setJournal(st, id, { entries: [...prev, ...(live && live.kind !== 'reversal' ? [correctionReversal(st, d.companyId, live)] : []),
-      ...(fresh ? [{ ...fresh, kind: 'correction' as const, postedAt: stamp(), ...(!isPinned() && isClosed(st, d.companyId, fresh.date) ? { date: firstOpenDate(st, d.companyId), late: true } : {}) }] : [])] });
+      ...(fresh ? [bankFloor(st, d.companyId, { ...fresh, kind: 'correction' as const, postedAt: stamp(), ...(!isPinned() && isClosed(st, d.companyId, fresh.date) ? { date: firstOpenDate(st, d.companyId), late: true } : {}) })] : [])] });
   }
   if (d.type === 'PV') { syncWts(st, id, actor); settlePaidUpRecords(st, id, [...(d.allocations ?? []), ...(next.allocations ?? [])].map((a) => a.targetId)); } // changed WHT: the old certificates are cancelled and new ones issued; unchanged WHT keeps them (§7.3 L)
   const at = stamp();

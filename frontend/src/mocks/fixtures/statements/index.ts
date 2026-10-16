@@ -14,6 +14,8 @@ export function seedBankStatements(st: MockState): void {
   withFixedClock('2026-10-01T09:00:00+07:00', () => {
     const a = importStatement(st, 'co-vat', 'ba-kbank', { fileName: KPLUS_SAMPLE_NAME, format: 'kplus-pdf', content: KPLUS_SAMPLE_BASE64 }, USER, { seed: true });
     const b = importStatement(st, 'co-nonvat', 'nba-kbank', { fileName: NBANK_SEP_NAME, format: 'kbiz-csv', content: utf8Base64(NBANK_SEP_CSV) }, USER, { seed: true });
+    // FN2 / R1-m2: the seed company has ten months of history before the statement, so the go-live adjustment (Dr / Cr bank against 3900) brings the bank GL to the statement's opening;
+    // 3900 therefore carries a debit balance (negative opening equity) in the seed TB. Seed fiction, kept consistent: history before the statement lives inside that opening.
     // FN2: the GL carries the balance the statements start from (the day before the first line), so the account reconciles to its statement
     for (const [co, imp] of [['co-vat', a], ['co-nonvat', b]] as const) postOpening(st, co, imp.accountId, new Date(Date.parse(`${imp.from}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10), imp.opening);
   });

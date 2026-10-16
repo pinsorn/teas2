@@ -103,6 +103,7 @@ export interface BankMatch { docId: string; type: 'RC' | 'PV'; number: string; a
 export interface BankLine { id: string; accountId: string; importId: string; date: IsoDate; description: string; amount: Money; balance: Money;
   status: 'unmatched' | 'matched' | 'ignored' | 'posted'; matchedDocIds?: string[]; matches?: BankMatch[]; diff?: { role: 'BankFee' | 'RoundingDifference'; amount: Money; journalId: string };
   journalId?: string; locked?: boolean; note?: string;
+  /** Unmatched, but a transfer journal it made is still in force (the exit: transfer again to the same account, or reverse it). */ transferPending?: string;
   /** Matched to a transfer journal between two own accounts (instead of documents): `side` is this line's own side of it. */ transfer?: { journalId: string; side: 'out' | 'in' } }
 /** A journal the reconciliation wrote (no document behind it): the fee / rounding difference of a match, an inline journal of a statement line, or the seeded opening balance. A reversal is appended, an entry is never edited. */
 export interface BankJournal { id: string; companyId: string; accountId: string; lineId?: string; kind: 'fee' | 'inline' | 'opening' | 'transfer'; label: string; entries: JournalEntryPreview[];

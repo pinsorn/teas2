@@ -132,14 +132,14 @@ describe('I2: transfers between own accounts', () => {
   it('reversing the journal needs both sides unmatched; then it is reversed once and the lines are free', () => {
     transfer(st, CO, OUT, 'ba-scb', ME);
     const j = st.bankJournals.find((x) => x.kind === 'transfer')!;
-    expect(err(() => reverseTransfer(st, CO, j.id, ME)).code).toBe('bank.transfer_matched');
+    expect(err(() => reverseTransfer(st, CO, j.id, ME, 'ทดสอบ')).code).toBe('bank.transfer_matched');
     unmatch(st, CO, OUT, ME);
     const before = glSum();
-    reverseTransfer(st, CO, j.id, ME);
+    reverseTransfer(st, CO, j.id, ME, 'ทดสอบ');
     expect(j.entries.map((e) => e.kind)).toEqual(['original', 'reversal']);
     expect(glBalance(st, CO, '1121', '2026-12-31') - before).toBe(0);
     expect(glSum()).toBe(before);
-    expect(err(() => reverseTransfer(st, CO, j.id, ME)).code).toBe('bank.transfer_reversed');
+    expect(err(() => reverseTransfer(st, CO, j.id, ME, 'ทดสอบ')).code).toBe('bank.transfer_reversed');
     expect(post(st, CO, OUT, { accountCode: '5200' }, ME).status).toBe('posted'); // free again
     expect(suggest(st, CO, addLine('s-rev', line(OUT).date, '35000.00', 'ba-scb'))).toEqual([]);
     expect(checkInvariants(st)).toEqual([]);

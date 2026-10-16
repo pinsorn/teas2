@@ -92,6 +92,17 @@ test('a transfer to another own account books one journal, matches the line, and
   await expect(row).toContainText('จับคู่แล้ว');
   await expect(row).toContainText('โอนระหว่างบัญชี');
   await expect(report.getByText('ยอดกระทบตรงกัน', { exact: false })).toBeVisible();
+  // the exit of a mis-targeted transfer: unmatch, reverse (a reason is required), then the line is free again
+  await row.getByRole('button', { name: 'ยกเลิกการจับคู่' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'ยกเลิกการจับคู่' }).click();
+  await expect(row).toContainText('ยังไม่จับคู่');
+  await row.getByRole('button', { name: 'ย้อนการโอน' }).click();
+  const why = page.getByRole('alertdialog');
+  await expect(why.getByRole('button', { name: 'ย้อนการโอน' })).toBeDisabled();
+  await why.getByRole('textbox', { name: /เหตุผล/ }).fill('โอนผิดบัญชี');
+  await why.getByRole('button', { name: 'ย้อนการโอน' }).click();
+  await expect(row.getByRole('button', { name: 'ย้อนการโอน' })).toHaveCount(0);
+  await expect(row.getByRole('button', { name: 'โอนระหว่างบัญชี' })).toBeVisible();
 });
 
 test('lock to a date: refused while lines are open; then locked lines need a reason to unmatch', async ({ page }) => {

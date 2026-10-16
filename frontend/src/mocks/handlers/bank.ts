@@ -83,8 +83,9 @@ export const bankHandlers = [
     persist(c.st);
     return HttpResponse.json(line);
   })),
-  http.post('*/bff/v1/finance/bank-journals/:id/reverse', ({ params }) => guarded('item', RECONCILE, (c) => {
-    const j = reverseTransfer(c.st, c.company.id, String(params.id), ACTOR);
+  http.post('*/bff/v1/finance/bank-journals/:id/reverse', ({ request, params }) => guarded('item', RECONCILE, async (c) => {
+    const body = ((await request.json().catch(() => undefined)) ?? {}) as { reason?: string };
+    const j = reverseTransfer(c.st, c.company.id, String(params.id), ACTOR, body.reason);
     persist(c.st);
     return HttpResponse.json({ id: j.id, reversed: true });
   })),
