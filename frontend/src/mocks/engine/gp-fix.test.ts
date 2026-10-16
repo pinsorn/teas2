@@ -68,6 +68,29 @@ describe('m2: after approval, which documents a gated voucher pays is part of th
   });
 });
 
+describe('GP-m1: a date-only revise keeps the stored WHT', () => {
+  it('Z1: PV2 keeps base 934.58 / WHT 28.04 and its certificate after a date-only revise, even after a PCN changed the bill', () => {
+    const st = buildSeedState();
+    const b = pb(st, [svc('10000.00'), L('g', 'S7', '10000.00', { expenseCategory: 'supplies' })]);
+    const mk = (amount: string) => { const d = pvDraft(st, [alloc(b, amount)]); return issue(st, d.id, d.version, me).id; };
+    mk('21400.00');
+    const pdn = createDraft(st, 'co-vat', 'PDN', { header: { documentDate: '2026-10-14', refDocId: b, reasonCode: 'PRICE_INCREASE' }, lines: [L('c', 'S7', '2000.00', { sourceLineId: 's' })] }, me, k());
+    issue(st, pdn.id, pdn.version, me);
+    const p2 = mk('1000.00');
+    const pcn = createDraft(st, 'co-vat', 'PCN', { header: { documentDate: '2026-10-14', refDocId: b, reasonCode: 'DISCOUNT' }, lines: [L('c', 'S7', '1271.03', { sourceLineId: 'g' })] }, me, k());
+    issue(st, pcn.id, pcn.version, me);
+    const before = structuredClone(g(st, p2));
+    expect(before.whtFrozen!.bases[0].base).toBe('934.58');
+    expect(before.totals.wht).toBe('28.04');
+    revise(st, p2, { header: { ...before.header, documentDate: '2026-10-13' }, lines: [], allocations: before.allocations }, before.version, 'date', me);
+    const after = g(st, p2);
+    expect(after.header.documentDate).toBe('2026-10-13');
+    expect(after.whtFrozen).toEqual(before.whtFrozen);
+    expect([after.totals.wht, after.totals.cash]).toEqual([before.totals.wht, before.totals.cash]);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+});
+
 describe('GP-I1: each voucher withholds on its own share of what the bill still owed; the paying-up voucher takes the remainder', () => {
   const setup = () => {
     const st = buildSeedState();

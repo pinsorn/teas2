@@ -248,11 +248,11 @@ function settlePaidUpRecords(st: MockState, pvId: string, bills: string[]): void
   }
 }
 
-/** C1: a PV's withholding figures are fixed with the voucher. Kept as stored while nothing that feeds them changed (own lines, allocations, mode, payee, date, price basis), else taken afresh (I1). */
+/** C1: a PV's withholding figures are fixed with the voucher. Kept as stored while the voucher's own money is unchanged (own lines, allocations - targets and amounts, WHT mode, payee; the price basis counts only with own lines), else taken afresh (I1). A date, notes or reference never re-freeze it. */
 function withWht(st: MockState, companyId: string, type: DocType, body: Body, own?: Stored): Body {
   if (type !== 'PV') return body;
   const same = !!own?.whtFrozen && sameLines(body.lines, own.lines) && fiscalAllocations(body.allocations) === fiscalAllocations(own.allocations) && body.header.whtMode === own.header.whtMode
-    && body.header.partyId === own.header.partyId && body.header.documentDate === own.header.documentDate && !!body.header.priceIncludesVat === !!own.header.priceIncludesVat;
+    && body.header.partyId === own.header.partyId && (!body.lines.length || !!body.header.priceIncludesVat === !!own.header.priceIncludesVat);
   return { ...body, whtFrozen: same ? own!.whtFrozen : freezeWht(st, companyId, body, own?.id) };
 }
 
