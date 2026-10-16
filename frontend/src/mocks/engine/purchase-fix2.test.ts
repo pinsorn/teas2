@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { Doc, DocLine } from '@/domain/types';
 import { USER as me } from '../fixtures/documents';
 import { seed, type MockState } from '../store';
-import { compute, createDraft, issue, revise } from './commands';
+import { cancel, compute, createDraft, issue, revise } from './commands';
 import { checkInvariants } from './invariants';
 import { toSatang } from './money';
 import { assertBalanced } from './test-helpers';
@@ -145,6 +145,80 @@ describe('R1-M3 / M4', () => {
     const moved = revise(st, b.id, { header: get(b.id).header, lines: [L('a', 'S7', '1000.00', { expenseCategory: 'rent' })] }, get(b.id).version, 'x', me);
     expect(moved.lines[0].expenseCategory).toBe('rent');
     assertBalanced(st);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+});
+
+describe('round 3 regressions (probe5): the forfeit flag across revise, stale drafts, note mixes and the non-VAT company', () => {
+  const rev = (id: string, h: Partial<Doc['header']>) => revise(st, id, { header: { ...get(id).header, ...h }, lines: get(id).lines }, get(id).version, 'x', me);
+
+  it('a revise that moves the vendor date flips the flag both ways and reposts (un-forfeit claims in the document month, re-forfeit gives it back as cost)', () => {
+    const b = pb({ vendorDocDate: '2026-03-01' }, [L('a', 'S7', '1000.00', { expenseCategory: 'services' })], 'pv-03');
+    rev(b.id, { vendorDocDate: '2026-10-01' });
+    expect(get(b.id).header.inputVatForfeited).toBeUndefined();
+    expect(get(b.id).header.claimPeriod).toBe('2026-10');
+    expect([net('1170', b.id), net('5170', b.id)]).toEqual([sat('70.00'), 0]);
+    expect(checkInvariants(st)).toEqual([]);
+    rev(b.id, { vendorDocDate: '2026-02-01' });
+    expect(get(b.id).header.inputVatForfeited).toBe(true);
+    expect(get(b.id).header.claimPeriod).toBeUndefined();
+    expect([net('1170', b.id), net('5170', b.id)]).toEqual([0, sat('70.00')]);
+    assertBalanced(st);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+
+  it('a PCN of a forfeited bill mirrors cost / asset; the bill cannot un-forfeit under it; a stale draft PCN is re-derived at issue once the bill is un-forfeited', () => {
+    const b = pb({ vendorDocDate: '2026-03-01' }, [L('a', 'S7', '1000.00', { expenseCategory: 'services' }), L('b', 'S7', '10000.00', { expenseCategory: 'capex-equipment' })], 'pv-03');
+    const c = issueDraft(note('PCN', b, [L('c', 'S7', '1000.00', { sourceLineId: 'a' }), L('d', 'S7', '1000.00', { sourceLineId: 'b' })]));
+    expect(get(c.id).header.inputVatForfeited).toBe(true);
+    expect(jl(c.id)).toBe(['5120 0.00/1000.00', '5170 0.00/70.00', '1210 0.00/1070.00', '2110 2140.00/0.00'].sort().join(' | '));
+    expect(err(() => rev(b.id, { vendorDocDate: '2026-10-01' })).code).toBe('pb.has_notes');
+    rev(b.id, { claimPeriod: '2026-10' }); // a period sent on a forfeited bill is dropped, the flag stands
+    expect(get(b.id).header.inputVatForfeited).toBe(true);
+    expect(net('1170', b.id, c.id)).toBe(0);
+    expect(checkInvariants(st)).toEqual([]);
+    const stale = note('PCN', b, [L('e', 'S7', '500.00', { sourceLineId: 'a' })]);
+    expect(stale.header.inputVatForfeited).toBe(true);
+    // exit: cancel the live note, un-forfeit the bill, then issue the stale draft
+    cancel(st, c.id, get(c.id).version, 'OTHER', 'x', me);
+    rev(b.id, { vendorDocDate: '2026-10-01' });
+    expect(get(b.id).header.inputVatForfeited).toBeUndefined();
+    const issued = issueDraft(stale);
+    expect(issued.header.inputVatForfeited).toBeUndefined();
+    expect(jl(stale.id)).toContain('1170 0.00/35.00');
+    expect(net('1170', b.id, c.id, stale.id)).toBe(sat('770.00') - sat('35.00')); // 70 + 700 claimed, 35 given back
+    assertBalanced(st);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+
+  it('partial PDN + full PCN on a forfeited bill, and a forfeited PDN + full PCN on a claimed bill: the invariants and the 1170 / 5170 totals hold', () => {
+    const b = pb({ vendorDocDate: '2026-03-01' }, [L('a', 'S7', '1000.00', { expenseCategory: 'services' })], 'pv-03');
+    const d1 = issueDraft(note('PDN', b, [L('c', 'S7', '500.00', { sourceLineId: 'a' })])); // its own vendor date = the document: claimed
+    expect(get(d1.id).header.inputVatForfeited).toBeUndefined();
+    const d2 = issueDraft(note('PDN', b, [L('c', 'S7', '100.00', { sourceLineId: 'a' })], { vendorDocDate: '2026-02-01' })); // its own old invoice: cost
+    expect(get(d2.id).header.inputVatForfeited).toBe(true);
+    const c = issueDraft(note('PCN', b, [L('c', 'S7', '1000.00', { sourceLineId: 'a' })])); // follows the bill: no 1170
+    expect([net('1170', b.id, d1.id, d2.id, c.id), net('5170', b.id, d1.id, d2.id, c.id)]).toEqual([sat('35.00'), sat('7.00')]);
+    expect(get(b.id).outstanding).toBe('642.00'); // 1070 + 535 + 107 - 1070
+    expect(checkInvariants(st)).toEqual([]);
+
+    const b2 = pb({}, [L('a', 'S7', '1000.00', { expenseCategory: 'services' })], 'pv-03');
+    const f = issueDraft(note('PDN', b2, [L('c', 'S7', '1000.00', { sourceLineId: 'a' })], { vendorDocDate: '2026-02-01' }));
+    const c2 = issueDraft(note('PCN', b2, [L('c', 'S7', '1000.00', { sourceLineId: 'a' })]));
+    expect([net('1170', b2.id, f.id, c2.id), net('5170', b2.id, f.id, c2.id)]).toEqual([0, sat('70.00')]);
+    expect(get(b2.id).outstanding).toBe('1070.00');
+    assertBalanced(st);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+
+  it('the non-VAT company never forfeits: a sent flag is dropped, VAT stays cost / asset, its PCN mirrors', () => {
+    const d = createDraft(st, 'co-nonvat', 'PB', { header: { partyId: 'nv-03', documentDate: '2026-10-14', vendorDocDate: '2026-01-01', inputVatForfeited: true }, lines: [L('a', 'S7', '1000.00', { expenseCategory: 'capex-equipment' })] }, me, 'g-nv');
+    const b = issueDraft(d);
+    expect(get(b.id).header.inputVatForfeited).toBeUndefined();
+    expect(jl(b.id)).toBe(['1210 1070.00/0.00', '2110 0.00/1070.00'].sort().join(' | '));
+    const c = issueDraft(draft('PCN', { refDocId: b.id, reasonCode: 'PRICE_REDUCTION' }, [L('c', 'S7', '100.00', { sourceLineId: 'a' })], 'co-nonvat'));
+    expect(get(c.id).header.inputVatForfeited).toBeUndefined();
+    expect(jl(c.id)).toBe(['1210 0.00/107.00', '2110 107.00/0.00'].sort().join(' | '));
     expect(checkInvariants(st)).toEqual([]);
   });
 });
