@@ -13,3 +13,4 @@
 | 2026-10-16 | SP1c FN3 review (deposits, prepayments, netting, write-offs) | opus-reviewer | money diff — plan marks Opus |
 | 2026-10-16 | SP1c AC1 review (JV, reversals, accruals) | opus-reviewer | money / ledger — plan marks Opus for all AC tasks |
 | 2026-10-17 | SP1c AC3 review (opening balances, bank go-live) | opus-reviewer | money / ledger — plan marks Opus |
+| 2026-10-17 | SP1c AC4 review (schedules, amortisation runs, source lock) | opus-reviewer | money diff (GL runs on prepaid) — plan marks Opus; warm reviewer |
