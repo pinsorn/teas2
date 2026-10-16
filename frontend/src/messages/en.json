@@ -45,7 +45,7 @@
     },
     "paper": { "notPrintable": "No paper form is available for this document type", "notIssued": "This document has not been issued, so it cannot be printed as a tax invoice. Issue it first.", "stub": "The document paper preview appears here", "snapshot": "Revision {n}" },
     "chain": {
-      "empty": "No related documents", "self": "This document", "inactive": "No longer in effect",
+      "empty": "No related documents", "self": "This document", "inactive": "No longer in effect", "settlement": "Netting / deposit applied",
       "rel": {
         "converted_from": { "out": "Converted from", "in": "Converted into" },
         "settles": { "out": "Settles", "in": "Settled by" },
@@ -62,7 +62,7 @@
     },
     "activity": {
       "empty": "No activity yet",
-      "action": { "submit": "Submitted for approval", "approve": "Approved", "send_back": "Sent back for changes", "create": "Created draft", "issue": "Issued", "settle": "Payment received", "cancel": "Cancelled", "revise": "Revised", "convert": "Converted", "accept": "Customer accepted", "reject": "Customer rejected", "deliver": "Delivered", "close": "Remainder closed", "send": "Sent to vendor" }
+      "action": { "submit": "Submitted for approval", "approve": "Approved", "send_back": "Sent back for changes", "create": "Created draft", "issue": "Issued", "settle": "Payment received", "cancel": "Cancelled", "revise": "Revised", "convert": "Converted", "accept": "Customer accepted", "reject": "Customer rejected", "deliver": "Delivered", "close": "Remainder closed", "send": "Sent to vendor", "settlement": "Netting / deposit applied", "settlement_reverse": "Settlement reversed" }
     },
     "revisions": {
       "empty": "No history yet", "first": "First issued version", "n": "Revision {n}", "view": "View this version", "hide": "Hide this version",
@@ -222,6 +222,7 @@
       "expenseClaims": "Expense claims",
       "bankAccounts": "Bank accounts",
       "deposits": "Deposits and advances",
+      "settlements": "Netting and settlements",
       "journals": "Journals",
       "chartOfAccounts": "Chart of accounts",
       "openingBalances": "Opening balances",
@@ -412,6 +413,11 @@
       "bankView": "Bank account statement lines (KBank)",
       "bankEmpty": "Bank account with no statement lines yet",
       "nbankView": "Bank account statement lines (non-VAT)",
+      "depositsPage": "Deposits and advances",
+      "settlementsList": "Netting and settlements",
+      "settlementPosted": "Settlement - deposit applied (posted)",
+      "rcDepositApplied": "Deposit receipt that was applied (locked)",
+      "pvPrepayment": "Payment voucher with a prepayment",
       "styleGuide": "Style guide"
     },
     "state": { "normal": "Normal", "empty": "Empty", "loading": "Loading", "error": "Error", "forbidden": "Forbidden", "locked": "Locked" },
@@ -642,6 +648,9 @@
       "whtOfRC": "Tax withheld by the customer on {number}",
       "deposit": "Advance received (the part not allocated to any document)",
       "depositHint": "The customer paid in advance or overpaid: keep it as a customer deposit",
+      "prepayment": "Advance paid to the vendor (the part not allocated to any document)",
+      "prepaymentHint": "You paid the vendor in advance or overpaid: keep it as a vendor prepayment and apply it to a bill later from Deposits and advances",
+      "credits": { "label": "Advances remaining", "title": "This vendor has a prepayment left that can be applied to a bill", "titleRC": "This customer has an advance left that can be applied to an invoice", "use": "Apply to open documents" },
       "prefillSkipped": "Skipped: nothing left to receive",
       "skipSettled": "{number}: already paid in full",
       "skipCancelled": "{number}: cancelled or replaced",
@@ -779,6 +788,45 @@
       "notFoundTitle": "Record not found", "notFoundBody": "It may have been deleted, or it belongs to another company",
       "docsEmpty": "No documents for this party yet", "openEmpty": "Nothing outstanding", "openTotal": "Total outstanding", "number": "Number", "type": "Type",
       "date": "Date", "status": "Status", "total": "Total", "outstanding": "Outstanding", "due": "Due"
+    }
+  },
+  "settlement": {
+    "formTitle": "New netting / settlement",
+    "vatNote": "The output-VAT treatment of deposits awaits the SP-R ruling (no output VAT is posted from a deposit yet)",
+    "needManage": "Requires {permission}",
+    "notFoundTitle": "Settlement not found", "notFoundBody": "It is not in the selected company, or it was removed",
+    "kinds": { "apply_deposit": "Apply an advance received to an invoice", "apply_prepayment": "Apply an advance paid to a bill", "netting": "Net receivables against payables", "write_off": "Write off a small difference" },
+    "sources": { "apply_deposit": "Advances received applied", "apply_prepayment": "Advances paid applied", "netting": "Payables (bills) netted", "write_off": "Sources" },
+    "targets": { "apply_deposit": "Invoices settled", "apply_prepayment": "Bills settled", "netting": "Receivables (invoices) netted", "write_off": "Documents written down" },
+    "roles": { "RoundingDifference": "Rounding difference", "SmallWriteOff": "Small write-off", "BankFee": "Bank fee" },
+    "status": { "posted": "Posted", "reversed": "Reversed" },
+    "form": {
+      "kind": "Type", "date": "Date", "party": "Party", "pair": "Customer ⇄ vendor (the same company)", "side": "Side", "sideCustomer": "Receivable (customer)", "sideVendor": "Payable (vendor)",
+      "choose": "Choose…", "pickParty": "Pick a party first to see the documents that can be used", "noRows": "No documents available",
+      "number": "Number", "remaining": "Remaining", "outstanding": "Outstanding", "amount": "Amount to apply", "pick": "Select {number}", "amountOf": "Amount applied to {number}",
+      "differenceRole": "Difference", "noDifference": "No difference", "differenceAmount": "Difference amount", "tolerance": "Company tolerance: rounding up to {rounding}, write-off and bank fee up to {writeOff}",
+      "nettingHint": "Netting takes the same amount from the receivable and the payable side, with no difference", "reason": "Reason / note (optional)",
+      "cancel": "Cancel", "submit": "Post", "submitting": "Posting…", "failed": "Could not post"
+    },
+    "deposits": {
+      "title": "Deposits and advances", "new": "New netting / settlement", "history": "All settlements", "empty": "No deposits or advances left", "emptyBody": "When money is received or paid beyond the documents, the rest shows here and can be applied later",
+      "customer": { "title": "Advances received from customers", "empty": "No advances received left", "apply": "Apply to an invoice" },
+      "vendor": { "title": "Advances paid to vendors", "empty": "No advances paid left", "apply": "Apply to a bill" },
+      "number": "Number", "party": "Party", "date": "Date", "amount": "Total", "applied": "Applied", "remaining": "Remaining", "actions": "Actions"
+    },
+    "list": {
+      "title": "Netting and settlements", "intro": "Where an advance was applied, receivables were netted against payables or a small difference was written off. Money still waiting is at", "deposits": "Deposits and advances",
+      "new": "New settlement", "search": "Search settlements", "searchPlaceholder": "Search by number, document or party", "status": "Status", "all": "All statuses",
+      "empty": "No settlements yet", "emptyBody": "Create one to apply an advance to an invoice, net receivables against payables or write off a small difference",
+      "date": "Date", "number": "Number", "kind": "Type", "party": "Party", "sources": "From", "targets": "To", "statusCol": "Status"
+    },
+    "detail": {
+      "kind": "Type", "date": "Date", "party": "Party", "difference": "Difference", "reason": "Reason", "document": "Document", "amount": "Amount",
+      "journal": "Journal", "entry": { "original": "Original entry", "reversal": "Reversing entry", "correction": "Correcting entry" }, "late": "Posted late",
+      "account": "Account", "debit": "Debit", "credit": "Credit",
+      "reversedTitle": "Reversed on {at} by {by}", "reverse": "Reverse settlement", "reverseTitle": "Reverse {id}",
+      "reverseBody": "A reversing journal is posted and the outstanding amounts and advances of every document in it are restored. This cannot be repeated.",
+      "reasonLabel": "Reason for reversing", "cancel": "Cancel", "reverseConfirm": "Reverse", "reversing": "Reversing…", "failed": "Could not reverse"
     }
   },
   "bank": {

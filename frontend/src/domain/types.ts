@@ -21,7 +21,8 @@ export interface PartySummary { id: string; kind: 'customer' | 'vendor' | 'emplo
   usualItemIds?: string[]; entityKind: 'individual' | 'juristic' | 'foreign';
   nameEn?: string; notes?: string; partyGroup?: string; contact?: { phone?: string; email?: string };
   /** Vendor remittance details. */ bankAccount?: { bankName?: string; accountNo?: string; accountName?: string };
-  /** Foreign vendor registered under VAT-D (PP.36 not filed). */ vatDRegistered?: boolean }
+  /** Foreign vendor registered under VAT-D (PP.36 not filed). */ vatDRegistered?: boolean;
+  /** FN3: the other side of a customer that is also a vendor (and back): netting (หักกลบ) is offered between the two. */ linkedPartyId?: string }
 export interface ItemSummary { id: string; code: string; name: string; kind: 'good' | 'service'; unit: string;
   unitPrice: Money; taxCode: TaxCode; whtTypeCode?: string;
   /** Where the item is offered: sales documents, purchase documents, or both. */ usage: { sales: boolean; purchase: boolean };
@@ -51,7 +52,7 @@ export interface DocHeader { partyId?: string; documentDate: IsoDate; dueDate?: 
   /** RC / PV: the account the money moved through, as it was when the document was issued / last revised (frozen at issue: a later rename or re-number of the account never changes a reprint). Server-owned; a draft has none and prints the live account. */
   bankSnapshot?: { kind: 'bank' | 'cash'; bankName?: string; accountNo?: string; accountName: string };
   cheque?: { number: string; date: IsoDate; bank: string };
-  /** RC: the unallocated remainder kept as a customer deposit (Cr CustomerDeposit); S4 owns the editor field. */ depositAmount?: Money;
+  /** RC: the unallocated remainder kept as a customer deposit (Cr CustomerDeposit); S4 owns the editor field. PV (FN3): the part paid in advance to the vendor, kept as a prepayment (Dr VendorPrepayment). */ depositAmount?: Money;
   /** CN / DN: the tax invoice this note adjusts. Server-owned: the note's customer and reference follow it. */ refDocId?: string;
   /** CN / DN: a code from REASON_CODES (reference data [SP-R]); OTHER needs reasonText. The paper prints the Thai wording, never the code. */ reasonCode?: string; reasonText?: string;
   /** PB / PCN / PDN: the number and date printed on the VENDOR's document (we record it, the vendor issued it). On a PB / PDN the date is the vendor's TAX INVOICE date (ม.82/3): the claim window starts at its month; absent = the document date, never after it. */ vendorDocNumber?: string; vendorDocDate?: IsoDate;
@@ -115,13 +116,28 @@ export interface DocSummary { id: string; type: DocType; number?: string; status
 export interface Page<T> { items: T[]; nextCursor?: string; total?: number }
 
 export type LinkKind = 'converted_from' | 'settles' | 'adjusts' | 'groups' | 'replaces' | 'issues';
-export interface ChainNode { id: string; type: DocType; number?: string; status: DocStatus; total: Money; progress?: string }
+/** `type` 'STL' = a settlement record (FN3), not a document: `number` is its id, `status` follows it (posted = issued, reversed = cancelled). */
+export interface ChainNode { id: string; type: DocType | 'STL'; number?: string; status: DocStatus; total: Money; progress?: string }
 /** `from` = the document whose command created the link (DO→SO converted_from, RC→TI settles, CN→TI adjusts,
  *  BL→TI groups, new TI→old TI replaces, PV→WT issues); `to` = the document it refers to. */
 export interface ChainEdge { from: string; to: string; kind: LinkKind; amount?: Money; qty?: Qty; active: boolean; wht?: Money }
 export interface ChainGraph { rootId: string; nodes: ChainNode[]; edges: ChainEdge[] }
 
-export interface ActivityEntry { id: string; at: string; actor: Actor; action: string; detail?: string; reportId?: string }
+/** FN3 settlement record (D-13): applies deposits / prepayments, nets AR against AP, or writes off a small difference. Everything on it is frozen at posting; nothing is re-derived from the documents. */
+export type SettlementKind = 'apply_deposit' | 'apply_prepayment' | 'netting' | 'write_off';
+export type SettlementDifferenceRole = 'RoundingDifference' | 'SmallWriteOff' | 'BankFee';
+/** `type` / `number` / `partyId` / `partyName`: the document as it was when the settlement was posted. */
+export interface SettlementLeg { docId: string; amount: Money; type?: DocType; number?: string; partyId?: string; partyName?: string }
+export interface SettlementRecord { id: string; companyId: string; kind: SettlementKind; date: IsoDate; partyId: string;
+  /** netting: the vendor side (`partyId` is the customer side) */ counterPartyId?: string;
+  sources: SettlementLeg[];   // deposit RC / prepayment PV / the AP side (netting: PB)
+  targets: SettlementLeg[];   // TI / IV (or PB for a prepayment / write-off of a payable)
+  difference?: { role: SettlementDifferenceRole; amount: Money };
+  status: 'posted' | 'reversed'; journal: JournalEntryPreview[]; reason?: string; createdBy: Actor; postedAt: string;
+  reversal?: { at: string; by: Actor; reason?: string } }
+/** One unapplied customer deposit (RC) or vendor prepayment (PV): what was kept, what settlements took, what is left. */
+export interface DepositRow { docId: string; type: 'RC' | 'PV'; number: string; documentDate: IsoDate; partyId: string; partyName: string; amount: Money; applied: Money; remaining: Money }
+export interface ActivityEntry{ id: string; at: string; actor: Actor; action: string; detail?: string; reportId?: string }
 export interface FieldChange { path: string; before: string | null; after: string | null }
 export interface Revision { revision: number; at: string; actor: Actor; reason?: string; snapshot: Doc; diff: FieldChange[] }
 export interface AuditEntry { id: string; at: string; actor: Actor; companyId: string; command: string; target?: string;

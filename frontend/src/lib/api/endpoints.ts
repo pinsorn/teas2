@@ -1,6 +1,7 @@
 import type {
   ActivityEntry, Allocation, Attachment, AttachmentCategory, BankImport, BankLine, ChainGraph, ComputeResult, CorrectionPlan, CorrectionResult, Doc, DocHeader, DocLine, DocSummary,
   DocType, HomeInbox, MarkKey, Money, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, RemainingLine, Revision, SearchHit,
+  DepositRow, SettlementDifferenceRole, SettlementKind, SettlementRecord,
 } from '@/domain/types';
 import type { RecordKind, RecordRow } from '@/domain/records';
 import type { ReportKind, ReportModel } from '@/domain/reports';
@@ -13,6 +14,9 @@ export interface BankGlAccount { code: string; nameTh: string; subClass: 'cash' 
 export interface BankCandidate { docId: string; type: 'RC' | 'PV' | 'TR'; number: string; documentDate: string; partyName: string; cash: Money; remaining: Money; exact: boolean }
 export interface PostableAccount { code: string; nameTh: string; class: string }
 export interface Reconciliation { reconciledTo: string | null; counts: Record<BankLine['status'], number> }
+/** FN3: what `/finance/deposits` returns: the unapplied customer deposits / vendor prepayments, the company's tolerance for a difference and the customer / vendor pairs that can be netted. */
+export interface DepositsView { items: DepositRow[]; tolerance?: { rounding: Money; smallWriteOff: Money }; pairs?: { customerId: string; customerName: string; vendorId: string; vendorName: string }[] }
+export interface SettleInput { kind: SettlementKind; date: string; partyId: string; sources?: { docId: string; amount: Money }[]; targets: { docId: string; amount: Money }[]; difference?: { role: SettlementDifferenceRole; amount: Money }; reason?: string }
 export interface WhtTypeRef { code: string; nameTh: string; rate: string; incomeType: string }
 export interface ListDocsParams { status?: string; from?: string; to?: string; q?: string; outstanding?: 'positive'; overdue?: '1'; agent?: '1'; limit?: number; cursor?: string }
 
@@ -85,6 +89,12 @@ export const endpoints = {
   postableAccounts: () => api<PostableAccount[]>('GET', '/finance/postable-accounts'),
   getReconciliation: (accountId: string) => api<Reconciliation>('GET', `/finance/bank-accounts/${encodeURIComponent(accountId)}/reconciliation`),
   lockReconciliation: (accountId: string, date: string) => api<{ reconciledTo: string }>('POST', `/finance/bank-accounts/${encodeURIComponent(accountId)}/reconciled-to`, { date }),
+  /** FN3 settlements (D-13): read with bank.read, post / reverse with bank.manage. */
+  getDeposits: () => api<DepositsView>('GET', '/finance/deposits'),
+  listSettlements: (p: { q?: string; status?: SettlementRecord['status']; limit?: number; cursor?: string } = {}) => api<Page<SettlementRecord>>('GET', `/finance/settlements${qs(p)}`),
+  getSettlement: (id: string) => api<SettlementRecord>('GET', `/finance/settlements/${encodeURIComponent(id)}`),
+  postSettlement: (body: SettleInput, idempotencyKey: string) => api<SettlementRecord>('POST', '/finance/settlements', body, { idempotencyKey }),
+  reverseSettlement: (id: string, reason: string) => api<SettlementRecord>('POST', `/finance/settlements/${encodeURIComponent(id)}/reverse`, { reason }),
   whtTypes: () => api<WhtTypeRef[]>('GET', '/wht-types'),
   /** Every document of one party, across the types the role can read. */
   docsByParty: (partyId: string) => api<Page<DocSummary>>('GET', `/docs/by-party/${encodeURIComponent(partyId)}`),

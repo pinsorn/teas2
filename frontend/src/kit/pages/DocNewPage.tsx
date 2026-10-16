@@ -73,7 +73,7 @@ async function adjustPrefill(d: DocDescriptor, me: Me, tiId: string): Promise<Do
   if (credits) {
     const chain = await endpoints.getChain(d.adjusts!, tiId);
     const ids = chain.edges.filter((e) => e.kind === 'adjusts' && e.active && e.to === tiId).map((e) => e.from); // live CNs, and DNs (a stored negative DN line is a credit too)
-    notes = await Promise.all(ids.map((id) => endpoints.getDoc(chain.nodes.find((n) => n.id === id)!.type, id)));
+    notes = await Promise.all(ids.map((id) => endpoints.getDoc(chain.nodes.find((n) => n.id === id)!.type as DocType, id)));
   }
   if (notes.length || incl) { // the server's own nets (one compute): the original's lines, then every live note's lines
     const all = [...ti.lines.map((l, i) => ({ ...l, id: `t${i}` })), ...notes.flatMap((c, j) => c.lines.map((l, i) => ({ ...l, id: `c${j}-${i}`, vatOverride: undefined })))];

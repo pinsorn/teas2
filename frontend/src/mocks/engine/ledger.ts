@@ -60,7 +60,7 @@ export const POST: Partial<Record<DocType, Rows>> = {
       const cost = toSatang(rs[i].net) + toSatang(rs[i].vat); // a voucher line carries no claimable VAT: any VAT on it is cost
       return [cat?.capex ? ['FixedAsset', cost, 0, { ...ctx, assetClass: cat.assetClass }] : ['Expense', cost, 0, ctx]];
     });
-    return [...perTarget(d, st, 'AP', ['PB'], 'Dr'), ...perTarget(d, st, 'EmployeePayable', ['EX'], 'Dr'), ...own,
+    return [...perTarget(d, st, 'AP', ['PB'], 'Dr'), ...perTarget(d, st, 'EmployeePayable', ['EX'], 'Dr'), ...own, ['VendorPrepayment', toSatang(d.header.depositAmount ?? '0.00'), 0], // FN3: paid in advance, kept as a prepayment
       ['WhtExpense', w.expense, 0], ...w.lines.map((l): RolePosting[number] => ['WhtPayable', 0, toSatang(l.tax), { whtForm: l.form }]),
       ['Cash', 0, t.cash, { bankAccountId: cashBankId(st, companyId, d.header) }]];
   },
@@ -86,7 +86,7 @@ export function ledgerFor(st: MockState, doc: Doc & { companyId?: string }): Jou
   for (const [role, dr, cr, extra] of post(t, doc, st, companyId)) {
     const r = resolveRole(st, role, { companyId, docType: doc.type, ...extra });
     const dims = { ...doc.header.dimensions, ...extra?.dimensions };
-    const party = (role === 'AR' || role === 'AP' || role === 'EmployeePayable') ? (extra?.partyName ?? partyName) : undefined;
+    const party = (role === 'AR' || role === 'AP' || role === 'EmployeePayable' || role === 'CustomerDeposit' || role === 'VendorPrepayment') ? (extra?.partyName ?? partyName) : undefined;
     const key = `${r.code}|${r.rule}|${party ?? ''}|${JSON.stringify(dims)}`;
     const prev = acc.get(key);
     // a negative side (e.g. a CN line with a negative VAT) is posted on the opposite side, never as a negative amount
@@ -103,9 +103,10 @@ export function ledgerFor(st: MockState, doc: Doc & { companyId?: string }): Jou
   return { entries };
 }
 
-/** Every journal entry of a company: its documents' and the ones the reconciliation wrote itself (fee / inline / opening). The one reader for reports. */
+/** Every journal entry of a company: its documents', the ones the reconciliation wrote itself (fee / inline / opening) and its settlement records'. The one reader for reports. */
 export function* companyEntries(st: MockState, companyId: string): Generator<JournalEntryPreview> {
   const mine = new Set(st.docs.filter((d) => d.companyId === companyId).map((d) => d.id));
   for (const j of st.journals) if (mine.has(j.docId)) yield* j.preview.entries;
   for (const j of st.bankJournals) if (j.companyId === companyId) yield* j.entries;
+  for (const s of st.settlements) if (s.companyId === companyId) yield* s.journal; // FN3: deposits / prepayments applied, netting, write-offs
 }

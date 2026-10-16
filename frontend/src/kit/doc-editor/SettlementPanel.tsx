@@ -1,5 +1,6 @@
 'use client';
 import { useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useCompanyEpoch } from '@/app-shell/useCompanyEpoch';
 import { isForbidden, useMe } from '@/app-shell/useMe';
@@ -48,6 +49,9 @@ function SettlementPanelInner({ descriptor: d, partyId, value, onChange, allocat
     enabled: !!me && !!partyId && !readOnly && types.length > 0,
   });
   const withholds = d.type === 'RC'; // the customer withholds on a receipt; a voucher withholds from its own lines
+  // FN3: the party's unapplied deposits / prepayments are credits the user can apply to these open items (on the settlement screen); the amounts are the server's, never added here
+  const deposits = useQuery({ queryKey: qk.deposits(companyId), queryFn: () => endpoints.getDeposits(), enabled: !!me && !!partyId && !readOnly && me.permissions.includes('bank.read') });
+  const credits = (deposits.data?.items ?? []).filter((r) => r.partyId === partyId && r.type === d.type);
   const patch = (targetId: string, p: Partial<Allocation>) => onChange(value.map((a) => (a.targetId === targetId ? { ...a, ...p } : a)));
 
   const totals = (
@@ -59,6 +63,13 @@ function SettlementPanelInner({ descriptor: d, partyId, value, onChange, allocat
   const shell = (body: React.ReactNode) => (
     <section aria-label={t(withholds ? 'titleRC' : 'title')} className="grid gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
       <h2 className="text-section font-semibold">{t(withholds ? 'titleRC' : 'title')}</h2>
+      {credits.length > 0 && (
+        <div role="status" aria-label={t('credits.label')} data-testid="deposit-credits" className="grid gap-1 rounded-lg border border-border bg-muted/40 p-3 text-body">
+          <p className="font-medium">{t(withholds ? 'credits.titleRC' : 'credits.title')}</p>
+          <ul className="grid gap-0.5">{credits.map((c) => <li key={c.docId} className="flex flex-wrap justify-between gap-x-4"><span className="tabular-nums">{c.number}</span><span className="tabular-nums">{formatMoney(c.remaining)}</span></li>)}</ul>
+          <Link href="/finance/deposits" className="text-primary hover:underline">{t('credits.use')}</Link>
+        </div>
+      )}
       {body}
     </section>
   );

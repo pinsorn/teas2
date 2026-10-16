@@ -338,13 +338,13 @@ describe('the P2 seed (hand-checked)', () => {
     expect(j('npb-2')).toBe(['5100 6000.00/0.00', '2110 0.00/6000.00'].sort().join(' | '));
     expect(gl(NV, '1170')).toBe(0);
   });
-  it('pb-capex capitalises to 1210; pb-po is half of po-part; the claim periods add up (2026-10: 5,369.00, 2026-12: 595.00)', () => {
+  it('pb-capex capitalises to 1210; pb-po is half of po-part; the claim periods add up (2026-10: 5,719.00, 2026-12: 595.00)', () => {
     expect(j('pb-capex')).toBe(['1210 32000.00/0.00', '1170 2240.00/0.00', '2110 0.00/34240.00'].sort().join(' | '));
     expect(get('pb-po').totals).toMatchObject({ net: '1900.00', vat: '133.00', total: '2033.00' });
     expect(buildChain(st, 'po-part').nodes.find((x) => x.id === 'po-part')!.progress).toBe('รับวางบิลแล้ว 70/140');
-    expect(period(VAT, '2026-10')).toBe(sat('5369.00'));
+    expect(period(VAT, '2026-10')).toBe(sat('5719.00')); // + pb-prep 70.00 and pb-net 280.00 (FN3)
     expect(period(VAT, '2026-12')).toBe(sat('595.00'));
-    expect(gl(VAT, '2110')).toBe(-sat('59134.00')); // Σ outstanding of the live bills: 0 (pb-1, paid) + 12,305 (pb-2, half paid) + 1,033 (pb-po, 1,000 paid) + 34,240 + 9,095 + 2,461
+    expect(gl(VAT, '2110')).toBe(-sat('64484.00')); // Σ outstanding of the live bills: 0 (pb-1, paid) + 12,305 (pb-2, half paid) + 1,033 (pb-po, 1,000 paid) + 34,240 + 9,095 + 2,461 + 1,070 (pb-prep) + 4,280 (pb-net), FN3
   });
   it('pb-incomplete issued with its paperwork flag off; the pb-d1 draft posts nothing', () => {
     expect(get('pb-incomplete')).toMatchObject({ status: 'issued', header: { complete: false } });

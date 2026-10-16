@@ -1,9 +1,9 @@
 import { ADJUSTS, CREDIT_NOTES, DOC_TYPES, GROUPS, LIVE, SETTLES } from '@/domain/doc-types';
-import type { WhtLine, WhtMode } from '@/domain/types';
+import type { DocType, WhtLine, WhtMode } from '@/domain/types';
 import type { Doc, JournalEntryPreview } from '@/domain/types';
 import type { MockState } from '../store';
 import { approvalRequired } from './approval';
-import { docCash } from './locks';
+import { appliedOf, docCash } from './locks';
 import { payoutOf, resolvedBankId } from './settlement';
 import { consumed, q4 } from './chain';
 import { divRoundHalfAway, fromSatang, toSatang } from './money';
@@ -91,6 +91,7 @@ export function checkInvariants(st: MockState): string[] {
   const arByParty = new Map<string, number>(); // `${companyId}|${party}` -> debit - credit on 1130
   const apByParty = new Map<string, number>(); // the same on 2110 (payables)
   const empByParty = new Map<string, number>(); // the same on 2180 (owed to employees)
+  const byParty = new Map<string, number>(); // `${companyId}|${account}|${party}` -> debit - credit (FN3: the deposit / prepayment accounts per party)
   const inputVat = new Map<string, number>(); // `${companyId}|${claim period}` -> debit - credit on 1170 posted by PB / PCN / PDN (reversals and corrections included)
 
   // 1. every journal entry balances, is non-negative and posts to postable accounts of its own company. R0: the reconciliation's own journals (fee / inline / transfer / opening) feed every GL map below like a document's
@@ -101,6 +102,7 @@ export function checkInvariants(st: MockState): string[] {
     jsrc.push({ id: d.id, companyId: d.companyId, d, entries: j.preview.entries });
   }
   for (const j of st.bankJournals) jsrc.push({ id: `bank journal ${j.id}`, companyId: j.companyId, entries: j.entries });
+  for (const s of st.settlements) jsrc.push({ id: `settlement ${s.id}`, companyId: s.companyId, entries: s.journal }); // FN3: a settlement's own journal feeds every GL map below like a document's
   for (const { id, companyId, d, entries } of jsrc) {
     for (const e of entries) {
       const where = `${id} ${e.kind} entry ${e.date}`;
@@ -115,6 +117,7 @@ export function checkInvariants(st: MockState): string[] {
         const k = `${companyId}|${l.accountCode}`;
         gl.set(k, (gl.get(k) ?? 0) + a - b);
         credit.set(k, (credit.get(k) ?? 0) + b - a);
+        { const pk = `${companyId}|${l.accountCode}|${l.partyName ?? ''}`; byParty.set(pk, (byParty.get(pk) ?? 0) + a - b); }
         if (l.accountCode === '1130') { const pk = `${companyId}|${l.partyName ?? ''}`; arByParty.set(pk, (arByParty.get(pk) ?? 0) + a - b); }
         if (l.accountCode === '2110') { const pk = `${companyId}|${l.partyName ?? ''}`; apByParty.set(pk, (apByParty.get(pk) ?? 0) + b - a); }
         if (l.accountCode === '2180') { const pk = `${companyId}|${l.partyName ?? ''}`; empByParty.set(pk, (empByParty.get(pk) ?? 0) + b - a); }
@@ -227,7 +230,7 @@ export function checkInvariants(st: MockState): string[] {
 
   // 6. links join documents of one company; every posted ledger document has its journal (cancelled / replaced: original + reversal)
   for (const l of st.links) {
-    const a = doc(l.from), b = doc(l.to);
+    const a = doc(l.from) ?? (l.kind === 'settles' ? st.settlements.find((s) => s.id === l.from) : undefined), b = doc(l.to); // FN3: a settlement record is the `from` of its settles links
     if (!a || !b) out.push(`link ${l.from} → ${l.to} points at a missing document`);
     else if (a.companyId !== b.companyId || (l.companyId !== undefined && l.companyId !== a.companyId)) out.push(`link ${l.from} → ${l.to} joins different companies`);
   }
@@ -284,7 +287,9 @@ export function checkInvariants(st: MockState): string[] {
       const w = expectedWht(st, d);
       if (w.bad) out.push(`${d.id}: ${w.bad}`);
       else if (wht !== w.tax) out.push(`${d.id}: PV wht ${fromSatang(wht)} but round-half-away(base x rate) per WHT type gives ${fromSatang(w.tax)}`);
-      if (total !== alloc + lineTotal) out.push(`${d.id}: PV total ${fromSatang(total)} is not Σ allocations + line totals (${fromSatang(alloc + lineTotal)})`);
+      const pdep = sat(d.header.depositAmount ?? '0.00', d.id); // FN3: paid in advance, kept as a vendor prepayment
+      if (pdep < 0) out.push(`${d.id}: PV prepayment ${fromSatang(pdep)} is negative`);
+      if (total !== alloc + lineTotal + pdep) out.push(`${d.id}: PV total ${fromSatang(total)} is not Σ allocations + line totals + prepayment (${fromSatang(alloc + lineTotal + pdep)})`);
       if (!w.bad && cash !== total + w.cashDelta) out.push(`${d.id}: PV cash ${fromSatang(cash)} is wrong for mode ${mode} (total ${fromSatang(total)}, expected ${fromSatang(total + w.cashDelta)})`);
       if (live) {
         const expense = j('WhtExpense', 'debit');
@@ -293,7 +298,8 @@ export function checkInvariants(st: MockState): string[] {
         if (j('WhtPayable', 'credit') !== wht) out.push(`${d.id}: journal WHT payable ${fromSatang(j('WhtPayable', 'credit'))} but the voucher withheld ${fromSatang(wht)}`);
         if (j('AP', 'debit') + j('EmployeePayable', 'debit') !== alloc) out.push(`${d.id}: journal payables ${fromSatang(j('AP', 'debit') + j('EmployeePayable', 'debit'))} but the allocations clear ${fromSatang(alloc)}`);
         // the balance identity: Σ allocations + line totals + the WHT we bear = cash + Σ tax
-        if (alloc + lineTotal + expense !== cash + wht) out.push(`${d.id}: PV Σ alloc + lines + expense (${fromSatang(alloc + lineTotal + expense)}) is not cash + WHT (${fromSatang(cash + wht)})`);
+        if (j('VendorPrepayment', 'debit') !== pdep) out.push(`${d.id}: journal prepayment ${fromSatang(j('VendorPrepayment', 'debit'))} but the prepayment is ${fromSatang(pdep)}`);
+        if (alloc + lineTotal + pdep + expense !== cash + wht) out.push(`${d.id}: PV Σ alloc + lines + prepayment + expense (${fromSatang(alloc + lineTotal + pdep + expense)}) is not cash + WHT (${fromSatang(cash + wht)})`);
       }
     }
   }
@@ -492,6 +498,72 @@ export function checkInvariants(st: MockState): string[] {
       if (!e.postedAt) out.push(`${where} ${e.kind} entry ${e.date}: no postedAt`);
       const p = st.periods.find((x) => x.companyId === j.companyId && x.month === e.date.slice(0, 7));
       if (p?.status === 'closed' && !(e.postedAt && p.closedAt && Date.parse(e.postedAt) <= Date.parse(p.closedAt))) out.push(`${where} ${e.kind} entry ${e.date}: dated in closed period ${p.month} but posted after it closed`);
+    }
+  }
+
+  // 14. settlement records (FN3, D-13): the frozen legs balance for their kind, the journal posts exactly the legs, the settles links are the legs of the POSTED records (a reversed one leaves none active),
+  //     a deposit / prepayment is never applied beyond what it kept, and per company and per party GL(2140) / GL(1140) = Σ the unapplied customer deposits / vendor prepayments
+  const PAYABLE: DocType[] = ['PB'];
+  for (const s of st.settlements) {
+    const where = `settlement ${s.id}`, sm = (xs: { amount: string }[]) => xs.reduce((n, l) => n + sat(l.amount, where), 0);
+    const ss = sm(s.sources), ts = sm(s.targets), diff = sat(s.difference?.amount ?? '0.00', where);
+    for (const l of [...s.sources, ...s.targets]) {
+      const d = doc(l.docId);
+      if (sat(l.amount, where) <= 0) out.push(`${where}: leg ${l.docId} is not positive`);
+      if (!d || d.companyId !== s.companyId) out.push(`${where}: leg ${l.docId} is missing or of another company`);
+      else if (s.status === 'posted' && !LIVE.includes(d.status)) out.push(`${where}: posted but its leg ${d.id} is ${d.status}`);
+    }
+    if (s.kind === 'netting') { if (ss !== ts) out.push(`${where}: netting clears AR ${fromSatang(ts)} but AP ${fromSatang(ss)}`); if (s.difference) out.push(`${where}: a netting carries no difference`); }
+    else if (ts !== ss + diff) out.push(`${where}: targets ${fromSatang(ts)} are not sources ${fromSatang(ss)} + difference ${fromSatang(diff)}`);
+    if (s.kind === 'write_off' && (s.sources.length || diff <= 0 || diff !== ts)) out.push(`${where}: a write-off has no sources and writes off exactly its targets`);
+    const active = st.links.filter((l) => l.active && l.kind === 'settles' && l.from === s.id);
+    if (s.status === 'posted') {
+      const want = [...s.sources, ...s.targets].map((l) => `${l.docId}|${sat(l.amount, where)}`).sort().join(','), have = active.map((l) => `${l.to}|${sat(l.amount ?? '0.00', where)}`).sort().join(',');
+      if (want !== have) out.push(`${where}: legs [${want}] but the active settles links are [${have}]`);
+    } else if (active.length) out.push(`${where}: reversed but ${active.length} settles link(s) are still active`);
+    const original = s.journal[0], last = s.journal[s.journal.length - 1];
+    if (!original || original.kind !== 'original') { out.push(`${where}: no original journal entry`); continue; }
+    if (s.status === 'posted' ? s.journal.length !== 1 : s.journal.length !== 2 || last.kind !== 'reversal') out.push(`${where}: ${s.status} but its journal has ${s.journal.length} entries ending in ${last.kind}`);
+    if (original.date !== s.date) out.push(`${where}: dated ${s.date} but its journal entry is dated ${original.date}`);
+    for (const e of s.journal) {
+      if (!e.postedAt) out.push(`${where} ${e.kind} entry ${e.date}: no postedAt`);
+      const p = st.periods.find((x) => x.companyId === s.companyId && x.month === e.date.slice(0, 7));
+      if (p?.status === 'closed' && !(e.postedAt && p.closedAt && Date.parse(e.postedAt) <= Date.parse(p.closedAt))) out.push(`${where} ${e.kind} entry ${e.date}: dated in closed period ${p.month} but posted after it closed`);
+    }
+    if (s.journal.length === 2 && last.kind === 'reversal' && JSON.stringify(last.lines.map((l) => [l.accountCode, l.credit, l.debit, l.partyName ?? ''])) !== JSON.stringify(original.lines.map((l) => [l.accountCode, l.debit, l.credit, l.partyName ?? '']))) {
+      out.push(`${where}: its reversal is not the exact mirror of the original entry`);
+    }
+    const j = (role: string, side: 'debit' | 'credit') => roleSum(original, role, side), diffRole = s.difference?.role ?? '';
+    const payable = s.targets.length > 0 && s.targets.every((t) => PAYABLE.includes(t.type as DocType));
+    const jwant: [string, 'debit' | 'credit', number][] = s.kind === 'apply_deposit' ? [['CustomerDeposit', 'debit', ss], ['AR', 'credit', ts], ...(diff ? [[diffRole, 'debit', diff] as [string, 'debit', number]] : [])]
+      : s.kind === 'apply_prepayment' ? [['AP', 'debit', ts], ['VendorPrepayment', 'credit', ss], ...(diff ? [[diffRole, 'credit', diff] as [string, 'credit', number]] : [])]
+        : s.kind === 'netting' ? [['AP', 'debit', ss], ['AR', 'credit', ts]]
+          : payable ? [['AP', 'debit', ts], [diffRole, 'credit', diff]] : [['AR', 'credit', ts], [diffRole, 'debit', diff]];
+    for (const [role, side, n] of jwant) if (j(role, side) !== n) out.push(`${where}: journal ${role} ${side} ${fromSatang(j(role, side))} but its legs say ${fromSatang(n)}`);
+  }
+  for (const l of st.links) {
+    const s = l.kind === 'settles' ? st.settlements.find((x) => x.id === l.from) : undefined;
+    if (s && l.active && s.status !== 'posted') out.push(`link ${l.from} → ${l.to} is active but ${l.from} is ${s.status}`);
+    if (s && s.companyId !== l.companyId) out.push(`link ${l.from} → ${l.to} joins different companies`);
+  }
+  for (const c of st.companies) {
+    for (const [role, type, sign] of [['CustomerDeposit', 'RC', -1], ['VendorPrepayment', 'PV', 1]] as const) {
+      let code = '';
+      try { code = resolveRole(st, role, { companyId: c.id, docType: 'JV' }).code; } catch (e) { out.push(`${c.id}: ${role} does not resolve (${(e as Error).message})`); continue; }
+      const kept = new Map<string, number>(); // party name -> Σ unapplied
+      for (const d of st.docs) {
+        if (d.companyId !== c.id || d.type !== type || !LIVE.includes(d.status)) continue;
+        const dep = sat(d.header.depositAmount ?? '0.00', d.id), rest = dep - appliedOf(st, d.id);
+        if (rest < 0) out.push(`${d.id}: ${fromSatang(appliedOf(st, d.id))} applied from a ${role === 'CustomerDeposit' ? 'deposit' : 'prepayment'} of ${fromSatang(dep)}`);
+        kept.set(d.party?.name ?? '', (kept.get(d.party?.name ?? '') ?? 0) + rest);
+      }
+      const total = [...kept.values()].reduce((n, x) => n + x, 0);
+      if (sign * (gl.get(`${c.id}|${code}`) ?? 0) !== total) out.push(`${c.id}: GL ${code} (${role}) ${fromSatang(sign * (gl.get(`${c.id}|${code}`) ?? 0))} but the unapplied ${role === 'CustomerDeposit' ? 'customer deposits' : 'vendor prepayments'} are ${fromSatang(total)}`);
+      const names = new Set([...kept.keys(), ...[...byParty.keys()].filter((k) => k.startsWith(`${c.id}|${code}|`)).map((k) => k.slice(`${c.id}|${code}|`.length))]);
+      for (const name of names) {
+        const g = sign * (byParty.get(`${c.id}|${code}|${name}`) ?? 0);
+        if (g !== (kept.get(name) ?? 0)) out.push(`${c.id}: GL ${code} of ${name || '(no party)'} ${fromSatang(g)} but their unapplied ${role === 'CustomerDeposit' ? 'deposits' : 'prepayments'} are ${fromSatang(kept.get(name) ?? 0)}`);
+      }
     }
   }
 

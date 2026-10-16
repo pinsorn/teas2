@@ -33,7 +33,7 @@ export const NAV: NavGroup[] = [
     doc('vendorDebitNotes', '/purchases/vendor-debit-notes', 'PDN'),
     doc('expenseClaims', '/purchases/expense-claims', 'EX'),
   ]),
-  group('finance', [item('bankAccounts', '/finance/bank-accounts', BANK), item('deposits', '/finance/deposits', BANK)]),
+  group('finance', [item('bankAccounts', '/finance/bank-accounts', BANK), item('deposits', '/finance/deposits', BANK), item('settlements', '/finance/settlements', BANK)]),
   group('accounting', [
     item('journals', '/accounting/journals', LEDGER),
     item('chartOfAccounts', '/accounting/chart-of-accounts', LEDGER),

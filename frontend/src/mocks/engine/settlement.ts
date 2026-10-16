@@ -185,7 +185,7 @@ export const frozenFigures = (f: WhtFrozen) => ({ lines: f.lines, tax: sum(f.lin
 
 /**
  * RC / PV totals. RC: total = Σ allocation amounts + deposit remainder + cash-bill lines; the customer withholds Σ allocation wht; cash = total - wht.
- * PV: total = Σ allocation amounts + Σ line totals; WHT per type from the lines; deduct: cash = total - wht, gross-up: cash = total (we bear the tax).
+ * PV: total = Σ allocation amounts + Σ line totals + the prepayment (FN3); WHT per type from the lines; deduct: cash = total - wht, gross-up: cash = total (we bear the tax).
  */
 export function settleTotals(st: MockState, companyId: string, type: DocType, body: Part, lineTotals: DocTotals, selfId?: string): DocTotals {
   const alloc = sum((body.allocations ?? []).map((a) => money(a.amount, 'settle.invalid_amount')));
@@ -197,7 +197,7 @@ export function settleTotals(st: MockState, companyId: string, type: DocType, bo
     wht = sum((body.allocations ?? []).map((a) => money(a.wht, 'settle.invalid_wht')));
     cash = total - wht;
   } else {
-    total = alloc + lines;
+    total = alloc + lines + money(body.header.depositAmount, 'pv.invalid_deposit'); // FN3: the part paid in advance to the vendor counts in the voucher's total and cash
     const w = frozenFigures(body.whtFrozen ?? freezeWht(st, companyId, body, selfId)); // the voucher's own stored figures when it has them
     wht = w.tax;
     cash = total + w.cashDelta; // deduct: -tax; gross-up always: 0; gross-up once: income - tax - B per type
@@ -275,6 +275,7 @@ export function payError(st: MockState, companyId: string, type: DocType, body: 
     return new MockError(422, 'pv.employee_claims_only', 'ใบสำคัญจ่ายถึงพนักงานจ่ายได้เฉพาะใบเบิกค่าใช้จ่ายที่อนุมัติแล้ว ไม่มีรายการของตัวเอง บันทึกเป็นใบเบิกค่าใช้จ่ายแล้วจ่ายจากใบเบิก');
   }
   if (type === 'RC' && money(h.depositAmount, 'rc.invalid_deposit') < 0) return new MockError(422, 'rc.invalid_deposit', 'เงินรับล่วงหน้าต้องไม่ติดลบ');
+  if (type === 'PV' && money(h.depositAmount, 'pv.invalid_deposit') < 0) return new MockError(422, 'pv.invalid_deposit', 'เงินจ่ายล่วงหน้าต้องไม่ติดลบ');
   if (type === 'PV' && body.lines.some((l) => l.taxCode !== 'EX')) {
     return new MockError(422, 'pv.input_vat_needs_bill', 'ใบสำคัญจ่ายไม่มีภาษีซื้อ รายการที่มีภาษีซื้อต้องมีใบกำกับภาษี กด “บันทึกซื้อ (มีใบกำกับภาษี)” เพื่อบันทึกเป็นบันทึกซื้อแล้วจ่ายชำระ');
   }
@@ -320,7 +321,7 @@ export function settleExtras(st: MockState, companyId: string, type: DocType, bo
   return {
     ...(whtLines?.length ? { whtLines } : {}),
     allocation: {
-      allocated: fromSatang(allocated), unallocated: type === 'RC' ? fromSatang(money(body.header.depositAmount, 'rc.invalid_deposit')) : '0.00',
+      allocated: fromSatang(allocated), unallocated: fromSatang(money(body.header.depositAmount, type === 'RC' ? 'rc.invalid_deposit' : 'pv.invalid_deposit')),
       suggestedWht: type === 'RC' ? suggestWht(st, companyId, body.header, body.allocations ?? []) : [],
     },
   };

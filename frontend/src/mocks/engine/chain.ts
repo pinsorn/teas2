@@ -65,8 +65,10 @@ export function buildChain(st: MockState, id: string): ChainGraph {
       if (!seen.has(other)) { seen.add(other); queue.push(other); }
     }
   }
-  const nodes: ChainNode[] = [...seen].flatMap((nid) => {
+  const nodes: ChainNode[] = [...seen].flatMap((nid): ChainNode[] => {
     const d = st.docs.find((x) => x.id === nid);
+    const s = d ? undefined : st.settlements.find((x) => x.id === nid); // FN3: a settlement record is a node of the chain, not a document
+    if (s) return [{ id: s.id, type: 'STL' as const, number: s.id.toUpperCase(), status: s.status === 'posted' ? 'issued' as const : 'cancelled' as const, total: fromSatang(s.targets.reduce((n, l) => n + toSatang(l.amount), 0)) }];
     if (!d) return [];
     const progress = progressOf(st, d);
     return [{ id: d.id, type: d.type, number: d.number, status: d.status, total: d.totals.total, ...(progress ? { progress } : {}) }];

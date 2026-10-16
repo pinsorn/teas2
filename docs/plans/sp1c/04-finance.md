@@ -139,11 +139,11 @@ export interface SettlementRecord { id: string; companyId: string; kind: Settlem
 **Money invariants:** `netting: AR cleared = AP cleared`; each target's outstanding follows §7.11 including settlement
 links; `GL(2140) = Σ unapplied customer deposits`; `GL(1140) = Σ unapplied vendor prepayments`; reversing restores all.
 
-- [ ] **Step 1: Failing tests** — apply a deposit to a TI (outstanding drops, 2140 drops); netting clears equal AR /
+- [x] **Step 1: Failing tests** — apply a deposit to a TI (outstanding drops, 2140 drops); netting clears equal AR /
   AP; write-off above tolerance refused; reverse restores; `checkInvariants` `[]`. e2e: `screenContract` deposits
   (`both`) and settlements list (`both`, forbiddenRole operator for create — list is read); flow apply `rcDeposit` to
   an unpaid TI of pc-08.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.** (FN3 worker: tsc, eslint, unit 122 files / 1336 passed, e2e finance-settlement + sales-rc + purchases-pv + purchases-pb + finance-reconcile + screens + routes 183 passed, then every other spec 332 passed = all 28 specs; report `.superpowers/sdd/04-finance/task-FN3-report.md`)
 - [ ] **Step 6: Controller commits** — `feat(finance): deposits, prepayments, netting and settlement differences`.
 
 ---

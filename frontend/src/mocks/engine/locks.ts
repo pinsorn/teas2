@@ -13,7 +13,8 @@ export function derivedLocks(st: MockState, d: { id?: string; locks: Lock[]; com
   const live = LIVE.includes(d.status);
   const p = live ? periodLock(st, d.companyId, d.header.documentDate) : undefined;
   const r = live && d.id ? reconciliationLock(st, d.id) : undefined;
-  return [...d.locks, ...(r ? [r] : []), ...(p ? [p] : [])];
+  const s = live && d.id ? settlementLock(st, d.id) : undefined;
+  return [...d.locks, ...(r ? [r] : []), ...(s ? [s] : []), ...(p ? [p] : [])];
 }
 
 /** The cash an RC / PV moves (satang): `totals.cash`, or total - WHT for a document stored without it. */
@@ -47,3 +48,33 @@ export function refuseReconciled(st: MockState, d: { id: string; type: DocType; 
   throw new MockError(409, 'doc.reconciled', `${lock.reason} — ${next ? 'แก้ไขยอดเงิน บัญชี หรือวันที่ไม่ได้' : 'ยกเลิกหรือออกใหม่ไม่ได้'} ทางออก: ยกเลิกการจับคู่ที่รายการเดินบัญชีก่อน`);
 }
 
+
+/** FN3: the posted settlement records a document is a leg of (a deposit / prepayment source, a target, a netting side). Reads the store only, so the lock never depends on the settlement engine. */
+export const settlementsOf = (st: MockState, docId: string) =>
+  st.settlements.filter((s) => s.status === 'posted' && (s.sources.some((l) => l.docId === docId) || s.targets.some((l) => l.docId === docId)));
+
+/** What posted settlements took FROM a deposit / prepayment (satang). */
+export const appliedOf = (st: MockState, docId: string): number =>
+  st.settlements.filter((s) => s.status === 'posted').reduce((n, s) => n + s.sources.filter((l) => l.docId === docId).reduce((m, l) => m + toSatang(l.amount), 0), 0);
+
+/** SP0 7.5: a document that is a leg of a posted settlement reads with the settlement lock; the exit goes to that settlement (reverse it). Derived at read, never stored. */
+export function settlementLock(st: MockState, docId: string): Lock | undefined {
+  const ss = settlementsOf(st, docId).sort((a, b) => a.id.localeCompare(b.id));
+  if (!ss.length) return undefined;
+  const more = ss.length > 1 ? ` และอีก ${ss.length - 1} รายการ` : '';
+  return { kind: 'settlement', reason: `ใช้ในรายการหักกลบ/ใช้เงินมัดจำ ${ss[0].id.toUpperCase()} แล้ว${more}`, exits: ['ย้อนรายการหักกลบ'], href: `/finance/settlements/${ss[0].id}` };
+}
+
+/** Ruling 1 (FN3): while a document is a leg of a posted settlement it cannot be cancelled or reissued (no `next`), nor revised in a way that changes its cash, deposit, party, date or total (`next` = what the revision would make it).
+ *  Any other edit stays free. Exit: reverse the settlement. */
+export function refuseSettled(st: MockState, d: { id: string; header: DocHeader; totals: { total: string; wht?: string; cash?: string } },
+  next?: { header: DocHeader; totals: { total: string; wht?: string; cash?: string } }): void {
+  const lock = settlementLock(st, d.id);
+  if (!lock) return;
+  if (next) {
+    const dep = (h: DocHeader) => toSatang(h.depositAmount ?? '0.00');
+    const same = docCash(next) === docCash(d) && dep(next.header) === dep(d.header) && next.header.partyId === d.header.partyId && next.header.documentDate === d.header.documentDate && toSatang(next.totals.total) === toSatang(d.totals.total);
+    if (same) return;
+  }
+  throw new MockError(409, 'doc.settled', `${lock.reason} — ${next ? 'แก้ไขยอดเงิน เงินมัดจำ คู่ค้า หรือวันที่ไม่ได้' : 'ยกเลิกหรือออกใหม่ไม่ได้'} ทางออก: ย้อนรายการหักกลบก่อน`);
+}

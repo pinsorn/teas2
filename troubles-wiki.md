@@ -22,6 +22,16 @@ Entry format — terse, greppable by symptom:
 
 <!-- entries below — newest on top -->
 
+## TypeError "Cannot read properties of undefined (reading 'type')" in a seed-wide test, or a GL figure that is short by a settlement's amount (FN3)
+- **Root cause:** a `settles` link's `from` can be a SETTLEMENT RECORD id (`st.settlements`), not a document: `st.docs.find((d) => d.id === l.from)!.type` crashes, and a GL helper that sums only `st.journals` (+ `bankJournals`) misses the settlement journals.
+- **Fix:** resolve `from` with `?.` (a settlement is not a document; invariant 6 resolves it through `st.settlements`), and sum GL through `companyEntries(st, companyId)` (documents + bank journals + settlements) or add `st.settlements[].journal` by hand as the trial-balance test does.
+- **Seen:** 2026-10-16, SP1c FN3
+
+## Netting fixture: customer pc-03 cannot get an issued tax invoice
+- **Root cause:** pc-03 (ห้างหุ้นส่วนจำกัด สมบูรณ์ค้าไม้) is the one VAT customer with no TIN on purpose (the `tiDraftNoTin` fixture); `issue` refuses a TI to a VAT-registered buyer without a TIN, so it can never owe an invoice the netting could clear.
+- **Fix:** the linked pair is pc-02 ⇄ pv-11 (`linkedPartyId` both ways, same company and TIN); the seed carries ti-net (10,700.00) and pb-net (4,280.00). Do not give pc-03 a TIN: it breaks the TIN-less buyer fixtures.
+- **Seen:** 2026-10-16, SP1c FN3
+
 ## A new seed document breaks absolute-number assertions elsewhere (GL totals, an item "not in use", PO progress 0/140)
 - **Root cause:** `runSeed` documents are part of every fixture state. P2's `pb-1` uses item EXP-01 (so `inUse` is true), `pb-po` takes 70 of `po-part`'s 140, and the seed now posts 2110 / 1170 in both companies.
 - **Fix:** in new tests measure a DELTA (`gl(after) - gl(before)`) instead of an absolute GL figure; pick a still-unused fixture (EXP-04) when a test needs an unused item; when a seed spec consumes a fixture another test names, re-point that test in the same change.

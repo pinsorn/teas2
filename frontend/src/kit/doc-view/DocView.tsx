@@ -126,7 +126,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
     if (lock.kind === 'filing' || lock.kind === 'period') {
       return { onClick: () => router.push(routesOf(d).edit(doc.id)), why: permissions.includes(d.permissions.create) ? undefined : ts('needPermission', { permission: d.permissions.create }) };
     }
-    if (lock.kind === 'settlement') return { onClick: () => setTab('chain') };
+    if (lock.kind === 'settlement') return lock.href ? { onClick: () => router.push(lock.href!) } : { onClick: () => setTab('chain') }; // FN3: a lock from a settlement record leads to it (reverse it there); a receipt's goes to the chain
     if (lock.kind === 'reconciliation' && lock.href) return { onClick: () => router.push(lock.href!) }; // the bank line, where the match is cancelled
     return undefined;
   };

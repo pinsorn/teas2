@@ -10,6 +10,7 @@ import { partiesHandlers } from './parties';
 import { recordsHandlers } from './records';
 import { reportsHandlers } from './reports';
 import { searchHandlers } from './search';
+import { settlementHandlers } from './settlements';
 
 export * from './common';
-export const handlers = [...meHandlers, ...homeHandlers, ...partiesHandlers, ...recordsHandlers, ...itemsHandlers, ...docsReadHandlers, ...docsWriteHandlers, ...financeRefsHandlers, ...bankHandlers, ...reportsHandlers, ...searchHandlers, ...mockFixturesHandlers];
+export const handlers = [...meHandlers, ...homeHandlers, ...partiesHandlers, ...recordsHandlers, ...itemsHandlers, ...docsReadHandlers, ...docsWriteHandlers, ...financeRefsHandlers, ...bankHandlers, ...settlementHandlers, ...reportsHandlers, ...searchHandlers, ...mockFixturesHandlers];
