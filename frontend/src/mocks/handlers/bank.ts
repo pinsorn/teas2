@@ -3,12 +3,15 @@ import type { Actor, BankLine, Page } from '@/domain/types';
 import { discardAttachment } from '../engine/attachments';
 import { importStatement, type StatementInput } from '../engine/bank-import';
 import { MockError } from '../engine/log';
+import { type MatchRequest, type PostRequest, ignore, isTaxControl, linesOf, lockTo, match, partyKindOf, post, publicLine, suggest, unignore, unmatch } from '../engine/reconcile';
 import { bankGlAccounts, glClaim } from '../records/bank-accounts';
 import { ctx, forbidden, persist, problem, screenGate } from './common';
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
 type Ctx = ReturnType<typeof ctx>;
 const STATUSES = ['unmatched', 'matched', 'ignored', 'posted'];
+const RECONCILE = 'bank.reconcile';
+
 
 /** Screen-state gate, one permission check; MockError becomes problem+json. */
 async function guarded(gate: 'list' | 'item', perm: string, run: (c: Ctx) => Response | Promise<Response>): Promise<Response> {
@@ -46,14 +49,42 @@ export const bankHandlers = [
   http.get('*/bff/v1/finance/bank-accounts/:id/lines', ({ request, params }) => guarded('list', 'bank.read', (c) => {
     const acct = accountOf(c, params.id);
     const u = new URL(request.url);
+    const only = u.searchParams.get('line') || undefined;
     const status = u.searchParams.get('status') || undefined, from = u.searchParams.get('from') || undefined, to = u.searchParams.get('to') || undefined;
     if (status && !STATUSES.includes(status)) throw new MockError(422, 'bank.invalid_filter', 'สถานะที่เลือกไม่ถูกต้อง');
     const limit = Math.min(Number(u.searchParams.get('limit')) || 50, 200);
     const offset = u.searchParams.get('cursor') ? Number(atob(u.searchParams.get('cursor')!)) || 0 : 0;
-    const rows = c.st.bankLines.filter((l) => l.companyId === c.company.id && l.accountId === acct.id && (!status || l.status === status) && (!from || l.date >= from) && (!to || l.date <= to))
+    const rows = c.st.bankLines.filter((l) => l.companyId === c.company.id && l.accountId === acct.id && (!only || l.id === only) && (!status || l.status === status) && (!from || l.date >= from) && (!to || l.date <= to))
       .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)) // newest first
-      .map(({ companyId, ...l }): BankLine => { void companyId; return l; });
+      .map((l): BankLine => publicLine(c.st, l));
     const next = offset + limit;
     return HttpResponse.json({ items: rows.slice(offset, next), total: rows.length, ...(next < rows.length ? { nextCursor: btoa(String(next)) } : {}) } satisfies Page<BankLine>);
   })),
+  // ---- FN2: reconciliation (accountant: bank.reconcile)
+  http.get('*/bff/v1/finance/bank-accounts/:id/reconciliation', ({ params }) => guarded('item', 'bank.read', (c) => {
+    const acct = accountOf(c, params.id), ls = linesOf(c.st, c.company.id, acct.id);
+    return HttpResponse.json({ reconciledTo: acct.reconciledTo ?? null, counts: Object.fromEntries(STATUSES.map((k) => [k, ls.filter((l) => l.status === k).length])) });
+  })),
+  http.post('*/bff/v1/finance/bank-accounts/:id/reconciled-to', ({ request, params }) => guarded('item', RECONCILE, async (c) => {
+    const acct = accountOf(c, params.id);
+    const body = (await request.json().catch(() => undefined)) as { date?: string } | undefined;
+    lockTo(c.st, c.company.id, acct.id, String(body?.date ?? ''), ACTOR);
+    persist(c.st);
+    return HttpResponse.json({ reconciledTo: c.st.bankAccounts.find((b) => b.id === acct.id)?.reconciledTo ?? null });
+  })),
+  // the accounts an inline journal can post to: postable, not a tax control account (the page drops the bank's own); `party` = the kind of party it needs
+  http.get('*/bff/v1/finance/postable-accounts', () => guarded('item', RECONCILE, (c) => HttpResponse.json(
+    c.st.accounts.filter((a) => a.companyId === c.company.id && a.postable && !isTaxControl(c.st, c.company.id, a.code))
+      .map((a) => ({ code: a.code, nameTh: a.nameTh, class: a.class, ...(partyKindOf(c.st, c.company.id, a.code) ? { party: partyKindOf(c.st, c.company.id, a.code) } : {}) }))))),
+  http.get('*/bff/v1/finance/bank-lines/:id/candidates', ({ request, params }) => guarded('list', RECONCILE, (c) =>
+    HttpResponse.json({ items: suggest(c.st, c.company.id, String(params.id), new URL(request.url).searchParams.get('q') ?? undefined) }))),
+  ...(['match', 'unmatch', 'ignore', 'unignore', 'post'] as const).map((cmd) => http.post(`*/bff/v1/finance/bank-lines/:id/${cmd}`, ({ request, params }) => guarded('item', RECONCILE, async (c) => {
+    const body = ((await request.json().catch(() => undefined)) ?? {}) as Record<string, unknown>;
+    const id = String(params.id), co = c.company.id, reason = typeof body.reason === 'string' ? body.reason : undefined;
+    const line = cmd === 'match' ? match(c.st, co, id, body as unknown as MatchRequest, ACTOR)
+      : cmd === 'post' ? post(c.st, co, id, body as unknown as PostRequest, ACTOR)
+        : cmd === 'unmatch' ? unmatch(c.st, co, id, ACTOR, reason) : cmd === 'ignore' ? ignore(c.st, co, id, ACTOR, reason) : unignore(c.st, co, id, ACTOR, reason);
+    persist(c.st);
+    return HttpResponse.json(line);
+  }))),
 ];

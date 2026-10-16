@@ -94,12 +94,12 @@ Modify `app/(app)/finance/bank-accounts/[id]/page.tsx` (tab "กระทบย�
 (reconciliation identity, asserted in `reconcile.test.ts` on the seed after matching all suggestions); every inline
 journal Dr = Cr.
 
-- [ ] **Step 1: Failing tests** — suggestion window and ranking; batch match sum rule; fee difference journal balances;
+- [x] **Step 1: Failing tests** — suggestion window and ranking; batch match sum rule; fee difference journal balances;
   control-account refusal; matched RC shows the reconciliation lock and cancel is disabled naming the exit; unmatch
   removes the lock. e2e: `screenContract` for the reconcile tab (`both`; forbiddenRole operator); flow "unmatched
   money-in line → ค้นหารายการที่ตรงกัน → pick the RC → matched; open the RC → lock banner with ยกเลิกการจับคู่".
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS**; invariants `[]`.
-- [ ] **Step 5: Full gate.**
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS**; invariants `[]`.
+- [x] **Step 5: Full gate.** (FN2 worker: tsc, eslint, unit 116 files / 1221 passed, e2e finance-reconcile + finance-bank + sales-rc + purchases-pv + screens + routes + reports-tb 134 passed; full e2e by the controller)
 - [ ] **Step 6: Controller commits** — `feat(finance): bank reconciliation with matching, inline journals and locks`.
 
 ---

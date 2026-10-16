@@ -13,7 +13,7 @@ export function ReportParams({ specs, values, onChange }: { specs: ReportParamSp
   const id = useId();
   return (
     <div role="group" aria-label={t('reports.paramsLabel')} className="flex flex-wrap items-end gap-4 print:hidden">
-      {specs.map((s) => {
+      {specs.filter((s) => !s.hidden).map((s) => {
         const fid = `${id}-${s.key}`;
         const v = values[s.key] ?? '';
         if (s.kind === 'bool') {

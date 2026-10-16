@@ -3,7 +3,8 @@ import type { WhtLine, WhtMode } from '@/domain/types';
 import type { Doc } from '@/domain/types';
 import type { MockState } from '../store';
 import { approvalRequired } from './approval';
-import { payoutOf } from './settlement';
+import { docCash } from './locks';
+import { payoutOf, resolvedBankId } from './settlement';
 import { consumed, q4 } from './chain';
 import { divRoundHalfAway, fromSatang, toSatang } from './money';
 import { resolveRole } from './posting';
@@ -430,6 +431,58 @@ export function checkInvariants(st: MockState): string[] {
     }
   }
 
+  // 13. bank reconciliation (FN2): a matched line = its stored document shares + its difference; a document is never matched for more than its cash and still IS what was matched; every reconciliation journal balances and posts to the line's account
+  const shares = new Map<string, number>(); // docId -> Σ stored shares over all lines
+  for (const l of st.bankLines) {
+    const where = `bank line ${l.id}`, amount = sat(l.amount, where), ms = l.matches ?? [];
+    if (l.status !== 'matched' && (ms.length || l.diff)) out.push(`${where}: ${l.status} but carries a match`);
+    if (l.status === 'posted' && !l.journalId) out.push(`${where}: posted without its journal`);
+    if (l.status === 'posted' && !st.bankJournals.some((j) => j.id === l.journalId && j.lineId === l.id && j.kind === 'inline')) out.push(`${where}: posted but its inline journal is missing`);
+    if (l.status !== 'matched') continue;
+    if (!ms.length) out.push(`${where}: matched without a document`);
+    const s1 = amount < 0 ? -1 : 1, diff = sat(l.diff?.amount ?? '0.00', where), sum = ms.reduce((n, m) => n + sat(m.amount, where), 0);
+    if (s1 * sum + diff !== amount) out.push(`${where}: matched ${fromSatang(sum)} + difference ${fromSatang(diff)} is not the line amount ${l.amount}`);
+    if (l.diff) {
+      const j = st.bankJournals.find((x) => x.id === l.diff!.journalId && x.lineId === l.id && x.kind === 'fee');
+      if (!j) out.push(`${where}: difference without its journal`);
+      else {
+        const b = st.bankAccounts.find((x) => x.id === l.accountId);
+        const net = j.entries.reduce((n, e) => n + e.lines.filter((g) => g.accountCode === b?.accountCode).reduce((x, g) => x + sat(g.debit, where) - sat(g.credit, where), 0), 0);
+        const open = j.entries[j.entries.length - 1]?.kind !== 'reversal';
+        if (open && net !== diff) out.push(`${where}: difference journal moves the bank by ${fromSatang(net)} but the difference is ${fromSatang(diff)}`);
+      }
+    }
+    for (const m of ms) {
+      const d = doc(m.docId);
+      shares.set(m.docId, (shares.get(m.docId) ?? 0) + sat(m.amount, where));
+      if (sat(m.amount, where) <= 0) out.push(`${where}: share of ${m.docId} is not positive`);
+      if (!d || d.companyId !== l.companyId) { out.push(`${where}: matched document ${m.docId} is missing or of another company`); continue; }
+      if (!LIVE.includes(d.status)) out.push(`${where}: matched document ${d.id} is ${d.status}`);
+      if (docCash(d) !== sat(m.docCash, where)) out.push(`${where}: ${d.id} cash is now ${fromSatang(docCash(d))} but it was matched at ${m.docCash}`);
+      if (resolvedBankId(st, d.companyId, d.type, d.header) !== m.accountId || m.accountId !== l.accountId) out.push(`${where}: ${d.id} is on account ${resolvedBankId(st, d.companyId, d.type, d.header)} but was matched on ${m.accountId} / line ${l.accountId}`);
+      if (d.header.documentDate !== m.docDate) out.push(`${where}: ${d.id} is dated ${d.header.documentDate} but was matched at ${m.docDate}`);
+    }
+  }
+  for (const [id, n] of shares) { const d = doc(id); if (d && n > docCash(d)) out.push(`${id}: matched for ${fromSatang(n)} but its cash is ${fromSatang(docCash(d))}`); }
+  for (const j of st.bankJournals) {
+    const where = `bank journal ${j.id}`, b = st.bankAccounts.find((x) => x.id === j.accountId && x.companyId === j.companyId);
+    if (!b) { out.push(`${where}: unknown bank account ${j.accountId}`); continue; }
+    if (j.lineId && !st.bankLines.some((l) => l.id === j.lineId && l.accountId === j.accountId && l.companyId === j.companyId)) out.push(`${where}: line ${j.lineId} is not on its account`);
+    for (const e of j.entries) {
+      let dr = 0, cr = 0;
+      for (const g of e.lines) {
+        dr += sat(g.debit, where); cr += sat(g.credit, where);
+        const a = st.accounts.find((x) => x.companyId === j.companyId && x.code === g.accountCode);
+        if (!a?.postable) out.push(`${where}: ${g.accountCode} is not a postable account of the company`);
+      }
+      if (dr !== cr) out.push(`${where} ${e.kind} entry ${e.date}: unbalanced (Dr ${fromSatang(dr)} / Cr ${fromSatang(cr)})`);
+      if (!e.lines.some((g) => g.accountCode === b.accountCode)) out.push(`${where} ${e.kind} entry ${e.date}: does not post to the account's GL ${b.accountCode}`);
+      if (!e.postedAt) out.push(`${where} ${e.kind} entry ${e.date}: no postedAt`);
+      const p = st.periods.find((x) => x.companyId === j.companyId && x.month === e.date.slice(0, 7));
+      if (p?.status === 'closed' && !(e.postedAt && p.closedAt && Date.parse(e.postedAt) <= Date.parse(p.closedAt))) out.push(`${where} ${e.kind} entry ${e.date}: dated in closed period ${p.month} but posted after it closed`);
+    }
+  }
+
   // numbering: gap-free per company x type x month, and the series counter agrees
   const groups = new Map<string, number[]>();
   for (const d of st.docs) {
@@ -447,5 +500,6 @@ export function checkInvariants(st: MockState): string[] {
 
   // locks: the period lock is derived at read time, never stored (one function: derivedLocks)
   for (const d of st.docs as Doc[]) if (d.locks.some((l) => l.kind === 'period')) out.push(`${d.id}: stored period lock (derived at read time only)`);
+  for (const d of st.docs as Doc[]) if (d.locks.some((l) => l.kind === 'reconciliation')) out.push(`${d.id}: stored reconciliation lock (derived from the bank-line matches at read time only)`);
   return out;
 }

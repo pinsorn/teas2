@@ -63,7 +63,8 @@ export interface DocHeader { partyId?: string; documentDate: IsoDate; dueDate?: 
 /** `cash` = money that moves: received (RC) / paid (PV). `wht` = withholding tax of the document. */
 export interface DocTotals { gross: Money; discount: Money; net: Money; vat: Money; total: Money; wht?: Money; cash?: Money;
   amountInWords: string }
-export interface Lock { kind: 'period' | 'filing' | 'settlement' | 'reconciliation'; reason: string; exits: string[] }
+/** `href`: where an exit button goes when the exit is a page elsewhere (the reconciliation lock: the bank line). */
+export interface Lock { kind: 'period' | 'filing' | 'settlement' | 'reconciliation'; reason: string; exits: string[]; href?: string }
 /** Document marks: facts about the document that are not status (customer accepted / rejected a QT, DO delivered, PO sent, SO closed). Never a revision. */
 export type MarkKey = 'accepted' | 'rejected' | 'delivered' | 'sent';
 export interface DocMarks { accepted?: { at: string; by: string }; rejected?: { at: string; by: string; reason: string };
@@ -95,8 +96,15 @@ export type AttachmentCategory = 'customer_po' | 'purchase_order' | 'delivery' |
   | 'contract' | 'photo' | 'wht_certificate' | 'government' | 'other';
 export interface Attachment { id: string; docId: string; category: AttachmentCategory; name: string; size: number; mime: string; dataUrl: string; at: string; by: string }
 /** FN1: a bank statement line. `amount` is signed (+ in, - out); `balance` is the statement's running balance after the line. Importing never posts (FN2 matches / posts). */
+/** FN2: what one document matched on one line, frozen at match time (CLAUDE.md money rule): `amount` = this line's share of the document's cash (positive), `docCash` / `accountId` / `docDate` = the document as it was matched. */
+export interface BankMatch { docId: string; type: 'RC' | 'PV'; number: string; amount: Money; docCash: Money; accountId: string; docDate: IsoDate }
+/** `matches` / `diff` (matched lines), `journalId` (a posted line), `locked` (derived at read: on or before the account's reconciled-to date).
+ *  `diff.amount` is in the line's own sign: Σ matched cash (in the line's direction) + diff = line amount, so a bank fee is negative on a receipt and on a payment alike. */
 export interface BankLine { id: string; accountId: string; importId: string; date: IsoDate; description: string; amount: Money; balance: Money;
-  status: 'unmatched' | 'matched' | 'ignored' | 'posted'; matchedDocIds?: string[]; journalId?: string }
+  status: 'unmatched' | 'matched' | 'ignored' | 'posted'; matchedDocIds?: string[]; matches?: BankMatch[]; diff?: { role: 'BankFee' | 'RoundingDifference'; amount: Money; journalId: string };
+  journalId?: string; locked?: boolean; note?: string }
+/** A journal the reconciliation wrote (no document behind it): the fee / rounding difference of a match, an inline journal of a statement line, or the seeded opening balance. A reversal is appended, an entry is never edited. */
+export interface BankJournal { id: string; companyId: string; accountId: string; lineId?: string; kind: 'fee' | 'inline' | 'opening'; label: string; entries: JournalEntryPreview[] }
 export interface BankImport { id: string; accountId: string; fileName: string; format: 'kbiz-csv' | 'kplus-pdf'; from: IsoDate; to: IsoDate;
   opening: Money; closing: Money; lines: number; at: string; warnings: string[] }
 export interface DocSummary { id: string; type: DocType; number?: string; status: DocStatus; documentDate: IsoDate;

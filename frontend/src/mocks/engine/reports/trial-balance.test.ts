@@ -14,7 +14,8 @@ describe('trial balance', () => {
       expect(report.tieOuts![0].diff).toBe('0.00');
       expect(report.tieOuts![0].left).toBe(report.tieOuts![0].right);
       const lines = s.journals.filter((j) => s.docs.some((d) => d.id === j.docId && d.companyId === company))
-        .flatMap((j) => j.preview.entries).filter((e) => e.date <= asOf).flatMap((e) => e.lines);
+        .flatMap((j) => j.preview.entries).concat(s.bankJournals.filter((j) => j.companyId === company).flatMap((j) => j.entries)) // FN2: the opening balance the statements start from
+        .filter((e) => e.date <= asOf).flatMap((e) => e.lines);
       const expectedCodes = [...new Set(lines.map((l) => l.accountCode))].sort();
       expect(report.rows.filter((r) => r.kind === 'row').map((r) => r.cells.code).sort()).toEqual(expectedCodes);
       for (const row of report.rows.filter((r) => r.kind === 'row')) {

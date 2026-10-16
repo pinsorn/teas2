@@ -2,6 +2,7 @@
 export interface BankAccount {
   id: string; companyId: string; kind: 'bank' | 'cash'; bankName?: string; nameTh: string; accountNo?: string; accountCode: string;
   /** The account new receipts / payments default to. */ default?: boolean; active?: boolean; version?: number;
+  /** FN2: statement lines on or before this date are locked ("ปิดการกระทบยอดถึงวันที่"). */ reconciledTo?: string;
 }
 
 /** Bank / cash accounts per company; ids prefixed `ba-` (VAT company) / `nba-` (non-VAT company). */

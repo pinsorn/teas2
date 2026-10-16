@@ -12,6 +12,7 @@ import { MockError, diffBody, isPinned, logActivity, logAudit, stamp, today } fr
 import { fromSatang, toSatang } from './money';
 import { adjustSnapshot, hasSnapshot, isNote, noteHeader, noteMissing, noteProblem, withNoteVat } from './notes';
 import { SeriesAllocator } from './numbering';
+import { refuseReconciled } from './locks';
 import { firstOpenDate, isClosed, monthLabelTh } from './periods';
 import { balanceOf, certError, cleanAllocations, fiscalAllocations, freezeWht, groupTotals, payDefaults, payLines, payoutOf, settleExtras, settleProblem, settleTotals, withBankSnapshot } from './settlement';
 import { syncWts } from './wht-certificates';
@@ -43,7 +44,7 @@ const reverseEntry = (st: MockState, companyId: string, e: JournalEntryPreview):
     : isClosed(st, companyId, e.date) ? { ...reversalOf(e, firstOpenDate(st, companyId), stamp()), late: true } : reversalOf(e, today(), stamp());
 
 /** A correction's reversal (SP0 5.9): on the ORIGINAL entry's date while that period is open, else late on the first open date. Only a user cancel posts its reversal today. */
-const correctionReversal = (st: MockState, companyId: string, e: JournalEntryPreview): JournalEntryPreview =>
+export const correctionReversal = (st: MockState, companyId: string, e: JournalEntryPreview): JournalEntryPreview =>
   isPinned() || isClosed(st, companyId, e.date) ? reverseEntry(st, companyId, e) : reversalOf(e, e.date, stamp());
 
 /** D-10: a NEW entry for a document dated in a closed month posts on the first open date, late; the document date is unchanged (I9). */
@@ -334,7 +335,7 @@ function settleTargets(st: MockState, d: Stored, allocations: Allocation[] | und
 }
 
 /** D-10: a document is dated today or earlier, in an open month (seed history, on the pinned clock, only skips the closed-period refusal). Issue, and revise when the date moves. */
-function dateGuards(st: MockState, companyId: string, date: IsoDate): void {
+export function dateGuards(st: MockState, companyId: string, date: IsoDate): void {
   if (date > today()) throw new MockError(422, 'doc.future_date', `วันที่เอกสารอยู่ในอนาคต (วันนี้ ${today()}) ออกเอกสารไม่ได้ ให้แก้วันที่เป็นวันนี้หรือก่อนหน้า`);
   if (!isPinned() && isClosed(st, companyId, date)) {
     throw new MockError(422, 'period.closed', `งวดบัญชี ${monthLabelTh(date.slice(0, 7))} ปิดแล้ว ออกเอกสารลงวันที่ในงวดนี้ไม่ได้ ให้เปลี่ยนวันที่เป็น ${firstOpenDate(st, companyId)} เป็นต้นไป หรือขอเปิดงวดอีกครั้ง`);
@@ -436,6 +437,7 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
   checkVersion(d, version);
   // SP0 §7.5: a period lock does not block cancel (blockingLocks leaves it out); the other locks do.
   if (blockingLocks(d).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ยกเลิกไม่ได้');
+  refuseReconciled(st, d); // FN2: matched to a bank line - the exit is to unmatch it first
   // SP0 §7.4: an applied receipt (TI) or settlements (IV) block a cancel; N-class documents and a CN / DN being cancelled do not. S5 adds: a TI with a live CN / DN against it (below).
   if (st.links.some((l) => l.to === id && l.active && l.kind === 'settles')) throw new MockError(409, 'doc.has_dependents', 'มีใบเสร็จ/การชำระที่ผูกอยู่ ต้องยกเลิกหรือถอนการชำระก่อน');
   // invariant 10: every live note adjusts a live TI, and a cancelled invoice with a live note would reverse its receivable twice (AR 1130 vs the subledger): cancel the notes first
@@ -573,6 +575,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   const fin = { ...fin0, header: withBankSnapshot(st, d.companyId, d.type, withClaimPeriod(st, d.companyId, d.type, fin0.header)) }; // a bill is always filed in a claim period: the vendor invoice month unless one was chosen; a PCN keeps none
   const { allocations: _a, ...rest } = d; void _a;
   const totals = totalsOf(st, d.companyId, d.type, fin, d.id);
+  refuseReconciled(st, d, { header: fin.header, totals }); // FN2: a matched document keeps its cash, bank account and date; anything else stays editable
   const payout = payoutOf(st, d.companyId, { id: d.id, type: d.type, ...fin, totals });
   const reapprove = reviseNeedsApproval(st, d, payout, fin.allocations); // C1: more money than was approved needs an approver in the same command
   if (reapprove) {
@@ -621,6 +624,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   const old = getDoc(st, id);
   if (!LIVE.includes(old.status)) throw new MockError(409, 'doc.not_correctable', 'ออกใหม่ได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   if (blockingLocks(old).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ออกใหม่ไม่ได้');
+  refuseReconciled(st, old);
   if (st.links.some((l) => l.to === id && l.active)) throw new MockError(409, 'doc.has_dependents', 'มีเอกสารอ้างอิงอยู่ ต้องยกเลิกเอกสารนั้นก่อน');
   let body = stored(st, old.companyId, old.type, { ...raw, allocations: raw.allocations ?? old.allocations }, old.allocations);
   if (SETTLES[old.type] && fiscalAllocations(body.allocations) !== fiscalAllocations(old.allocations)) { // the links are carried as they are

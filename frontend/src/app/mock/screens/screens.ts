@@ -135,6 +135,7 @@ export const SCREENS: Screen[] = [
   { name: 'bankList', route: BANK_BASE, company: 'both', states: true },
   { name: 'bankView', route: { fixture: 'bankKbank', base: BANK_BASE }, company: 'vat', states: true },
   { name: 'bankEmpty', route: { fixture: 'bankEmpty', base: BANK_BASE }, company: 'vat', states: true },
+  { name: 'bankReconcile', route: { fixture: 'bankKbank', base: BANK_BASE, suffix: '?tab=reconcile' }, company: 'vat', states: true },
   { name: 'nbankView', route: { fixture: 'nbankKbank', base: BANK_BASE }, company: 'nonvat', states: true },
   { name: 'styleGuide', route: '/style-guide', company: 'both', states: false },
 ];

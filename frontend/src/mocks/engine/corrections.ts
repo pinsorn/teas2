@@ -4,6 +4,7 @@ import type { MockState } from '../store';
 import {
   type Body, LIVE, approvalOnRevise, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, keepNoteLines, keepOmitted, markReplaced, refuseBelowSettled, refuseNonPositive, refusePartyChange, refuseUnissuableReceipt, refuseUnrevisablePurchase, reissue, revise, reviseNeedsApprover, stableJson, totalsOf,
 } from './commands';
+import { refuseReconciled } from './locks';
 import { MockError, today } from './log';
 import { fromSatang, toSatang } from './money';
 import { isNote, noteProblem } from './notes';
@@ -98,6 +99,7 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
     refuseBelowSettled(st, d, proposed); // an IV / PB cannot be revised below what is already received / paid: say so before the plan is shown
     refuseUnrevisablePurchase(st, d, proposed); // a PB under live notes, an unregistered vendor's VAT, a claim period out of range, more than the PO has left
     if (reviseNeedsApprover(st, d, proposed) && !PERMISSIONS_BY_ROLE[role].includes(`doc.${d.type}.approve`)) throw approvalOnRevise(); // C1: more money than was approved - a plan nobody here may run is never shown
+    refuseReconciled(st, d, { header: proposed.header, totals: totalsOf(st, d.companyId, d.type, proposed, d.id) }); // FN2: a plan that would move a matched document's cash, account or date is never shown
     add('revise', d, `แก้ไข ${label} (เลขที่เดิม เพิ่มรุ่นแก้ไข)`, `doc.${d.type}.correct`);
     explanation = 'การแก้ไขนี้ไม่กระทบภาษี แก้ไขในเอกสารเดิมและเก็บประวัติการแก้ไข';
   } else {
@@ -154,6 +156,7 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
       explanation = 'การแก้ไขนี้กระทบภาษี ยกเลิกใบเสร็จที่เกี่ยวข้อง ออกเอกสารใหม่ด้วยยอดเดิม แล้วออกใบเพิ่ม/ลดหนี้สำหรับส่วนต่าง';
     }
   }
+  for (const s of steps) if (s.action === 'cancel' || s.action === 'reissue') refuseReconciled(st, getDoc(st, s.docId)); // FN2: cancelling / reissuing a matched document (the plan's own or a receipt it would cancel) is refused up front
   const ordered = steps.map((s, i) => ({ ...s, order: i + 1 }));
   const granted = PERMISSIONS_BY_ROLE[role];
   return {

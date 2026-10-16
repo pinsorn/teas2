@@ -17,12 +17,16 @@ export const bankGlAccounts = (st: MockState, companyId: string): CompanyAccount
 
 /** Read-only-after-use (M1): any journal line of the company already posts to the account. History carries the code itself, so a later edit could never move it - this only refuses the edit. */
 export function glUsed(st: MockState, companyId: string, accountCode: string): boolean {
-  return glPoster(st, companyId, accountCode) !== undefined;
+  return glPoster(st, companyId, accountCode) !== undefined || bankJournalPoster(st, companyId, accountCode) !== undefined;
 }
 /** The first document of the company whose journal posts to the account. */
 function glPoster(st: MockState, companyId: string, accountCode: string): string | undefined {
   const own = new Map(st.docs.filter((d) => d.companyId === companyId).map((d) => [d.id, d.number ?? d.id]));
   return st.journals.find((j) => own.has(j.docId) && j.preview.entries.some((e) => e.lines.some((l) => l.accountCode === accountCode)))?.docId;
+}
+/** The bank journal (fee / inline / opening) that posts to the account, if any: the same freeze as a document's journal. */
+function bankJournalPoster(st: MockState, companyId: string, accountCode: string): string | undefined {
+  return st.bankJournals.find((j) => j.companyId === companyId && j.entries.some((e) => e.lines.some((l) => l.accountCode === accountCode)))?.id;
 }
 
 /** M1: who else claims a GL account that no bank account is bound to - a posting rule that is not a bank's own Cash rule (the keyless Cash default included), or journal lines already posted to it for something else.
@@ -33,6 +37,7 @@ export function glClaim(st: MockState, companyId: string, accountCode: string): 
   if (rule) return `บัญชีแยกประเภทนี้ถูกใช้โดยกฎการลงบัญชี “${rule.role}”${rule.key ? ` (${rule.key})` : ' (ค่าเริ่มต้น)'} แล้ว`;
   const docId = glPoster(st, companyId, accountCode);
   if (docId) return `มีรายการบัญชีลงที่บัญชีแยกประเภทนี้แล้ว (เอกสาร ${st.docs.find((d) => d.id === docId)?.number ?? docId}) ผูกกับบัญชีธนาคารไม่ได้`;
+  if (bankJournalPoster(st, companyId, accountCode)) return 'มีรายการบัญชีจากการกระทบยอดธนาคารลงที่บัญชีแยกประเภทนี้แล้ว ผูกกับบัญชีธนาคารไม่ได้';
   return undefined;
 }
 

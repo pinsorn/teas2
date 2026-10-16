@@ -1,7 +1,7 @@
 'use client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useId, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -9,6 +9,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { useCompanyEpoch } from '@/app-shell/useCompanyEpoch';
 import { isForbidden, useMe } from '@/app-shell/useMe';
@@ -17,6 +18,7 @@ import { ApiError } from '@/lib/api/client';
 import { endpoints } from '@/lib/api/endpoints';
 import { qk } from '@/lib/query/keys';
 import { ImportDialog } from '@/kit/bank/ImportDialog';
+import { ReconcileTab } from '@/kit/bank/ReconcileTab';
 import { StatementLines } from '@/kit/bank/StatementLines';
 import { RecordFormDialog } from '@/kit/record-form/RecordForm';
 import { ErrorState } from '@/kit/states/ErrorState';
@@ -55,6 +57,11 @@ function Loaded({ row, permissions, companyId }: { row: RecordRow; permissions: 
   const [confirmOff, setConfirmOff] = useState(false);
   const [importing, setImporting] = useState(false);
   const hintId = useId();
+  const router = useRouter();
+  const search = useSearchParams();
+  const focusLine = search.get('line') ?? undefined; // the exit of a matched document's lock lands on its line
+  const tab = focusLine || search.get('tab') === 'reconcile' ? 'reconcile' : 'lines';
+  const go = (next: Record<string, string | undefined>) => { const u = new URLSearchParams(search.toString()); for (const [k, v] of Object.entries(next)) { if (v) u.set(k, v); else u.delete(k); } router.replace(`?${u}`); };
   const canManage = permissions.includes(descriptor.permissions.manage);
   const isBank = row.kind === 'bank';
   const toggle = useMutation({
@@ -96,7 +103,18 @@ function Loaded({ row, permissions, companyId }: { row: RecordRow; permissions: 
         ) : null}
       </header>
 
-      {isBank ? <StatementLines accountId={row.id} onImport={canManage ? () => setImporting(true) : undefined} /> : <p className="text-muted-foreground">{tb('noStatements')}</p>}
+      {isBank ? (
+        <Tabs value={tab} onValueChange={(v) => go({ tab: v === 'reconcile' ? 'reconcile' : undefined, line: undefined })}>
+          <TabsList aria-label={tb('tabs.label')}>
+            <TabsTrigger value="lines">{tb('tabs.lines')}</TabsTrigger>
+            <TabsTrigger value="reconcile">{tb('tabs.reconcile')}</TabsTrigger>
+          </TabsList>
+          <TabsContent value="lines"><StatementLines accountId={row.id} onImport={canManage ? () => setImporting(true) : undefined} /></TabsContent>
+          <TabsContent value="reconcile">
+            <ReconcileTab accountId={row.id} accountCode={String(row.accountCode)} permissions={permissions} focusLine={focusLine} onShowAll={() => go({ line: undefined })} />
+          </TabsContent>
+        </Tabs>
+      ) : <p className="text-muted-foreground">{tb('noStatements')}</p>}
 
       {confirmOff ? (
         <AlertDialog open onOpenChange={(o) => { if (!o) setConfirmOff(false); }}>

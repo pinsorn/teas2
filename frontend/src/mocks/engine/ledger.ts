@@ -102,3 +102,10 @@ export function ledgerFor(st: MockState, doc: Doc & { companyId?: string }): Jou
   if (doc.status === 'cancelled' || doc.status === 'replaced') entries.push(reversalOf(original, doc.cancel?.at.slice(0, 10) ?? doc.header.documentDate, doc.cancel?.at));
   return { entries };
 }
+
+/** Every journal entry of a company: its documents' and the ones the reconciliation wrote itself (fee / inline / opening). The one reader for reports. */
+export function* companyEntries(st: MockState, companyId: string): Generator<JournalEntryPreview> {
+  const mine = new Set(st.docs.filter((d) => d.companyId === companyId).map((d) => d.id));
+  for (const j of st.journals) if (mine.has(j.docId)) yield* j.preview.entries;
+  for (const j of st.bankJournals) if (j.companyId === companyId) yield* j.entries;
+}

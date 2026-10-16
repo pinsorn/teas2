@@ -9,6 +9,10 @@ import { api, ApiError, normalizeProblem } from './client';
 export type DocInput = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] };
 /** A postable current-asset account a bank / cash account can be bound to; `taken` = another bank account of the company already owns it. */
 export interface BankGlAccount { code: string; nameTh: string; subClass: 'cash' | 'bank'; taken: boolean }
+/** FN2: a receipt / voucher the line could match (`exact` = the suggestion: same cash, within 7 days). */
+export interface BankCandidate { docId: string; type: 'RC' | 'PV'; number: string; documentDate: string; partyName: string; cash: Money; remaining: Money; exact: boolean }
+export interface PostableAccount { code: string; nameTh: string; class: string; /** the kind of party the account needs (receivable / payable) */ party?: 'customer' | 'vendor' | 'employee' }
+export interface Reconciliation { reconciledTo: string | null; counts: Record<BankLine['status'], number> }
 export interface WhtTypeRef { code: string; nameTh: string; rate: string; incomeType: string }
 export interface ListDocsParams { status?: string; from?: string; to?: string; q?: string; outstanding?: 'positive'; overdue?: '1'; agent?: '1'; limit?: number; cursor?: string }
 
@@ -64,8 +68,19 @@ export const endpoints = {
   /** FN1: `content` is the CSV text, or the PDF as base64. The password (K PLUS) is sent once and never kept. */
   importStatement: (accountId: string, body: { fileName: string; format: BankImport['format']; content: string; password?: string }) =>
     api<BankImport>('POST', `/finance/bank-accounts/${encodeURIComponent(accountId)}/imports`, body),
-  listBankLines: (accountId: string, p: { status?: BankLine['status']; from?: string; to?: string; limit?: number; cursor?: string } = {}) =>
+  listBankLines: (accountId: string, p: { status?: BankLine['status']; from?: string; to?: string; line?: string; limit?: number; cursor?: string } = {}) =>
     api<Page<BankLine>>('GET', `/finance/bank-accounts/${encodeURIComponent(accountId)}/lines${qs(p)}`),
+  /** FN2 reconciliation (bank.reconcile): suggestions / search, match (batch, split share, fee / rounding difference), unmatch, ignore, inline journal, lock to a date. */
+  bankCandidates: (lineId: string, q?: string) => api<{ items: BankCandidate[] }>('GET', `/finance/bank-lines/${encodeURIComponent(lineId)}/candidates${qs({ q })}`),
+  matchBankLine: (lineId: string, body: { docIds: string[]; amounts?: Record<string, Money>; diff?: { role: 'BankFee' | 'RoundingDifference'; amount: Money } }) =>
+    api<BankLine>('POST', `/finance/bank-lines/${encodeURIComponent(lineId)}/match`, body),
+  bankLineCommand: (lineId: string, command: 'unmatch' | 'ignore' | 'unignore', reason?: string) =>
+    api<BankLine>('POST', `/finance/bank-lines/${encodeURIComponent(lineId)}/${command}`, { reason }),
+  postBankLine: (lineId: string, body: { accountCode: string; description?: string; partyId?: string }) =>
+    api<BankLine>('POST', `/finance/bank-lines/${encodeURIComponent(lineId)}/post`, body),
+  postableAccounts: () => api<PostableAccount[]>('GET', '/finance/postable-accounts'),
+  getReconciliation: (accountId: string) => api<Reconciliation>('GET', `/finance/bank-accounts/${encodeURIComponent(accountId)}/reconciliation`),
+  lockReconciliation: (accountId: string, date: string) => api<{ reconciledTo: string }>('POST', `/finance/bank-accounts/${encodeURIComponent(accountId)}/reconciled-to`, { date }),
   whtTypes: () => api<WhtTypeRef[]>('GET', '/wht-types'),
   /** Every document of one party, across the types the role can read. */
   docsByParty: (partyId: string) => api<Page<DocSummary>>('GET', `/docs/by-party/${encodeURIComponent(partyId)}`),

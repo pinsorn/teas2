@@ -32,7 +32,7 @@
     "actions": {
       "submit": "Submit for approval", "approve": "Approve", "approveAndIssue": "Approve and issue", "sendBack": "Send back for changes", "whyPaid": "Paid in full, nothing left to pay",
       "label": "Actions", "issueDraft": "Save and issue…", "edit": "Edit", "print": "Print", "copy": "Copy as new",
-      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "receive": "Receive payment", "whyInclusiveNote": "This invoice is priced VAT-inclusive, so a credit / debit note cannot be issued directly. Use Edit (a correction plan) instead.", "issueCn": "Issue credit note", "issueDn": "Issue debit note", "issuePcn": "Record vendor credit note", "issuePdn": "Record vendor debit note", "markDelivered": "Delivered", "markSent": "Mark as sent to vendor", "whyNothingRemaining": "Every line is already converted in full; there is nothing to close", "whyClosed": "The remainder is closed, so it cannot be converted; revise the document to reopen it"
+      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "lockedReconciliation": "Cannot cancel ({reason}); use “Cancel match” in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "receive": "Receive payment", "whyInclusiveNote": "This invoice is priced VAT-inclusive, so a credit / debit note cannot be issued directly. Use Edit (a correction plan) instead.", "issueCn": "Issue credit note", "issueDn": "Issue debit note", "issuePcn": "Record vendor credit note", "issuePdn": "Record vendor debit note", "markDelivered": "Delivered", "markSent": "Mark as sent to vendor", "whyNothingRemaining": "Every line is already converted in full; there is nothing to close", "whyClosed": "The remainder is closed, so it cannot be converted; revise the document to reopen it"
     },
     "print": { "reprintTitle": "Reprint {doc}", "reprintBody": "A reprint is printed as a 'COPY'. The original has already been printed.", "reprintConfirm": "Print a copy", "back": "Back", "logFailed": "The print could not be logged, so nothing was printed. Try again." },
     "agent": { "draftBy": "Drafted by {name} for {owner}", "draftByNoOwner": "Drafted by {name}", "createdBy": "Created by {name} for {owner}", "createdByNoOwner": "Created by {name}", "report": "View the check report" },
@@ -408,6 +408,7 @@
       "vendors": "Vendors list",
       "items": "Items list",
       "bankList": "Bank and cash accounts list",
+      "bankReconcile": "Bank account reconciliation (KBank)",
       "bankView": "Bank account statement lines (KBank)",
       "bankEmpty": "Bank account with no statement lines yet",
       "nbankView": "Bank account statement lines (non-VAT)",
@@ -734,7 +735,8 @@
     "print": "Print",
     "tieOut": { "title": "Tie-out does not match", "diff": "Difference {diff} baht", "ok": "Tie-out matches" },
     "tabs": { "label": "Financial statements", "tb": "Trial balance", "pl": "Profit and loss", "bs": "Balance sheet", "gl": "General ledger" },
-    "tb": { "title": "Trial balance", "code": "Account code", "name": "Account name", "debit": "Debit", "credit": "Credit", "balanced": "Total debit {left} baht against total credit {right} baht" }
+    "tb": { "title": "Trial balance", "code": "Account code", "name": "Account name", "debit": "Debit", "credit": "Credit", "balanced": "Total debit {left} baht against total credit {right} baht" },
+    "bankRec": { "title": "Bank reconciliation", "item": "Item", "date": "Date", "amount": "Amount", "tie": "Adjusted statement balance {left} baht against adjusted book balance {right} baht" }
   },
   "records": {
     "common": {
@@ -782,6 +784,34 @@
   "bank": {
     "noStatements": "A cash box has no statement lines",
     "gl": "GL account", "accountNo": "Account number", "bankName": "Bank", "kind": "Account type",
+    "tabs": { "label": "Account views", "lines": "Statement lines", "reconcile": "Reconcile" },
+    "reconcile": {
+      "actions": "Actions", "locked": "Locked", "onlyLine": "Showing the one selected line", "showAll": "Show all",
+      "find": "Find a match", "ignore": "Skip", "unmatch": "Cancel match", "unignore": "Stop skipping", "postedFinal": "Posted and final (reverse the journal to undo)",
+      "unmatchTitle": "Cancel the match", "unignoreTitle": "Stop skipping this line", "reason": "Reason", "reasonOptional": "You may give a reason (optional)",
+      "lockedReason": "This line is inside the locked reconciliation period, so a reason is required. It is recorded on the line and on the documents.",
+      "cancel": "Cancel", "failed": "The action failed",
+      "diff": { "BankFee": "Bank fee", "RoundingDifference": "Rounding difference" },
+      "lock": {
+        "title": "Lock the reconciliation up to a date", "current": "Reconciliation locked up to {date}", "none": "No reconciliation lock yet",
+        "counts": "Unmatched {unmatched} · matched {matched} · skipped {ignored} · posted {posted}", "date": "Lock up to date", "submit": "Lock reconciliation",
+        "hint": "Allowed once every line up to that date is matched, posted or skipped. Afterwards cancelling a match needs bank.reconcile and a reason."
+      },
+      "match": {
+        "title": "Find a match", "search": "Search document number or party", "searchHint": "e.g. RC-202609-0001", "suggestions": "Suggestions: same amount, within 7 days, same account",
+        "searchResults": "Search results (same account, still matchable)", "loading": "Searching", "noSuggestion": "No suggestion. Search by document number or party.", "noneFound": "No document matches the search",
+        "list": "Matchable documents", "exact": "Exact amount", "cash": "Cash", "remaining": "Still matchable", "options": "Options",
+        "share": "Amount matched to this line (when a document is split over several lines)", "shareHint": "Empty = the document's whole remainder", "diffRole": "Difference", "noDiff": "No difference", "diffAmount": "Difference amount (baht)",
+        "feeHint": "The bank took a fee out of this amount; the fee is booked at the line's date", "roundingHint": "Use a minus sign when the bank shows less than the document", "noDiffHint": "The selected documents must add up to the line amount",
+        "submit": "Match", "submitting": "Matching"
+      },
+      "post": {
+        "open": "Book to an account", "title": "Book a statement line", "creditAccount": "Account received from (credit)", "debitAccount": "Account paid to (debit)", "choose": "— choose —",
+        "controlHint": "VAT and withholding-tax accounts are not offered; tax is posted by documents only", "party": "Party", "partySearch": "Search parties", "partyList": "Choose a party",
+        "description": "Description", "final": "Once posted it cannot be edited; reverse the journal if it is wrong", "submit": "Book", "submitting": "Booking"
+      },
+      "report": { "title": "Bank reconciliation report", "account": "Account" }
+    },
     "glPlaceholder": "— Choose a GL account —",
     "import": {
       "open": "Import statement", "title": "Import statement", "needManage": "Requires bank.manage",

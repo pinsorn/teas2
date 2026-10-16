@@ -11,7 +11,7 @@ type DocFixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssuedUnpa
   | 'soPartlyDelivered' | 'soClosed' | 'doDelivered' | 'nsoIssued' | 'ndoDelivered'
   | 'ivDraft' | 'ivIssuedUnpaid' | 'ivPartly' | 'ivSettled' | 'blVat' | 'blNonVat'
   | 'poDraft' | 'poSent' | 'poPartlyBilled' | 'poClosed' | 'npoIssued'
-  | 'rcMulti' | 'rcNoCert' | 'rcDeposit' | 'nrcCashBill' | 'cnIssued' | 'dnIssued' | 'tiCreditedToZero'
+  | 'rcStatement' | 'rcMulti' | 'rcNoCert' | 'rcDeposit' | 'nrcCashBill' | 'cnIssued' | 'dnIssued' | 'tiCreditedToZero'
   | 'pbDraft' | 'pbIssuedUnpaid' | 'pb1Settled' | 'pbMixedVat' | 'pbFromPo' | 'pbCapex' | 'pbClaimLate' | 'pbIncomplete' | 'pcnIssued' | 'pdnIssued' | 'npbVatToCost'
   | 'pvMultiWt' | 'pvGrossUp' | 'pvForeign' | 'pvCancelled' | 'wtIssued' | 'wtCancelled'
   | 'exDraft' | 'exPending' | 'exApproved' | 'exUnpaid' | 'exPaid' | 'exForfeit' | 'nexIssued'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
@@ -72,6 +72,7 @@ export const FIXTURE_PREDICATES: Record<DocFixtureKey, (d: D, st: MockState) => 
   blVat: byId('bl-1', (d) => d.status === 'issued'),
   blNonVat: byId('nbl-1', (d) => d.status === 'issued'),
   // S4 receipts
+  rcStatement: byId('rc-013', (d) => d.status === 'issued' && d.totals.cash === '6955.00'), // FN2: the September receipt whose cash equals a seeded statement line (bi-001-003)
   rcMulti: byId('rc-multi', (d) => d.status === 'issued'),
   rcNoCert: byId('rc-nocert', (d) => d.status === 'issued' && !!d.allocations?.some((a) => a.wht && !a.certNumber)),
   rcDeposit: byId('rc-dep', (d) => d.status === 'issued'),

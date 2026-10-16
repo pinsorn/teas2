@@ -127,6 +127,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
       return { onClick: () => router.push(routesOf(d).edit(doc.id)), why: permissions.includes(d.permissions.create) ? undefined : ts('needPermission', { permission: d.permissions.create }) };
     }
     if (lock.kind === 'settlement') return { onClick: () => setTab('chain') };
+    if (lock.kind === 'reconciliation' && lock.href) return { onClick: () => router.push(lock.href!) }; // the bank line, where the match is cancelled
     return undefined;
   };
 
