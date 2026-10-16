@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import { axeClean } from './helpers/axe';
 
 test('every built screen in the index opens without an error boundary', async ({ page }) => {
+  test.setTimeout(120_000); // one navigation per screen of the index: the index grows with every group
   await page.goto('/mock/screens');
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible(); // the page mounts once the mock worker is ready
   await expect(page.getByRole('link', { name: /^เปิด/ }).first()).toBeVisible();

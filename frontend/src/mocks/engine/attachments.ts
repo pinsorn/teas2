@@ -1,4 +1,4 @@
-import type { Actor, Attachment, AttachmentCategory, Doc } from '@/domain/types';
+import type { Actor, Attachment, AttachmentCategory, Doc, PaperModel } from '@/domain/types';
 import type { MockState } from '../store';
 import { MockError, logActivity, logAudit, stamp } from './log';
 
@@ -55,6 +55,13 @@ export function addAttachment(st: MockState, doc: Doc & { companyId: string }, i
   return { ...publicMeta(meta), dataUrl: input.dataUrl };
 }
 
+/** Seed data only: a file already attached to a document, under a fixed id (the bytes are a best-effort write: with no storage the list shows the metadata and an empty link). */
+export function seedAttachment(st: MockState, companyId: string, docId: string, a: { id: string; category: AttachmentCategory; name: string; dataUrl: string }, by: string): void {
+  const info = parse(a.dataUrl)!;
+  try { localStorage.setItem(keyOf(a.id), a.dataUrl); } catch { /* no storage: metadata only */ }
+  st.attachments.push({ companyId, id: a.id, docId, category: a.category, name: a.name, size: info.bytes, mime: info.mime, at: stamp(), by });
+}
+
 /** Undoes `addAttachment` when the metadata could not be persisted either. */
 export function discardAttachment(st: MockState, id: string): void {
   st.attachments = st.attachments.filter((a) => a.id !== id);
@@ -83,11 +90,11 @@ export const printCountOf = (st: MockState, docId: string): number => st.prints.
 
 /** The print action was used. The server decides what it was: the first print of a live document is the ต้นฉบับ, every later one a สำเนา whatever the caller asked.
  *  A cancelled / replaced document may be printed (the paper carries its void stamp) but that is logged as such and is never the original. */
-export function markPrinted(st: MockState, doc: Doc, copy: boolean, actor: Actor): { copy: boolean; printCount: number } {
+export function markPrinted(st: MockState, doc: Doc, copy: boolean, actor: Actor, paper?: PaperModel): { copy: boolean; printCount: number } {
   if (['draft', 'pending', 'approved'].includes(doc.status)) throw new MockError(409, 'doc.not_printable', 'เอกสารที่ยังไม่ได้ออกพิมพ์ไม่ได้ ต้องออกเอกสารก่อน');
   const dead = doc.status === 'cancelled' || doc.status === 'replaced';
   const asCopy = copy || dead || printCountOf(st, doc.id) > 0;
-  st.prints.push({ docId: doc.id, at: stamp(), by: actor.name, copy: asCopy });
+  st.prints.push({ docId: doc.id, at: stamp(), by: actor.name, copy: asCopy, ...(paper && printCountOf(st, doc.id) === 0 ? { paper } : {}) }); // the first print freezes the paper it was given (WT, I7)
   logActivity(st, doc.id, actor, dead ? 'พิมพ์เอกสารที่ยกเลิกแล้ว' : asCopy ? 'พิมพ์สำเนา' : 'พิมพ์ต้นฉบับ');
   return { copy: asCopy, printCount: printCountOf(st, doc.id) };
 }

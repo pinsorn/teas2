@@ -1,11 +1,12 @@
 import type { Company, Doc, DocType, PaperModel } from '@/domain/types';
-import { formatDateBE } from '@/lib/format';
+import { formatDateBE, formatMoney } from '@/lib/format';
 import type { ctx } from '../handlers/common';
 import { reasonTh } from '../fixtures/reason-codes';
+import { bahtText } from './bahtText';
 import { compute } from './commands';
 import { fromSatang, toSatang } from './money';
 import { notesUpTo } from './notes';
-import { cashBankId } from './settlement';
+import { cashBankId, freezeWht } from './settlement';
 type Ctx = ReturnType<typeof ctx>;
 
 const branchLabel = (code?: string) => (!code ? undefined : code === '00000' ? 'สำนักงานใหญ่ (00000)' : `สาขา ${code}`);
@@ -20,6 +21,10 @@ const LOOK: Partial<Record<DocType, Look>> = {
   RC: { titleTh: 'ใบเสร็จรับเงิน', titleEn: 'RECEIPT', signatures: ['ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'] },
   CN: { titleTh: 'ใบลดหนี้', titleEn: 'CREDIT NOTE', signatures: ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'] },
   DN: { titleTh: 'ใบเพิ่มหนี้', titleEn: 'DEBIT NOTE', signatures: ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'] },
+  PO: { titleTh: 'ใบสั่งซื้อ', titleEn: 'PURCHASE ORDER', signatures: ['ผู้สั่งซื้อ', 'ผู้อนุมัติ'], dueLabel: 'กำหนดรับของ' },
+  PV: { titleTh: 'ใบสำคัญจ่าย', titleEn: 'PAYMENT VOUCHER', signatures: ['ผู้จัดทำ', 'ผู้ตรวจ', 'ผู้อนุมัติ', 'ผู้รับเงิน'] },
+  EX: { titleTh: 'ใบเบิกค่าใช้จ่าย', titleEn: 'EXPENSE CLAIM', signatures: ['ผู้เบิก', 'ผู้ตรวจ', 'ผู้อนุมัติ'] },
+  WT: { titleTh: 'หนังสือรับรองการหักภาษี ณ ที่จ่าย', titleEn: 'WITHHOLDING TAX CERTIFICATE', signatures: ['ผู้จ่ายเงิน', 'ผู้มีอำนาจลงนาม'] },
   QT: { titleTh: 'ใบเสนอราคา', titleEn: 'QUOTATION', signatures: ['ผู้เสนอราคา', 'ผู้อนุมัติ', 'ลูกค้ายืนยันสั่งซื้อ'], dueLabel: 'ยืนราคาถึง' },
 };
 
@@ -54,7 +59,7 @@ function paperOf(c: Ctx, d: Doc, copy: boolean): PaperModel {
   };
 }
 
-const TYPE_TH: Partial<Record<DocType, string>> = { TI: 'ใบกำกับภาษี', IV: 'ใบแจ้งหนี้' };
+const TYPE_TH: Partial<Record<DocType, string>> = { TI: 'ใบกำกับภาษี', IV: 'ใบแจ้งหนี้', PB: 'บันทึกซื้อ', EX: 'ใบเบิกค่าใช้จ่าย' };
 /** BL: one row per grouped document with the amount the server recorded at issue; a statement is not a tax document, so no VAT rows. */
 function billingPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
   const { vatLines, ...m } = paperOf(c, d, copy); void vatLines;
@@ -86,6 +91,54 @@ function receiptPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
   return { ...m, payment: paymentLine(c, d), lines: [...settled, ...deposit, ...m.lines].map((l, i) => ({ ...l, no: i + 1 })) };
 }
 
+/** PV: the settled bills (number, the vendor's own number, date, amount paid), the voucher's own expense lines, the tax withheld per WHT type, the payment, and the server's cash / withheld / total.
+ *  A voucher is an internal payment record, not a tax document: no VAT rows. */
+function voucherPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
+  const { vatLines, ...m } = paperOf(c, d, copy); void vatLines;
+  const settled = (d.allocations ?? []).map((a) => {
+    const t = c.st.docs.find((x) => x.id === a.targetId);
+    const vno = t?.header.vendorDocNumber ? ` (เอกสารผู้ขาย ${t.header.vendorDocNumber})` : '';
+    return { description: `${TYPE_TH[a.targetType] ?? a.targetType} ${a.targetNumber ?? a.targetId}${vno}${t ? ` ลงวันที่ ${formatDateBE(t.header.documentDate)}` : ''}`, qty: '', unit: '', unitPrice: '', amount: a.amount, taxCode: 'EX' as const };
+  });
+  const whtLines = (d.whtFrozen ?? freezeWht(c.st, c.company.id, d, d.id)).lines.map((l) => ({ label: `${l.nameTh} ${l.rate} (ฐาน ${formatMoney(l.base)})`, base: l.base, tax: l.tax }));
+  return { ...m, partyLabel: 'ผู้รับเงิน', payment: paymentLine(c, d), whtLines, lines: [...settled, ...m.lines].map((l, i) => ({ ...l, no: i + 1 })) };
+}
+
+/** EX: the employee is the party; a line with a vendor tax invoice names it (number, vendor, date) under its description, and the approval trail is printed as a note. A claim is an internal record: no VAT rows. */
+function claimPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
+  const { vatLines, ...m } = paperOf(c, d, copy); void vatLines;
+  const lines = m.lines.map((l, i) => {
+    const v = d.lines[i].vendorInvoice;
+    return v ? { ...l, description: `${l.description} (ใบกำกับภาษี ${v.number} ${v.vendorName} ลงวันที่ ${formatDateBE(v.date)})` } : l;
+  });
+  const a = d.approval;
+  const trail = a?.approvedBy ? `ส่งอนุมัติโดย ${a.submittedBy.name} · อนุมัติโดย ${a.approvedBy.name} เมื่อ ${formatDateBE(a.approvedAt!.slice(0, 10))}` : undefined;
+  return { ...m, partyLabel: 'ผู้เบิก', lines, ...(trail || m.notes ? { notes: [m.notes, trail].filter(Boolean).join('\n') } : {}) };
+}
+
+/** WT (50 ทวิ, D-21): payer = our company, payee = the voucher's payee, one income type and its tax. Built from the stored certificate and the voucher that issued it; after the first print the
+ *  paper IS the stored snapshot (I7) - only the copy label and the void stamp follow the document as it is now. */
+function certificatePaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
+  const stampOf = (): Pick<PaperModel, 'voidMark'> => (d.status === 'cancelled' || d.status === 'replaced' ? { voidMark: { label: 'ยกเลิก', note: d.cancel?.reasonText } } : {});
+  const frozen = c.st.prints.find((p) => p.docId === d.id && p.paper)?.paper;
+  if (frozen) { const { voidMark, ...rest } = frozen; void voidMark; return { ...rest, copyLabel: copy ? 'สำเนา' : 'ต้นฉบับ', ...stampOf() }; }
+  const co: Company = c.company, look = LOOK.WT!;
+  const pv = c.st.docs.find((x) => x.id === c.st.links.find((l) => l.kind === 'issues' && l.to === d.id)?.from);
+  const mode = pv?.header.whtMode ?? 'deduct';
+  const tax = d.header.whtTax ?? d.totals.wht ?? '0.00', income = d.totals.total;
+  return {
+    titleTh: look.titleTh, titleEn: look.titleEn, copyLabel: copy ? 'สำเนา' : 'ต้นฉบับ', number: d.number ?? '-', documentDate: d.header.documentDate, ...(pv?.number ? { reference: pv.number } : {}),
+    seller: { name: co.legalNameTh, nameEn: co.legalNameEn, address: co.address, phone: co.phone, taxId: co.taxId, branchLabel: branchLabel(co.branchCode) },
+    buyer: { name: d.party?.name ?? '-', address: d.party?.address ?? '', taxId: d.party?.taxId, branchLabel: d.party?.taxId ? branchLabel(d.party.branchCode) : undefined },
+    partyLabel: 'ผู้ถูกหักภาษี ณ ที่จ่าย',
+    lines: d.lines.map((l, i) => ({ no: i + 1, description: l.description, qty: l.qty, unit: l.unit, unitPrice: l.unitPrice, amount: l.unitPrice, taxCode: 'EX' as const })),
+    totals: d.totals, signatures: look.signatures,
+    certificate: { form: d.header.whtForm ?? 'PND53', incomeType: d.header.whtIncomeType ?? '', incomeLabel: d.lines[0]?.description ?? '', paidOn: d.header.documentDate, income, tax, taxInWords: bahtText(tax),
+      condition: mode === 'grossup_always' ? 'forever' : mode === 'grossup_once' ? 'once' : 'withhold', ...(pv?.number ? { voucher: pv.number } : {}) },
+    ...stampOf(),
+  };
+}
+
 /** CN / DN (ม.86/10): the invoice adjusted (number, date), its value, the correct value after this note and the difference - this note's own net; its VAT and total are the document's.
  *  The correct value runs through the notes issued up to this one; the reason is the Thai wording, never the code. */
 function adjustmentPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
@@ -99,4 +152,4 @@ function adjustmentPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
   return { ...m, adjusts: { number: ti.number ?? '-', date: ti.header.documentDate, originalNet: ti.totals.net, correctNet: fromSatang(correct), diffNet: d.totals.net, reason: reasonTh(d.header) } };
 }
 
-export const PAPER_BUILDERS: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf, QT: paperOf, SO: paperOf, DO: paperOf, IV: paperOf, BL: billingPaper, RC: receiptPaper, CN: adjustmentPaper, DN: adjustmentPaper };
+export const PAPER_BUILDERS: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf, QT: paperOf, SO: paperOf, DO: paperOf, IV: paperOf, BL: billingPaper, RC: receiptPaper, CN: adjustmentPaper, DN: adjustmentPaper, PO: paperOf, PV: voucherPaper, EX: claimPaper, WT: certificatePaper };

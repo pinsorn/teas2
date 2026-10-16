@@ -22,14 +22,14 @@ describe('LineGrid amount editor (RC / PV)', () => {
     expect(screen.getByRole('combobox', { name: 'ภาษีรายการ 1' })).toHaveValue('S7');
     expect(screen.queryByRole('textbox', { name: 'จำนวน 1' })).toBeNull();
     expect(screen.queryByRole('textbox', { name: 'ราคาต่อหน่วย 1' })).toBeNull();
-    expect(screen.queryByRole('textbox', { name: 'หมวดค่าใช้จ่ายรายการ 1' })).toBeNull(); // category only for a vendor / employee party
+    expect(screen.queryByRole('combobox', { name: 'หมวดค่าใช้จ่ายรายการ 1' })).toBeNull(); // category only for a vendor / employee party
     expect(screen.queryByRole('combobox', { name: 'หัก ณ ที่จ่ายรายการ 1' })).toBeNull(); // withholding only when the document withholds
   });
   it('the category column appears for a vendor or employee party; the WHT column lists the server types', async () => {
     const spy = vi.fn();
     render(<Host showCategory whtTypes={WHT} spy={spy} />);
-    await userEvent.type(screen.getByRole('textbox', { name: 'หมวดค่าใช้จ่ายรายการ 1' }), 'ค่าจ้างช่างภาพ');
-    expect(spy).toHaveBeenLastCalledWith([expect.objectContaining({ expenseCategory: 'ค่าจ้างช่างภาพ' })]);
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'หมวดค่าใช้จ่ายรายการ 1' }), 'services'); // a known category, never free text
+    expect(spy).toHaveBeenLastCalledWith([expect.objectContaining({ expenseCategory: 'services' })]);
     const wht = screen.getByRole('combobox', { name: 'หัก ณ ที่จ่ายรายการ 1' });
     expect(within(wht).getAllByRole('option').map((o) => o.textContent)).toEqual(['ไม่หัก', 'ค่าบริการ 3%', 'ค่าเช่า 5%']);
     await userEvent.selectOptions(wht, 'SVC');
@@ -44,7 +44,7 @@ describe('LineGrid amount editor (RC / PV)', () => {
     render(<Host showCategory spy={spy} />);
     await userEvent.click(screen.getByRole('combobox', { name: 'รายการ 1' }));
     await userEvent.keyboard('{Enter}');
-    expect(screen.getByRole('textbox', { name: 'หมวดค่าใช้จ่ายรายการ 1' })).toHaveFocus();
+    expect(screen.getByRole('combobox', { name: 'หมวดค่าใช้จ่ายรายการ 1' })).toHaveFocus();
     await userEvent.keyboard('{Enter}');
     const amount = screen.getByRole('textbox', { name: 'จำนวนเงินรายการ 1' });
     expect(amount).toHaveFocus();
@@ -86,13 +86,22 @@ describe('LineGrid amount editor (RC / PV)', () => {
     expect(wht).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByRole('option', { name: 'ไม่พบประเภท GONE' })).toBeInTheDocument();
   });
-  it('a voucher grid (exemptOnly) offers only the no-VAT tax code and forces it on a picked item', async () => {
+  it('a voucher grid (exemptOnly) still offers every tax code (S7 is refused by the server with the quick-bill exit, D-16) but forces the no-VAT code on a picked item', async () => {
     const spy = vi.fn();
     render(<Host exemptOnly whtTypes={WHT} lines={[{ ...blank, taxCode: 'EX' }]} spy={spy} />);
-    expect(within(screen.getByRole('combobox', { name: 'ภาษีรายการ 1' })).getAllByRole('option').map((o) => o.textContent)).toEqual(['ไม่มี VAT / ยกเว้น']);
+    expect(within(screen.getByRole('combobox', { name: 'ภาษีรายการ 1' })).getAllByRole('option').map((o) => o.textContent)).toEqual(['VAT 7%', 'VAT 0%', 'ไม่มี VAT / ยกเว้น']);
     await userEvent.type(screen.getByRole('combobox', { name: 'รายการ 1' }), 'ถ');
     await userEvent.keyboard('{Enter}');
     await waitFor(() => expect(spy.mock.lastCall![0][0].itemId).toBe('SV-01'));
     expect(spy.mock.lastCall![0][0].taxCode).toBe('EX');
+  });
+  it('a line converted from a PO keeps its quantity when its price is typed (D-29: the PO remainder follows the quantity); a typed line is still 1 x amount', async () => {
+    const spy = vi.fn();
+    render(<Host showCategory spy={spy} lines={[{ ...blank, description: 'แฟ้ม', sourceLineId: 'po-l1', qty: '20', unit: 'เล่ม', unitPrice: '65.00' }, { ...blank, id: 'l2', description: 'อื่น ๆ', qty: '3', unitPrice: '10.00' }]} />);
+    await userEvent.type(screen.getByRole('textbox', { name: 'ราคาต่อหน่วยรายการ 1' }), '1');
+    expect(spy.mock.lastCall![0][0]).toMatchObject({ unitPrice: '1', qty: '20', sourceLineId: 'po-l1' });
+    expect(screen.getByText(/จาก 20 เล่ม/)).toBeVisible();
+    await userEvent.type(screen.getByRole('textbox', { name: 'จำนวนเงินรายการ 2' }), '5');
+    expect(spy.mock.lastCall![0][1]).toMatchObject({ qty: '1' });
   });
 });

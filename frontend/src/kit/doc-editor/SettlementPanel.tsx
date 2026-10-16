@@ -40,11 +40,12 @@ function SettlementPanelInner({ descriptor: d, partyId, value, onChange, allocat
   const t = useTranslations('docEditor.settlement');
   const { me } = useMe();
   const companyId = me?.activeCompanyId ?? '';
-  const types = d.settles ?? [];
+  // only the open items this role may read: a voucher pays bills and expense claims, and a role that cannot read claims still pays bills
+  const types = (d.settles ?? []).filter((x) => !me || me.permissions.includes(`doc.${x}.read`));
   const q = useQuery({
     queryKey: qk.openItems(companyId, partyId ?? '', types.join(',')),
     queryFn: () => endpoints.openItems({ partyId: partyId!, types }),
-    enabled: !!me && !!partyId && !readOnly,
+    enabled: !!me && !!partyId && !readOnly && types.length > 0,
   });
   const withholds = d.type === 'RC'; // the customer withholds on a receipt; a voucher withholds from its own lines
   const patch = (targetId: string, p: Partial<Allocation>) => onChange(value.map((a) => (a.targetId === targetId ? { ...a, ...p } : a)));
@@ -78,6 +79,7 @@ function SettlementPanelInner({ descriptor: d, partyId, value, onChange, allocat
     );
   }
   if (!partyId) return shell(<p className="text-muted-foreground">{t('pickParty')}</p>);
+  if (me && types.length === 0) return shell(<ForbiddenState permission={`doc.${d.settles?.[0]}.read`} />);
   if (q.isPending) return shell(<LoadingState rows={3} />);
   if (q.isError) {
     return shell(isForbidden(q.error)

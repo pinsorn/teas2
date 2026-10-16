@@ -45,7 +45,7 @@ describe('mock store', () => {
     const old = { ...seed(), version: 5, items: [] as unknown[] };
     localStorage.setItem('teas2.mock.state.v5', JSON.stringify(old));
     const s = loadState();
-    expect(s.version).toBe(14);
+    expect(s.version).toBe(23);
     expect(s.items.some((i) => i.id === 'EXP-01')).toBe(true);
     expect(s.parties.some((p) => p.id === 'pv-12')).toBe(true);
   });
@@ -74,16 +74,16 @@ describe('mock store', () => {
     const rcTargets = s.links.filter((l) => l.kind === 'settles' && s.docs.find((d) => d.id === l.to)?.type === 'TI').map((l) => l.to).filter((id) => !id.startsWith('spike-')).sort(); // (S3's receipts settle IVs; rc-multi also pays spike-60, outside this count)
     expect(rcTargets).toEqual(tis.filter((d) => d.status === 'settled' || d.status === 'partly_settled').map((d) => d.id).sort());
     expect(s.links.filter((l) => l.kind === 'replaces')).toHaveLength(3);
-    expect(s.links.filter((l) => l.kind === 'adjusts')).toHaveLength(5); // cn-1, cn-2 + S5's cn-ret, dn-1, cn-full
+    expect(s.links.filter((l) => l.kind === 'adjusts')).toHaveLength(7); // cn-1, cn-2 + S5's cn-ret, dn-1, cn-full + P2's pcn-1, pdn-1
     expect(kinds('CN')).toHaveLength(4);
-    expect(s.links.filter((l) => l.kind === 'converted_from')).toHaveLength(16);
+    expect(s.links.filter((l) => l.kind === 'converted_from')).toHaveLength(17); // + P2's pb-po
     const delivered = new Set(s.links.filter((l) => l.kind === 'converted_from').map((l) => l.to));
     expect(kinds('SO').filter((d) => d.status === 'issued' && !delivered.has(d.id))).toHaveLength(2);
     const qt = kinds('QT').find((d) => d.revision === 1)!;
     expect(qt.status).toBe('issued');
     expect(s.revisions.filter((r) => r.docId === qt.id).map((r) => r.revision)).toEqual([0, 1]);
     expect(tis.filter((d) => d.locks.some((l) => l.kind === 'filing'))).toHaveLength(1);
-    for (const d of s.docs.filter((x) => x.status !== 'draft')) {
+    for (const d of s.docs.filter((x) => x.status !== 'draft' && x.status !== 'pending' && x.status !== 'approved')) {
       expect(d.number).toMatch(/^[A-Z]+-\d{6}-\d{4}$/);
       expect(s.revisions.some((r) => r.docId === d.id && r.revision === 0)).toBe(true);
     }

@@ -17,6 +17,13 @@ export const BL_BASE = '/sales/billing-statements';
 export const RC_BASE = '/sales/receipts';
 export const CN_BASE = '/sales/credit-notes';
 export const DN_BASE = '/sales/debit-notes';
+export const PO_BASE = '/purchases/purchase-orders';
+export const PB_BASE = '/purchases/bills';
+export const PCN_BASE = '/purchases/vendor-notes';
+export const PDN_BASE = '/purchases/vendor-debit-notes';
+export const PV_BASE = '/purchases/payment-vouchers';
+export const EX_BASE = '/purchases/expense-claims';
+export const WT_BASE = '/tax/wht-certificates';
 // names are keys of messages `screens.name.*`; fixture keys live in src/mocks/fixtures/ids.ts (later tasks append their screens here)
 export const SCREENS: Screen[] = [
   { name: 'home', route: '/', company: 'both', states: true },
@@ -50,6 +57,46 @@ export const SCREENS: Screen[] = [
   { name: 'doPrint', route: { fixture: 'doDelivered', base: '/print/DO' }, company: 'vat', states: false },
   { name: 'nsoIssued', route: { fixture: 'nsoIssued', base: SO_BASE }, company: 'nonvat', states: true },
   { name: 'ndoDelivered', route: { fixture: 'ndoDelivered', base: DO_BASE }, company: 'nonvat', states: true },
+  { name: 'poList', route: PO_BASE, company: 'both', states: true },
+  { name: 'poNew', route: `${PO_BASE}/new`, company: 'both', states: true },
+  { name: 'poDraft', route: { fixture: 'poDraft', base: PO_BASE }, company: 'vat', states: true },
+  { name: 'poSent', route: { fixture: 'poSent', base: PO_BASE }, company: 'vat', states: true },
+  { name: 'poPartlyBilled', route: { fixture: 'poPartlyBilled', base: PO_BASE }, company: 'vat', states: true },
+  { name: 'poClosed', route: { fixture: 'poClosed', base: PO_BASE }, company: 'vat', states: true },
+  { name: 'poPrint', route: { fixture: 'poSent', base: '/print/PO' }, company: 'vat', states: false },
+  { name: 'npoIssued', route: { fixture: 'npoIssued', base: PO_BASE }, company: 'nonvat', states: true },
+  { name: 'pbList', route: PB_BASE, company: 'both', states: true },
+  { name: 'pbNew', route: `${PB_BASE}/new`, company: 'both', states: true },
+  { name: 'pbDraft', route: { fixture: 'pbDraft', base: PB_BASE }, company: 'vat', states: true },
+  { name: 'pbMixedVat', route: { fixture: 'pbMixedVat', base: PB_BASE }, company: 'vat', states: true },
+  { name: 'pbFromPo', route: { fixture: 'pbFromPo', base: PB_BASE }, company: 'vat', states: true },
+  { name: 'pbIncomplete', route: { fixture: 'pbIncomplete', base: PB_BASE }, company: 'vat', states: true },
+  { name: 'npbVatToCost', route: { fixture: 'npbVatToCost', base: PB_BASE }, company: 'nonvat', states: true },
+  { name: 'pcnList', route: PCN_BASE, company: 'both', states: true },
+  { name: 'pcnIssued', route: { fixture: 'pcnIssued', base: PCN_BASE }, company: 'vat', states: true },
+  { name: 'pdnList', route: PDN_BASE, company: 'both', states: true },
+  { name: 'pdnIssued', route: { fixture: 'pdnIssued', base: PDN_BASE }, company: 'vat', states: true },
+  { name: 'pvList', route: PV_BASE, company: 'both', states: true },
+  { name: 'pvNew', route: `${PV_BASE}/new`, company: 'both', states: true },
+  { name: 'pvMultiWt', route: { fixture: 'pvMultiWt', base: PV_BASE }, company: 'vat', states: true },
+  { name: 'pvGrossUp', route: { fixture: 'pvGrossUp', base: PV_BASE }, company: 'vat', states: true },
+  { name: 'pvForeign', route: { fixture: 'pvForeign', base: PV_BASE }, company: 'vat', states: true },
+  { name: 'pvCancelled', route: { fixture: 'pvCancelled', base: PV_BASE }, company: 'vat', states: true },
+  { name: 'pvPrint', route: { fixture: 'pvMultiWt', base: '/print/PV' }, company: 'vat', states: false },
+  { name: 'exList', route: EX_BASE, company: 'both', states: true },
+  { name: 'exNew', route: `${EX_BASE}/new`, company: 'both', states: true },
+  { name: 'exDraft', route: { fixture: 'exDraft', base: EX_BASE }, company: 'vat', states: true },
+  { name: 'exPending', route: { fixture: 'exPending', base: EX_BASE }, company: 'vat', states: true },
+  { name: 'exApproved', route: { fixture: 'exApproved', base: EX_BASE }, company: 'vat', states: true },
+  { name: 'exUnpaid', route: { fixture: 'exUnpaid', base: EX_BASE }, company: 'vat', states: true },
+  { name: 'exPaid', route: { fixture: 'exPaid', base: EX_BASE }, company: 'vat', states: true },
+  { name: 'exForfeit', route: { fixture: 'exForfeit', base: EX_BASE }, company: 'vat', states: true },
+  { name: 'nexIssued', route: { fixture: 'nexIssued', base: EX_BASE }, company: 'nonvat', states: true },
+  { name: 'exPrint', route: { fixture: 'exUnpaid', base: '/print/EX' }, company: 'vat', states: false },
+  { name: 'wtList', route: WT_BASE, company: 'both', states: true },
+  { name: 'wtIssued', route: { fixture: 'wtIssued', base: WT_BASE }, company: 'vat', states: true },
+  { name: 'wtCancelled', route: { fixture: 'wtCancelled', base: WT_BASE }, company: 'vat', states: true },
+  { name: 'wtPrint', route: { fixture: 'wtIssued', base: '/print/WT' }, company: 'vat', states: false },
   { name: 'ivList', route: IV_BASE, company: 'nonvat', states: true },
   { name: 'ivNew', route: `${IV_BASE}/new`, company: 'nonvat', states: true },
   { name: 'ivDraft', route: { fixture: 'ivDraft', base: IV_BASE }, company: 'nonvat', states: true },

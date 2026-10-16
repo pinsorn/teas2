@@ -1,12 +1,15 @@
-import { DOC_TYPES, GROUPS, LIVE, SETTLES } from '@/domain/doc-types';
+import { ADJUSTS, CREDIT_NOTES, DOC_TYPES, GROUPS, LIVE, SETTLES } from '@/domain/doc-types';
 import type { WhtLine, WhtMode } from '@/domain/types';
 import type { Doc } from '@/domain/types';
 import type { MockState } from '../store';
+import { approvalRequired } from './approval';
+import { payoutOf } from './settlement';
 import { consumed, q4 } from './chain';
 import { divRoundHalfAway, fromSatang, toSatang } from './money';
 import { resolveRole } from './posting';
-import { whtOf } from './settlement';
-import { computeDoc, vatOf } from './vat';
+import { claimPeriodOf, exForfeited, forfeitedOf, isRecoverable } from './purchase-vat';
+import { computeDoc, vatBasisOf } from './vat';
+import { wtsOfPv } from './wht-certificates';
 
 type Stored = MockState['docs'][number];
 
@@ -43,33 +46,36 @@ export function whtLineProblems(l: WhtLine, base: number, bp: bigint, mode: WhtM
   return out;
 }
 
-/** WHT of a PV recomputed from its lines and the fixture rate table with its own bigint formulas (not `computeWht`), and the engine's lines checked against it. */
-function expectedWht(st: MockState, d: Stored): { tax: number; expense: number; cashDelta: number; bad?: string } {
-  const nets = computeDoc(d.lines, !!d.header.priceIncludesVat, vatOf(st, d.companyId)).lines;
+/** WHT of a PV recomputed from its lines and the bills it pays (the bases: its own typed lines + the bases STORED on it when it was issued, C1) and the fixture rate table with its own bigint formulas (not `computeWht`),
+ *  and the engine's lines checked against it. */
+function expectedWht(st: MockState, d: Stored): { tax: number; expense: number; cashDelta: number; lines: { code: string; tax: bigint }[]; bad?: string } {
+  const nets = computeDoc(d.lines, !!d.header.priceIncludesVat, vatBasisOf(st, d.companyId, 'PV')).lines;
   const base = new Map<string, bigint>();
   d.lines.forEach((l, i) => { if (l.whtTypeCode) base.set(l.whtTypeCode, (base.get(l.whtTypeCode) ?? 0n) + BigInt(toSatang(nets[i].net))); });
+  for (const b of d.whtFrozen?.bases ?? []) base.set(b.whtTypeCode, (base.get(b.whtTypeCode) ?? 0n) + BigInt(toSatang(b.base)));
   const mode = d.header.whtMode ?? 'deduct';
   let tax = 0n, expense = 0n, cashDelta = 0n;
-  const want: [string, bigint, bigint][] = [];
+  const want: [string, bigint, bigint][] = [], perType: { code: string; tax: bigint }[] = [];
   for (const [code, b] of base) {
     if (b <= 0n) continue; // the engine skips a non-positive base before it looks the type up, so does this check
     const t = st.whtTypes.filter((x) => x.companyId === d.companyId && x.code === code && x.effectiveFrom <= d.header.documentDate).sort((x, y) => y.effectiveFrom.localeCompare(x.effectiveFrom))[0];
-    if (!t) return { tax: 0, expense: 0, cashDelta: 0, bad: `unknown WHT type ${code}` };
+    if (!t) return { tax: 0, expense: 0, cashDelta: 0, lines: [], bad: `unknown WHT type ${code}` };
     const r = BigInt(t.rateBp);
     const income = mode === 'deduct' ? b : mode === 'grossup_always' ? divRoundHalfAway(b * 10000n, 10000n - r) : divRoundHalfAway(b * (10000n + r), 10000n);
     const lt = divRoundHalfAway(income * r, 10000n);
     const paid = mode === 'deduct' ? b - lt : mode === 'grossup_always' ? b : income - lt; // what the payee receives
+    perType.push({ code, tax: lt });
     tax += lt; cashDelta += paid - b; expense += mode === 'deduct' ? 0n : mode === 'grossup_always' ? lt : income - b;
     want.push([code, b, r]);
   }
-  let engine: WhtLine[];
-  try { engine = whtOf(st, d.companyId, d.header, d.lines).lines; } catch (e) { return { tax: 0, expense: 0, cashDelta: 0, bad: e instanceof Error ? e.message : String(e) }; }
+  if (!d.whtFrozen) return { tax: 0, expense: 0, cashDelta: 0, lines: [], bad: 'a live voucher without its stored withholding figures' };
+  const engine: WhtLine[] = d.whtFrozen.lines;
   const problems = want.flatMap(([code, b, r]) => {
     const l = engine.find((x) => x.code === code);
     return l ? whtLineProblems(l, Number(b), r, mode) : [`WHT ${code}: the engine produced no line`];
   });
-  if (problems.length) return { tax: 0, expense: 0, cashDelta: 0, bad: problems.join('; ') };
-  return { tax: Number(tax), expense: Number(expense), cashDelta: Number(cashDelta) };
+  if (problems.length) return { tax: 0, expense: 0, cashDelta: 0, lines: [], bad: problems.join('; ') };
+  return { tax: Number(tax), expense: Number(expense), cashDelta: Number(cashDelta), lines: perType };
 }
 
 /** Every violation in the state, as readable strings; [] = all hold (money invariants 1-7, numbering, derived locks). */
@@ -80,7 +86,11 @@ export function checkInvariants(st: MockState): string[] {
     try { return toSatang(m); } catch { out.push(`${where}: bad money "${m}"`); return 0; }
   };
   const gl = new Map<string, number>(); // `${companyId}|${code}` -> debit - credit
+  const credit = new Map<string, number>(); // the same, credit - debit (WHT payable accounts)
   const arByParty = new Map<string, number>(); // `${companyId}|${party}` -> debit - credit on 1130
+  const apByParty = new Map<string, number>(); // the same on 2110 (payables)
+  const empByParty = new Map<string, number>(); // the same on 2180 (owed to employees)
+  const inputVat = new Map<string, number>(); // `${companyId}|${claim period}` -> debit - credit on 1170 posted by PB / PCN / PDN (reversals and corrections included)
 
   // 1. every journal entry balances, is non-negative and posts to postable accounts of its own company
   for (const j of st.journals) {
@@ -98,7 +108,11 @@ export function checkInvariants(st: MockState): string[] {
         else if (!acc.postable) out.push(`${where}: account ${l.accountCode} is not postable`);
         const k = `${d.companyId}|${l.accountCode}`;
         gl.set(k, (gl.get(k) ?? 0) + a - b);
+        credit.set(k, (credit.get(k) ?? 0) + b - a);
         if (l.accountCode === '1130') { const pk = `${d.companyId}|${l.partyName ?? ''}`; arByParty.set(pk, (arByParty.get(pk) ?? 0) + a - b); }
+        if (l.accountCode === '2110') { const pk = `${d.companyId}|${l.partyName ?? ''}`; apByParty.set(pk, (apByParty.get(pk) ?? 0) + b - a); }
+        if (l.accountCode === '2180') { const pk = `${d.companyId}|${l.partyName ?? ''}`; empByParty.set(pk, (empByParty.get(pk) ?? 0) + b - a); }
+        if (l.accountCode === '1170' && (d.type === 'PB' || d.type === 'EX' || ADJUSTS[d.type] === 'PB')) { const pk = `${d.companyId}|${claimPeriodOf(d.type, d.header)}`; inputVat.set(pk, (inputVat.get(pk) ?? 0) + a - b); }
       }
       if (dr !== cr) out.push(`${where}: unbalanced (Dr ${fromSatang(dr)} / Cr ${fromSatang(cr)})`);
     }
@@ -138,6 +152,62 @@ export function checkInvariants(st: MockState): string[] {
     }
   }
 
+  // 4c. each vendor's AP (2110 lines labelled with their name) = Σ that vendor's live PB outstanding
+  const apSub = new Map<string, number>();
+  for (const d of st.docs) {
+    if (!LIVE.includes(d.status) || d.type !== 'PB') continue;
+    const k = `${d.companyId}|${d.party?.name ?? ''}`;
+    apSub.set(k, (apSub.get(k) ?? 0) + sat(d.outstanding ?? '0.00', d.id));
+  }
+  for (const k of new Set([...apByParty.keys(), ...apSub.keys()])) {
+    if ((apByParty.get(k) ?? 0) !== (apSub.get(k) ?? 0)) {
+      const [company, name] = k.split('|');
+      out.push(`${company}: AP 2110 of ${name}: GL ${fromSatang(apByParty.get(k) ?? 0)} but outstanding of their live PB is ${fromSatang(apSub.get(k) ?? 0)}`);
+    }
+  }
+
+  // 4e. each employee's 2180 (lines labelled with their name) = Σ that employee's live EX outstanding (a voucher that pays a claim clears it under the same name)
+  const empSub = new Map<string, number>();
+  for (const d of st.docs) {
+    if (!LIVE.includes(d.status) || d.type !== 'EX') continue;
+    const k = `${d.companyId}|${d.party?.name ?? ''}`;
+    empSub.set(k, (empSub.get(k) ?? 0) + sat(d.outstanding ?? '0.00', d.id));
+  }
+  for (const k of new Set([...empByParty.keys(), ...empSub.keys()])) {
+    if ((empByParty.get(k) ?? 0) !== (empSub.get(k) ?? 0)) {
+      const [company, name] = k.split('|');
+      out.push(`${company}: employee payable 2180 of ${name}: GL ${fromSatang(empByParty.get(k) ?? 0)} but outstanding of their live EX is ${fromSatang(empSub.get(k) ?? 0)}`);
+    }
+  }
+
+  // 4d. input VAT (ม.82/3, ม.82/5, I6): per claim period, the 1170 posted by PB / PCN / PDN / EX = the claimable VAT of the live ones filed in it (a PCN gives back, a PDN adds; an EX claims a line only with the vendor's tax invoice behind it); a company outside VAT claims nothing
+  const claimable = new Map<string, number>();
+  for (const d of st.docs) {
+    if (!LIVE.includes(d.status) || (d.type !== 'PB' && d.type !== 'EX' && ADJUSTS[d.type] !== 'PB')) continue;
+    if (d.type !== 'EX' && !!d.header.inputVatForfeited !== forfeitedOf(st, d.companyId, d.type, d.header)) out.push(`${d.id}: inputVatForfeited ${!!d.header.inputVatForfeited} but the claim window says ${!d.header.inputVatForfeited} (ม.82/3)`);
+    const rows = computeDoc(d.lines, !!d.header.priceIncludesVat, true).lines;
+    const vat = d.lines.reduce((n, l, i) => n + (isRecoverable(st, d.companyId, l, d.type === 'EX' ? exForfeited(d.header, l) : d.header.inputVatForfeited) ? sat(rows[i].vat, d.id) : 0), 0);
+    const k = `${d.companyId}|${claimPeriodOf(d.type, d.header)}`;
+    claimable.set(k, (claimable.get(k) ?? 0) + (CREDIT_NOTES.includes(d.type) ? -vat : vat));
+  }
+  // C1: a live note line carries the category of the live bill line it adjusts (the VAT it gives back / adds is claimable exactly when the bill's was)
+  for (const d of st.docs) {
+    if (!LIVE.includes(d.status) || d.type === 'PB' || ADJUSTS[d.type] !== 'PB') continue;
+    const pb = doc(d.header.refDocId ?? '');
+    if (!pb || !LIVE.includes(pb.status)) continue;
+    for (const l of d.lines) {
+      const src = pb.lines.find((x) => x.id === l.sourceLineId);
+      if (src && (l.expenseCategory ?? '') !== (src.expenseCategory ?? '')) out.push(`${d.id}: line ${l.id} category ${l.expenseCategory ?? 'none'} but the bill line ${src.id} of ${pb.id} has ${src.expenseCategory ?? 'none'}`);
+    }
+  }
+  for (const k of new Set([...inputVat.keys(), ...claimable.keys()])) {
+    if ((inputVat.get(k) ?? 0) !== (claimable.get(k) ?? 0)) {
+      const [company, period] = k.split('|');
+      out.push(`${company}: claim period ${period}: input VAT 1170 posted ${fromSatang(inputVat.get(k) ?? 0)} but the bills / notes filed in it claim ${fromSatang(claimable.get(k) ?? 0)}`);
+    }
+  }
+  for (const c of st.companies) if (!c.vatRegistered && (gl.get(`${c.id}|1170`) ?? 0) !== 0) out.push(`${c.id}: not VAT-registered but GL 1170 moved by ${fromSatang(gl.get(`${c.id}|1170`) ?? 0)}`);
+
   // 5. converted quantity per source line never exceeds the source quantity
   const sources = new Set(st.links.filter((l) => l.kind === 'converted_from' && l.active).map((l) => l.to));
   for (const id of sources) {
@@ -156,7 +226,7 @@ export function checkInvariants(st: MockState): string[] {
     else if (a.companyId !== b.companyId || (l.companyId !== undefined && l.companyId !== a.companyId)) out.push(`link ${l.from} → ${l.to} joins different companies`);
   }
   for (const d of st.docs) {
-    if (d.status === 'draft' || !DOC_TYPES[d.type].ledger || d.totals.total === '0.00') continue;
+    if (d.status === 'draft' || d.status === 'pending' || d.status === 'approved' || !DOC_TYPES[d.type].ledger || d.totals.total === '0.00') continue;
     const entries = st.journals.find((j) => j.docId === d.id)?.preview.entries;
     if (!entries?.length) { out.push(`${d.id}: ${d.status} ${d.type} has no journal`); continue; }
     if ((d.status === 'cancelled' || d.status === 'replaced') && entries[entries.length - 1].kind !== 'reversal') out.push(`${d.id}: ${d.status} but its journal ends without a reversal`);
@@ -249,14 +319,14 @@ export function checkInvariants(st: MockState): string[] {
     if (st.journals.some((j) => j.docId === d.id)) out.push(`${d.id}: BL has a journal (a billing statement posts nothing)`);
   }
 
-  // 10. credit / debit notes: each live note adjusts one live TI of its company and customer through exactly one active link of its own total; its total is its lines' net + VAT;
+  // 10. credit / debit notes (CN / DN of a TI, PCN / PDN of a PB): each live note adjusts one live original of its company and party through exactly one active link of its own total; its total is its lines' net + VAT;
   //     per invoice line the live credits never exceed the line's net (G3) and a fully credited line gives back exactly its VAT (rule B), to the satang
   const credited = new Map<string, { net: number; vat: number; debit: boolean }>(); // `${ti}|${line}`
   for (const d of st.docs) {
-    if ((d.type !== 'CN' && d.type !== 'DN') || !LIVE.includes(d.status)) continue;
+    if (!ADJUSTS[d.type] || !LIVE.includes(d.status)) continue;
     const ti = d.header.refDocId ? doc(d.header.refDocId) : undefined;
-    if (!ti || ti.type !== 'TI' || ti.companyId !== d.companyId || !LIVE.includes(ti.status)) { out.push(`${d.id}: ${d.type} has no live tax invoice of its company to adjust (refDocId ${d.header.refDocId ?? 'missing'})`); continue; }
-    if (d.header.partyId !== ti.header.partyId) out.push(`${d.id}: ${d.type} party ${d.header.partyId} is not the customer of ${ti.id}`);
+    if (!ti || ti.type !== ADJUSTS[d.type] || ti.companyId !== d.companyId || !LIVE.includes(ti.status)) { out.push(`${d.id}: ${d.type} has no live ${ADJUSTS[d.type]} of its company to adjust (refDocId ${d.header.refDocId ?? 'missing'})`); continue; }
+    if (d.header.partyId !== ti.header.partyId) out.push(`${d.id}: ${d.type} party ${d.header.partyId} is not the party of ${ti.id}`);
     const links = st.links.filter((l) => l.active && l.kind === 'adjusts' && l.from === d.id);
     if (links.length !== 1 || links[0].to !== ti.id || sat(links[0].amount ?? '0.00', d.id) !== sat(d.totals.total, d.id)) {
       out.push(`${d.id}: ${d.type} needs exactly one active adjusts link to ${ti.id} of its total ${d.totals.total} (has [${links.map((l) => `${l.to} ${l.amount}`).join(', ')}])`);
@@ -269,7 +339,7 @@ export function checkInvariants(st: MockState): string[] {
       if (!l.sourceLineId) return;
       const k = `${ti.id}|${l.sourceLineId}`, c = credited.get(k) ?? { net: 0, vat: 0, debit: false };
       const net = sat(rows.lines[i].net, d.id), vat = sat(rows.lines[i].vat, d.id);
-      if (d.type === 'CN') credited.set(k, { ...c, net: c.net + net, vat: c.vat + vat });
+      if (CREDIT_NOTES.includes(d.type)) credited.set(k, { ...c, net: c.net + net, vat: c.vat + vat });
       else if (net < 0) credited.set(k, { ...c, net: c.net - net, vat: c.vat - vat }); // a negative referenced debit line is a credit as well
       else credited.set(k, { ...c, debit: true });
     });
@@ -280,6 +350,84 @@ export function checkInvariants(st: MockState): string[] {
     const own = computeDoc([line], !!ti.header.priceIncludesVat, true).lines[0];
     if (c.net > sat(own.net, tiId)) out.push(`${tiId} line ${lineId}: credit notes take net ${fromSatang(c.net)}, which exceeds the line's net ${own.net} (cap)`);
     else if (c.net === sat(own.net, tiId) && !c.debit && c.vat !== sat(own.vat, tiId)) out.push(`${tiId} line ${lineId}: fully credited but the credit notes' VAT is ${fromSatang(c.vat)} and the line's VAT is ${own.vat} (rule B)`);
+  }
+
+  // 11. withholding certificates (50 tawi, D-14 / I7): a live PV has exactly one live WT per WHT type it withholds on (its active `issues` links), whose tax sums to the PV's wht and whose figures are the
+  //     recomputed ones; a WT is live only through a live PV (the one that issues it); and per return the credit on its WHT-payable account = the tax of the live WTs of that return
+  const wtTax = new Map<string, number>(); // company|account -> Σ tax of live WTs
+  for (const d of st.docs) {
+    if (d.type !== 'PV') continue;
+    const live = LIVE.includes(d.status);
+    const issued = wtsOfPv(st, d.id);
+    if (!live) { for (const { wt } of issued) if (LIVE.includes(wt.status)) out.push(`${wt.id}: live WT of ${d.id}, which is ${d.status}`); continue; }
+    const exp = expectedWht(st, d);
+    if (exp.bad) continue; // check 8 reports it
+    const liveWts = issued.filter(({ wt }) => LIVE.includes(wt.status));
+    for (const x of issued) if (!LIVE.includes(x.wt.status)) out.push(`${x.wt.id}: an active issues link of ${d.id} points at a ${x.wt.status} WT`);
+    for (const e of exp.lines) {
+      const mine = liveWts.filter(({ wt }) => wt.header.whtTypeCode === e.code);
+      if (mine.length !== 1) { out.push(`${d.id}: ${mine.length} active WT for WHT type ${e.code} (exactly one is issued per type)`); continue; }
+      if (sat(mine[0].wt.header.whtTax ?? 'x', mine[0].wt.id) !== Number(e.tax) || sat(mine[0].wt.totals.wht ?? 'x', mine[0].wt.id) !== Number(e.tax)) {
+        out.push(`${mine[0].wt.id}: tax ${mine[0].wt.header.whtTax} but ${d.id} withholds ${fromSatang(Number(e.tax))} on ${e.code}`);
+      }
+      if (mine[0].wt.header.partyId !== d.header.partyId || mine[0].wt.header.documentDate !== d.header.documentDate) out.push(`${mine[0].wt.id}: payee or date differs from ${d.id}`);
+    }
+    for (const { wt } of liveWts) if (!exp.lines.some((e) => e.code === wt.header.whtTypeCode)) out.push(`${wt.id}: live WT of type ${wt.header.whtTypeCode} that ${d.id} does not withhold on`);
+    const sum = liveWts.reduce((n, { wt }) => n + sat(wt.header.whtTax ?? '0.00', wt.id), 0);
+    if (sum !== sat(d.totals.wht ?? '0.00', d.id)) out.push(`${d.id}: Σ active WT tax ${fromSatang(sum)} but the voucher withholds ${d.totals.wht}`);
+    for (const { wt } of liveWts) {
+      let acct = '';
+      try { acct = resolveRole(st, 'WhtPayable', { companyId: d.companyId, docType: 'PV', whtForm: wt.header.whtForm }).code; } catch (e) { out.push(`${wt.id}: WhtPayable does not resolve (${(e as Error).message})`); continue; }
+      const k = `${d.companyId}|${acct}`;
+      wtTax.set(k, (wtTax.get(k) ?? 0) + sat(wt.header.whtTax ?? '0.00', wt.id));
+    }
+  }
+  // 11b. (I1) a bill at outstanding 0.00 that a live voucher paid up carries exactly ONE paid-up record (the holder's `billBase` = the bill's base per WHT type when it was paid up, never today's bill: a later note
+  //      must not turn this red). Per WHT type: Σ stored bases of the bill's live vouchers = max(B_paidUp, Σ bases of the OTHER vouchers). Normally the holder's base is the remainder, so Σ = B_paidUp; when an
+  //      earlier over-withholding already exceeds B_paidUp (a credit landed between payments) the holder's base is clamped to 0 and Σ = Σ others (WHT is not refunded). A bill brought to 0 by notes alone
+  //      has no holder and is skipped (C1). Records are cleared by the command that reopens the bill, so none can be stale.
+  for (const bill of st.docs) {
+    if (bill.type !== 'PB' || !LIVE.includes(bill.status)) continue;
+    const bal = expectedBalance(st, bill);
+    if (bal.status !== 'settled' || bal.out !== 0) continue;
+    const pvs = st.docs.filter((d) => d.type === 'PV' && LIVE.includes(d.status)).map((d) => ({ id: d.id, bases: (d.whtFrozen?.bases ?? []).filter((x) => x.targetId === bill.id) })).filter((x) => x.bases.length);
+    const holders = pvs.filter((x) => x.bases.some((y) => y.full));
+    if (holders.length > 1) { out.push(`${bill.id}: two paid-up records (${holders.map((h) => h.id).join(', ')}), exactly one voucher paid it up last`); continue; }
+    if (!holders.length) continue;
+    for (const h of holders[0].bases.filter((y) => y.full && y.billBase !== undefined)) {
+      const sum = (xs: typeof h[]) => xs.filter((y) => y.whtTypeCode === h.whtTypeCode).reduce((n, y) => n + toSatang(y.base), 0);
+      const got = sum(pvs.flatMap((x) => x.bases)), others = sum(pvs.filter((x) => x.id !== holders[0].id).flatMap((x) => x.bases));
+      const want = Math.max(toSatang(h.billBase!), others);
+      if (got !== want) out.push(`${bill.id}: paid up but its vouchers withheld on ${fromSatang(got)} of ${h.whtTypeCode}; the bill's base when it was paid up was ${h.billBase} and the other vouchers took ${fromSatang(others)}, so ${fromSatang(want)} is expected`);
+    }
+  }
+  for (const wt of st.docs) {
+    if (wt.type !== 'WT' || !LIVE.includes(wt.status)) continue;
+    const from = st.links.filter((l) => l.active && l.kind === 'issues' && l.to === wt.id);
+    if (from.length !== 1 || !LIVE.includes(doc(from[0].from)?.status ?? 'cancelled')) out.push(`${wt.id}: a live WT needs exactly one active issues link from a live PV (has ${from.length})`);
+  }
+  for (const c of st.companies) {
+    const accounts = new Set<string>();
+    for (const form of ['PND1', 'PND2', 'PND3', 'PND53', 'PND54'] as const) { try { accounts.add(resolveRole(st, 'WhtPayable', { companyId: c.id, docType: 'PV', whtForm: form }).code); } catch { /* not in this chart */ } }
+    for (const a of accounts) if ((credit.get(`${c.id}|${a}`) ?? 0) !== (wtTax.get(`${c.id}|${a}`) ?? 0)) {
+      out.push(`${c.id}: GL ${a} (WHT payable) credit movement ${fromSatang(credit.get(`${c.id}|${a}`) ?? 0)} but the live WTs of that return carry ${fromSatang(wtTax.get(`${c.id}|${a}`) ?? 0)}`);
+    }
+  }
+
+  // 12. approval (§7.6): a pending / approved document is not issued - no number, no journal, no link - and carries who sent it (and who approved it); an issued one never carries an approval nobody gave
+  for (const d of st.docs) {
+    if (d.status === 'pending' || d.status === 'approved') {
+      if (d.number) out.push(`${d.id}: ${d.status} but has the number ${d.number} (the number is allocated once, at issue)`);
+      if (st.journals.some((j) => j.docId === d.id)) out.push(`${d.id}: ${d.status} but has a journal`);
+      if (st.links.some((l) => l.active && l.from === d.id)) out.push(`${d.id}: ${d.status} but has an active link`);
+      if (!d.approval?.submittedBy) out.push(`${d.id}: ${d.status} without an approval record (who sent it)`);
+      if (d.status === 'approved' && !d.approval?.approvedBy) out.push(`${d.id}: approved without an approval record (who approved it)`);
+    } else if (d.approval && !d.approval.approvedBy) out.push(`${d.id}: ${d.status} with an approval record that nobody approved`);
+    // C1: a live document the policy wants approved at its CURRENT total carries an approval that covers it (a revise above the approved amount is approved in the same command)
+    const payout = payoutOf(st, d.companyId, d); // what the company pays out: the settled total plus the WHT it bears (P4 m1)
+    if (LIVE.includes(d.status) && approvalRequired(st, d.companyId, d.type, payout) && (!d.approval?.approvedBy || toSatang(d.approval.amount ?? '0.00') < toSatang(payout))) {
+      out.push(`${d.id}: ${d.type} payout ${payout} needs approval but the approval ${d.approval?.approvedBy ? `covers only ${d.approval.amount ?? '0.00'}` : 'is missing'}`);
+    }
   }
 
   // numbering: gap-free per company x type x month, and the series counter agrees

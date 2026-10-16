@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event';
 import { HttpResponse, delay, http } from 'msw';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { purchaseOrder } from '@/descriptors/purchase-order';
 import { taxInvoice } from '@/descriptors/tax-invoice';
 import { setSettings } from '@/mocks/settings';
 import { resetState } from '@/mocks/store';
@@ -38,6 +39,28 @@ describe('DocEditor', () => {
     await userEvent.keyboard('{Enter}');
     expect(await screen.findByText(/0105568024684/)).toBeVisible();
     expect(screen.getByRole('combobox', { name: 'รายการ 1' })).toHaveValue('ออกแบบอัตลักษณ์องค์กร');
+  });
+  it('a vendor document (PO) prefills the vendor usual item from PURCHASE items only', async () => {
+    const usages: (string | null)[] = [];
+    testServer.use(
+      http.get('*/bff/v1/parties', () => HttpResponse.json({ items: [{ id: 'pv-01', kind: 'vendor', code: 'V01', name: 'บริษัท ภูพานกระดาษ จำกัด', vatRegistered: true, taxId: '0105560000000', branchCode: '00000', entityKind: 'juristic', paymentTermDays: 30, address: 'x', usualItemIds: ['EXP-06'] }], total: 1, nextCursor: null })),
+      http.get('*/bff/v1/items', ({ request }) => { usages.push(new URL(request.url).searchParams.get('usage')); }),
+    );
+    render(<QueryClientProvider client={new QueryClient()}><DocEditor descriptor={purchaseOrder} mode="create" onIssued={vi.fn()} /></QueryClientProvider>);
+    await userEvent.type(screen.getByRole('combobox', { name: 'ผู้ขาย' }), 'ภูพาน');
+    await screen.findByRole('option');
+    await userEvent.keyboard('{Enter}');
+    expect(await screen.findByDisplayValue('กระดาษ A4')).toBeVisible();
+    expect(usages.length).toBeGreaterThan(0);
+    expect(usages.every((u) => u === 'purchase')).toBe(true);
+  });
+  it('a document with no party kind searches every item (no silent purchase default)', async () => {
+    const usages: (string | null)[] = [];
+    testServer.use(http.get('*/bff/v1/items', ({ request }) => { usages.push(new URL(request.url).searchParams.get('usage')); }));
+    render(<QueryClientProvider client={new QueryClient()}><DocEditor descriptor={{ ...purchaseOrder, partyKind: null }} mode="create" onIssued={vi.fn()} /></QueryClientProvider>);
+    await userEvent.type(screen.getByRole('combobox', { name: 'รายการ 1' }), 'กระดาษ');
+    await screen.findByRole('listbox');
+    expect(usages).toEqual([null]);
   });
   it('Enter while composing text does nothing', async () => {
     ui();

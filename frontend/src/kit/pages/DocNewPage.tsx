@@ -9,7 +9,7 @@ import { DESCRIPTORS } from '@/descriptors';
 import type { DocDescriptor } from '@/domain/descriptors';
 import type { Allocation, Doc, DocType, Me } from '@/domain/types';
 import { routesOf } from '@/domain/descriptors';
-import { isTypeAvailable, LIVE } from '@/domain/doc-types';
+import { CREDIT_NOTES, isTypeAvailable, LIVE } from '@/domain/doc-types';
 import { DocEditor } from '@/kit/doc-editor/DocEditor';
 import { settleable } from '@/kit/doc-editor/SettlementPanel';
 import { ErrorState } from '@/kit/states/ErrorState';
@@ -62,27 +62,30 @@ async function receiptPrefill(d: DocDescriptor, me: Me, settle: string | null, f
 }
 
 const sat = (m: string) => Math.round(Number(m) * 100);
-/** A CN / DN opened from its invoice ("ออกใบลดหนี้" on a TI): the customer, the reference and the lines come from the SERVER's invoice; every line keeps the id of the invoice line it credits (the per-line cap reads it).
- *  A CN starts at what is still creditable of each line (a line credited in full is left out; one credited in part becomes 1 x what is left); a DN starts every line at quantity 0, so saving it unedited adds nothing. */
+/** A note opened from its original ("ออกใบลดหนี้" on a TI, "บันทึกใบลดหนี้จากผู้ขาย" on a PB): the party, the reference and the lines come from the SERVER's document; every line keeps the id of the line it credits (the per-line cap reads it).
+ *  A credit note starts at what is still creditable of each line (a line credited in full is left out; one credited in part becomes 1 x what is left); a debit note starts every line at quantity 0, so saving it unedited adds nothing.
+ *  A bill priced WITH VAT is read through the server's nets (a note is always priced ex-VAT): its lines become 1 x the line's net (credit) or 0 x it (debit). */
 async function adjustPrefill(d: DocDescriptor, me: Me, tiId: string): Promise<Doc> {
   const ti = await endpoints.getDoc(d.adjusts!, tiId);
+  const credits = CREDIT_NOTES.includes(d.type), incl = !!ti.header.priceIncludesVat;
   let lines = ti.lines.map((l) => ({ ...l, id: crypto.randomUUID(), sourceLineId: l.id, vatOverride: undefined }));
-  if (d.type === 'DN') lines = lines.map((l) => ({ ...l, qty: '0' }));
-  else {
+  let notes: Doc[] = [];
+  if (credits) {
     const chain = await endpoints.getChain(d.adjusts!, tiId);
     const ids = chain.edges.filter((e) => e.kind === 'adjusts' && e.active && e.to === tiId).map((e) => e.from); // live CNs, and DNs (a stored negative DN line is a credit too)
-    const notes = await Promise.all(ids.map((id) => endpoints.getDoc(chain.nodes.find((n) => n.id === id)!.type, id)));
-    if (notes.length) { // the server's own nets (one compute): the invoice's lines, then every live note's lines
-      const all = [...ti.lines.map((l, i) => ({ ...l, id: `t${i}` })), ...notes.flatMap((c, j) => c.lines.map((l, i) => ({ ...l, id: `c${j}-${i}`, vatOverride: undefined })))];
-      const net = new Map((await endpoints.computeDocument(d.adjusts!, { header: ti.header, lines: all })).lines.map((r) => [r.id, sat(r.net)] as const));
-      const credit = (c: Doc, j: number, l: Doc['lines'][number], k: number) => { // a CN line credits its net; a DN line only when negative
-        const x = net.get(`c${j}-${k}`)!;
-        return l.sourceLineId && (c.type === 'CN' ? x : x < 0 ? -x : 0);
-      };
-      const left = ti.lines.map((l, i) => net.get(`t${i}`)! - notes.reduce((a, c, j) => a + c.lines.reduce((b, cl, k) => b + (cl.sourceLineId === l.id ? credit(c, j, cl, k) || 0 : 0), 0), 0));
-      lines = lines.flatMap((l, i) => (left[i] <= 0 ? [] : left[i] === net.get(`t${i}`) ? [l] : [{ ...l, qty: '1', unitPrice: (left[i] / 100).toFixed(2), discountPct: undefined }]));
-    }
+    notes = await Promise.all(ids.map((id) => endpoints.getDoc(chain.nodes.find((n) => n.id === id)!.type, id)));
   }
+  if (notes.length || incl) { // the server's own nets (one compute): the original's lines, then every live note's lines
+    const all = [...ti.lines.map((l, i) => ({ ...l, id: `t${i}` })), ...notes.flatMap((c, j) => c.lines.map((l, i) => ({ ...l, id: `c${j}-${i}`, vatOverride: undefined })))];
+    const net = new Map((await endpoints.computeDocument(d.adjusts!, { header: ti.header, lines: all })).lines.map((r) => [r.id, sat(r.net)] as const));
+    const credit = (c: Doc, j: number, l: Doc['lines'][number], k: number) => { // a credit note line credits its net; a debit note line only when negative
+      const x = net.get(`c${j}-${k}`)!;
+      return l.sourceLineId && (CREDIT_NOTES.includes(c.type) ? x : x < 0 ? -x : 0);
+    };
+    const left = ti.lines.map((l, i) => net.get(`t${i}`)! - notes.reduce((a, c, j) => a + c.lines.reduce((b, cl, k) => b + (cl.sourceLineId === l.id ? credit(c, j, cl, k) || 0 : 0), 0), 0));
+    lines = lines.flatMap((l, i) => (!credits ? [{ ...l, qty: '0', ...(incl ? { unitPrice: (left[i] / 100).toFixed(2), discountPct: undefined } : {}) }]
+      : left[i] <= 0 ? [] : left[i] === net.get(`t${i}`) && !incl ? [l] : [{ ...l, qty: '1', unitPrice: (left[i] / 100).toFixed(2), discountPct: undefined }]));
+  } else if (!credits) lines = lines.map((l) => ({ ...l, qty: '0' }));
   return {
     id: '', type: d.type, status: 'draft', correctionClass: d.correctionClass, revision: 0, version: 0,
     header: { documentDate: me.businessDate, ...(ti.header.partyId ? { partyId: ti.header.partyId } : {}), refDocId: ti.id, ...(ti.number ? { reference: ti.number } : {}), priceIncludesVat: false },

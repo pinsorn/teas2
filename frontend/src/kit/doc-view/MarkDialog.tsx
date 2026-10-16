@@ -12,7 +12,7 @@ import { ApiError } from '@/lib/api/client';
 
 /** Records the customer's answer on a quotation. Rejecting needs a reason; accepting is a plain confirmation. The server's refusal is shown in place. */
 export function MarkDialog({ mark, docLabel, busy, error, onConfirm, onCancel }: {
-  mark: 'accepted' | 'rejected' | 'delivered'; docLabel: string; busy?: boolean; error?: unknown; onConfirm: (reason?: string) => void; onCancel: () => void;
+  mark: 'accepted' | 'rejected' | 'delivered' | 'sent'; docLabel: string; busy?: boolean; error?: unknown; onConfirm: (reason?: string) => void; onCancel: () => void;
 }) {
   const t = useTranslations('docView.mark');
   const tp = useTranslations('problem');

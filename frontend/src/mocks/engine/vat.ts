@@ -1,4 +1,4 @@
-import type { DocLine, DocTotals, TaxCode } from '@/domain/types';
+import type { DocLine, DocTotals, DocType, TaxCode } from '@/domain/types';
 import { bahtText } from './bahtText';
 import { divRoundHalfAway, fromSatang, mulQtyPrice, toSatang } from './money';
 
@@ -8,6 +8,11 @@ export interface LineResult { id: string; gross: number; discount: number; net: 
 
 /** I1: a company outside VAT charges no VAT on any line, whatever its tax code. */
 export const vatOf = (st: { companies: { id: string; vatRegistered: boolean }[] }, companyId: string): boolean => !!st.companies.find((c) => c.id === companyId)?.vatRegistered;
+
+/** Documents that record a VENDOR's tax invoice: the VAT is what the tax code says, whatever OUR company's VAT status (A.4, D-25). I1 is for our own sales only. */
+const VENDOR_VAT_DOCS: DocType[] = ['PB', 'PCN', 'PDN', 'PV', 'EX'];
+/** The `vatRegistered` argument of `computeDoc` for a document of `type`: always true for a vendor's invoice, else the company's flag. */
+export const vatBasisOf = (st: Parameters<typeof vatOf>[0], companyId: string, type: DocType): boolean => VENDOR_VAT_DOCS.includes(type) || vatOf(st, companyId);
 
 /** `vatRegistered` is required on purpose: every caller states the company's VAT status (I1), none can forget it. */
 export function computeLine(l: DocLine, priceIncludesVat: boolean, vatRegistered: boolean): LineResult {

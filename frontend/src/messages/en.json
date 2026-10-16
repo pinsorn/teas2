@@ -1,8 +1,15 @@
 {
   "app": { "name": "TEAS 2" },
   "docView": {
+    "linesPreview": { "title": "Lines waiting for approval", "description": "Description", "category": "Expense category", "amount": "Amount", "tax": "Tax", "invoice": "Vendor tax invoice", "noInvoice": "No tax invoice (the VAT is cost)" },
+    "approval": {
+      "sendBackTitle": "Send back for changes", "sendBackBody": "Send {doc} back to the author as a draft. A reason is required.", "reason": "Reason for sending back", "back": "Back", "sendBackConfirm": "Send back",
+      "pendingNote": "Waiting for approval — no document number yet, nothing posted", "approvedNote": "Approved — ready to issue (editing the document returns it to draft and it must be submitted again)",
+      "requiredNote": "This document must be approved before it is issued", "trail": "Submitted by {by}", "trailApproved": "Approved by {by}", "payBody": "Creates a draft payment voucher that pays what this claim still owes. No tax is withheld on reimbursing an employee."
+    },
     "tabs": { "paper": "Paper", "chain": "Related documents", "ledger": "Ledger effect", "activity": "Activity", "revisions": "Revision history", "attachments": "Attachments" },
-    "header": { "party": "Counterparty", "date": "Document date", "total": "Total", "outstanding": "Outstanding", "revised": "Revised {n} times", "progress": "Progress" },
+    "header": { "party": "Counterparty", "employee": "Employee", "date": "Document date", "total": "Total", "outstanding": "Outstanding", "revised": "Revised {n} times", "progress": "Progress",
+      "vendorDoc": "Vendor document no.", "vendorDocDate": "Vendor document date", "claimPeriod": "Input VAT claim period", "incomplete": "Documents incomplete", "inputVatForfeited": "Input VAT claim window expired (Sec. 82/3) - recorded as cost" },
     "lock": { "label": "Locked", "exits": "Ways forward" },
     "marks": { "accepted": "Customer accepted", "rejected": "Customer rejected", "delivered": "Delivered", "sent": "Sent to vendor", "closed": "Closed", "rejectedWhy": "Reason: {reason}" },
     "closedAlert": "The remainder of this document is closed, so nothing more can be converted; revise the document to reopen it",
@@ -12,6 +19,7 @@
       "acceptedTitle": "Customer accepted {doc}", "acceptedBody": "Records that the customer accepted this quotation. Totals do not change and no revision is made.",
       "rejectedTitle": "Customer rejected {doc}", "rejectedBody": "Records that the customer rejected this quotation. It cannot be converted until it is revised or copied as a new one.",
       "deliveredTitle": "Delivered {doc}", "deliveredBody": "Records that the goods on this order were delivered. A status only: no other document is issued and totals do not change.",
+      "sentTitle": "Sent {doc} to the vendor", "sentBody": "Records that this purchase order was sent to the vendor. A status only: no other document is issued and totals do not change.",
       "reason": "Why the customer rejected it", "confirm": "Save", "back": "Back"
     },
     "convertDialog": {
@@ -22,12 +30,14 @@
       "groupBody": "The whole document is added to a new billing statement (draft). Nothing is posted; choose more documents of this customer in the editor."
     },
     "actions": {
+      "submit": "Submit for approval", "approve": "Approve", "approveAndIssue": "Approve and issue", "sendBack": "Send back for changes", "whyPaid": "Paid in full, nothing left to pay",
       "label": "Actions", "issueDraft": "Save and issue…", "edit": "Edit", "print": "Print", "copy": "Copy as new",
-      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "receive": "Receive payment", "whyInclusiveNote": "This invoice is priced VAT-inclusive, so a credit / debit note cannot be issued directly. Use Edit (a correction plan) instead.", "issueCn": "Issue credit note", "issueDn": "Issue debit note", "markDelivered": "Delivered", "markSent": "Sent to vendor", "whyNothingRemaining": "Every line is already converted in full; there is nothing to close", "whyClosed": "The remainder is closed, so it cannot be converted; revise the document to reopen it"
+      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "receive": "Receive payment", "whyInclusiveNote": "This invoice is priced VAT-inclusive, so a credit / debit note cannot be issued directly. Use Edit (a correction plan) instead.", "issueCn": "Issue credit note", "issueDn": "Issue debit note", "issuePcn": "Record vendor credit note", "issuePdn": "Record vendor debit note", "markDelivered": "Delivered", "markSent": "Mark as sent to vendor", "whyNothingRemaining": "Every line is already converted in full; there is nothing to close", "whyClosed": "The remainder is closed, so it cannot be converted; revise the document to reopen it"
     },
     "print": { "reprintTitle": "Reprint {doc}", "reprintBody": "A reprint is printed as a 'COPY'. The original has already been printed.", "reprintConfirm": "Print a copy", "back": "Back", "logFailed": "The print could not be logged, so nothing was printed. Try again." },
     "agent": { "draftBy": "Drafted by {name} for {owner}", "draftByNoOwner": "Drafted by {name}", "createdBy": "Created by {name} for {owner}", "createdByNoOwner": "Created by {name}", "report": "View the check report" },
     "attachments": {
+      "camera": "Take a photo of the receipt",
       "title": "Attachments", "category": "File type", "add": "Add file", "file": "Choose a file", "limits": "PDF, PNG, JPEG or WebP, up to 1 MB per file", "empty": "No attachments yet",
       "remove": "Remove", "removeNamed": "Remove {name}", "removeTitle": "Remove attachment", "removeBody": "Remove {name} from an issued document. The removal is recorded in the history and the audit log.", "removeConfirm": "Remove file", "back": "Back",
       "needDraft": "Fill in the document first, then attach files (the draft is saved automatically)", "readFailed": "The file could not be read", "loadFailed": "The attachments could not be loaded", "by": "by {name}",
@@ -52,15 +62,16 @@
     },
     "activity": {
       "empty": "No activity yet",
-      "action": { "create": "Created draft", "issue": "Issued", "settle": "Payment received", "cancel": "Cancelled", "revise": "Revised", "convert": "Converted", "accept": "Customer accepted", "reject": "Customer rejected", "deliver": "Delivered", "close": "Remainder closed", "send": "Sent to vendor" }
+      "action": { "submit": "Submitted for approval", "approve": "Approved", "send_back": "Sent back for changes", "create": "Created draft", "issue": "Issued", "settle": "Payment received", "cancel": "Cancelled", "revise": "Revised", "convert": "Converted", "accept": "Customer accepted", "reject": "Customer rejected", "deliver": "Delivered", "close": "Remainder closed", "send": "Sent to vendor" }
     },
     "revisions": {
       "empty": "No history yet", "first": "First issued version", "n": "Revision {n}", "view": "View this version", "hide": "Hide this version",
       "noChange": "No data changes", "blank": "(empty)", "reason": "Reason: {reason}",
       "lineN": "Line {n}", "lineField": "{line} · {field}",
       "fields": {
-        "header": { "notes": "Notes", "reference": "Reference", "dueDate": "Due date", "documentDate": "Document date", "partyId": "Counterparty", "refDocId": "Tax invoice adjusted", "reasonCode": "Reason", "reasonText": "Reason details", "dimensions": "Dimensions", "priceIncludesVat": "Prices include VAT" },
-        "line": { "description": "Description", "itemId": "Item", "qty": "Quantity", "unit": "Unit", "unitPrice": "Unit price", "discountPct": "Discount (%)", "taxCode": "Tax code", "dimensions": "Dimensions", "sourceLineId": "Source line", "vatOverride": "VAT" }
+        "header": { "notes": "Notes", "reference": "Reference", "dueDate": "Due date", "documentDate": "Document date", "partyId": "Counterparty", "refDocId": "Tax invoice adjusted", "reasonCode": "Reason", "reasonText": "Reason details", "dimensions": "Dimensions", "priceIncludesVat": "Prices include VAT",
+          "vendorDocNumber": "Vendor document no.", "vendorDocDate": "Vendor document date", "claimPeriod": "Input VAT claim period", "complete": "Documents complete" },
+        "line": { "vendorInvoice": "Vendor tax invoice", "description": "Description", "itemId": "Item", "qty": "Quantity", "unit": "Unit", "unitPrice": "Unit price", "discountPct": "Discount (%)", "taxCode": "Tax code", "dimensions": "Dimensions", "sourceLineId": "Source line", "vatOverride": "VAT", "expenseCategory": "Expense category" }
       }
     },
     "cancel": {
@@ -206,7 +217,8 @@
       "purchaseOrders": "Purchase orders",
       "bills": "Bills and expenses",
       "paymentVouchers": "Payment vouchers",
-      "vendorNotes": "Vendor credit and debit notes",
+      "vendorNotes": "Vendor credit notes",
+      "vendorDebitNotes": "Vendor debit notes",
       "expenseClaims": "Expense claims",
       "bankAccounts": "Bank accounts",
       "deposits": "Deposits and advances",
@@ -219,6 +231,7 @@
       "taxSummary": "Monthly tax summary",
       "vat": "VAT return and registers",
       "wht": "Withholding tax",
+      "whtCertificates": "Withholding certificates (50 tawi)",
       "cit": "Corporate income tax",
       "employees": "Employees",
       "payrollRuns": "Payroll runs",
@@ -317,6 +330,46 @@
       "doList": "Delivery orders: list",
       "doDelivered": "Delivery order: delivered",
       "doPrint": "Print delivery order",
+      "pbList": "Purchase bills and expenses: list",
+      "pbNew": "Purchase bill: new",
+      "pbDraft": "Purchase bill: draft",
+      "pbMixedVat": "Purchase bill: claimable and non-claimable input VAT (entertainment)",
+      "pbFromPo": "Purchase bill: converted from a purchase order",
+      "pbIncomplete": "Purchase bill: vendor documents incomplete",
+      "pcnList": "Vendor credit notes: list",
+      "pcnIssued": "Vendor credit note: rent discount, references a purchase bill",
+      "pdnList": "Vendor debit notes: list",
+      "pdnIssued": "Vendor debit note: extra entertainment, references a purchase bill",
+      "npbVatToCost": "Purchase bill (non-VAT): the vendor's VAT is cost",
+      "pvList": "Payment vouchers: list",
+      "pvNew": "Payment voucher: new",
+      "pvMultiWt": "Payment voucher: two bills and two WHT types (2 certificates)",
+      "pvGrossUp": "Payment voucher: tax borne by us every time (freelance photographer)",
+      "pvForeign": "Payment voucher: foreign payee (PND.54 and PP.36)",
+      "pvCancelled": "Payment voucher: cancelled",
+      "pvPrint": "Print: payment voucher",
+      "wtList": "Withholding certificates: list",
+      "wtIssued": "Withholding certificate: issued",
+      "wtCancelled": "Withholding certificate: cancelled with its voucher",
+      "wtPrint": "Print: withholding certificate (2 copies)",
+      "exList": "Expense claims: list",
+      "exNew": "Expense claim: new",
+      "exDraft": "Expense claim: draft",
+      "exPending": "Expense claim: waiting for approval (receipt photo attached)",
+      "exApproved": "Expense claim: approved, not issued yet",
+      "exUnpaid": "Expense claim: issued, unpaid (input VAT on one line with a tax invoice)",
+      "exPaid": "Expense claim: paid back to the employee in full",
+      "exForfeit": "Expense claim: vendor invoice past its claim window, VAT is cost",
+      "nexIssued": "Expense claim (non-VAT company): issued directly",
+      "exPrint": "Print: expense claim",
+      "poList": "Purchase orders: list",
+      "poNew": "Purchase order: new",
+      "poDraft": "Purchase order: draft",
+      "poSent": "Purchase order: sent to the vendor (3 lines)",
+      "poPartlyBilled": "Purchase order: awaiting vendor bills",
+      "poClosed": "Purchase order: remainder closed",
+      "poPrint": "Print purchase order",
+      "npoIssued": "Purchase order (non-VAT)",
       "nsoIssued": "Sales order (non-VAT)",
       "ndoDelivered": "Delivery order: delivered (non-VAT)",
       "ivList": "Invoices: list (non-VAT)",
@@ -437,6 +490,14 @@
     "confirmAction": "Issue tax invoice"
   },
   "docEditor": {
+    "submitApproval": "Submit for approval",
+    "confirmSubmit": { "body": "The document waits for approval: no document number and nothing posted until it is approved and issued." },
+    "confirmApprove": { "body": "The system approves and issues the document in one step: it gets its number and is posted now." },
+    "vendorInvoice": {
+      "title": "Vendor tax invoice (input VAT)", "hint": "Input VAT is claimed only on a line with the vendor's complete full tax invoice made out to the company (Revenue Code s.82/3, s.86/4). Leave it empty and that line's VAT is cost.",
+      "line": "Line {n}: {description}", "vendorName": "Vendor name", "vendorTin": "Vendor tax ID", "number": "Tax invoice number", "date": "Tax invoice date", "fullTaxInvoice": "Full tax invoice made out to the company",
+      "expired": "Past the claim window (s.82/3) — this line's VAT is recorded as cost"
+    },
     "editDraft": "Edit draft {title}",
     "revise": "Edit {title}",
     "party": {
@@ -456,14 +517,24 @@
     "noTaxId": "No tax ID",
     "documentDate": "Document date",
     "dueDate": "Due date",
-    "dueDateByType": { "QT": "Valid until", "SO": "Delivery due" },
+    "dueDateByType": { "QT": "Valid until", "SO": "Delivery due", "PO": "Expected on" },
     "reference": "Reference",
     "refDoc": "Tax invoice adjusted",
     "refDocNone": "No tax invoice chosen yet",
+    "refDocPb": "Purchase bill adjusted",
+    "refDocNonePb": "No purchase bill chosen yet",
+    "vendorDocNumber": "Vendor document number",
+    "vendorDocDate": "Vendor document date",
+   
+    "claimPeriod": "Input VAT claim period",
+    "claimPeriodHint": "From the month the document is recorded, up to 6 months after the vendor's tax invoice month (Sec. 82/3)",
+    "inputVatForfeited": "Input VAT claim window expired (Sec. 82/3) - recorded as cost",
+    "complete": "Documents complete (the vendor's tax invoice has arrived)",
     "reason": "Reason",
     "reasonPick": "Choose a reason",
     "reasonText": "Describe the reason",
     "reasons": { "RETURN": "Goods returned / defective", "PRICE_REDUCTION": "Price reduction", "DISCOUNT": "Discount granted afterwards", "SERVICE_SHORT": "Service not fully delivered", "OTHER": "Other (specify)", "PRICE_INCREASE": "Price increase", "QTY_EXCESS": "Quantity over-delivered" },
+    "adjustVendor": { "title": "Choose the purchase bill to record the {kind} against", "hint": "A vendor credit or debit note must reference an issued purchase bill; its lines come from that bill", "empty": "No issued purchase bill yet", "loadFailed": "Could not load the purchase bills", "pick": "Choose {number}", "kindPcn": "vendor credit note", "kindPdn": "vendor debit note", "partyFixed": "Vendor of the purchase bill adjusted" },
     "adjust": { "title": "Choose the tax invoice to {kind}", "hint": "A credit or debit note must reference an issued tax invoice; its lines come from that invoice", "empty": "No issued tax invoice yet", "loadFailed": "Could not load the tax invoices", "pick": "Choose {number}", "kindCn": "credit", "kindDn": "debit", "partyFixed": "Customer of the tax invoice adjusted" },
     "notes": "Notes",
     "lines": {
@@ -490,6 +561,7 @@
       "whtUnknown": "Unknown type {code}",
       "whtNone": "None",
       "hintAmount": "Enter moves to the next cell  ·  Enter in the last cell adds a line",
+      "categoryNone": "From the item / none", "fromSource": "From {qty} {unit} x unit price (change the quantity on the purchase order)", "unitPriceOf": "Unit price of line {n}",
       "taxCode": { "S7": "VAT 7%", "Z0": "VAT 0%", "EX": "No VAT / exempt" }
     },
     "bankAccount": "Bank / cash account",
@@ -521,6 +593,22 @@
       "outstanding": "Outstanding (billed)",
       "pick": "Select {number}",
       "total": "Billing statement total"
+    },
+    "quickBill": {
+      "open": "Record purchase (with tax invoice)",
+      "title": "Record a purchase from the vendor's tax invoice",
+      "body": "A purchase bill (PB) is recorded and issued for you, then its total is paid by this voucher. The input VAT lives on the bill, not on the voucher.",
+      "vendor": "Vendor",
+      "vendorDocNumber": "Vendor document number",
+      "vendorDocDate": "Vendor document date",
+      "description": "Item",
+      "amount": "Amount before tax",
+      "taxCode": "Tax code",
+      "category": "Expense category",
+      "categoryNone": "None",
+      "back": "Back",
+      "save": "Save and use on this voucher",
+      "saving": "Saving…"
     },
     "settlement": {
       "title": "Documents settled",
@@ -572,6 +660,7 @@
     },
     "save": "Save draft",
     "saveRevision": "Save changes",
+    "approveAndSaveRevision": "Approve and save changes",
     "preview": "Document preview",
     "journal": "View journal entry", "journalNeedsPermission": "Requires the View ledger permission (ledger.read)",
     "status": {
@@ -591,6 +680,7 @@
       "missing": "Not complete yet, see \"What is still missing\"",
       "conflict": "Someone changed this document first. Reload before issuing.",
       "permission": "You do not have permission to do this",
+      "reviseApproval": "The new total is above the approved amount. Ask someone who can approve to make this change.",
       "saving": "Saving the draft"
     },
     "shortcuts": "Ctrl+Enter issue  ·  Ctrl+S save draft",
@@ -611,6 +701,10 @@
   "docTypes": {
     "QT": {"title": "Quotation", "issue": "Save and issue quotation", "create": "Create quotation", "empty": "No quotations yet"},
     "SO": {"title": "Sales order", "issue": "Save and issue sales order", "create": "Create sales order", "empty": "No sales orders yet"},
+    "PO": {"title": "Purchase order", "issue": "Save and issue purchase order", "create": "Create purchase order", "empty": "No purchase orders yet"},
+    "PB": {"title": "Purchase bill", "issue": "Save and issue purchase bill", "create": "Create purchase bill", "empty": "No purchase bills yet"},
+    "PCN": {"title": "Vendor credit note", "issue": "Save and issue vendor credit note", "create": "Create vendor credit note", "empty": "No vendor credit notes yet"},
+    "PDN": {"title": "Vendor debit note", "issue": "Save and issue vendor debit note", "create": "Create vendor debit note", "empty": "No vendor debit notes yet"},
     "DO": {"title": "Delivery order", "issue": "Save and issue delivery order", "create": "Create delivery order", "empty": "No delivery orders yet"},
     "BL": {"title": "Billing statement", "issue": "Save and issue billing statement", "create": "Create billing statement", "empty": "No billing statements yet"},
     "IV": {"title": "Invoice", "issue": "Save and issue invoice", "create": "Create invoice", "empty": "No invoices yet"},
@@ -618,7 +712,9 @@
     "RC": {"title": "Receipt", "issue": "Save and issue receipt", "create": "Create receipt", "empty": "No receipts yet"},
     "CN": {"title": "Credit note", "issue": "Save and issue credit note", "create": "Create credit note", "empty": "No credit notes yet"},
     "DN": {"title": "Debit note", "issue": "Save and issue debit note", "create": "Create debit note", "empty": "No debit notes yet"},
-    "PV": {"title": "Payment voucher", "issue": "Save and issue payment voucher", "create": "Create payment voucher", "empty": "No payment vouchers yet"}
+    "EX": {"title": "Expense claim", "issue": "Save and issue expense claim", "create": "Create expense claim", "empty": "No expense claims yet"},
+    "PV": {"title": "Payment voucher", "issue": "Save and issue payment voucher", "create": "Create payment voucher", "empty": "No payment vouchers yet"},
+    "WT": {"title": "Withholding tax certificate", "issue": "Issue withholding certificate", "create": "Create withholding certificate", "empty": "No withholding certificates yet"}
   },
   "reports": {
     "total": "Total",

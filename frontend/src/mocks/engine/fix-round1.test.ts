@@ -109,7 +109,7 @@ describe('6: input VAT only via a bill: PV amount lines are exempt-only', () => 
   it.each(['S7', 'Z0'] as const)('a PV line with %s is refused (pv.input_vat_needs_bill) and compute reports it', (taxCode) => {
     const st = buildSeedState();
     const body = { header: hdr('pv-01'), lines: [ln({ taxCode })] };
-    expect(compute(st, 'co-vat', 'PV', body).missing.map((m) => m.message).join()).toMatch(/ใบรับวางบิล/);
+    expect(compute(st, 'co-vat', 'PV', body).missing.map((m) => m.message).join()).toMatch(/บันทึกซื้อ \(มีใบกำกับภาษี\)/);
     const d = createDraft(st, 'co-vat', 'PV', body, U, `vat-${taxCode}`);
     expect(() => issue(st, d.id, d.version, U)).toThrow(/pv.input_vat_needs_bill/);
   });

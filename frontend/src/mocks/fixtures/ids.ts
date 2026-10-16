@@ -1,4 +1,5 @@
 import type { MockState } from '../store';
+import { LIVE } from '@/domain/doc-types';
 import { derivedLocks } from '../engine/locks';
 
 type D = MockState['docs'][number];
@@ -9,7 +10,11 @@ export type FixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssued
   | 'qtDraft' | 'qtIssued' | 'qtRejected' | 'qtCancelled' | 'qtRevised' | 'nqtIssued'
   | 'soPartlyDelivered' | 'soClosed' | 'doDelivered' | 'nsoIssued' | 'ndoDelivered'
   | 'ivDraft' | 'ivIssuedUnpaid' | 'ivPartly' | 'ivSettled' | 'blVat' | 'blNonVat'
-  | 'rcMulti' | 'rcNoCert' | 'rcDeposit' | 'nrcCashBill' | 'cnIssued' | 'dnIssued' | 'tiCreditedToZero'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
+  | 'poDraft' | 'poSent' | 'poPartlyBilled' | 'poClosed' | 'npoIssued'
+  | 'rcMulti' | 'rcNoCert' | 'rcDeposit' | 'nrcCashBill' | 'cnIssued' | 'dnIssued' | 'tiCreditedToZero'
+  | 'pbDraft' | 'pbIssuedUnpaid' | 'pb1Settled' | 'pbMixedVat' | 'pbFromPo' | 'pbCapex' | 'pbClaimLate' | 'pbIncomplete' | 'pcnIssued' | 'pdnIssued' | 'npbVatToCost'
+  | 'pvMultiWt' | 'pvGrossUp' | 'pvForeign' | 'pvCancelled' | 'wtIssued' | 'wtCancelled'
+  | 'exDraft' | 'exPending' | 'exApproved' | 'exUnpaid' | 'exPaid' | 'exForfeit' | 'nexIssued'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
 
 /** An issued, untouched TI of pc-01 (the multi-target receipt vector settles two of them). */
 const rcTarget = (d: D, st: MockState) => isTi(d) && d.status === 'issued' && d.party?.id === 'pc-01' && d.outstanding === d.totals.total
@@ -17,7 +22,7 @@ const rcTarget = (d: D, st: MockState) => isTi(d) && d.status === 'issued' && d.
 const firstRcTarget = (st: MockState) => st.docs.filter((x) => rcTarget(x, st)).map((x) => x.id).sort()[0];
 
 /** A fixture that is one explicit seed document (fixtures/specs/<group>.ts), still in the state the fixture promises. */
-const byId = (id: string, ok: (d: D) => boolean = () => true) => (d: D) => d.id === id && ok(d);
+const byId = (id: string, ok: (d: D, st: MockState) => boolean = () => true) => (d: D, st: MockState) => d.id === id && ok(d, st);
 
 /** Predicates evaluate the READ model (derivedLocks), never the stored row alone. */
 export const FIXTURE_PREDICATES: Record<FixtureKey, (d: D, st: MockState) => boolean> = {
@@ -49,6 +54,12 @@ export const FIXTURE_PREDICATES: Record<FixtureKey, (d: D, st: MockState) => boo
   doDelivered: byId('do-dlv', (d) => !!d.marks?.delivered),
   nsoIssued: byId('nso-1', (d) => d.status === 'issued'),
   ndoDelivered: byId('ndo-1', (d) => !!d.marks?.delivered),
+  // P1 purchase orders
+  poDraft: byId('po-d1', (d) => d.status === 'draft'),
+  poSent: byId('po-1', (d) => d.status === 'issued' && !!d.marks?.sent),
+  poPartlyBilled: byId('po-part', (d) => d.status === 'issued'),
+  poClosed: byId('po-closed', (d) => !!d.marks?.closed),
+  npoIssued: byId('npo-1', (d) => d.status === 'issued'),
   // S3 non-VAT invoices / billing statements
   ivDraft: byId('iv-d1', (d) => d.status === 'draft'),
   ivIssuedUnpaid: byId('iv-1', (d) => d.status === 'issued' && d.outstanding === d.totals.total),
@@ -65,6 +76,33 @@ export const FIXTURE_PREDICATES: Record<FixtureKey, (d: D, st: MockState) => boo
   cnIssued: byId('cn-ret', (d) => d.status === 'issued' && d.lines.length === 2),
   dnIssued: byId('dn-1', (d) => d.status === 'issued'),
   tiCreditedToZero: byId('ti-046', (d) => d.status === 'issued' && d.outstanding === '0.00'), // credited in full by cn-full, never settled
+  // P2 purchase bills / vendor notes
+  pbDraft: byId('pb-d1', (d) => d.status === 'draft'),
+  pbIssuedUnpaid: byId('pb-claim-late', (d) => d.status === 'issued'), // issued, no voucher, no note against it (pb-1 is settled by pv-pay1: pb1Settled)
+  pb1Settled: byId('pb-1', (d) => d.status === 'settled'), // rent with a vendor credit (pcn-1) against it, paid in full by pv-pay1 (P3)
+  pbMixedVat: byId('pb-2', (d) => LIVE.includes(d.status)), // services + non-claimable entertainment, with a debit (pdn-1)
+  pbFromPo: byId('pb-po', (d) => LIVE.includes(d.status) && !!d.lines[0]?.sourceLineId),
+  pbCapex: byId('pb-capex', (d) => d.status === 'issued'),
+  pbClaimLate: byId('pb-claim-late', (d) => d.status === 'issued' && d.header.claimPeriod === '2026-12'),
+  pbIncomplete: byId('pb-incomplete', (d) => d.status === 'issued' && d.header.complete === false),
+  pcnIssued: byId('pcn-1', (d) => d.status === 'issued'),
+  pdnIssued: byId('pdn-1', (d) => d.status === 'issued'),
+  npbVatToCost: byId('npb-1', (d) => LIVE.includes(d.status) && d.companyId === 'co-nonvat'), // settled by npv-1 (P3)
+  // P3 payment vouchers / withholding certificates
+  pvMultiWt: byId('pv-multi', (d, st) => d.status === 'issued' && st.links.filter((l) => l.active && l.kind === 'issues' && l.from === d.id).length === 2),
+  pvGrossUp: byId('pv-gross', (d) => d.status === 'issued' && d.header.whtMode === 'grossup_always'),
+  pvForeign: byId('pv-foreign', (d) => d.status === 'issued' && d.lines.some((l) => l.pnd36)),
+  pvCancelled: byId('pv-can', (d) => d.status === 'cancelled'),
+  wtIssued: (d, st) => d.type === 'WT' && d.status === 'issued' && st.links.some((l) => l.kind === 'issues' && l.from === 'pv-pay1' && l.to === d.id),
+  wtCancelled: (d, st) => d.type === 'WT' && d.status === 'cancelled' && st.links.some((l) => l.kind === 'issues' && l.from === 'pv-can' && l.to === d.id),
+  // P4 expense claims
+  exDraft: byId('ex-d1', (d) => d.status === 'draft'),
+  exPending: byId('ex-pend', (d) => d.status === 'pending'),
+  exApproved: byId('ex-appr', (d) => d.status === 'approved'),
+  exUnpaid: byId('ex-1', (d) => d.status === 'issued' && d.outstanding === d.totals.total), // issued by approve-and-issue, nothing paid, claims VAT on one line only
+  exPaid: byId('ex-paid', (d) => d.status === 'settled'), // paid in full by pv-ex
+  exForfeit: byId('ex-late', (d) => d.status === 'issued'), // the vendor invoice is past its claim window: VAT is cost
+  nexIssued: byId('nex-1', (d) => d.status === 'issued' && d.companyId === 'co-nonvat'),
 };
 
 /** Lowest id (string order) matching each predicate in the active seed; throws listing every unresolved key. */

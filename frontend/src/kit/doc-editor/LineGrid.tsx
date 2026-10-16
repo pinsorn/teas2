@@ -8,6 +8,7 @@ import { ErrorState } from '../states/ErrorState';
 import type { DocLine, ItemSummary, Money, TaxCode } from '@/domain/types';
 import type { WhtTypeRef } from '@/lib/api/endpoints';
 import { formatMoney } from '@/lib/format';
+import { EXPENSE_CATEGORY_CODES } from '@/records/items';
 import { ItemField } from './ItemField';
 import { AMOUNT_ORDER, cleanDecimal, isComposing, moneyText, nextCell, parseClipboardRows, qtyText, type Cell } from './useLineGridKeys';
 
@@ -48,6 +49,7 @@ export interface LineGridProps {
 
 export function LineGrid({ lines, onChange, searchItems, amounts, computing, variant = 'item', showCategory = false, whtTypes, whtError, onWhtRetry, exemptOnly = false }: LineGridProps) {
   const t = useTranslations('docEditor.lines');
+  const tcat = useTranslations('records.options.expenseCategory');
   const root = useRef<HTMLDivElement>(null);
   const focusReq = useRef<{ row: number; cell: Cell } | null>(null);
 
@@ -66,7 +68,7 @@ export function LineGrid({ lines, onChange, searchItems, amounts, computing, var
     if (n === 'add-row') { focusReq.current = { row: lines.length, cell: 'description' }; onChange([...lines, newLine(lines[i].taxCode)]); }
     else if (n) focus(n.row, n.cell);
   };
-  const onCellKey = (e: KeyboardEvent<HTMLInputElement>, i: number, cell: Cell) => {
+  const onCellKey = (e: KeyboardEvent<HTMLInputElement | HTMLSelectElement>, i: number, cell: Cell) => {
     if (e.key !== 'Enter' || isComposing(e) || e.ctrlKey || e.metaKey || e.altKey) return;
     e.preventDefault();
     move(i, cell, e.shiftKey);
@@ -83,7 +85,8 @@ export function LineGrid({ lines, onChange, searchItems, amounts, computing, var
   };
   const pick = (i: number, it: ItemSummary) => {
     focusReq.current = { row: i, cell: amountMode ? 'unitPrice' : 'qty' };
-    patch(i, { itemId: it.id, description: it.name, unit: it.unit, unitPrice: moneyText(it.unitPrice), taxCode: exemptOnly ? 'EX' : it.taxCode, ...(amountMode && whtTypes && it.whtTypeCode ? { whtTypeCode: it.whtTypeCode } : {}) });
+    patch(i, { itemId: it.id, description: it.name, unit: it.unit, unitPrice: moneyText(it.unitPrice), taxCode: exemptOnly ? 'EX' : it.taxCode, ...(amountMode && whtTypes && it.whtTypeCode ? { whtTypeCode: it.whtTypeCode } : {}),
+      ...(amountMode && it.expenseCategory ? { expenseCategory: it.expenseCategory } : {}) });
   };
   const remove = (i: number) => onChange(lines.filter((_, k) => k !== i));
 
@@ -109,22 +112,28 @@ export function LineGrid({ lines, onChange, searchItems, amounts, computing, var
               {showCategory && (
                 <label className="grid gap-1">
                   <span aria-hidden className="text-small text-muted-foreground md:hidden">{t('colCategory')}</span>
-                  <Input type="text" autoComplete="off" aria-label={t('category', { n })} data-cell={`${i}:category`} value={l.expenseCategory ?? ''}
-                    onChange={(e) => patch(i, { expenseCategory: e.target.value || undefined })} onKeyDown={(e) => onCellKey(e, i, 'category')} />
+                  <select aria-label={t('category', { n })} data-cell={`${i}:category`} className={select} value={l.expenseCategory ?? ''}
+                    onChange={(e) => patch(i, { expenseCategory: e.target.value || undefined })} onKeyDown={(e) => onCellKey(e, i, 'category')}>
+                    <option value="">{t('categoryNone')}</option>
+                    {l.expenseCategory && !EXPENSE_CATEGORY_CODES.includes(l.expenseCategory) && <option value={l.expenseCategory}>{l.expenseCategory}</option>}
+                    {EXPENSE_CATEGORY_CODES.map((c) => <option key={c} value={c}>{tcat(c)}</option>)}
+                  </select>
                 </label>
               )}
               <label className="grid gap-1">
                 <span aria-hidden className="text-small text-muted-foreground md:hidden">{t('colAmountInput')}</span>
-                <Input type="text" inputMode="decimal" autoComplete="off" aria-label={t('amountInput', { n })} data-cell={`${i}:unitPrice`}
+                {/* a line converted from a PO keeps its quantity (D-29: the PO's remaining quantity follows it): the field is the unit price, the quantity is shown */}
+                <Input type="text" inputMode="decimal" autoComplete="off" aria-label={l.sourceLineId ? t('unitPriceOf', { n }) : t('amountInput', { n })} data-cell={`${i}:unitPrice`}
                   className="text-right tabular-nums" value={l.unitPrice}
-                  onChange={(e) => patch(i, { unitPrice: cleanDecimal(e.target.value, 2), qty: '1' })}
+                  onChange={(e) => patch(i, { unitPrice: cleanDecimal(e.target.value, 2), ...(l.sourceLineId ? {} : { qty: '1' }) })}
                   onBlur={() => { if (moneyText(l.unitPrice) !== l.unitPrice) patch(i, { unitPrice: moneyText(l.unitPrice) }); }} onFocus={(e) => e.target.select()}
                   onKeyDown={(e) => onCellKey(e, i, 'unitPrice')} />
+                {l.sourceLineId ? <span className="text-small text-muted-foreground">{t('fromSource', { qty: l.qty, unit: l.unit })}</span> : null}
               </label>
               <label className="grid gap-1">
                 <span aria-hidden className="text-small text-muted-foreground md:hidden">{t('colTax')}</span>
                 <select aria-label={t('tax', { n })} className={select} value={l.taxCode} onChange={(e) => patch(i, { taxCode: e.target.value as TaxCode })}>
-                  {(exemptOnly ? (['EX'] as TaxCode[]) : TAX_CODES).map((c) => <option key={c} value={c}>{t(`taxCode.${c}`)}</option>)}
+                  {TAX_CODES.map((c) => <option key={c} value={c}>{t(`taxCode.${c}`)}</option>)}
                 </select>
               </label>
               {whtTypes && (

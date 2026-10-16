@@ -157,7 +157,7 @@ describe('item record rules', () => {
     expect(r.status).toBe(422);
     expect((await r.json()).fieldErrors.code).toEqual(['รหัสแก้ไม่ได้หลังจากใช้ในเอกสารแล้ว']);
     expect((await call('PUT', `/records/item/${id}`, { ...used, name: 'ชื่อใหม่', version: used.version })).status).toBe(200);
-    expect((await row('EXP-01')).inUse).toBe(false);
+    expect((await row('EXP-04')).inUse).toBe(false);
   });
   it('deactivating a used item hides it from type-ahead; the old document keeps its line', async () => {
     const { doc, line } = usedLine();

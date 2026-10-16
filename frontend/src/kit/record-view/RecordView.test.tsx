@@ -63,6 +63,18 @@ describe('RecordView', () => {
     expect(within(panel).getAllByRole('row').length).toBeGreaterThan(3);
   });
 
+  it('a vendor open-items tab lists its purchase bills with the server total (pv-03: pb-2 after its debit note, pb-po)', async () => {
+    mount('pv-03', 'vendor');
+    await userEvent.click(await screen.findByRole('tab', { name: 'ยอดค้าง' }));
+    const panel = await screen.findByRole('tabpanel');
+    expect(await within(panel).findAllByRole('link', { name: /^PB-\d{6}-\d{4}$/ })).toHaveLength(2);
+    const server = (await (await fetch('http://localhost/bff/v1/docs/open-items?partyId=pv-03&types=PB')).json()) as { items: { outstanding: string }[]; total: string };
+    expect(server.items).toHaveLength(2);
+    expect(server.total).toBe('13338.00'); // pb-2 24,075.00 + 535.00 (pdn-1) - 12,305.00 paid by pv-multi + pb-po 2,033.00 - 1,000.00 paid
+    await waitFor(() => expect(within(panel).getAllByRole('row')).toHaveLength(3));
+    expect(within(panel).getByRole('status')).toHaveTextContent(formatTHB(server.total));
+  }, 10_000);
+
   it('a role without document read sees "forbidden" on the open-items tab, never "nothing outstanding"', async () => {
     setSettings({ role: 'admin' });
     const { container } = mount();

@@ -40,13 +40,13 @@ signatures ผู้สั่งซื้อ / ผู้อนุมัติ.
 
 **Permissions:** operator + `doc.PO.read/create/issue`; accountant + all `doc.PO.*`.
 
-- [ ] **Step 1: Failing tests** — engine: PO → PB conversion over the remaining quantity refused (`doc.over_conversion`),
+- [x] **Step 1: Failing tests** — engine: PO → PB conversion over the remaining quantity refused (`doc.over_conversion`),
   `sent` mark only on live PO; e2e `purchases-po.spec.ts`: `screenContract` PO list (`company: 'both'`, operator /
   accountant, forbiddenRole admin) and PO view (`poSent`); flow "PO view → แปลงเป็น… → บันทึกซื้อ (PB) → qty 1 of line 1"
   lands on the PB editor with the vendor and line prefilled (the PB descriptor arrives in P2 — this e2e is added to
   P2's spec file instead; P1's flow test is "mark sent → chip ส่งแล้ว visible; activity lists it").
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(purchases): purchase orders`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(purchases): purchase orders`.
 
 ---
 
@@ -93,7 +93,7 @@ non-recoverable), `pb-po` (from `po-part`, half qty), `pb-capex` (EXP-08 noteboo
 
 **Permissions:** operator + `doc.PB.read/create/issue`, `doc.PCN.read`, `doc.PDN.read`; accountant + all `doc.PB/PCN/PDN.*`.
 
-- [ ] **Step 1: Failing tests** (`purchase-vat.test.ts` + e2e)
+- [x] **Step 1: Failing tests** (`purchase-vat.test.ts` + e2e)
 ```ts
 it('vendor not VAT-registered + S7 line → pb.vendor_not_vat_registered', () => {});
 it('entertainment line VAT posts to 5170, not 1170; journal balances', () => {});
@@ -105,9 +105,9 @@ it('PO → PB beyond the remaining quantity is refused (D-29)', () => {});
 e2e: `screenContract` PB list (`both`), PB view (`pbMixedVat`, states incl. `locked`), PCN list, PDN list; flow
 "PO view → แปลงเป็น… → บันทึกซื้อ → lines prefilled → vendor document number + claim period → issue → PO progress
 'รับวางบิลแล้ว'".
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS**; invariants `[]`.
-- [ ] **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(purchases): purchase bills, vendor credit / debit notes and input VAT rules`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS**; invariants `[]`.
+- [x] **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(purchases): purchase bills, vendor credit / debit notes and input VAT rules`.
 
 ---
 
@@ -158,7 +158,7 @@ Non-VAT: `npv-1` settles `npb-1`. Keys `pvMultiWt`, `pvGrossUp`, `pvForeign`, `p
 links) = PV wht`; exactly one active WT per (PV, WHT type); `GL(2131…2135)` credit movement per form = Σ WT tax of that
 form; PB outstanding after PV = `total − ΣPCN + ΣPDN − Σ settles`; cancel restores everything.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `e2e/pv-action-count.spec.ts` (SP0 S3, D-15)
 ```ts
@@ -200,9 +200,9 @@ it('WT paper is frozen after the first print (a later payee rename does not chan
 `locked`), WT list `/tax/wht-certificates` (`both`; operator forbidden? no — operator lacks `doc.WT.read`: forbiddenRole
 operator), WT view (`wtIssued`); flow "VAT vendor with S7 line → refusal banner → บันทึกซื้อ (มีใบกำกับภาษี) → dialog →
 allocation appears → issue".
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS**; invariants `[]`.
-- [ ] **Step 5: Full gate** (the TI and PV action-count specs both green).
-- [ ] **Step 6: Controller commits** — `feat(purchases): payment vouchers, WHT certificates and the PV action count`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS**; invariants `[]`.
+- [x] **Step 5: Full gate** (the TI and PV action-count specs both green).
+- [x] **Step 6: Controller commits** — `feat(purchases): payment vouchers, WHT certificates and the PV action count`.
 
 ---
 
@@ -244,20 +244,20 @@ user), `emp-02` วิชาญ ขยันงาน (sales), `emp-03` มา�
 admin none. (Approve codes added for the other types in their own tasks only when a policy enables them — the catalog
 lists all now.)
 
-- [ ] **Step 1: Failing tests** — `approval.test.ts`: submit below the minimum issues directly; self-approval off
+- [x] **Step 1: Failing tests** — `approval.test.ts`: submit below the minimum issues directly; self-approval off
   refuses the creator; approve-and-issue allocates the number once; editing an approved EX returns it to draft;
   `checkInvariants` (2180 subledger) holds. `ApprovalActions.test.tsx`: operator sees "ส่งอนุมัติ", accountant sees
   "อนุมัติและออก" and "ส่งกลับแก้ไข" (reason required). e2e: `screenContract` EX list (`both`), EX view (`exPending`);
   approval flow operator submits → accountant approves and issues → EX → PV conversion pays it (EX outstanding 0,
   status `settled`); mobile test at 390 × 844 creates an EX with a photo.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(purchases): expense claims and the approval engine`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(purchases): expense claims and the approval engine`.
 
 ---
 
 ### Task GP: Ham gate — purchases
 
-- [ ] Consolidated gate green (includes `e2e/pv-action-count.spec.ts`); production build / staging.
-- [ ] Send Ham: URLs; the PV action count result (≤ 6, scenario D-15); G2 inline PB (D-16); WHT modes with WT papers
+- [x] Consolidated gate green (includes `e2e/pv-action-count.spec.ts`); production build / staging.
+- [x] Send Ham: URLs; the PV action count result (≤ 6, scenario D-15); G2 inline PB (D-16); WHT modes with WT papers
   (D-14, D-21, `[SP-R]` rates); PCN / PDN; claim period and non-recoverable VAT; EX + approval (D-18, D-19).
-- [ ] AskUserQuestion "Purchases approve?" — approve / approve with changes / rework. Record in `STATUS.md`.
+- [x] AskUserQuestion "Purchases approve?" — approve / approve with changes / rework. Record in `STATUS.md`.

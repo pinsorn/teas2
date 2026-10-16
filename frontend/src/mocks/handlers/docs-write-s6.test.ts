@@ -19,7 +19,8 @@ const issued = async () => { const d = await draft(); return (await (await call(
 /** A data URL of `bytes` real bytes. */
 const dataUrl = (mime: string, bytes: number) => `data:${mime};base64,${btoa('x'.repeat(bytes))}`;
 const att = (over: Record<string, unknown> = {}) => ({ category: 'customer_po', name: 'po.pdf', mime: 'application/pdf', dataUrl: dataUrl('application/pdf', 100), ...over });
-const attKeys = () => Object.keys(localStorage).filter((k) => k.startsWith('teas2.mock.att.'));
+const attKeys = () => Object.keys(localStorage).filter((k) => k.startsWith('teas2.mock.att.') && !k.includes('att-seed-')); // the seed's own receipt photo (ex-pend) is not what these tests count
+const userAtt = () => loadState().attachments.filter((a) => !a.id.startsWith('att-seed-'));
 
 describe('attachments', () => {
   it('a draft keeps its file (bytes under their own key, metadata in the state), and it survives issue', async () => {
@@ -31,7 +32,7 @@ describe('attachments', () => {
     expect(attKeys()).toEqual([`teas2.mock.att.${a.id}`]);
     const st = loadState();
     expect(JSON.stringify(st)).not.toContain('base64'); // the bytes are never part of the state blob
-    expect(st.attachments).toHaveLength(1);
+    expect(userAtt()).toHaveLength(1);
     await call('POST', `/docs/TI/${d.id}/issue`, { version: d.version });
     const list = await (await call('GET', `/docs/TI/${d.id}/attachments`)).json();
     expect(list).toHaveLength(1);
@@ -43,7 +44,7 @@ describe('attachments', () => {
     expect(big.status).toBe(422);
     expect((await big.json()).code).toBe('attachment.too_large');
     expect(attKeys()).toEqual([]);
-    expect(loadState().attachments).toEqual([]);
+    expect(userAtt()).toEqual([]);
     expect((await call('POST', `/docs/TI/${d.id}/attachments`, att({ dataUrl: dataUrl('application/pdf', 1024 * 1024) }))).status).toBe(201);
   });
   it('accepts pdf / png / jpeg / webp only (422 attachment.type_not_allowed); the size and type come from the bytes, not the client', async () => {
@@ -73,13 +74,13 @@ describe('attachments', () => {
     const p = await r.json();
     expect(p.code).toBe('attachment.storage_full');
     expect(p.title).toContain('พื้นที่เก็บไฟล์ตัวอย่างเต็ม');
-    expect(loadState().attachments).toEqual([]);
+    expect(userAtt()).toEqual([]);
   });
   it('the state blob refusing the metadata also rolls the file back (507)', async () => {
     const d = await draft();
     const real = Storage.prototype.setItem;
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, k: string, v: string) {
-      if (k === 'teas2.mock.state.v14') throw new DOMException('full', 'QuotaExceededError');
+      if (k === 'teas2.mock.state.v23') throw new DOMException('full', 'QuotaExceededError');
       return real.call(this, k, v);
     });
     expect((await call('POST', `/docs/TI/${d.id}/attachments`, att())).status).toBe(507);
@@ -121,7 +122,7 @@ describe('attachments', () => {
     expect((await call('GET', `/docs/TI/${d.id}/attachments`)).status).toBe(403);
     setSettings({ role: 'accountant' });
     expect((await call('GET', '/docs/TI/nope/attachments')).status).toBe(404);
-    expect(loadState().attachments).toHaveLength(1);
+    expect(userAtt()).toHaveLength(1);
   });
 });
 
@@ -212,10 +213,10 @@ describe('S6 fix round 1', () => {
   });
   it('I3: a write the browser cannot persist is a 507 storage.full, never a success, and the stored state is untouched', async () => {
     const d = await draft();
-    const before = localStorage.getItem('teas2.mock.state.v14');
+    const before = localStorage.getItem('teas2.mock.state.v23');
     const real = Storage.prototype.setItem;
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, k: string, v: string) {
-      if (k === 'teas2.mock.state.v14') throw new DOMException('full', 'QuotaExceededError');
+      if (k === 'teas2.mock.state.v23') throw new DOMException('full', 'QuotaExceededError');
       return real.call(this, k, v);
     });
     const r = await call('POST', `/docs/TI/${d.id}/issue`, { version: d.version });
@@ -223,7 +224,7 @@ describe('S6 fix round 1', () => {
     const p = await r.json();
     expect(p.code).toBe('storage.full');
     expect(p.title).toContain('พื้นที่เก็บข้อมูลตัวอย่างเต็ม');
-    expect(localStorage.getItem('teas2.mock.state.v14')).toBe(before);
+    expect(localStorage.getItem('teas2.mock.state.v23')).toBe(before);
     vi.restoreAllMocks();
     const again = await (await call('GET', `/docs/TI/${d.id}`)).json();
     expect(again.status).toBe('draft');
@@ -237,6 +238,6 @@ describe('S6 fix round 1', () => {
     const e = await draft().catch(() => undefined);
     const r = e ? await call('POST', `/docs/TI/${e.id}/issue`, { version: e.version }) : undefined;
     if (r) expect([200, 507]).toContain(r.status); // whatever the leftover room allows, a 200 must really be persisted
-    if (r?.status === 200) expect((await (await call('GET', `/docs/TI/${e!.id}`)).json()).status).toBe('issued');
+    if (r?.status === 210) expect((await (await call('GET', `/docs/TI/${e!.id}`)).json()).status).toBe('issued');
   });
 });

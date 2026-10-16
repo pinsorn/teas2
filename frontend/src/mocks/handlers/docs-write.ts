@@ -4,7 +4,8 @@ import type { Actor, AttachmentCategory, DocType, MarkKey, Qty } from '@/domain/
 import { addAttachment, discardAttachment, listAttachments, markPrinted, removeAttachment } from '../engine/attachments';
 import { PAPER_BUILDERS } from '../engine/paper';
 import { buildChain } from '../engine/chain';
-import { type Body, unavailableTh, cancel, compute, convert, createDraft, deleteDraft, issue, publicDoc, updateDraft } from '../engine/commands';
+import { approve, sendBack } from '../engine/approval';
+import { type Body, unavailableTh, approveAndIssue, cancel, compute, convert, createDraft, deleteDraft, issue, publicDoc, submitForApproval, updateDraft } from '../engine/commands';
 import { buildPlan, correctionPlan, executePlan, planStale } from '../engine/corrections';
 import { MockError } from '../engine/log';
 import { closeRemainder, remainingOf, setMark } from '../engine/marks';
@@ -15,7 +16,10 @@ import { ctx, forbidden, persist, problem, screenGate } from './common';
 const ACTOR: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
 
 /** vatOverride (correction notes) and allocation targetNumber are engine-set only: never accepted from an API caller. */
+const WHT_MODES = ['deduct', 'grossup_once', 'grossup_always'];
 export const stripOverrides = <T extends Body>(b: T): T => {
+  // the shape of the request, refused where it enters (create, update, compute, correction plan): an unknown withholding mode would otherwise be read as "deduct" by some paths and as a gross-up by others
+  if (b?.header?.whtMode != null && !WHT_MODES.includes(b.header.whtMode)) throw new MockError(422, 'wht.mode_invalid', `โหมดภาษีหัก ณ ที่จ่าย “${String(b.header.whtMode)}” ไม่ถูกต้อง ใช้ได้เฉพาะ: ${WHT_MODES.join(', ')}`);
   if (!Array.isArray(b?.lines)) return b;
   const lines = b.lines.map((l) => { if (!l || typeof l !== 'object') return l; const { vatOverride, ...r } = l; void vatOverride; return r; });
   // `targetNumber` is engine-set (the engine re-reads it from the target); only the user's own figures and the certificate number come from the caller
@@ -96,6 +100,37 @@ export const docsWriteHandlers = [
     own(c, t, params.id);
     const body = (await request.json().catch(() => ({}))) as { version?: number };
     const doc = issue(c.st, String(params.id), versionOf(request, body), ACTOR);
+    done(c);
+    return HttpResponse.json(doc);
+  })),
+
+  // §7.6 approval. The gate itself is in the engine (issue refuses an unapproved document); these are the ways through it, each with its own right.
+  http.post('*/bff/v1/docs/:type/:id/submit', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
+    own(c, t, params.id);
+    const body = (await request.json().catch(() => ({}))) as { version?: number };
+    const doc = submitForApproval(c.st, String(params.id), versionOf(request, body), ACTOR);
+    done(c);
+    return HttpResponse.json(doc);
+  })),
+  http.post('*/bff/v1/docs/:type/:id/approve', ({ request, params }) => guarded(String(params.type), P('approve'), async (c, t) => {
+    own(c, t, params.id);
+    const body = (await request.json().catch(() => ({}))) as { version?: number };
+    const doc = approve(c.st, String(params.id), versionOf(request, body), ACTOR);
+    done(c);
+    return HttpResponse.json(doc);
+  })),
+  http.post('*/bff/v1/docs/:type/:id/approve-and-issue', ({ request, params }) => guarded(String(params.type), P('approve'), async (c, t) => {
+    own(c, t, params.id);
+    if (!c.perms.includes(`doc.${t}.issue`)) return forbidden(`doc.${t}.issue`); // one action only for a person who holds BOTH rights
+    const body = (await request.json().catch(() => ({}))) as { version?: number };
+    const doc = approveAndIssue(c.st, String(params.id), versionOf(request, body), ACTOR);
+    done(c);
+    return HttpResponse.json(doc);
+  })),
+  http.post('*/bff/v1/docs/:type/:id/send-back', ({ request, params }) => guarded(String(params.type), P('approve'), async (c, t) => {
+    own(c, t, params.id);
+    const body = (await request.json().catch(() => ({}))) as { version?: number; reason?: string };
+    const doc = sendBack(c.st, String(params.id), versionOf(request, body), typeof body.reason === 'string' ? body.reason : '', ACTOR);
     done(c);
     return HttpResponse.json(doc);
   })),
@@ -209,7 +244,8 @@ export const docsWriteHandlers = [
     own(c0, t, params.id);
     const body = (await request.json().catch(() => ({}))) as { copy?: boolean };
     const c = ctx(); // the body was awaited: read the state again so two quick prints (two tabs) see each other and only one is the original
-    const r = markPrinted(c.st, own(c, t, params.id), body.copy === true, ACTOR);
+    const doc = own(c, t, params.id);
+    const r = markPrinted(c.st, doc, body.copy === true, ACTOR, t === 'WT' && PAPER_BUILDERS.WT && !['draft', 'pending', 'approved'].includes(doc.status) ? PAPER_BUILDERS.WT(c, publicDoc(doc), false) : undefined); // 50 tawi: frozen at the first print (I7)
     done(c);
     return HttpResponse.json(r);
   })),

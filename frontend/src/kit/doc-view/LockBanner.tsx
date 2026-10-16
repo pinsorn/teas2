@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { Lock } from '@/domain/types';
-import { Guarded } from './ActionBar';
+import { Guarded } from './Guarded';
 
 /** What an exit does: `onClick`, or `why` when the user cannot (the missing permission). No result = the exit is plain text. */
 export type ExitAction = (lock: Lock, exit: string) => { onClick: () => void; why?: string } | undefined;

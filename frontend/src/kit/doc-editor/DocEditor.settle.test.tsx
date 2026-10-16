@@ -88,7 +88,7 @@ describe('DocEditor: receipt in a non-VAT company (cash bill)', () => {
     const amount = await screen.findByRole('textbox', { name: 'จำนวนเงินรายการ 1' });
     await waitFor(() => expect(amount).toHaveValue('185.00')); // the customer's usual item landed (price and tax copied from the server)
     expect(screen.getByRole('combobox', { name: 'ภาษีรายการ 1' })).toHaveValue('EX');
-    expect(screen.queryByRole('textbox', { name: 'หมวดค่าใช้จ่ายรายการ 1' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'หมวดค่าใช้จ่ายรายการ 1' })).toBeNull();
     await userEvent.clear(amount);
     await userEvent.type(amount, '1500');
     await userEvent.tab();
@@ -112,7 +112,7 @@ describe('DocEditor: payment voucher with withholding', () => {
     await userEvent.type(screen.getByRole('combobox', { name: 'ผู้ขาย' }), 'ภูพาน{Enter}');
     expect(screen.getByRole('combobox', { name: 'ผู้รับภาระภาษีหัก ณ ที่จ่าย' })).toHaveValue('deduct');
     await userEvent.type(screen.getByRole('combobox', { name: 'รายการ 1' }), 'ค่าถ่ายภาพ');
-    expect(screen.getByRole('textbox', { name: 'หมวดค่าใช้จ่ายรายการ 1' })).toBeVisible();
+    expect(screen.getByRole('combobox', { name: 'หมวดค่าใช้จ่ายรายการ 1' })).toBeVisible();
     const amount = screen.getByRole('textbox', { name: 'จำนวนเงินรายการ 1' });
     await userEvent.clear(amount);
     await userEvent.type(amount, '5000');

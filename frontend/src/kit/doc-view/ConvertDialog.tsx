@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { convertTargets, GROUPS } from '@/domain/doc-types';
+import { convertTargets, GROUPS, SETTLES } from '@/domain/doc-types';
 import type { Doc, DocType } from '@/domain/types';
 import { ApiError } from '@/lib/api/client';
 import { endpoints } from '@/lib/api/endpoints';
@@ -28,6 +28,7 @@ const qtyKind = (q: string): 'drop' | 'ok' | 'invalid' => {
 export function ConvertDialog({ source, targets, onDone, onClose }: { source: Doc; targets: DocType[]; onDone: (created: Doc) => void; onClose: () => void }) {
   const t = useTranslations('docView.convertDialog');
   const td = useTranslations('docTypes');
+  const ta = useTranslations('docView.approval');
   const qc = useQueryClient();
   const id = useId();
   const { me } = useMe();
@@ -35,7 +36,8 @@ export function ConvertDialog({ source, targets, onDone, onClose }: { source: Do
   const allowed = me ? convertTargets(targets, me.vatRegistered, me.permissions) : [];
   const [picked, setPicked] = useState<DocType>();
   const target = picked && allowed.includes(picked) ? picked : allowed[0];
-  const grouping = !!target && !!GROUPS[target]; // a billing statement takes the whole document: no quantities to pick
+  const paying = !!target && !!SETTLES[target]?.includes(source.type); // a voucher pays what the document still owes (an allocation): no quantities to pick
+  const grouping = !!target && (!!GROUPS[target] || paying); // a billing statement takes the whole document: no quantities to pick
   const [typed, setTyped] = useState<Record<string, string>>({});
   const rem = useQuery({ queryKey: qk.remaining(companyId, source.type, source.id), queryFn: () => endpoints.getRemaining(source.type, source.id), enabled: !!me });
   const qtyOf = (lineId: string, remaining: string) => typed[lineId] ?? remaining;
@@ -63,7 +65,7 @@ export function ConvertDialog({ source, targets, onDone, onClose }: { source: Do
                 {allowed.map((x) => <option key={x} value={x}>{td(`${x}.title`)}</option>)}
               </select>
             </div>
-            {grouping ? <p className="text-body text-muted-foreground">{t('groupBody')}</p> : rem.isError ? <Alert variant="destructive"><AlertTitle>{t('loadFailed')}</AlertTitle></Alert> : (
+            {grouping ? <p className="text-body text-muted-foreground">{paying ? ta('payBody') : t('groupBody')}</p> : rem.isError ? <Alert variant="destructive"><AlertTitle>{t('loadFailed')}</AlertTitle></Alert> : (
               <Table>
                 <TableHeader><TableRow>
                   <TableHead>{t('colItem')}</TableHead><TableHead>{t('colUnit')}</TableHead>
