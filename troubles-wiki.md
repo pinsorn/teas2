@@ -95,3 +95,8 @@ Entry format — terse, greppable by symptom:
 - **Symptom:** `corepack pnpm build && corepack pnpm start -p 3100` serves pages, but every screen shows the load error; the network tab shows `GET /bff/v1/me` → 404 from Next.
 - **Root cause:** `NEXT_PUBLIC_API_MOCKING` is inlined at BUILD time; the worktree has no `.env` (only `.env.example`), so the build ships without the MSW worker. A stale `next start` can also keep holding the port after its shell is stopped (EADDRINUSE on restart).
 - **Fix:** build and start with `NEXT_PUBLIC_API_MOCKING=enabled` in the environment (or copy `.env.example` to `.env.local`); free the port by PID first. The preview works on `http://localhost:3100` only — MSW service workers need a secure context, so a LAN IP over http stays broken.
+
+## An e2e locator passes locally and hits "strict mode violation" on CI (2 elements)
+- **Symptom:** `getByRole('heading', { level: 1 })` / `getByText('ส่งมอบแล้ว')` resolve to 2 elements on GitHub CI only; green locally.
+- **Root cause:** a race, not an environment difference. Locally the second element (the paper's lazily fetched seller `h1`; the activity-tab entry) had not rendered yet when the assertion ran, so the locator matched one element and passed vacuously. Slower CI runners render both first. The paper seller name was also a real a11y defect (an extra `h1` per sheet).
+- **Fix:** the paper seller name is an `h2`; scope text locators to their region (`getByRole('tabpanel', { name })`). Never `.first()`.

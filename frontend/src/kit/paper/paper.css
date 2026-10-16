@@ -24,7 +24,7 @@
   print-color-adjust: exact;
 }
 .paper-root *, .paper-root *::before, .paper-root *::after { box-sizing: border-box; }
-.paper-root p, .paper-root h1, .paper-root h2, .paper-root h3, .paper-root h4, .paper-root dl, .paper-root dd { margin: 0; }
+.paper-root p, .paper-root h2, .paper-root h3, .paper-root h4, .paper-root dl, .paper-root dd { margin: 0; }
 
 /* ---------- A4 sheets ---------- */
 .paper-stack { display: grid; justify-content: center; gap: 24px; padding: 24px 0; background: var(--color-bg); }
@@ -48,7 +48,7 @@
 .paper-hd { display: grid; grid-template-columns: 1fr auto; gap: 5mm; align-items: start; padding-bottom: 4mm; border-bottom: 2pt solid var(--paper-accent); }
 .paper-seller { display: flex; gap: 4mm; }
 .paper-logo { flex: none; width: 17mm; height: 17mm; border-radius: 50%; border: 1.6pt solid var(--paper-accent); display: grid; place-items: center; font-weight: 700; font-size: 22pt; color: var(--paper-accent-text); line-height: 1; }
-.paper-seller h1 { font-size: 12.5pt; font-weight: 700; line-height: 1.25; }
+.paper-seller h2 { font-size: 12.5pt; font-weight: 700; line-height: 1.25; }
 .paper-seller .paper-name-en { font-size: 8.5pt; color: var(--paper-muted); margin-bottom: 1.2mm; }
 .paper-seller p { font-size: 8.5pt; line-height: 1.45; text-wrap: pretty; }
 .paper-seller .paper-tin { margin-top: 1mm; }

@@ -50,6 +50,7 @@ export function PaperView({ type, id, copy = false, toolbar = false }: { type: D
     <div ref={root}>
       {toolbar ? (
         <div className="paper-noprint flex items-center justify-end gap-3 p-3">
+          <h1 className="sr-only">{q.data.titleTh} {q.data.number}</h1>
           {logFailed ? <p role="status" className="text-small text-muted-foreground">{tpr('logFailed')}</p> : null}
           <Button disabled={!ready} onClick={() => {
             if (printing.current) return;

@@ -33,7 +33,7 @@ function Head({ m }: { m: PaperModel }) {
         <div className="paper-seller">
           <div className="paper-logo" aria-hidden="true">{mark(s.name)}</div>
           <div>
-            <h1>{s.name}</h1>
+            <h2>{s.name}</h2>
             {s.nameEn ? <div className="paper-name-en">{s.nameEn}</div> : null}
             <p>{s.address}</p>
             {s.phone ? <p>{L.phone} {s.phone}</p> : null}

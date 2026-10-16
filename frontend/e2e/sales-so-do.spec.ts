@@ -72,7 +72,7 @@ test('DO: the delivered button records a status-only mark with an activity entry
   await expect(page.getByRole('button', { name: 'ส่งของแล้ว' })).toHaveCount(0);
   await expect(page.getByText(/วางบิลแล้ว 0\/\d+/)).toBeVisible(); // status-only: nothing billed, no TI created
   await page.getByRole('tab', { name: 'กิจกรรม' }).click();
-  await expect(page.getByText('ส่งมอบแล้ว')).toBeVisible();
+  await expect(page.getByRole('tabpanel', { name: 'กิจกรรม' }).getByText('ส่งมอบแล้ว')).toBeVisible();
 });
 
 test('a DO offers TI / IV only (D-07: no billing note from a delivery order)', async ({ page }) => {
@@ -96,7 +96,7 @@ test('SO prints with its own title and no tax-invoice wording', async ({ page })
   await page.goto('/'); const id = await fixtureId(page, 'soPartlyDelivered');
   await page.goto(`/print/SO/${id}`);
   await expect(page.locator('[data-paper-ready="true"]')).toBeVisible();
-  await expect(page.locator('h2').first()).toHaveText('ใบสั่งขาย');
+  await expect(page.locator('.paper-title h2').first()).toHaveText('ใบสั่งขาย');
   await expect(page.locator('[data-paper-page]').first().getByText('กำหนดส่ง')).toBeVisible();
   await expect(page.getByText('ใบกำกับภาษี')).toHaveCount(0);
 });

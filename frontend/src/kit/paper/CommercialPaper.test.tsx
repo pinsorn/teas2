@@ -15,7 +15,7 @@ const model = (n: number, over: Partial<PaperModel> = {}): PaperModel => ({
 describe('CommercialPaper (QT SO DO BL IV PO)', () => {
   it('prints the title, the due label and the signature row of the model', () => {
     const { container } = render(<CommercialPaper model={model(1)} measure={() => 30} />);
-    expect(container.querySelector('h2')?.textContent).toBe('ใบเสนอราคา');
+    expect(container.querySelector('.paper-title h2')?.textContent).toBe('ใบเสนอราคา');
     expect(screen.getByText('QUOTATION')).toBeInTheDocument();
     expect(screen.getByText('ยืนราคาถึง')).toBeInTheDocument();
     for (const s of ['ผู้เสนอราคา', 'ผู้อนุมัติ', 'ลูกค้ายืนยันสั่งซื้อ']) expect(screen.getByText(s)).toBeInTheDocument();
