@@ -56,4 +56,11 @@ export const CLOSEABLE: DocType[] = ['SO', 'DO', 'PO'];
 export const REASON_CODES: Partial<Record<DocType, string[]>> = {
   CN: ['RETURN', 'PRICE_REDUCTION', 'DISCOUNT', 'SERVICE_SHORT', 'OTHER'],
   DN: ['PRICE_INCREASE', 'QTY_EXCESS', 'OTHER'],
+  PCN: ['RETURN', 'PRICE_REDUCTION', 'DISCOUNT', 'SERVICE_SHORT', 'OTHER'],
+  PDN: ['PRICE_INCREASE', 'QTY_EXCESS', 'OTHER'],
 };
+
+/** Adjustment notes and the document each one adjusts (ADR-0002 analogue for purchases): CN / DN -> the tax invoice we issued, PCN / PDN -> the purchase bill we recorded. */
+export const ADJUSTS: Partial<Record<DocType, DocType>> = { CN: 'TI', DN: 'TI', PCN: 'PB', PDN: 'PB' };
+/** The decreasing note of each side (the credit): CN lowers a receivable, PCN lowers a payable. */
+export const CREDIT_NOTES: DocType[] = ['CN', 'PCN'];

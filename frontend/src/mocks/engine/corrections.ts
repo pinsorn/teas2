@@ -2,7 +2,7 @@ import type { Actor, Allocation, ChainEdge, CorrectionNote, CorrectionPlan, Corr
 import { PERMISSIONS_BY_ROLE } from '../permissions';
 import type { MockState } from '../store';
 import {
-  type Body, LIVE, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, keepNoteLines, keepOmitted, markReplaced, refuseBelowSettled, refuseNonPositive, refusePartyChange, refuseUnissuableReceipt, reissue, revise, stableJson, totalsOf,
+  type Body, LIVE, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, keepNoteLines, keepOmitted, markReplaced, refuseBelowSettled, refuseNonPositive, refusePartyChange, refuseUnissuableReceipt, refuseUnrevisablePurchase, reissue, revise, stableJson, totalsOf,
 } from './commands';
 import { MockError, today } from './log';
 import { fromSatang, toSatang } from './money';
@@ -95,7 +95,8 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
   } else if (d.correctionClass !== 'T' || !isFiscalChange(d, proposed)) {
     refusePartyChange(st, d, proposed);
     refuseNonPositive(st, d.companyId, d.type, proposed);
-    refuseBelowSettled(st, d, proposed); // an IV cannot be revised below what is already received: say so before the plan is shown
+    refuseBelowSettled(st, d, proposed); // an IV / PB cannot be revised below what is already received / paid: say so before the plan is shown
+    refuseUnrevisablePurchase(st, d, proposed); // a PB under live notes, an unregistered vendor's VAT, a claim period out of range, more than the PO has left
     add('revise', d, `แก้ไข ${label} (เลขที่เดิม เพิ่มรุ่นแก้ไข)`, `doc.${d.type}.correct`);
     explanation = 'การแก้ไขนี้ไม่กระทบภาษี แก้ไขในเอกสารเดิมและเก็บประวัติการแก้ไข';
   } else {

@@ -1,7 +1,7 @@
 import type {
   Actor, Allocation, ComputeResult, Doc, DocHeader, DocLine, DocTotals, DocType, IsoDate, JournalEntryPreview, JournalPreview, Lock, MissingItem, Money, PartySummary, Qty,
 } from '@/domain/types';
-import { CLASS, CONVERSIONS, DOC_TYPES, GROUPS, LIVE, SETTLES, isTypeAvailable } from '@/domain/doc-types';
+import { ADJUSTS, CLASS, CONVERSIONS, DOC_TYPES, GROUPS, LIVE, SETTLES, isTypeAvailable } from '@/domain/doc-types';
 import type { MockState } from '../store';
 import { dropAttachmentsOf } from './attachments';
 import { consumed, fmtQ, q4 } from './chain';
@@ -9,11 +9,12 @@ import { ledgerFor, reversalOf } from './ledger';
 import { afterRevision, refuseClosed, refuseRejected, withAcceptedStamp } from './marks';
 import { MockError, diffBody, isPinned, logActivity, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
-import { adjustSnapshot, isNote, noteHeader, noteMissing, noteProblem, withNoteVat } from './notes';
+import { adjustSnapshot, hasSnapshot, isNote, noteHeader, noteMissing, noteProblem, withNoteVat } from './notes';
 import { SeriesAllocator } from './numbering';
 import { firstOpenDate, isClosed, monthLabelTh } from './periods';
 import { balanceOf, certError, cleanAllocations, fiscalAllocations, groupTotals, payDefaults, settleExtras, settleProblem, settleTotals } from './settlement';
-import { computeDoc, vatOf } from './vat';
+import { purchaseProblem, withClaimPeriod } from './purchase-vat';
+import { computeDoc, vatBasisOf, vatOf } from './vat';
 
 export type Body = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] };
 type Stored = MockState['docs'][number];
@@ -67,7 +68,7 @@ export function calc(body: Body, vatRegistered: boolean) {
 }
 /** Document totals: the lines' totals, plus for an RC / PV the settlement money (total, WHT, cash). One seam for create / update / issue / revise / compute. */
 export function totalsOf(st: MockState, companyId: string, type: DocType, body: Body, selfId?: string): DocTotals {
-  const t = calc(withNoteVat(st, companyId, type, body, selfId), vatOf(st, companyId)).totals; // a CN / DN: each line's VAT is its invoice line's VAT change (rule B)
+  const t = calc(withNoteVat(st, companyId, type, body, selfId), vatBasisOf(st, companyId, type)).totals; // a note: each line's VAT is its original line's VAT change (rule B); a vendor's invoice carries the VAT of its tax code (A.4)
   return SETTLES[type] ? settleTotals(st, companyId, type, body, t) : GROUPS[type] ? groupTotals(body, t) : t;
 }
 function partyOf(st: MockState, companyId: string, id?: string): PartySummary | undefined {
@@ -180,7 +181,19 @@ function stored(st: MockState, companyId: string, type: DocType, body: Body, kee
   // D-12: a VAT company's receipt settles tax invoices, it never sells (a cash bill is the non-VAT company's). Shape of the request, so it is refused where the body enters.
   if (type === 'RC' && body.lines.length && vatOf(st, companyId)) throw new MockError(422, 'rc.lines_need_invoice', 'บริษัทที่จดทะเบียน VAT ต้องออกใบกำกับภาษีก่อนรับชำระ');
   const allocations = cleanAllocations(st, companyId, type, body.allocations, keep);
-  return { header: noteHeader(st, companyId, type, payDefaults(st, companyId, type, body.header), body.lines), lines: GROUPS[type] ? [] : body.lines, ...(allocations ? { allocations } : {}) };
+  return { header: noteHeader(st, companyId, type, payDefaults(st, companyId, type, body.header), body.lines), lines: GROUPS[type] ? [] : vendorNoteLines(st, companyId, type, body), ...(allocations ? { allocations } : {}) };
+}
+
+/** A PCN / PDN line takes the expense category (and item) of the bill line it adjusts, server-side: the VAT it gives back is claimable exactly when the bill's was, whatever the client sent. */
+function vendorNoteLines(st: MockState, companyId: string, type: DocType, body: Body): DocLine[] {
+  const pb = ADJUSTS[type] === 'PB' ? st.docs.find((d) => d.id === body.header.refDocId && d.companyId === companyId && d.type === 'PB') : undefined;
+  if (!pb) return body.lines;
+  return body.lines.map((l) => {
+    const src = l.sourceLineId ? pb.lines.find((x) => x.id === l.sourceLineId) : undefined;
+    if (!src) return l;
+    const { expenseCategory: _c, itemId: _i, ...rest } = l; void _c; void _i;
+    return { ...rest, ...(src.itemId ? { itemId: src.itemId } : {}), ...(src.expenseCategory ? { expenseCategory: src.expenseCategory } : {}) };
+  });
 }
 
 function insertDraft(st: MockState, companyId: string, type: DocType, raw: Body, actor: Actor, id?: string): Stored {
@@ -202,7 +215,7 @@ const outstandingNow = (st: MockState) => (id: string): number => balanceOf(st, 
 /** `opts.docId`: the issued document being revised - its own active settlements are given back before the allocations are checked (same as `revise`). */
 export function compute(st: MockState, companyId: string, type: DocType, raw: Body, opts?: { docId?: string }): ComputeResult {
   const body = withNoteVat(st, companyId, type, stored(st, companyId, type, raw, opts?.docId ? st.docs.find((x) => x.id === opts.docId)?.allocations : undefined), opts?.docId);
-  const c = calc(body, vatOf(st, companyId));
+  const c = calc(body, vatBasisOf(st, companyId, type));
   const totals = totalsOf(st, companyId, type, body, opts?.docId);
   const doc: Doc = {
     id: 'preview', type, status: 'draft', correctionClass: CLASS[type], revision: 0, version: 1, header: body.header,
@@ -215,6 +228,8 @@ export function compute(st: MockState, companyId: string, type: DocType, raw: Bo
   if (bad) missing.push({ field: 'allocations', message: bad.title });
   const np = noteProblem(st, companyId, type, body, opts?.docId);
   if (np) missing.push({ field: 'lines', message: np.title }); // the cap, the invoice's lines: shown before issue
+  const pp = purchaseProblem(st, companyId, type, body); // input VAT rules of a vendor's invoice: shown before issue too
+  if (pp) missing.push({ field: pp.code === 'pb.claim_period_out_of_range' ? 'header.claimPeriod' : 'lines', message: pp.title });
   return { lines: c.lines, totals, missing, journal: ledgerFor(st, { ...doc, companyId }), ...settleExtras(st, companyId, type, body) };
 }
 
@@ -273,19 +288,21 @@ function dateGuards(st: MockState, companyId: string, date: IsoDate): void {
   }
 }
 
-/** An invoice or a note of 0.00 or less is not a document: cancel it instead. */
+/** An invoice, a purchase bill or a note of 0.00 or less is not a document: cancel it instead. */
 export function refuseNonPositive(st: MockState, companyId: string, type: DocType, body: Body, selfId?: string): void {
-  if (type !== 'IV' && !isNote(type)) return;
+  if (type !== 'IV' && type !== 'PB' && !isNote(type)) return;
   if (toSatang(totalsOf(st, companyId, type, body, selfId).total) <= 0) {
-    throw new MockError(422, 'doc.total_not_positive', `ยอดรวม${type === 'IV' ? 'ใบแจ้งหนี้' : type === 'CN' ? 'ใบลดหนี้' : 'ใบเพิ่มหนี้'}ต้องมากกว่า 0.00 บาท ถ้าไม่ต้องการเอกสารนี้ให้ยกเลิกเอกสาร`);
+    throw new MockError(422, 'doc.total_not_positive', `ยอดรวม${({ IV: 'ใบแจ้งหนี้', PB: 'บันทึกซื้อ', CN: 'ใบลดหนี้', PCN: 'ใบลดหนี้จากผู้ขาย', PDN: 'ใบเพิ่มหนี้จากผู้ขาย' } as Partial<Record<DocType, string>>)[type] ?? 'ใบเพิ่มหนี้'}ต้องมากกว่า 0.00 บาท ถ้าไม่ต้องการเอกสารนี้ให้ยกเลิกเอกสาร`);
   }
 }
 
-/** A document that receipts (`settles`) or a billing statement (`groups`) point at keeps its customer: their AR / list belong to that customer. */
+/** A document that receipts / vouchers (`settles`), a billing statement (`groups`) or a note (`adjusts`) point at keeps its customer / vendor: their AR / AP and the note's own party belong to it. */
 export function refusePartyChange(st: MockState, d: Stored, body: Body): void {
   if (body.header.partyId === d.header.partyId) return;
-  if (st.links.some((l) => l.active && l.to === d.id && (l.kind === 'settles' || l.kind === 'groups'))) {
-    throw new MockError(422, 'doc.party_locked', 'เปลี่ยนลูกค้าไม่ได้ เพราะมีใบเสร็จหรือใบวางบิลอ้างถึงอยู่ ยกเลิกใบเสร็จ/ใบวางบิลที่อ้างถึงก่อน หรือยกเลิกใบแจ้งหนี้แล้วออกใบใหม่');
+  if (st.links.some((l) => l.active && l.to === d.id && (l.kind === 'settles' || l.kind === 'groups' || l.kind === 'adjusts'))) {
+    const notes = !st.links.some((l) => l.active && l.to === d.id && (l.kind === 'settles' || l.kind === 'groups'));
+    throw new MockError(422, 'doc.party_locked', notes ? 'เปลี่ยนผู้ขายไม่ได้ เพราะมีใบลดหนี้/ใบเพิ่มหนี้จากผู้ขายอ้างถึงอยู่ ยกเลิกใบลดหนี้/ใบเพิ่มหนี้ก่อน หรือยกเลิกบันทึกซื้อแล้วบันทึกใหม่'
+      : 'เปลี่ยนลูกค้า/ผู้ขายไม่ได้ เพราะมีใบเสร็จ ใบสำคัญจ่าย หรือใบวางบิลอ้างถึงอยู่ ยกเลิกใบเสร็จ/ใบวางบิลที่อ้างถึงก่อน หรือยกเลิกเอกสารนี้แล้วออกใบใหม่');
   }
 }
 
@@ -302,16 +319,20 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   refuseNonPositive(st, d.companyId, d.type, body);
   const np = noteProblem(st, d.companyId, d.type, body); // the invoice, its lines and the per-line cap, judged before anything is written
   if (np) throw np;
+  const pp = purchaseProblem(st, d.companyId, d.type, body); // a vendor's invoice: the registered-vendor, category and claim-window rules
+  if (pp) throw pp;
+  refuseOverConversion(st, d, body);
+  body = { ...body, header: withClaimPeriod(st, d.companyId, d.type, body.header) }; // the document month unless a period was chosen
   const bad = settleProblem(st, d.companyId, d.type, body, outstandingNow(st), { partyExempt: opts?.partyExempt, prior: opts?.prior, priorParty: opts?.priorParty });
   if (bad) throw bad; // nothing has been written yet: a refused issue leaves no number, link or journal behind
   if (GROUPS[d.type]) body = { ...body, allocations: cleanAllocations(st, d.companyId, d.type, body.allocations) }; // BL: each target's outstanding AS OF ISSUE, server-read
   body = withNoteVat(st, d.companyId, d.type, body); // a CN / DN keeps the VAT its lines carry at issue
   const totals = totalsOf(st, d.companyId, d.type, body);
   const next: Stored = {
-    ...d, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', totals, party: partyOf(st, d.companyId, d.header.partyId),
+    ...d, header: body.header, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', totals, party: partyOf(st, d.companyId, d.header.partyId),
     version: d.version + 1, issuedAt: stamp(), ...(hasOut(d.type) ? { outstanding: totals.total } : {}),
   };
-  if (isNote(d.type)) next.adjustSnapshot = adjustSnapshot(st, getDoc(st, d.header.refDocId!), next); // the ม.86/10 values as of now: the paper reads them, never recomputes
+  if (hasSnapshot(d.type)) next.adjustSnapshot = adjustSnapshot(st, getDoc(st, d.header.refDocId!), next); // the ม.86/10 values as of now: the paper reads them, never recomputes
   put(st, next);
   settleTargets(st, next, body.allocations);
   if (isNote(d.type)) adjustTarget(st, next, totals.total);
@@ -347,14 +368,49 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
   return publicDoc(next);
 }
 
-/** An IV (L-class, receivable): a revision cannot take the total below what active settlements already took (T5). Equal is fine (outstanding 0.00). */
+/** An IV or a PB (L-class, receivable / payable): a revision cannot take the total below what active settlements already took (T5). Equal is fine (outstanding 0.00). */
 export function refuseBelowSettled(st: MockState, d: Stored, body: Body): void {
-  if (d.type !== 'IV') return; // the payable side (PB / EX) keeps its own rule
+  if (d.type !== 'IV' && d.type !== 'PB') return; // EX keeps its own rule (P4)
   const paid = sumSat(st.links.filter((l) => l.active && l.kind === 'settles' && l.to === d.id).map((l) => l.amount));
   const total = totalsOf(st, d.companyId, d.type, body).total;
   if (toSatang(total) < paid) {
-    throw new MockError(422, 'settle.below_settled', `ยอดใหม่ ${total} บาท ต่ำกว่ายอดที่รับชำระแล้ว ${fromSatang(paid)} บาท ยกเลิกหรือถอนการรับชำระก่อน`);
+    throw new MockError(422, 'settle.below_settled', d.type === 'PB' ? `ยอดใหม่ ${total} บาท ต่ำกว่ายอดที่จ่ายชำระแล้ว ${fromSatang(paid)} บาท ยกเลิกหรือถอนการจ่ายชำระก่อน` : `ยอดใหม่ ${total} บาท ต่ำกว่ายอดที่รับชำระแล้ว ${fromSatang(paid)} บาท ยกเลิกหรือถอนการรับชำระก่อน`);
   }
+}
+
+/** D-29: a bill made from a PO never takes more than the PO line has left, whatever it was edited to after the conversion (issue and revise; the other bills and drafts already hold their share). */
+export function refuseOverConversion(st: MockState, d: Stored, body: Body): void {
+  if (d.type !== 'PB') return;
+  for (const l of st.links.filter((x) => x.active && x.kind === 'converted_from' && x.from === d.id)) {
+    const src = getDoc(st, l.to);
+    for (const sl of src.lines) {
+      const mine = body.lines.filter((x) => x.sourceLineId === sl.id).reduce((a, x) => a + q4(x.qty), 0);
+      const left = q4(sl.qty) - consumed(st, src, sl, (t) => t.id !== d.id);
+      if (mine > left) throw new MockError(422, 'doc.over_conversion', `เกินจำนวนคงเหลือ (${sl.description}: เหลือ ${fmtQ(Math.max(0, left))} ${sl.unit})`);
+    }
+  }
+}
+
+/** A bill a live PCN / PDN adjusts keeps its lines, price basis and date (the notes reference its lines and are dated from it): exit = cancel the notes, or issue a further note. */
+function refuseFrozenByNotes(st: MockState, d: Stored, body: Body): void {
+  if (d.type !== 'PB' || !st.links.some((l) => l.active && l.kind === 'adjusts' && l.to === d.id)) return;
+  if (!sameLines(body.lines, d.lines) || !!body.header.priceIncludesVat !== !!d.header.priceIncludesVat || body.header.documentDate !== d.header.documentDate) {
+    throw new MockError(422, 'pb.has_notes', 'แก้ไขรายการ ราคา หรือวันที่ของบันทึกซื้อนี้ไม่ได้ เพราะมีใบลดหนี้/ใบเพิ่มหนี้จากผู้ขายอ้างถึงอยู่ ยกเลิกใบลดหนี้/ใบเพิ่มหนี้ก่อน หรือบันทึกใบลดหนี้/ใบเพิ่มหนี้เพิ่ม');
+  }
+}
+
+/** Everything that makes a revision of a PB / PCN / PDN unacceptable, judged before anything is written (also for the correction plan, which must not offer what would fail).
+ *  A note keeps the bill it adjusts; its lines, cap and VAT are judged as at issue, the note itself not counting among its predecessors. */
+export function refuseUnrevisablePurchase(st: MockState, d: Stored, body: Body): void {
+  if (ADJUSTS[d.type] === 'PB') {
+    if (body.header.refDocId !== d.header.refDocId) throw new MockError(422, 'note.ref_locked', 'เปลี่ยนบันทึกซื้อที่อ้างอิงไม่ได้ ให้ยกเลิกเอกสารนี้แล้วบันทึกใหม่');
+    const np = noteProblem(st, d.companyId, d.type, body, d.id);
+    if (np) throw np;
+  } else if (d.type === 'PB') refuseFrozenByNotes(st, d, body);
+  else return;
+  const pp = purchaseProblem(st, d.companyId, d.type, body);
+  if (pp) throw pp;
+  refuseOverConversion(st, d, body);
 }
 
 /** A correction of receipt `d` is only offered when it can be issued (M4, I1): the same body shape, completeness, party and allocation rules the reissue will meet,
@@ -383,7 +439,8 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   const d = getDoc(st, id);
   const keepBank = keepOmitted(d, raw.header); // absent bank account / dimensions mean "unchanged": the company default must not fill the bank in (it would read as a move)
   const sent = stored(st, d.companyId, d.type, { ...raw, header: keepBank, allocations: raw.allocations ?? d.allocations }, d.allocations);
-  const body = keepNoteLines(d, sent); // an API caller cannot send the engine-set VAT back: the issued lines stand
+  const kept = keepNoteLines(d, sent); // an API caller cannot send the engine-set VAT back: the issued lines stand
+  const body = { ...kept, header: withClaimPeriod(st, d.companyId, d.type, kept.header) }; // a bill is always filed in a claim period: the document month unless one was chosen
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_revisable', 'แก้ไขได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   checkVersion(d, version);
   if (d.correctionClass === 'T' && isFiscalChange(d, body)) {
@@ -393,8 +450,9 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   if (d.correctionClass !== 'T') { const m = missingOf(st, d.companyId, d.type, body); if (m.length) throw incomplete(m); }
   if (body.header.documentDate !== d.header.documentDate) dateGuards(st, d.companyId, body.header.documentDate); // a moved date follows the issue rules
   refusePartyChange(st, d, body);
-  refuseNonPositive(st, d.companyId, d.type, body);
+  refuseNonPositive(st, d.companyId, d.type, body, d.id);
   refuseBelowSettled(st, d, body);
+  refuseUnrevisablePurchase(st, d, body);
   const resettle = (SETTLES[d.type] !== undefined && d.correctionClass !== 'T') || GROUPS[d.type] !== undefined; // a payment voucher / billing statement re-points its own links; a receipt (T) can only change a certificate number here
   if (resettle) { // the voucher's own current links give their amounts back before the new list is checked
     const bad = settleProblem(st, d.companyId, d.type, body, ownBack(st, outstandingNow(st), id), { prior: d.allocations, priorParty: d.header.partyId });
@@ -408,14 +466,19 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
       throw new MockError(422, 'doc.below_converted', `รายการ “${ol.description}” แปลงไปแล้ว ${fmtQ(taken)} ${ol.unit} ลดต่ำกว่านี้หรือลบไม่ได้ ให้ยกเลิกหรือแก้ไขเอกสารปลายทางก่อน`);
     }
   }
+  const fin = isNote(d.type) ? withNoteVat(st, d.companyId, d.type, body, d.id) : body; // a revised vendor note: rule B again, the note itself not among its own predecessors
   const { allocations: _a, ...rest } = d; void _a;
   const next: Stored = {
-    ...rest, header: body.header, lines: body.lines, totals: totalsOf(st, d.companyId, d.type, body), party: partyOf(st, d.companyId, body.header.partyId),
-    revision: d.revision + 1, version: d.version + 1, ...(body.allocations ? { allocations: body.allocations } : {}),
+    ...rest, header: fin.header, lines: fin.lines, totals: totalsOf(st, d.companyId, d.type, fin, d.id), party: partyOf(st, d.companyId, fin.header.partyId),
+    revision: d.revision + 1, version: d.version + 1, ...(fin.allocations ? { allocations: fin.allocations } : {}),
   };
   const marks = afterRevision(d); // a quotation's customer answer is void once it is revised
   if (marks) next.marks = marks; else delete next.marks;
   put(st, next);
+  if (isNote(d.type)) { // the note's one adjusts link carries its total: a revised note moves the bill's outstanding with it
+    st.links = st.links.map((l) => (l.active && l.kind === 'adjusts' && l.from === id ? { ...l, amount: next.totals.total } : l));
+    recomputeSettlement(st, d.header.refDocId!);
+  }
   if (resettle) {
     const own = GROUPS[d.type] ? 'groups' : 'settles';
     const before = st.links.filter((l) => l.active && l.kind === own && l.from === id).map((l) => l.to);
@@ -432,7 +495,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
       ...(fresh ? [{ ...fresh, kind: 'correction' as const, postedAt: stamp(), ...(!isPinned() && isClosed(st, d.companyId, fresh.date) ? { date: firstOpenDate(st, d.companyId), late: true } : {}) }] : [])] });
   }
   const at = stamp();
-  st.revisions.push({ docId: id, revision: next.revision, at, actor, reason, snapshot: publicDoc(getDoc(st, id)), diff: diffBody(d, body) });
+  st.revisions.push({ docId: id, revision: next.revision, at, actor, reason, snapshot: publicDoc(getDoc(st, id)), diff: diffBody(d, fin) });
   logActivity(st, id, actor, 'revise', certNote(d, body) ?? reason);
   logAudit(st, actor, d.companyId, 'doc.revise', id, { revision: d.revision }, { revision: next.revision, reason });
   return publicDoc(getDoc(st, id));
@@ -469,7 +532,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   const { outstanding: _o, ...oldRest } = old; void _o;
   put(st, { ...oldRest, status: 'replaced', replacedById: created.id, version: old.version + 1, cancel: { reasonCode: 'CORRECTION', reasonText: reason, at } });
   st.docs.push(created);
-  if (isNote(created.type)) created.adjustSnapshot = old.adjustSnapshot ?? adjustSnapshot(st, getDoc(st, created.header.refDocId!), created); // a reissue keeps date and total (I9), so it keeps the values the customer holds
+  if (hasSnapshot(created.type)) created.adjustSnapshot = old.adjustSnapshot ?? adjustSnapshot(st, getDoc(st, created.header.refDocId!), created); // a reissue keeps date and total (I9), so it keeps the values the customer holds
   const carried = st.links.filter((l) => l.from === old.id && l.active);
   st.links = st.links.map((l) => (l.from === old.id && l.active ? { ...l, active: false } : l));
   for (const l of carried) {

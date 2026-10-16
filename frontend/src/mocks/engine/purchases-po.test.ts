@@ -97,3 +97,29 @@ describe('purchase order (P1)', () => {
     expect(code(() => closeRemainder(st, p.id, get(p.id).version, 'x', me))).toBe('doc.nothing_remaining');
   });
 });
+
+describe('P1 review carries', () => {
+  it('a repeat mark (sent, delivered) is a 409 mark.already_set and changes nothing', () => {
+    const p = po();
+    const marked = setMark(st, p.id, 'sent', p.version, me);
+    const before = JSON.stringify(get(p.id));
+    expect(code(() => setMark(st, p.id, 'sent', marked.version, me))).toBe('mark.already_set');
+    expect(JSON.stringify(get(p.id))).toBe(before);
+    const ids = fixtureIds(st);
+    const dlv = get(ids.doDelivered);
+    expect(code(() => setMark(st, dlv.id, 'delivered', dlv.version, me))).toBe('mark.already_set');
+    expect(st.activity.filter((a) => a.docId === p.id && a.action === 'send')).toHaveLength(1);
+  });
+  it('an N-class revision of a PO clears the sent mark (the vendor was sent the old order); the mark can be set again', () => {
+    const p = po();
+    const marked = setMark(st, p.id, 'sent', p.version, me);
+    const rev = revise(st, p.id, { header: marked.header, lines: marked.lines.map((l) => ({ ...l, qty: '21' })) }, marked.version, 'เพิ่มจำนวน', me);
+    expect(rev.marks?.sent).toBeUndefined();
+    expect(code(() => setMark(st, p.id, 'sent', rev.version, me))).toBe('no error');
+  });
+  it('a revised delivery order keeps its delivered mark (only a sent PO is a different order after a revision)', () => {
+    const dlv = get(fixtureIds(st).doDelivered);
+    const rev = revise(st, dlv.id, { header: dlv.header, lines: dlv.lines }, dlv.version, 'x', me);
+    expect(rev.marks?.delivered).toBeTruthy();
+  });
+});

@@ -4,7 +4,7 @@ import type {
 import { DOC_TYPES, LIVE } from '@/domain/doc-types';
 import { recomputeSettlement } from './engine/commands';
 import { ledgerFor } from './engine/ledger';
-import { adjustSnapshot, isNote } from './engine/notes';
+import { adjustSnapshot, hasSnapshot } from './engine/notes';
 import type { Period } from './engine/periods';
 import type { PostingRule } from './engine/posting';
 import type { BankAccount } from './fixtures/bank-accounts';
@@ -17,7 +17,7 @@ import { clearAttachmentBlobs } from './engine/attachments';
 import { getSettings } from './settings';
 
 export interface MockState {
-  version: 15;
+  version: 16;
   companies: Company[];
   memberships: (Membership & { userId: string })[];
   /** `active` (default true) and `version` (default 1) are the master record's; documents keep their own party snapshot. */
@@ -47,7 +47,7 @@ export interface MockState {
   plans?: Record<string, { docId: string; proposed: { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] }; role: Role; plan: CorrectionPlan }>;
 }
 
-const KEY = 'teas2.mock.state.v15';
+const KEY = 'teas2.mock.state.v16';
 
 /** The seed for a given role (default accountant: the screen index resolves fixture ids on the server, where there is no toolbar). */
 export function buildSeedState(role: Role = 'accountant'): MockState {
@@ -59,7 +59,7 @@ export function buildSeedState(role: Role = 'accountant'): MockState {
     if (preview.entries.length) s.journals.push({ docId: d.id, preview });
   }
   for (const d of s.docs) { // seeded notes enter directly: give them the ม.86/10 snapshot an issued note has, so the paper never recomputes them
-    const ti = isNote(d.type) && LIVE.includes(d.status) && d.header.refDocId ? s.docs.find((x) => x.id === d.header.refDocId) : undefined;
+    const ti = hasSnapshot(d.type) && LIVE.includes(d.status) && d.header.refDocId ? s.docs.find((x) => x.id === d.header.refDocId) : undefined;
     if (ti && !d.adjustSnapshot) d.adjustSnapshot = adjustSnapshot(s, ti, d);
   }
   runSeed(s, SEED_SPECS); // later groups' documents, produced through the engine (D-23)
@@ -71,7 +71,7 @@ export const seed = (): MockState => buildSeedState(getSettings().role);
 export function loadState(): MockState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 15) return s; }
+    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 16) return s; }
   } catch { /* fall through to a fresh seed */ }
   return seed();
 }

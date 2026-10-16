@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import type { HeaderFieldKey } from '@/domain/descriptors';
-import { REASON_CODES } from '@/domain/doc-types';
+import { ADJUSTS, REASON_CODES } from '@/domain/doc-types';
+import { Checkbox } from '@/components/ui/checkbox';
 import type { DocHeader, DocType, WhtMode } from '@/domain/types';
 import { endpoints } from '@/lib/api/endpoints';
 import { formatDateBE } from '@/lib/format';
@@ -35,15 +36,30 @@ function BankAccountField({ id, header, setHeader }: { id: string; header: DocHe
   );
 }
 
-/** CN / DN: the tax invoice adjusted - the server owns it (set by "ออกใบลดหนี้" / "ออกใบเพิ่มหนี้" on the invoice), so it is shown, not edited. */
-function RefDocField({ id, refDocId }: { id: string; refDocId?: string }) {
+/** A note: the document adjusted (the tax invoice of a CN / DN, the purchase bill of a PCN / PDN) - the server owns it (set by the "ออกใบลดหนี้" / "บันทึกใบลดหนี้จากผู้ขาย" button on that document), so it is shown, not edited. */
+function RefDocField({ id, refDocId, type }: { id: string; refDocId?: string; type?: DocType }) {
   const t = useTranslations('docEditor');
   const { me } = useMe();
-  const q = useQuery({ queryKey: qk.doc(me?.activeCompanyId ?? '', 'TI', refDocId ?? ''), queryFn: () => endpoints.getDoc('TI', refDocId!), enabled: !!me && !!refDocId });
+  const orig = (type && ADJUSTS[type]) || 'TI', vendor = orig === 'PB';
+  const q = useQuery({ queryKey: qk.doc(me?.activeCompanyId ?? '', orig, refDocId ?? ''), queryFn: () => endpoints.getDoc(orig, refDocId!), enabled: !!me && !!refDocId });
   return (
     <div className="grid gap-1.5">
-      <Label htmlFor={id}>{t('refDoc')}</Label>
-      <Input id={id} type="text" readOnly value={!refDocId ? t('refDocNone') : q.data ? `${q.data.number ?? ''} · ${formatDateBE(q.data.header.documentDate)}` : '…'} />
+      <Label htmlFor={id}>{t(vendor ? 'refDocPb' : 'refDoc')}</Label>
+      <Input id={id} type="text" readOnly value={!refDocId ? t(vendor ? 'refDocNonePb' : 'refDocNone') : q.data ? `${q.data.number ?? ''} · ${formatDateBE(q.data.header.documentDate)}` : '…'} />
+    </div>
+  );
+}
+
+/** PB / PCN / PDN of a VAT company: the month the input VAT is claimed in (I6). Shown as the document month until one is chosen; a non-VAT company claims nothing, so it has no field. */
+function ClaimPeriodField({ id, header, setHeader }: { id: string; header: DocHeader; setHeader: Dispatch<SetStateAction<DocHeader>> }) {
+  const t = useTranslations('docEditor');
+  const { me } = useMe();
+  if (me?.vatRegistered === false) return null;
+  return (
+    <div className="grid gap-1.5">
+      <Label htmlFor={id}>{t('claimPeriod')}</Label>
+      <Input id={id} type="month" value={header.claimPeriod ?? header.documentDate.slice(0, 7)} onChange={(e) => setHeader((h) => ({ ...h, claimPeriod: e.target.value || undefined }))} />
+      <p className="text-small text-muted-foreground">{t('claimPeriodHint')}</p>
     </div>
   );
 }
@@ -81,7 +97,9 @@ export function HeaderFields({ type, keys, ids, header, setHeader }: {
       case 'documentDate': return (
         <div className="grid gap-1.5">
           <Label htmlFor={`${ids}-date`}>{t('documentDate')}</Label>
-          <Input id={`${ids}-date`} type="date" value={header.documentDate} onChange={(e) => setHeader((h) => ({ ...h, documentDate: e.target.value }))} />
+          <Input id={`${ids}-date`} type="date" value={header.documentDate}
+            onChange={(e) => setHeader((h) => ({ ...h, documentDate: e.target.value, // a claim period that was just the document month follows the date; one the user chose stays
+              ...(keys.includes('claimPeriod') && (!h.claimPeriod || h.claimPeriod === h.documentDate.slice(0, 7)) ? { claimPeriod: undefined } : {}) }))} />
           {header.documentDate && <p className="text-small text-muted-foreground">{formatDateBE(header.documentDate)}</p>}
         </div>
       );
@@ -104,7 +122,26 @@ export function HeaderFields({ type, keys, ids, header, setHeader }: {
           <Textarea id={`${ids}-notes`} value={header.notes ?? ''} onChange={(e) => setHeader((h) => ({ ...h, notes: e.target.value }))} />
         </div>
       );
-      case 'refDoc': return <RefDocField id={`${ids}-refdoc`} refDocId={header.refDocId} />;
+      case 'refDoc': return <RefDocField id={`${ids}-refdoc`} refDocId={header.refDocId} type={type} />;
+      case 'vendorDocNumber': return (
+        <div className="grid gap-1.5">
+          <Label htmlFor={`${ids}-vdoc`}>{t('vendorDocNumber')}</Label>
+          <Input id={`${ids}-vdoc`} type="text" autoComplete="off" value={header.vendorDocNumber ?? ''} onChange={(e) => setHeader((h) => ({ ...h, vendorDocNumber: e.target.value || undefined }))} />
+        </div>
+      );
+      case 'vendorDocDate': return (
+        <div className="grid gap-1.5">
+          <Label htmlFor={`${ids}-vdate`}>{t('vendorDocDate')}</Label>
+          <Input id={`${ids}-vdate`} type="date" value={header.vendorDocDate ?? ''} onChange={(e) => setHeader((h) => ({ ...h, vendorDocDate: e.target.value || undefined }))} />
+        </div>
+      );
+      case 'claimPeriod': return <ClaimPeriodField id={`${ids}-claim`} header={header} setHeader={setHeader} />;
+      case 'complete': return (
+        <div className="flex items-center gap-2 md:col-span-2">
+          <Checkbox id={`${ids}-complete`} checked={header.complete !== false} onCheckedChange={(c) => setHeader((h) => ({ ...h, complete: c === false ? false : undefined }))} />
+          <Label htmlFor={`${ids}-complete`}>{t('complete')}</Label>
+        </div>
+      );
       case 'reason': return <ReasonField ids={ids} type={type} header={header} setHeader={setHeader} />;
       case 'bankAccount': return <BankAccountField id={`${ids}-bank`} header={header} setHeader={setHeader} />;
       case 'paymentMethod': return (

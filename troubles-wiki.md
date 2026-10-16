@@ -22,6 +22,11 @@ Entry format — terse, greppable by symptom:
 
 <!-- entries below — newest on top -->
 
+## A new seed document breaks absolute-number assertions elsewhere (GL totals, an item "not in use", PO progress 0/140)
+- **Root cause:** `runSeed` documents are part of every fixture state. P2's `pb-1` uses item EXP-01 (so `inUse` is true), `pb-po` takes 70 of `po-part`'s 140, and the seed now posts 2110 / 1170 in both companies.
+- **Fix:** in new tests measure a DELTA (`gl(after) - gl(before)`) instead of an absolute GL figure; pick a still-unused fixture (EXP-04) when a test needs an unused item; when a seed spec consumes a fixture another test names, re-point that test in the same change.
+- **Seen:** 2026-10-16, SP1c P2
+
 ## After issuing a draft from its edit page the view still shows "ฉบับร่าง" (cached draft)
 - **Root cause:** `DocEditor.invalidate()` invalidated `[company, 'docs', type]` (the lists) but the document query is `qk.doc` = `[company, 'doc', type, id]`; the view mounted straight from the cached draft and never refetched. A NEW document (create flow) has no cache entry, so only edit-draft showed it.
 - **Fix:** `invalidate()` also invalidates `[company, 'doc', type]`. e2e: `purchases-po.spec.ts` "PO draft" issues from the edit page and reads the numbered view.

@@ -45,7 +45,10 @@ export interface DocHeader { partyId?: string; documentDate: IsoDate; dueDate?: 
   cheque?: { number: string; date: IsoDate; bank: string };
   /** RC: the unallocated remainder kept as a customer deposit (Cr CustomerDeposit); S4 owns the editor field. */ depositAmount?: Money;
   /** CN / DN: the tax invoice this note adjusts. Server-owned: the note's customer and reference follow it. */ refDocId?: string;
-  /** CN / DN: a code from REASON_CODES (reference data [SP-R]); OTHER needs reasonText. The paper prints the Thai wording, never the code. */ reasonCode?: string; reasonText?: string }
+  /** CN / DN: a code from REASON_CODES (reference data [SP-R]); OTHER needs reasonText. The paper prints the Thai wording, never the code. */ reasonCode?: string; reasonText?: string;
+  /** PB / PCN / PDN: the number and date printed on the VENDOR's document (we record it, the vendor issued it). */ vendorDocNumber?: string; vendorDocDate?: IsoDate;
+  /** PB / PCN / PDN (VAT company): the month 'YYYY-MM' the input VAT is claimed in, the document month .. +6 (I6); the server fills the document month at issue. */ claimPeriod?: string;
+  /** PB: the vendor paperwork is complete (เอกสารครบ). Absent = complete; `false` still issues but the Home inbox counts it (HC1). */ complete?: boolean }
 /** `cash` = money that moves: received (RC) / paid (PV). `wht` = withholding tax of the document. */
 export interface DocTotals { gross: Money; discount: Money; net: Money; vat: Money; total: Money; wht?: Money; cash?: Money;
   amountInWords: string }

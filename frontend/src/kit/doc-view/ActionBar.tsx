@@ -5,7 +5,8 @@ import { useId, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { routesOf, type DocDescriptor } from '@/domain/descriptors';
-import { CLOSEABLE, convertTargets, LIVE, MARKS, SETTLES } from '@/domain/doc-types';
+import { docListHref } from '@/descriptors';
+import { ADJUSTS, CLOSEABLE, convertTargets, DOC_TYPES, LIVE, MARKS, SETTLES } from '@/domain/doc-types';
 import type { Doc, DocType, MarkKey } from '@/domain/types';
 import { settleable } from '../doc-editor/SettlementPanel';
 
@@ -28,6 +29,8 @@ export function Guarded({ why, children }: { why?: string; children: (p: { disab
 /** Marks that have a button. */
 const MARK_BUTTONS: MarkKey[] = ['accepted', 'rejected', 'delivered', 'sent'];
 const MARK_LABEL = { accepted: 'markAccepted', rejected: 'markRejected', delivered: 'markDelivered', sent: 'markSent' } as const;
+/** The notes made from a document (never by conversion): their buttons open the note's editor on `?adjust=<this document>`. */
+const NOTE_LABEL = { CN: 'issueCn', DN: 'issueDn', PCN: 'issuePcn', PDN: 'issuePdn' } as const;
 
 export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCancel, onConvert, onMark, onCloseRemainder, nothingRemaining, onReprint }: {
   descriptor: ConvertibleDescriptor; doc: Doc; permissions: string[]; /** The active company's VAT status (conversion targets depend on it). */ vatRegistered: boolean; onCancel: () => void; onConvert?: () => void; onMark?: (mark: MarkKey) => void; onCloseRemainder?: () => void; /** Every line is already converted in full: there is nothing to close. */ nothingRemaining?: boolean; /** The original was printed: the print action asks first (a reprint is a สำเนา). */ onReprint?: () => void;
@@ -65,7 +68,7 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCa
             {(p) => <Button {...p} asChild={!p.disabled}>{p.disabled ? <span>{t('edit')}</span> : <Link href={routes.edit(doc.id)}>{t('edit')}</Link>}</Button>}
           </Guarded>
         )}
-        {doc.status !== 'draft' ? (
+        {doc.status !== 'draft' && DOC_TYPES[d.type].printable ? ( // a vendor's document is recorded, not printed
           <Guarded why={missing(d.permissions.read)}>
             {(p) => (doc.printCount ?? 0) > 0 && !p.disabled
               ? <Button {...p} variant="outline" onClick={onReprint}>{t('print')}</Button>
@@ -85,9 +88,9 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCa
             {(p) => <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t('receive')}</span> : <Link href={receiveHref}>{t('receive')}</Link>}</Button>}
           </Guarded>
         ) : null}
-        {d.type === 'TI' && live ? (['CN', 'DN'] as const).map((n) => ( // a note is made from the invoice it adjusts (the lines come from the server on ?adjust=)
-          <Guarded key={n} why={missing(`doc.${n}.create`) ?? (doc.header.priceIncludesVat ? t('whyInclusiveNote') : undefined)}>
-            {(p) => <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t(n === 'CN' ? 'issueCn' : 'issueDn')}</span> : <Link href={`${n === 'CN' ? '/sales/credit-notes' : '/sales/debit-notes'}/new?adjust=${doc.id}`}>{t(n === 'CN' ? 'issueCn' : 'issueDn')}</Link>}</Button>}
+        {live ? (['CN', 'DN', 'PCN', 'PDN'] as const).filter((n) => ADJUSTS[n] === d.type && docListHref(n, vatRegistered)).map((n) => ( // a note is made from the document it adjusts (the lines come from the server on ?adjust=)
+          <Guarded key={n} why={missing(`doc.${n}.create`) ?? (d.type === 'TI' && doc.header.priceIncludesVat ? t('whyInclusiveNote') : undefined)}>
+            {(p) => <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t(NOTE_LABEL[n])}</span> : <Link href={`${docListHref(n, vatRegistered)}/new?adjust=${doc.id}`}>{t(NOTE_LABEL[n])}</Link>}</Button>}
           </Guarded>
         )) : null}
         {live && CLOSEABLE.includes(d.type) && !doc.marks?.closed ? (

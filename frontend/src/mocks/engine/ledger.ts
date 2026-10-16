@@ -3,6 +3,7 @@ import type { MockState } from '../store';
 import { fromSatang, toSatang } from './money';
 import { MockError } from './log';
 import { type AccountingRole, type PostingContext, resolveRole } from './posting';
+import { categoryOf, isRecoverable } from './purchase-vat';
 import { cashBankId, whtOf } from './settlement';
 import { computeDoc, vatOf } from './vat';
 
@@ -19,7 +20,17 @@ const netRows = (d: Doc, role: AccountingRole, side: 'Dr' | 'Cr', vatRegistered:
   });
 
 const sales = (role: AccountingRole): Rows => (t, d, st, co) => [['AR', t.total, 0], ...netRows(d, role, 'Cr', vatOf(st, co)), ['OutputVat', 0, t.vat]];
-const purchase: Rows = (t, d, st, co) => [...netRows(d, 'Expense', 'Dr', vatOf(st, co)), ['InputVat', t.vat, 0], ['AP', 0, t.total]];
+/** A vendor's invoice (PB / PDN, mirrored for a PCN): per line the net goes to its expense account (a capex category capitalises to its asset class) and its VAT to input VAT when it is
+ *  claimable, else to InputVatUnclaimed (cost). The VAT is the tax code's whatever OUR company's status (A.4); AP is the gross. */
+const purchase: Rows = (t, d, st, co) => {
+  const rs = computeDoc(d.lines, !!d.header.priceIncludesVat, true).lines;
+  const rows: RolePosting = d.lines.flatMap((l, i): RolePosting => {
+    const cat = categoryOf(st, co, l), ctx = { itemId: l.itemId, expenseCategory: cat?.code ?? l.expenseCategory, dimensions: l.dimensions };
+    return [cat?.capex ? ['FixedAsset', toSatang(rs[i].net), 0, { ...ctx, assetClass: cat.assetClass }] : ['Expense', toSatang(rs[i].net), 0, ctx],
+      [isRecoverable(st, co, l) ? 'InputVat' : 'InputVatUnclaimed', toSatang(rs[i].vat), 0]];
+  });
+  return [...rows, ['AP', 0, t.total]];
+};
 /** Σ allocation amounts whose target is one of `types` (satang). */
 const allocTo = (d: Doc, types: DocType[]) => (d.allocations ?? []).filter((a) => types.includes(a.targetType)).reduce((n, a) => n + toSatang(a.amount), 0);
 /** One row per allocation, under the TARGET's party: the AR / AP subledger of each customer / vendor stays right when one document settles several parties. */

@@ -1,4 +1,5 @@
 import type { PostingRule } from '../engine/posting';
+import { EXPENSE_CATEGORIES } from './expense-categories';
 
 /** Company-default posting rules (SP0 §5.5, D-26). Keyed defaults: WHT form accounts, bank accounts, the loss side of a disposal. */
 const DEFAULTS: [AccountingRoleKey, string][] = [
@@ -18,6 +19,8 @@ const KEYED: [AccountingRoleKey, string, string][] = [
 const CATEGORY: [AccountingRoleKey, string, string][] = [
   ['FixedAsset', 'equipment', '1210'], ['AccumulatedDepreciation', 'equipment', '1211'],
   ['FixedAsset', 'vehicle', '1220'], ['AccumulatedDepreciation', 'vehicle', '1221'],
+  // SP0 5.5: a purchase line's expense category picks its expense account (a capex category has none: it capitalises to its asset class above)
+  ...EXPENSE_CATEGORIES.flatMap((c): [AccountingRoleKey, string, string][] => (c.accountCode ? [['Expense', c.code, c.accountCode]] : [])),
 ];
 
 export function postingRulesFor(companyId: string, bankAccounts: Record<string, string>): PostingRule[] {

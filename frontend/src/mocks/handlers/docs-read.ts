@@ -10,6 +10,7 @@ import { today } from '../engine/log';
 import { derivedLocks } from '../engine/locks';
 import { balanceOf } from '../engine/settlement';
 import { fromSatang } from '../engine/money';
+import { isVendorBill } from '../engine/purchase-vat';
 
 const LOCKED: Lock = { kind: 'filing', reason: 'ภ.พ.30 เดือน ก.ย. 2569 ยื่นแล้ว', exits: ['ออกใบลดหนี้ / ใบเพิ่มหนี้ในงวดถัดไป'] };
 const LOCKABLE = ['issued', 'partly_settled', 'settled'];
@@ -17,7 +18,7 @@ const LOCKABLE = ['issued', 'partly_settled', 'settled'];
 const progressField = (st: Parameters<typeof progressOf>[0], d: Doc) => { const p = progressOf(st, d); return p ? { progress: p } : {}; };
 export const toSummary = (d: Doc): DocSummary => ({
   id: d.id, type: d.type, number: d.number, status: d.status, documentDate: d.header.documentDate, partyName: d.party?.name ?? '',
-  total: d.totals.total, outstanding: d.outstanding, dueDate: d.header.dueDate, reference: d.header.reference, createdByAgent: d.createdBy.kind === 'agent',
+  total: d.totals.total, outstanding: d.outstanding, dueDate: d.header.dueDate, reference: (isVendorBill(d.type) && d.header.vendorDocNumber) || d.header.reference, createdByAgent: d.createdBy.kind === 'agent', // a vendor's document is found by the number printed on it
   ...(d.marks ? { marks: d.marks } : {}),
 });
 
@@ -75,7 +76,7 @@ export const docsReadHandlers = [
       .filter((d) => d.companyId === company.id && d.type === type && (!statuses?.length || statuses.includes(d.status))
         && (!owing || Number(d.outstanding ?? 0) > 0)
         && (!overdue || (!!d.header.dueDate && d.header.dueDate < now && Number(d.outstanding ?? 0) > 0)) && (!agent || d.createdBy.kind === 'agent') && (!from || d.header.documentDate >= from) && (!to || d.header.documentDate <= to)
-        && (!q || `${d.number ?? ''} ${d.party?.name ?? ''}`.toLowerCase().includes(q)))
+        && (!q || `${d.number ?? ''} ${d.party?.name ?? ''} ${d.header.vendorDocNumber ?? ''}`.toLowerCase().includes(q)))
       .sort((a, b) => b.header.documentDate.localeCompare(a.header.documentDate) || (a.number ?? '').localeCompare(b.number ?? ''));
     const items = rows.slice(offset, offset + limit).map((d) => ({ ...toSummary(d), ...progressField(st, d) }));
     const next = offset + limit;

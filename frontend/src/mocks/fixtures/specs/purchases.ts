@@ -1,4 +1,4 @@
-import type { DocLine, MarkKey } from '@/domain/types';
+import type { DocHeader, DocLine, MarkKey } from '@/domain/types';
 import { closeRemainder, setMark } from '../../engine/marks';
 import type { MockState } from '../../store';
 import { USER } from '../documents';
@@ -6,8 +6,13 @@ import type { SeedSpec } from '../seed-runner';
 
 /** Purchase documents seeded THROUGH the engine (D-23); ids are explicit, the named fixtures and later purchase tasks refer to them. */
 const VAT = 'co-vat', NV = 'co-nonvat';
-const line = (doc: string, n: number, description: string, qty: string, unit: string, unitPrice: string, taxCode: DocLine['taxCode'] = 'S7'): DocLine =>
-  ({ id: `${doc}-l${n}`, description, qty, unit, unitPrice, taxCode });
+const line = (doc: string, n: number, description: string, qty: string, unit: string, unitPrice: string, taxCode: DocLine['taxCode'] = 'S7', extra: Partial<DocLine> = {}): DocLine =>
+  ({ id: `${doc}-l${n}`, description, qty, unit, unitPrice, taxCode, ...extra });
+/** A bill's expense line: the item (its code names the category) and the category the line posts under. */
+const exp = (doc: string, n: number, description: string, unit: string, unitPrice: string, itemId: string, expenseCategory: string, taxCode: DocLine['taxCode'] = 'S7', qty = '1'): DocLine =>
+  line(doc, n, description, qty, unit, unitPrice, taxCode, { itemId, expenseCategory });
+/** Vendor paperwork of a bill: the number and date printed on the vendor's own document. */
+const vendorDoc = (no: string, date: string, extra: Partial<DocHeader> = {}): Partial<DocHeader> => ({ vendorDocNumber: no, vendorDocDate: date, ...extra });
 const mark = (id: string, key: MarkKey) => (st: MockState) => { setMark(st, id, key, st.docs.find((d) => d.id === id)!.version, USER); };
 const due = (date: string) => ({ dueDate: date }); // PO: "กำหนดรับของ"
 
@@ -26,4 +31,39 @@ export const PURCHASE_SPECS: SeedSpec[] = [
   // ---- non-VAT company: no VAT anywhere ----
   { id: 'npo-1', type: 'PO', companyId: NV, date: '2026-10-12', partyId: 'nv-01', status: 'issued', header: due('2026-10-19'),
     lines: [line('npo-1', 1, 'ข้าวเปลือก', '2000', 'กก.', '12.00', 'EX')] },
+
+  // ---- P2: purchase bills, vendor credit / debit notes (VAT company) ----
+  // pb-1: rent 25,000.00 + VAT 1,750.00 = 26,750.00, all claimable in 2026-10 (the claim period defaults to the document month)
+  { id: 'pb-1', type: 'PB', companyId: VAT, date: '2026-10-06', partyId: 'pv-01', status: 'issued', header: { ...vendorDoc('INV-2026-1007', '2026-10-05'), dueDate: '2026-11-05' },
+    lines: [exp('pb-1', 1, 'ค่าเช่าสำนักงาน ตุลาคม 2569', 'เดือน', '25000.00', 'EXP-01', 'rent')] },
+  // pb-2: services 18,000.00 + entertainment 4,500.00, VAT 1,260.00 + 315.00; the entertainment VAT is not claimable (5170)
+  { id: 'pb-2', type: 'PB', companyId: VAT, date: '2026-10-08', partyId: 'pv-03', status: 'issued', header: { ...vendorDoc('TX-88/0412', '2026-10-07'), dueDate: '2026-11-07' },
+    lines: [exp('pb-2', 1, 'ค่าที่ปรึกษาระบบบัญชี', 'งาน', '18000.00', 'EXP-05', 'services'), exp('pb-2', 2, 'ค่ารับรองลูกค้า', 'ครั้ง', '4500.00', 'EXP-07', 'entertainment')] },
+  // pb-po: half of each line of po-part (20 of 40, 50 of 100)
+  { id: 'pb-po', type: 'PB', companyId: VAT, date: '2026-10-12', partyId: 'pv-03', status: 'issued', header: vendorDoc('TX-88/0431', '2026-10-12'),
+    lines: [], convertFrom: { id: 'po-part', lines: [{ sourceLineId: 'po-part-l1', qty: '20' }, { sourceLineId: 'po-part-l2', qty: '50' }] } },
+  { id: 'pb-capex', type: 'PB', companyId: VAT, date: '2026-10-09', partyId: 'pv-10', status: 'issued', header: vendorDoc('IT-2026-0093', '2026-10-09'),
+    lines: [exp('pb-capex', 1, 'เครื่องคอมพิวเตอร์โน้ตบุ๊ก', 'เครื่อง', '32000.00', 'EXP-08', 'capex-equipment')] },
+  // pb-claim-late: dated October, claimed two months later (2026-12)
+  { id: 'pb-claim-late', type: 'PB', companyId: VAT, date: '2026-10-05', partyId: 'pv-02', status: 'issued', header: { ...vendorDoc('SI-5521', '2026-10-05'), claimPeriod: '2026-12' },
+    lines: [exp('pb-claim-late', 1, 'ค่าบริการทำความสะอาด', 'เดือน', '8500.00', 'EXP-02', 'services')] },
+  // pb-incomplete: the vendor's tax invoice has not arrived (เอกสารไม่ครบ) - it issues, the Home inbox counts it (HC1)
+  { id: 'pb-incomplete', type: 'PB', companyId: VAT, date: '2026-10-10', partyId: 'pv-04', status: 'issued', header: { complete: false },
+    lines: [exp('pb-incomplete', 1, 'กระดาษ A4 80 แกรม', 'รีม', '115.00', 'EXP-06', 'supplies', 'S7', '20')] },
+  { id: 'pb-d1', type: 'PB', companyId: VAT, date: '2026-10-13', partyId: 'pv-05', status: 'draft', header: vendorDoc('FP-1180', '2026-10-13'),
+    lines: [exp('pb-d1', 1, 'ค่าโฆษณาออนไลน์ ตุลาคม', 'เดือน', '12000.00', 'EXP-03', 'advertising')] },
+  // pcn-1: a 10 % rent discount from the vendor; its VAT 175.00 gives back the claim of 2026-10
+  { id: 'pcn-1', type: 'PCN', companyId: VAT, date: '2026-10-12', status: 'issued',
+    header: { ...vendorDoc('CN-2026-0042', '2026-10-12'), refDocId: 'pb-1', reasonCode: 'PRICE_REDUCTION' },
+    lines: [line('pcn-1', 1, 'ส่วนลดค่าเช่า 10%', '1', 'เดือน', '2500.00', 'S7', { sourceLineId: 'pb-1-l1' })] },
+  // pdn-1: the vendor charged 500.00 more for entertainment; the VAT 35.00 is cost, like the bill's
+  { id: 'pdn-1', type: 'PDN', companyId: VAT, date: '2026-10-13', status: 'issued',
+    header: { ...vendorDoc('DN-2026-0007', '2026-10-13'), refDocId: 'pb-2', reasonCode: 'PRICE_INCREASE' },
+    lines: [line('pdn-1', 1, 'ค่ารับรองเพิ่ม', '1', 'ครั้ง', '500.00', 'S7', { sourceLineId: 'pb-2-l2' })] },
+
+  // ---- non-VAT company: the VAT on a vendor's tax invoice is cost (A.4, D-25) ----
+  { id: 'npb-1', type: 'PB', companyId: NV, date: '2026-10-07', partyId: 'nv-03', status: 'issued', header: vendorDoc('V-3391', '2026-10-07'),
+    lines: [line('npb-1', 1, 'ค่าซ่อมแซมอุปกรณ์โรงสี', '1', 'งาน', '1000.00', 'S7', { expenseCategory: 'services' })] },
+  { id: 'npb-2', type: 'PB', companyId: NV, date: '2026-10-08', partyId: 'nv-01', status: 'issued', header: vendorDoc('R-204', '2026-10-08'),
+    lines: [exp('npb-2', 1, 'ข้าวเปลือก', 'กก.', '12.00', 'nv-EXP-02', 'cost-of-sales', 'EX', '500')] },
 ];

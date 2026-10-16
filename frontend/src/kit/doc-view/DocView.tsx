@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { useCompanyEpoch } from '@/app-shell/useCompanyEpoch';
 import { isForbidden, useMe } from '@/app-shell/useMe';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { routesOf, type DocDescriptor } from '@/domain/descriptors';
 import type { Doc, MarkKey } from '@/domain/types';
@@ -89,7 +90,8 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
   const [reprintOpen, setReprintOpen] = useState(false);
   const [notice, setNotice] = useState<string>();
   // A dead document opens on its chain: the pointer to the replacement is what the reader needs first.
-  const [tab, setTab] = useState(doc.status === 'replaced' || doc.status === 'cancelled' ? 'chain' : 'paper');
+  // A type with no paper (a vendor's document is recorded, not printed) opens on its chain as well.
+  const [tab, setTab] = useState(doc.status === 'replaced' || doc.status === 'cancelled' || !PAPERS[doc.type] ? 'chain' : 'paper');
   const refresh = () => qc.invalidateQueries({ queryKey: [me!.activeCompanyId] });
 
   const cancel = useMutation({
@@ -139,12 +141,16 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
           <StatusChip status={doc.status} />
           <MarksChips marks={doc.marks} />
           {doc.revision > 0 ? <span className="text-small text-muted-foreground">{t('header.revised', { n: doc.revision })}</span> : null}
+          {doc.header.complete === false ? <Badge variant="outline" data-testid="doc-incomplete">{t('header.incomplete')}</Badge> : null}
         </div>
         <h1 className="text-h1 font-semibold tabular-nums" data-testid="doc-number">{doc.number ?? tc('draftNoNumber')}</h1>
         <dl className="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-x-6 gap-y-2 text-body">
           <div><dt className="text-small text-muted-foreground">{t('header.party')}</dt><dd>{doc.party?.name ?? '-'}</dd></div>
           <div><dt className="text-small text-muted-foreground">{t('header.date')}</dt><dd className="tabular-nums">{formatDateBE(doc.header.documentDate)}</dd></div>
           <div><dt className="text-small text-muted-foreground">{t('header.total')}</dt><dd className="tabular-nums">{formatTHB(doc.totals.total)}</dd></div>
+          {doc.header.vendorDocNumber ? <div><dt className="text-small text-muted-foreground">{t('header.vendorDoc')}</dt><dd className="tabular-nums">{doc.header.vendorDocNumber}</dd></div> : null}
+          {doc.header.vendorDocDate ? <div><dt className="text-small text-muted-foreground">{t('header.vendorDocDate')}</dt><dd className="tabular-nums">{formatDateBE(doc.header.vendorDocDate)}</dd></div> : null}
+          {doc.header.claimPeriod && me?.vatRegistered ? <div><dt className="text-small text-muted-foreground">{t('header.claimPeriod')}</dt><dd className="tabular-nums" data-testid="claim-period">{doc.header.claimPeriod}</dd></div> : null}
           {doc.progress ? <div><dt className="text-small text-muted-foreground">{t('header.progress')}</dt><dd className="tabular-nums">{doc.progress}</dd></div> : null}
           {doc.outstanding !== undefined ? <div><dt className="text-small text-muted-foreground">{t('header.outstanding')}</dt><dd className="tabular-nums">{formatTHB(doc.outstanding)}</dd></div> : null}
         </dl>

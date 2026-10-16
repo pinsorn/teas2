@@ -2,7 +2,8 @@
   "app": { "name": "TEAS 2" },
   "docView": {
     "tabs": { "paper": "Paper", "chain": "Related documents", "ledger": "Ledger effect", "activity": "Activity", "revisions": "Revision history", "attachments": "Attachments" },
-    "header": { "party": "Counterparty", "date": "Document date", "total": "Total", "outstanding": "Outstanding", "revised": "Revised {n} times", "progress": "Progress" },
+    "header": { "party": "Counterparty", "date": "Document date", "total": "Total", "outstanding": "Outstanding", "revised": "Revised {n} times", "progress": "Progress",
+      "vendorDoc": "Vendor document no.", "vendorDocDate": "Vendor document date", "claimPeriod": "Input VAT claim period", "incomplete": "Documents incomplete" },
     "lock": { "label": "Locked", "exits": "Ways forward" },
     "marks": { "accepted": "Customer accepted", "rejected": "Customer rejected", "delivered": "Delivered", "sent": "Sent to vendor", "closed": "Closed", "rejectedWhy": "Reason: {reason}" },
     "closedAlert": "The remainder of this document is closed, so nothing more can be converted; revise the document to reopen it",
@@ -24,7 +25,7 @@
     },
     "actions": {
       "label": "Actions", "issueDraft": "Save and issue…", "edit": "Edit", "print": "Print", "copy": "Copy as new",
-      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "receive": "Receive payment", "whyInclusiveNote": "This invoice is priced VAT-inclusive, so a credit / debit note cannot be issued directly. Use Edit (a correction plan) instead.", "issueCn": "Issue credit note", "issueDn": "Issue debit note", "markDelivered": "Delivered", "markSent": "Mark as sent to vendor", "whyNothingRemaining": "Every line is already converted in full; there is nothing to close", "whyClosed": "The remainder is closed, so it cannot be converted; revise the document to reopen it"
+      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "receive": "Receive payment", "whyInclusiveNote": "This invoice is priced VAT-inclusive, so a credit / debit note cannot be issued directly. Use Edit (a correction plan) instead.", "issueCn": "Issue credit note", "issueDn": "Issue debit note", "issuePcn": "Record vendor credit note", "issuePdn": "Record vendor debit note", "markDelivered": "Delivered", "markSent": "Mark as sent to vendor", "whyNothingRemaining": "Every line is already converted in full; there is nothing to close", "whyClosed": "The remainder is closed, so it cannot be converted; revise the document to reopen it"
     },
     "print": { "reprintTitle": "Reprint {doc}", "reprintBody": "A reprint is printed as a 'COPY'. The original has already been printed.", "reprintConfirm": "Print a copy", "back": "Back", "logFailed": "The print could not be logged, so nothing was printed. Try again." },
     "agent": { "draftBy": "Drafted by {name} for {owner}", "draftByNoOwner": "Drafted by {name}", "createdBy": "Created by {name} for {owner}", "createdByNoOwner": "Created by {name}", "report": "View the check report" },
@@ -60,8 +61,9 @@
       "noChange": "No data changes", "blank": "(empty)", "reason": "Reason: {reason}",
       "lineN": "Line {n}", "lineField": "{line} · {field}",
       "fields": {
-        "header": { "notes": "Notes", "reference": "Reference", "dueDate": "Due date", "documentDate": "Document date", "partyId": "Counterparty", "refDocId": "Tax invoice adjusted", "reasonCode": "Reason", "reasonText": "Reason details", "dimensions": "Dimensions", "priceIncludesVat": "Prices include VAT" },
-        "line": { "description": "Description", "itemId": "Item", "qty": "Quantity", "unit": "Unit", "unitPrice": "Unit price", "discountPct": "Discount (%)", "taxCode": "Tax code", "dimensions": "Dimensions", "sourceLineId": "Source line", "vatOverride": "VAT" }
+        "header": { "notes": "Notes", "reference": "Reference", "dueDate": "Due date", "documentDate": "Document date", "partyId": "Counterparty", "refDocId": "Tax invoice adjusted", "reasonCode": "Reason", "reasonText": "Reason details", "dimensions": "Dimensions", "priceIncludesVat": "Prices include VAT",
+          "vendorDocNumber": "Vendor document no.", "vendorDocDate": "Vendor document date", "claimPeriod": "Input VAT claim period", "complete": "Documents complete" },
+        "line": { "description": "Description", "itemId": "Item", "qty": "Quantity", "unit": "Unit", "unitPrice": "Unit price", "discountPct": "Discount (%)", "taxCode": "Tax code", "dimensions": "Dimensions", "sourceLineId": "Source line", "vatOverride": "VAT", "expenseCategory": "Expense category" }
       }
     },
     "cancel": {
@@ -207,7 +209,8 @@
       "purchaseOrders": "Purchase orders",
       "bills": "Bills and expenses",
       "paymentVouchers": "Payment vouchers",
-      "vendorNotes": "Vendor credit and debit notes",
+      "vendorNotes": "Vendor credit notes",
+      "vendorDebitNotes": "Vendor debit notes",
       "expenseClaims": "Expense claims",
       "bankAccounts": "Bank accounts",
       "deposits": "Deposits and advances",
@@ -318,6 +321,17 @@
       "doList": "Delivery orders: list",
       "doDelivered": "Delivery order: delivered",
       "doPrint": "Print delivery order",
+      "pbList": "Purchase bills and expenses: list",
+      "pbNew": "Purchase bill: new",
+      "pbDraft": "Purchase bill: draft",
+      "pbMixedVat": "Purchase bill: claimable and non-claimable input VAT (entertainment)",
+      "pbFromPo": "Purchase bill: converted from a purchase order",
+      "pbIncomplete": "Purchase bill: vendor documents incomplete",
+      "pcnList": "Vendor credit notes: list",
+      "pcnIssued": "Vendor credit note: rent discount, references a purchase bill",
+      "pdnList": "Vendor debit notes: list",
+      "pdnIssued": "Vendor debit note: extra entertainment, references a purchase bill",
+      "npbVatToCost": "Purchase bill (non-VAT): the vendor's VAT is cost",
       "poList": "Purchase orders: list",
       "poNew": "Purchase order: new",
       "poDraft": "Purchase order: draft",
@@ -469,10 +483,18 @@
     "reference": "Reference",
     "refDoc": "Tax invoice adjusted",
     "refDocNone": "No tax invoice chosen yet",
+    "refDocPb": "Purchase bill adjusted",
+    "refDocNonePb": "No purchase bill chosen yet",
+    "vendorDocNumber": "Vendor document number",
+    "vendorDocDate": "Vendor document date",
+    "claimPeriod": "Input VAT claim period",
+    "claimPeriodHint": "The document month up to 6 months after it (Sec. 82/4)",
+    "complete": "Documents complete (the vendor's tax invoice has arrived)",
     "reason": "Reason",
     "reasonPick": "Choose a reason",
     "reasonText": "Describe the reason",
     "reasons": { "RETURN": "Goods returned / defective", "PRICE_REDUCTION": "Price reduction", "DISCOUNT": "Discount granted afterwards", "SERVICE_SHORT": "Service not fully delivered", "OTHER": "Other (specify)", "PRICE_INCREASE": "Price increase", "QTY_EXCESS": "Quantity over-delivered" },
+    "adjustVendor": { "title": "Choose the purchase bill to record the {kind} against", "hint": "A vendor credit or debit note must reference an issued purchase bill; its lines come from that bill", "empty": "No issued purchase bill yet", "loadFailed": "Could not load the purchase bills", "pick": "Choose {number}", "kindPcn": "vendor credit note", "kindPdn": "vendor debit note", "partyFixed": "Vendor of the purchase bill adjusted" },
     "adjust": { "title": "Choose the tax invoice to {kind}", "hint": "A credit or debit note must reference an issued tax invoice; its lines come from that invoice", "empty": "No issued tax invoice yet", "loadFailed": "Could not load the tax invoices", "pick": "Choose {number}", "kindCn": "credit", "kindDn": "debit", "partyFixed": "Customer of the tax invoice adjusted" },
     "notes": "Notes",
     "lines": {
@@ -499,6 +521,7 @@
       "whtUnknown": "Unknown type {code}",
       "whtNone": "None",
       "hintAmount": "Enter moves to the next cell  ·  Enter in the last cell adds a line",
+      "categoryNone": "From the item / none", "fromSource": "From {qty} {unit} x unit price (change the quantity on the purchase order)", "unitPriceOf": "Unit price of line {n}",
       "taxCode": { "S7": "VAT 7%", "Z0": "VAT 0%", "EX": "No VAT / exempt" }
     },
     "bankAccount": "Bank / cash account",
@@ -621,6 +644,9 @@
     "QT": {"title": "Quotation", "issue": "Save and issue quotation", "create": "Create quotation", "empty": "No quotations yet"},
     "SO": {"title": "Sales order", "issue": "Save and issue sales order", "create": "Create sales order", "empty": "No sales orders yet"},
     "PO": {"title": "Purchase order", "issue": "Save and issue purchase order", "create": "Create purchase order", "empty": "No purchase orders yet"},
+    "PB": {"title": "Purchase bill", "issue": "Save and issue purchase bill", "create": "Create purchase bill", "empty": "No purchase bills yet"},
+    "PCN": {"title": "Vendor credit note", "issue": "Save and issue vendor credit note", "create": "Create vendor credit note", "empty": "No vendor credit notes yet"},
+    "PDN": {"title": "Vendor debit note", "issue": "Save and issue vendor debit note", "create": "Create vendor debit note", "empty": "No vendor debit notes yet"},
     "DO": {"title": "Delivery order", "issue": "Save and issue delivery order", "create": "Create delivery order", "empty": "No delivery orders yet"},
     "BL": {"title": "Billing statement", "issue": "Save and issue billing statement", "create": "Create billing statement", "empty": "No billing statements yet"},
     "IV": {"title": "Invoice", "issue": "Save and issue invoice", "create": "Create invoice", "empty": "No invoices yet"},

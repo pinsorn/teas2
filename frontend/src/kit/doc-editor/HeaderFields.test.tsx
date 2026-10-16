@@ -16,6 +16,6 @@ describe('HeaderFields', () => {
     expect(container.querySelectorAll('input,textarea')).toHaveLength(2);
   });
   it('an unsupported key throws in dev instead of silently dropping a field', () => {
-    expect(() => ui(['claimPeriod'])).toThrow(/Unsupported header field/);
+    expect(() => ui(['autoReverse'])).toThrow(/Unsupported header field/);
   });
 });

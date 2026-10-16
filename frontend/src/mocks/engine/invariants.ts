@@ -1,10 +1,11 @@
-import { DOC_TYPES, GROUPS, LIVE, SETTLES } from '@/domain/doc-types';
+import { ADJUSTS, CREDIT_NOTES, DOC_TYPES, GROUPS, LIVE, SETTLES } from '@/domain/doc-types';
 import type { WhtLine, WhtMode } from '@/domain/types';
 import type { Doc } from '@/domain/types';
 import type { MockState } from '../store';
 import { consumed, q4 } from './chain';
 import { divRoundHalfAway, fromSatang, toSatang } from './money';
 import { resolveRole } from './posting';
+import { claimPeriodOf, isRecoverable } from './purchase-vat';
 import { whtOf } from './settlement';
 import { computeDoc, vatOf } from './vat';
 
@@ -81,6 +82,8 @@ export function checkInvariants(st: MockState): string[] {
   };
   const gl = new Map<string, number>(); // `${companyId}|${code}` -> debit - credit
   const arByParty = new Map<string, number>(); // `${companyId}|${party}` -> debit - credit on 1130
+  const apByParty = new Map<string, number>(); // the same on 2110 (payables)
+  const inputVat = new Map<string, number>(); // `${companyId}|${claim period}` -> debit - credit on 1170 posted by PB / PCN / PDN (reversals and corrections included)
 
   // 1. every journal entry balances, is non-negative and posts to postable accounts of its own company
   for (const j of st.journals) {
@@ -99,6 +102,8 @@ export function checkInvariants(st: MockState): string[] {
         const k = `${d.companyId}|${l.accountCode}`;
         gl.set(k, (gl.get(k) ?? 0) + a - b);
         if (l.accountCode === '1130') { const pk = `${d.companyId}|${l.partyName ?? ''}`; arByParty.set(pk, (arByParty.get(pk) ?? 0) + a - b); }
+        if (l.accountCode === '2110') { const pk = `${d.companyId}|${l.partyName ?? ''}`; apByParty.set(pk, (apByParty.get(pk) ?? 0) + b - a); }
+        if (l.accountCode === '1170' && (d.type === 'PB' || ADJUSTS[d.type] === 'PB')) { const pk = `${d.companyId}|${claimPeriodOf(d.header)}`; inputVat.set(pk, (inputVat.get(pk) ?? 0) + a - b); }
       }
       if (dr !== cr) out.push(`${where}: unbalanced (Dr ${fromSatang(dr)} / Cr ${fromSatang(cr)})`);
     }
@@ -137,6 +142,37 @@ export function checkInvariants(st: MockState): string[] {
       out.push(`${company}: AR 1130 of ${name}: GL ${fromSatang(arByParty.get(k) ?? 0)} but outstanding of their live TI/IV is ${fromSatang(subByParty.get(k) ?? 0)}`);
     }
   }
+
+  // 4c. each vendor's AP (2110 lines labelled with their name) = Σ that vendor's live PB outstanding
+  const apSub = new Map<string, number>();
+  for (const d of st.docs) {
+    if (!LIVE.includes(d.status) || d.type !== 'PB') continue;
+    const k = `${d.companyId}|${d.party?.name ?? ''}`;
+    apSub.set(k, (apSub.get(k) ?? 0) + sat(d.outstanding ?? '0.00', d.id));
+  }
+  for (const k of new Set([...apByParty.keys(), ...apSub.keys()])) {
+    if ((apByParty.get(k) ?? 0) !== (apSub.get(k) ?? 0)) {
+      const [company, name] = k.split('|');
+      out.push(`${company}: AP 2110 of ${name}: GL ${fromSatang(apByParty.get(k) ?? 0)} but outstanding of their live PB is ${fromSatang(apSub.get(k) ?? 0)}`);
+    }
+  }
+
+  // 4d. input VAT (ม.82/3, ม.82/5, I6): per claim period, the 1170 posted by PB / PCN / PDN = the claimable VAT of the live ones filed in it (a PCN gives back, a PDN adds); a company outside VAT claims nothing
+  const claimable = new Map<string, number>();
+  for (const d of st.docs) {
+    if (!LIVE.includes(d.status) || (d.type !== 'PB' && ADJUSTS[d.type] !== 'PB')) continue;
+    const rows = computeDoc(d.lines, !!d.header.priceIncludesVat, true).lines;
+    const vat = d.lines.reduce((n, l, i) => n + (isRecoverable(st, d.companyId, l) ? sat(rows[i].vat, d.id) : 0), 0);
+    const k = `${d.companyId}|${claimPeriodOf(d.header)}`;
+    claimable.set(k, (claimable.get(k) ?? 0) + (CREDIT_NOTES.includes(d.type) ? -vat : vat));
+  }
+  for (const k of new Set([...inputVat.keys(), ...claimable.keys()])) {
+    if ((inputVat.get(k) ?? 0) !== (claimable.get(k) ?? 0)) {
+      const [company, period] = k.split('|');
+      out.push(`${company}: claim period ${period}: input VAT 1170 posted ${fromSatang(inputVat.get(k) ?? 0)} but the bills / notes filed in it claim ${fromSatang(claimable.get(k) ?? 0)}`);
+    }
+  }
+  for (const c of st.companies) if (!c.vatRegistered && (gl.get(`${c.id}|1170`) ?? 0) !== 0) out.push(`${c.id}: not VAT-registered but GL 1170 moved by ${fromSatang(gl.get(`${c.id}|1170`) ?? 0)}`);
 
   // 5. converted quantity per source line never exceeds the source quantity
   const sources = new Set(st.links.filter((l) => l.kind === 'converted_from' && l.active).map((l) => l.to));
@@ -249,14 +285,14 @@ export function checkInvariants(st: MockState): string[] {
     if (st.journals.some((j) => j.docId === d.id)) out.push(`${d.id}: BL has a journal (a billing statement posts nothing)`);
   }
 
-  // 10. credit / debit notes: each live note adjusts one live TI of its company and customer through exactly one active link of its own total; its total is its lines' net + VAT;
+  // 10. credit / debit notes (CN / DN of a TI, PCN / PDN of a PB): each live note adjusts one live original of its company and party through exactly one active link of its own total; its total is its lines' net + VAT;
   //     per invoice line the live credits never exceed the line's net (G3) and a fully credited line gives back exactly its VAT (rule B), to the satang
   const credited = new Map<string, { net: number; vat: number; debit: boolean }>(); // `${ti}|${line}`
   for (const d of st.docs) {
-    if ((d.type !== 'CN' && d.type !== 'DN') || !LIVE.includes(d.status)) continue;
+    if (!ADJUSTS[d.type] || !LIVE.includes(d.status)) continue;
     const ti = d.header.refDocId ? doc(d.header.refDocId) : undefined;
-    if (!ti || ti.type !== 'TI' || ti.companyId !== d.companyId || !LIVE.includes(ti.status)) { out.push(`${d.id}: ${d.type} has no live tax invoice of its company to adjust (refDocId ${d.header.refDocId ?? 'missing'})`); continue; }
-    if (d.header.partyId !== ti.header.partyId) out.push(`${d.id}: ${d.type} party ${d.header.partyId} is not the customer of ${ti.id}`);
+    if (!ti || ti.type !== ADJUSTS[d.type] || ti.companyId !== d.companyId || !LIVE.includes(ti.status)) { out.push(`${d.id}: ${d.type} has no live ${ADJUSTS[d.type]} of its company to adjust (refDocId ${d.header.refDocId ?? 'missing'})`); continue; }
+    if (d.header.partyId !== ti.header.partyId) out.push(`${d.id}: ${d.type} party ${d.header.partyId} is not the party of ${ti.id}`);
     const links = st.links.filter((l) => l.active && l.kind === 'adjusts' && l.from === d.id);
     if (links.length !== 1 || links[0].to !== ti.id || sat(links[0].amount ?? '0.00', d.id) !== sat(d.totals.total, d.id)) {
       out.push(`${d.id}: ${d.type} needs exactly one active adjusts link to ${ti.id} of its total ${d.totals.total} (has [${links.map((l) => `${l.to} ${l.amount}`).join(', ')}])`);
@@ -269,7 +305,7 @@ export function checkInvariants(st: MockState): string[] {
       if (!l.sourceLineId) return;
       const k = `${ti.id}|${l.sourceLineId}`, c = credited.get(k) ?? { net: 0, vat: 0, debit: false };
       const net = sat(rows.lines[i].net, d.id), vat = sat(rows.lines[i].vat, d.id);
-      if (d.type === 'CN') credited.set(k, { ...c, net: c.net + net, vat: c.vat + vat });
+      if (CREDIT_NOTES.includes(d.type)) credited.set(k, { ...c, net: c.net + net, vat: c.vat + vat });
       else if (net < 0) credited.set(k, { ...c, net: c.net - net, vat: c.vat - vat }); // a negative referenced debit line is a credit as well
       else credited.set(k, { ...c, debit: true });
     });

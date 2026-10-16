@@ -23,4 +23,9 @@ describe('ActionBar: ออกใบลดหนี้ / ออกใบเพ�
     expect(screen.getByRole('button', { name: 'ออกใบเพิ่มหนี้' })).toBeDisabled();
     expect(screen.getAllByText(/ราคารวมภาษี.*แก้ไข/).length).toBeGreaterThan(0);
   });
+  it('a tax invoice has no vendor-note buttons', () => {
+    bar(ti(false));
+    expect(screen.queryByText('บันทึกใบลดหนี้จากผู้ขาย')).toBeNull();
+    expect(screen.queryByText('บันทึกใบเพิ่มหนี้จากผู้ขาย')).toBeNull();
+  });
 });

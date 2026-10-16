@@ -100,7 +100,7 @@ function Loaded({ d, row, permissions, companyId }: { d: RecordDescriptor; row: 
         </TabsList>
         <TabsContent value="info"><Details d={d} row={row} /></TabsContent>
         <TabsContent value="docs"><PartyDocs d={d} row={row} companyId={companyId} /></TabsContent>
-        <TabsContent value="open"><OpenItems d={d} row={row} companyId={companyId} /></TabsContent>
+        <TabsContent value="open"><OpenItems d={d} row={row} companyId={companyId} permissions={permissions} /></TabsContent>
       </Tabs>
 
       {confirmOff ? (
@@ -191,10 +191,14 @@ function PartyDocs({ row, companyId }: { d: RecordDescriptor; row: RecordRow; co
   );
 }
 
-function OpenItems({ d, row, companyId }: { d: RecordDescriptor; row: RecordRow; companyId: string }) {
+function OpenItems({ d, row, companyId, permissions }: { d: RecordDescriptor; row: RecordRow; companyId: string; permissions: string[] }) {
   const tr = useTranslations('records.view');
-  const types = (d.kind === 'vendor' ? SETTLES.PV : SETTLES.RC) ?? [];
-  const q = useQuery({ queryKey: qk.openItems(companyId, row.id, types.join(',')), queryFn: () => endpoints.openItems({ partyId: row.id, types }) });
+  const all = (d.kind === 'vendor' ? SETTLES.PV : SETTLES.RC) ?? [];
+  // The server refuses a query that names a type the role cannot read: ask only for the open-item types this role may read (a vendor's PB today, its EX once expense claims exist),
+  // and say "forbidden" - never "nothing outstanding" - when it may read none of them.
+  const types = all.filter((x) => permissions.includes(`doc.${x}.read`));
+  const q = useQuery({ queryKey: qk.openItems(companyId, row.id, types.join(',')), queryFn: () => endpoints.openItems({ partyId: row.id, types }), enabled: types.length > 0 });
+  if (types.length === 0) return <ForbiddenState permission={`doc.${all[0]}.read`} />;
   return (
     <Query q={q} forbiddenPermission={types.map((x) => `doc.${x}.read`)[0]}>
       {q.data && q.data.items.length === 0 ? <EmptyState title={tr('openEmpty')} /> : (

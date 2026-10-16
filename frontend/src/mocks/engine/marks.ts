@@ -29,8 +29,9 @@ export const withAcceptedStamp = (d: Stored, actor: Actor): DocMarks | undefined
 /** revise(): an N-class revision of a quotation is a new offer, the customer's answer to the old one is void. */
 export const afterRevision = (d: Stored): DocMarks | undefined => {
   if (!d.marks) return d.marks;
-  const { accepted, rejected, closed, ...rest } = d.marks; void closed; // an N-class revision reopens a closed remainder (the exit)
-  const kept: DocMarks = d.type === 'QT' ? rest : { ...rest, ...(accepted ? { accepted } : {}), ...(rejected ? { rejected } : {}) };
+  const { accepted, rejected, closed, sent, ...rest } = d.marks; void closed; // an N-class revision reopens a closed remainder (the exit)
+  // a revised PO is a different order from the one that was sent: the vendor has not been sent THIS version (the mark button returns)
+  const kept: DocMarks = d.type === 'QT' ? rest : { ...rest, ...(accepted ? { accepted } : {}), ...(rejected ? { rejected } : {}), ...(sent && d.type !== 'PO' ? { sent } : {}) };
   return Object.keys(kept).length ? kept : undefined;
 };
 
@@ -61,6 +62,7 @@ export function setMark(st: MockState, id: string, mark: MarkKey, version: numbe
   if (!MARKS[d.type]?.includes(mark)) throw new MockError(422, 'mark.not_allowed', `เอกสารประเภทนี้ใช้เครื่องหมาย “${mark}” ไม่ได้`);
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_live', 'ทำเครื่องหมายได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   if (d.version !== version) throw new MockError(409, 'doc.version_conflict', 'เอกสารถูกแก้ไขโดยผู้อื่นแล้ว กรุณาโหลดใหม่');
+  if (d.marks?.[mark]) throw new MockError(409, 'mark.already_set', 'ทำเครื่องหมายนี้ไว้แล้ว'); // a repeat is a no-op the caller should hear about, not a second stamp
   const why = reason?.trim();
   if (mark === 'rejected' && !why) throw new MockError(422, 'mark.reason_required', 'ต้องระบุเหตุผลที่ลูกค้าปฏิเสธ');
   const at = stamp(), by = actor.name;

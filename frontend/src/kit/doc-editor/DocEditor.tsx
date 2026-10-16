@@ -119,7 +119,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   // Blank rows are never sent (nor, on a debit note opened from an invoice, a line left at quantity 0 - the prefill starts them there); money/quantity text is normalised to the wire format.
   const payload = useMemo<DocInput>(() => ({
     header,
-    lines: lines.filter((l) => !isBlankLine(l) && !(d.type === 'DN' && d.adjusts && Number(qtyText(l.qty)) === 0)).map((l) => ({ ...l, qty: qtyText(l.qty), unitPrice: moneyText(l.unitPrice) })),
+    lines: lines.filter((l) => !isBlankLine(l) && !((d.type === 'DN' || d.type === 'PDN') && d.adjusts && Number(qtyText(l.qty)) === 0)).map((l) => ({ ...l, qty: qtyText(l.qty), unitPrice: moneyText(l.unitPrice) })),
     ...(d.settles || d.groups ? { allocations } : {}),
   }), [header, lines, allocations, d.settles, d.groups, d.type, d.adjusts]);
   const payloadJson = JSON.stringify(payload);
@@ -221,7 +221,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
     if (item && showLines) {
       setLines((ls) => ls.length > 0 && isBlankLine(ls[0])
         ? [{ ...ls[0], itemId: item.id, description: item.name, unit: item.unit, unitPrice: moneyText(item.unitPrice), taxCode: exemptOnly ? 'EX' : item.taxCode,
-          ...(amountEditor && withholds && item.whtTypeCode ? { whtTypeCode: item.whtTypeCode } : {}) }, ...ls.slice(1)]
+          ...(amountEditor && withholds && item.whtTypeCode ? { whtTypeCode: item.whtTypeCode } : {}), ...(amountEditor && item.expenseCategory ? { expenseCategory: item.expenseCategory } : {}) }, ...ls.slice(1)]
         : ls);
     }
   };
@@ -258,7 +258,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
           <section className="grid gap-4 rounded-xl bg-card p-4 ring-1 ring-foreground/10 md:grid-cols-2">
             {d.adjusts ? ( // a note's customer is its invoice's: the server fills it, the editor only shows it
               <div className="grid gap-1 md:col-span-2">
-                <p className="text-small text-muted-foreground">{t('adjust.partyFixed')}</p>
+                <p className="text-small text-muted-foreground">{t(d.adjusts === 'PB' ? 'adjustVendor.partyFixed' : 'adjust.partyFixed')}</p>
                 <p className="text-body font-medium" data-field="party-fixed">{party?.name ?? '-'}</p>
               </div>
             ) : partyKind && (

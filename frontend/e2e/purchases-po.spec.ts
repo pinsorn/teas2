@@ -15,7 +15,7 @@ test('PO: mark sent records a status-only chip with an activity entry, then the 
   await page.getByRole('alertdialog').getByRole('button', { name: 'บันทึก' }).click();
   await expect(page.locator('[data-mark="sent"]')).toBeVisible();
   await expect(page.getByRole('button', { name: 'บันทึกว่าส่งให้ผู้ขายแล้ว' })).toHaveCount(0);
-  await expect(page.getByText('รับวางบิลแล้ว 0/140')).toBeVisible(); // status only: nothing received, no new document
+  await expect(page.getByText('รับวางบิลแล้ว 70/140')).toBeVisible(); // status only: no new document (70 of 140 were received on pb-po, P2)
   await page.getByRole('tab', { name: 'กิจกรรม' }).click();
   await expect(page.getByRole('tabpanel', { name: 'กิจกรรม' }).getByText('ส่งให้ผู้ขายแล้ว')).toBeVisible();
 });
@@ -29,13 +29,14 @@ test('PO sent fixture: the chip is there from the start and the mark button is n
 
 test('PO list shows the receiving progress and the marks columns', async ({ page }) => {
   await page.goto(BASE);
-  await expect(page.getByRole('row', { name: /รับวางบิลแล้ว 0\/140/ })).toBeVisible();
+  await expect(page.getByRole('row', { name: /รับวางบิลแล้ว 70\/140/ })).toBeVisible();
   await expect(page.getByRole('row', { name: /รับวางบิลแล้ว 0\/6 \(ปิดยอดคงเหลือ\)/ })).toBeVisible();
 });
 
 test('PO: close remainder needs a reason; the closed PO cannot convert and shows why', async ({ page }) => {
   await page.goto('/'); const id = await fixtureId(page, 'poPartlyBilled');
   await page.goto(`${BASE}/${id}`);
+  await expect(page.getByRole('button', { name: 'แปลงเป็น…' })).toBeEnabled(); // the purchase bill can be created now: the button is not blanket-disabled
   await page.getByRole('button', { name: 'ปิดยอดคงเหลือ' }).click();
   const dlg = page.getByRole('alertdialog', { name: 'ปิดยอดคงเหลือ' });
   await expect(dlg.getByRole('button', { name: 'ยืนยันปิดยอดคงเหลือ' })).toBeDisabled();
@@ -43,6 +44,7 @@ test('PO: close remainder needs a reason; the closed PO cannot convert and shows
   await dlg.getByRole('button', { name: 'ยืนยันปิดยอดคงเหลือ' }).click();
   await expect(page.locator('[data-mark="closed"]')).toBeVisible();
   await expect(page.getByRole('button', { name: 'แปลงเป็น…' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'แปลงเป็น…' })).toHaveAccessibleDescription(/ปิดยอดคงเหลือแล้ว แปลงเอกสารไม่ได้/); // disabled BECAUSE it is closed
   await expect(page.getByText(/แก้ไขเอกสาร \(ฉบับแก้ไข\) เพื่อเปิดยอดคงเหลือใหม่/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'ปิดยอดคงเหลือ' })).toHaveCount(0);
 });
@@ -53,6 +55,7 @@ test('a closed PO is shown closed from the start, with its reason', async ({ pag
   await expect(page.locator('[data-mark="closed"]')).toBeVisible();
   await expect(page.getByRole('alert').or(page.getByRole('status')).getByText(/ผู้ขายยกเลิกส่วนที่เหลือ/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'แปลงเป็น…' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'แปลงเป็น…' })).toHaveAccessibleDescription(/ปิดยอดคงเหลือแล้ว แปลงเอกสารไม่ได้/);
 });
 
 test('PO: the operator may issue but not cancel; the accountant may cancel', async ({ page }) => {
@@ -93,4 +96,26 @@ test('PO prints with its own title, due label and signatures', async ({ page }) 
   await expect(sheet.getByText('ผู้สั่งซื้อ')).toBeVisible();
   await expect(sheet.getByText('ผู้อนุมัติ')).toBeVisible();
   await expect(page.getByText('ใบกำกับภาษี')).toHaveCount(0);
+});
+
+test('PO: marking it sent twice is a 409 mark.already_set and the revision of a sent PO clears the mark', async ({ page }) => {
+  await page.goto('/'); const id = await fixtureId(page, 'poPartlyBilled');
+  const mark = (version: number) => page.evaluate(async ([i, v]) => {
+    const r = await fetch(`/bff/v1/docs/PO/${i}/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mark: 'sent', version: v }) });
+    return { status: r.status, body: await r.json() as { code?: string; version?: number } };
+  }, [id, version] as const);
+  const v0 = await page.evaluate(async (i) => (await (await fetch(`/bff/v1/docs/PO/${i}`)).json()).version as number, id);
+  const first = await mark(v0);
+  expect(first.status).toBe(200);
+  const again = await mark(first.body.version!);
+  expect(again).toMatchObject({ status: 409, body: { code: 'mark.already_set' } });
+  await page.goto(`${BASE}/${id}`);
+  await expect(page.locator('[data-mark="sent"]')).toBeVisible();
+  await page.getByRole('link', { name: 'แก้ไข' }).click();
+  await page.getByLabel('หมายเหตุ').fill('เปลี่ยนเงื่อนไขการส่งของ'); // a revision that changes something
+  await page.getByRole('button', { name: 'บันทึกการแก้ไข' }).click();
+  await page.getByRole('alertdialog', { name: /แผนการแก้ไข/ }).getByRole('button', { name: 'ยืนยันทั้งหมด' }).click();
+  await expect(page.getByTestId('doc-number')).toBeVisible();
+  await expect(page.locator('[data-mark="sent"]')).toHaveCount(0); // a revised order is not the one that was sent
+  await expect(page.getByRole('button', { name: 'บันทึกว่าส่งให้ผู้ขายแล้ว' })).toBeVisible();
 });

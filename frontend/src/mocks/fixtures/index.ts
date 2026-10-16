@@ -34,7 +34,7 @@ export function buildSeed(role: Role): MockState {
   const items = [...vatItems(), ...nonVatItems()];
   const { docs, links, activity, revisions, series } = buildDocs(parties, items);
   return {
-    version: 15,
+    version: 16,
     companies,
     memberships: companies.map((c) => ({ userId: 'u-1', companyId: c.id, companyName: c.legalNameTh, role: c.vatRegistered ? role : 'operator' })),
     parties, items, docs, links, activity, revisions, journals: [], audit: [], series, attachments: [], prints: [],

@@ -10,7 +10,8 @@ export type FixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssued
   | 'soPartlyDelivered' | 'soClosed' | 'doDelivered' | 'nsoIssued' | 'ndoDelivered'
   | 'ivDraft' | 'ivIssuedUnpaid' | 'ivPartly' | 'ivSettled' | 'blVat' | 'blNonVat'
   | 'poDraft' | 'poSent' | 'poPartlyBilled' | 'poClosed' | 'npoIssued'
-  | 'rcMulti' | 'rcNoCert' | 'rcDeposit' | 'nrcCashBill' | 'cnIssued' | 'dnIssued' | 'tiCreditedToZero'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
+  | 'rcMulti' | 'rcNoCert' | 'rcDeposit' | 'nrcCashBill' | 'cnIssued' | 'dnIssued' | 'tiCreditedToZero'
+  | 'pbDraft' | 'pbIssuedUnpaid' | 'pbMixedVat' | 'pbFromPo' | 'pbCapex' | 'pbClaimLate' | 'pbIncomplete' | 'pcnIssued' | 'pdnIssued' | 'npbVatToCost'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
 
 /** An issued, untouched TI of pc-01 (the multi-target receipt vector settles two of them). */
 const rcTarget = (d: D, st: MockState) => isTi(d) && d.status === 'issued' && d.party?.id === 'pc-01' && d.outstanding === d.totals.total
@@ -72,6 +73,17 @@ export const FIXTURE_PREDICATES: Record<FixtureKey, (d: D, st: MockState) => boo
   cnIssued: byId('cn-ret', (d) => d.status === 'issued' && d.lines.length === 2),
   dnIssued: byId('dn-1', (d) => d.status === 'issued'),
   tiCreditedToZero: byId('ti-046', (d) => d.status === 'issued' && d.outstanding === '0.00'), // credited in full by cn-full, never settled
+  // P2 purchase bills / vendor notes
+  pbDraft: byId('pb-d1', (d) => d.status === 'draft'),
+  pbIssuedUnpaid: byId('pb-1', (d) => d.status === 'issued'), // rent with a vendor credit (pcn-1) against it
+  pbMixedVat: byId('pb-2', (d) => d.status === 'issued'), // services + non-claimable entertainment, with a debit (pdn-1)
+  pbFromPo: byId('pb-po', (d) => d.status === 'issued' && !!d.lines[0]?.sourceLineId),
+  pbCapex: byId('pb-capex', (d) => d.status === 'issued'),
+  pbClaimLate: byId('pb-claim-late', (d) => d.status === 'issued' && d.header.claimPeriod === '2026-12'),
+  pbIncomplete: byId('pb-incomplete', (d) => d.status === 'issued' && d.header.complete === false),
+  pcnIssued: byId('pcn-1', (d) => d.status === 'issued'),
+  pdnIssued: byId('pdn-1', (d) => d.status === 'issued'),
+  npbVatToCost: byId('npb-1', (d) => d.status === 'issued' && d.companyId === 'co-nonvat'),
 };
 
 /** Lowest id (string order) matching each predicate in the active seed; throws listing every unresolved key. */
