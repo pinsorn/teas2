@@ -20,7 +20,9 @@ type DocFixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssuedUnpa
 
 /** FN1 bank accounts: not documents, so no predicate - a fixed record id that must exist in the seed. `bankEmpty` is the VAT company's account with no imports. */
 export const BANK_FIXTURES = { bankKbank: 'ba-kbank', bankEmpty: 'ba-scb', nbankKbank: 'nba-kbank' } as const;
-export type FixtureKey = DocFixtureKey | keyof typeof BANK_FIXTURES;
+/** AC4 schedules: not documents either, a fixed record id that must exist in the seed. */
+export const SCHEDULE_FIXTURES = { schedRecurringTi: 'sch-rec-ti', schedAmortisation: 'sch-amort', nschedRecurring: 'nsch-rec-iv' } as const;
+export type FixtureKey = DocFixtureKey | keyof typeof BANK_FIXTURES | keyof typeof SCHEDULE_FIXTURES;
 
 /** An issued, untouched TI of pc-01 (the multi-target receipt vector settles two of them). */
 const rcTarget = (d: D, st: MockState) => isTi(d) && d.status === 'issued' && d.party?.id === 'pc-01' && d.outstanding === d.totals.total
@@ -135,6 +137,9 @@ export function fixtureIds(st: MockState): Record<FixtureKey, string> {
   }
   for (const [k, id] of Object.entries(BANK_FIXTURES) as [keyof typeof BANK_FIXTURES, string][]) {
     if (st.bankAccounts.some((b) => b.id === id)) out[k] = id; else missing.push(k);
+  }
+  for (const [k, id] of Object.entries(SCHEDULE_FIXTURES) as [keyof typeof SCHEDULE_FIXTURES, string][]) {
+    if (st.schedules.some((s) => s.id === id)) out[k] = id; else missing.push(k);
   }
   if (missing.length) throw new Error(`fixture ids unresolved: ${missing.join(', ')}`);
   return out as Record<FixtureKey, string>;

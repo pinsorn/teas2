@@ -7,10 +7,11 @@ import type { MockState } from '../store';
 import { bahtText } from './bahtText';
 import { allocate, cancel, correctionReversal, dateGuards, getDoc, newId, placed, publicDoc, put, setJournal } from './commands';
 import { ledgerFor } from './ledger';
-import { MockError, isPinned, logActivity, logAudit, stamp } from './log';
+import { MockError, isPinned, logActivity, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
 import { firstOpenDate, isClosed, monthLabelTh } from './periods';
 import { controlExit } from './reconcile';
+import { beforeRunReversed, cancelSchedulesOf, lastDayOf, onRunReversed, refuseRunFinal, refuseScheduleSource, runLockOf } from './schedules';
 
 // AC1: journal vouchers (JV), their reversal, auto-reversing accruals, and the general journal. A JV posts its account lines verbatim; the account / control-account rules are
 // the money guards, kept in one place so issue, revise, compute and the invariants all judge the same thing.
@@ -131,10 +132,15 @@ export function reverseJv(st: MockState, id: string, actor: Actor, opts?: { date
   if (d.header.autoReversal) throw fail(422, 'ledger.reverse_document', `ใบกลับรายการอัตโนมัติ ${d.number} เปลี่ยนตามใบสำคัญต้นทาง — ยกเลิกหรือแก้ไขใบสำคัญต้นทาง ${getDoc(st, d.header.reversalOf!).number}`);
   const have = reversalsOf(st, id)[0];
   if (have) throw fail(409, 'ledger.already_reversed', `ใบสำคัญนี้กลับรายการแล้วโดย ${have.number} กลับรายการซ้ำไม่ได้`);
+  refuseScheduleSource(st, d); // AC4: a live amortisation run on one of its lines - undoing the debit under the schedule is as final as cancelling it (the exit: stop / reverse the schedule)
+  if (st.docs.find((x) => x.id === d.header.reversalOf)?.header.scheduleId) throw fail(409, 'schedule.run_reversal_final', `ใบกลับรายการ ${d.number} เป็นของงวดที่ตัดจ่ายตามตาราง กลับรายการซ้ำไม่ได้ ทางออก: รันงวดนั้นใหม่จากหน้าตารางตัดจ่าย`);
   const open = firstOpenDate(st, d.companyId), floor = d.header.documentDate > open ? d.header.documentDate : open, date = opts?.date ?? floor;
   if (date < floor) throw fail(422, 'ledger.reverse_date', `วันที่กลับรายการต้องไม่ก่อน ${floor} (วันที่ของใบสำคัญเดิม หรือวันแรกของงวดที่เปิดอยู่)`);
-  dateGuards(st, d.companyId, date); // not in the future, in an open month
-  return postReversal(st, d, { date, actor, ...(opts?.reason ? { reason: opts.reason } : {}), ...(opts?.id ? { id: opts.id } : {}) });
+  const run = !!d.header.scheduleId; // AC4: a schedule's run is dated the last day of its month (maybe not yet over): its reversal may carry that date, no later
+  if (run) { beforeRunReversed(st, d); const cap = lastDayOf(d.header.scheduleMonth ?? date.slice(0, 7)) > today() ? lastDayOf(d.header.scheduleMonth ?? date.slice(0, 7)) : today(); if (date > cap) throw fail(422, 'ledger.reverse_date', `วันที่กลับรายการต้องไม่หลัง ${cap}`); if (!isPinned() && isClosed(st, d.companyId, date)) throw fail(422, 'period.closed', `งวดบัญชี ${monthLabelTh(date.slice(0, 7))} ปิดแล้ว กลับรายการลงวันที่ในงวดนี้ไม่ได้`); } else dateGuards(st, d.companyId, date); // not in the future, in an open month
+  const r = postReversal(st, d, { date, actor, ...(opts?.reason ? { reason: opts.reason } : {}), ...(opts?.id ? { id: opts.id } : {}) });
+  if (run) onRunReversed(st, d, actor); else cancelSchedulesOf(st, d, actor); // no live run (the reversal was allowed): the schedules sourced from this JV go with it
+  return r;
 }
 
 /** Issue of an accrual with `autoReverse` (ruling 3): the system's reversal, dated day 1 of the next month (a future date, allowed for the system only), created in the same command. */
@@ -163,6 +169,7 @@ export function syncAutoReversal(st: MockState, jv: Stored, actor: Actor): void 
 
 /** The guards every revise / cancel of a JV meets. A reversal (the person's or the system's) is final: the mirror must stay exact. A JV the person reversed is final too. */
 function refuseFinal(st: MockState, d: Stored, system: boolean): void {
+  if (!system) refuseRunFinal(st, d); // AC4: a schedule's run is reversed, never revised or cancelled
   if (d.header.reversalOf && !system) {
     const orig = st.docs.find((x) => x.id === d.header.reversalOf);
     throw fail(409, 'ledger.reversal_final', d.header.autoReversal
@@ -196,6 +203,7 @@ export function jvLock(st: MockState, d: { id?: string; type?: string; status: s
     return { kind: 'reversal', reason: `ใบกลับรายการ${o ? ` ของ ${o.number}` : ''} แก้ไขหรือยกเลิกไม่ได้ ถ้าต้องการยกเลิกผลของใบนี้ ให้กลับรายการใบนี้อีกครั้ง`, exits: ['กลับรายการใบนี้'] };
   }
   const orig = d.header.autoReversal && d.header.reversalOf ? st.docs.find((x) => x.id === d.header.reversalOf) : undefined;
+  if (!orig && d.header.scheduleId) return runLockOf(st, d);
   if (orig) return { kind: 'reversal', reason: `ใบกลับรายการอัตโนมัติของ ${orig.number} เปลี่ยนตามใบสำคัญต้นทาง แก้ไขหรือยกเลิกที่ใบต้นทาง`, exits: [], ...(href(orig) ? { href: href(orig) } : {}) };
   return undefined;
 }

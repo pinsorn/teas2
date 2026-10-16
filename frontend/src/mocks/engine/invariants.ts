@@ -4,6 +4,7 @@ import type { Doc, JournalEntryPreview } from '@/domain/types';
 import type { MockState } from '../store';
 import { approvalRequired } from './approval';
 import { jvInvariants } from './journal';
+import { scheduleInvariants } from './schedules';
 import { obInvariants } from './opening';
 import { appliedOf, docCash, toleranceOf } from './locks';
 import { payoutOf, resolvedBankId } from './settlement';
@@ -585,6 +586,7 @@ export function checkInvariants(st: MockState): string[] {
   }
 
   out.push(...obInvariants(st)); // 16. opening balances (AC3): the journal is what its steps say, the ties hold, the frozen items are the steps' items, go-live follows the batch
+  out.push(...scheduleInvariants(st)); // 17. schedules (AC4): plan = total, each run JV = its plan row, the prepaid account moved by the live runs
   out.push(...jvInvariants(st)); // 15. journal vouchers (AC1): no controlled account, the journal is the lines, reversals mirror, accruals net to zero
 
   // numbering: gap-free per company x type x month, and the series counter agrees

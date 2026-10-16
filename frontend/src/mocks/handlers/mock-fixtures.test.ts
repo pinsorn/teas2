@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { BANK_FIXTURES, FIXTURE_PREDICATES } from '../fixtures/ids';
+import { BANK_FIXTURES, FIXTURE_PREDICATES, SCHEDULE_FIXTURES } from '../fixtures/ids';
 import { setSettings } from '../settings';
 import { resetState } from '../store';
 import { testServer } from '../test-server';
@@ -15,7 +15,7 @@ describe('GET /bff/v1/mock/fixtures', () => {
     const r = await fetch('http://localhost/bff/v1/mock/fixtures');
     expect(r.status).toBe(200);
     const ids = await r.json() as Record<string, string>;
-    expect(Object.keys(ids).sort()).toEqual([...Object.keys(FIXTURE_PREDICATES), ...Object.keys(BANK_FIXTURES)].sort());
+    expect(Object.keys(ids).sort()).toEqual([...Object.keys(FIXTURE_PREDICATES), ...Object.keys(BANK_FIXTURES), ...Object.keys(SCHEDULE_FIXTURES)].sort());
     expect(ids.tiLong).toBe('spike-60');
   });
 });

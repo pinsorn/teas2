@@ -40,7 +40,7 @@ describe('chart of accounts record (AC2)', () => {
     const r = items.find((x) => x.code === '1130')!;
     expect(r).toMatchObject({ id: '1130', name: 'ลูกหนี้การค้า', parent: '1100', postable: true, class: 'current-asset', subClass: 'receivable', active: true, inUse: true, version: 1 });
     expect(items.find((x) => x.code === '1100')).toMatchObject({ postable: false, inUse: false });
-    expect(items.find((x) => x.code === '1150')!.inUse).toBe(false);
+    expect(items.find((x) => x.code === '1171')!.inUse).toBe(false); // (1150 is in use since AC4: the insurance bill pb-ins lands on it)
     expect(items.every((x) => typeof x.dbdLine === 'string' || !x.postable || x.class === 'equity' || x.class === 'current-asset')).toBe(true);
   });
 
@@ -58,7 +58,7 @@ describe('chart of accounts record (AC2)', () => {
     for (const code of ['519', '1234567', '51A0', ' ']) expect((await create({ code })).json.fieldErrors?.code, code).toHaveLength(1);
     expect((await create({ code: '5110' })).json.fieldErrors?.code).toEqual(['รหัสบัญชีนี้ใช้แล้ว']);
     expect((await create({ code: '519000' })).status).toBe(201); // six digits are allowed
-    expect((await put('1150', { code: '1140' })).json.fieldErrors?.code).toEqual(['รหัสบัญชีนี้ใช้แล้ว']);
+    expect((await put('1171', { code: '1140' })).json.fieldErrors?.code).toEqual(['รหัสบัญชีนี้ใช้แล้ว']);
   });
 
   it('renaming the header 1100 does not break bank accounts: the GL picker still lists the cash / bank accounts and a bank-account edit saves (review F1)', async () => {

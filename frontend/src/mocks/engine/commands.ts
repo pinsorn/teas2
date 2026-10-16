@@ -14,6 +14,7 @@ import { fromSatang, toSatang } from './money';
 import { adjustSnapshot, hasSnapshot, isNote, noteHeader, noteMissing, noteProblem, withNoteVat } from './notes';
 import { SeriesAllocator } from './numbering';
 import { refuseObLocked, refuseReconciled, refuseSettled } from './locks';
+import { cancelSchedulesOf, refuseScheduleSource } from './schedules';
 import { buildOb, cancelObItems, EMPTY_OPENING, freezeOpening, obCalc, obMissing, obProblem, obTotals, plainOpening, syncObItems } from './opening';
 import { firstOpenDate, isClosed, monthLabelTh } from './periods';
 import { balanceOf, certError, cleanAllocations, fiscalAllocations, freezeWht, groupTotals, payDefaults, payLines, payoutOf, resolvedBankId, settleExtras, settleProblem, settleTotals, withBankSnapshot } from './settlement';
@@ -477,6 +478,7 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
   if (blockingLocks(d).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ยกเลิกไม่ได้');
   refuseReconciled(st, d); // FN2: matched to a bank line - the exit is to unmatch it first
   refuseSettled(st, d); // FN3: a leg of a posted settlement - the exit is to reverse the settlement
+  refuseScheduleSource(st, d); // AC4: a live amortisation run on one of its lines - the exit is to stop / reverse the schedule
   if (d.type === 'OB') refuseObLocked(st, d); // AC3: an item settled or matched - the exit is to cancel the RC / PV or unmatch
   if (d.type === 'JV') beforeJvCancel(st, d, actor, !!opts?.system); // AC1: a reversed JV and a reversal are final; a pending auto-reversal goes with its accrual
   // SP0 §7.4: an applied receipt (TI) or settlements (IV) block a cancel; N-class documents and a CN / DN being cancelled do not. S5 adds: a TI with a live CN / DN against it (below).
@@ -487,6 +489,7 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
   const next: Stored = { ...rest, status: 'cancelled', version: d.version + 1, cancel: { reasonCode, reasonText, at: stamp() } };
   put(st, next);
   if (d.type === 'OB') cancelObItems(st, id);
+  if (d.type === 'PB' || d.type === 'JV') cancelSchedulesOf(st, d, actor); // AC4: no live run (the cancel was allowed): the schedules on it are cancelled with it
   if (d.type === 'PV') syncWts(st, id, actor); // a cancelled voucher withholds nothing: its certificates are cancelled with it
   const released = st.links.filter((l) => l.from === id && l.active);
   st.links = st.links.map((l) => (l.from === id && l.active ? { ...l, active: false } : l)); // returns converted quantity, un-settles receipts
@@ -625,6 +628,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   const totals = totalsOf(st, d.companyId, d.type, fin, d.id);
   refuseReconciled(st, d, { header: fin.header, totals }); // FN2: a matched document keeps its cash, bank account and date; anything else stays editable
   refuseSettled(st, d, { header: fin.header, totals }); // FN3: a leg of a posted settlement keeps its amount, deposit, party and date
+  refuseScheduleSource(st, d, { header: fin.header, lines: fin.lines }); // AC4: a line with a live amortisation run keeps its money, account and date
   const payout = payoutOf(st, d.companyId, { id: d.id, type: d.type, ...fin, totals });
   const reapprove = reviseNeedsApproval(st, d, payout, fin.allocations); // C1: more money than was approved needs an approver in the same command
   if (reapprove) {

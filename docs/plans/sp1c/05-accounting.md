@@ -177,10 +177,10 @@ Missing runs show on the period-close checklist (AC6).
 amortisation of an annual insurance PB line 12,000.00 over 12 months from 2026-07 (3 runs done). Non-VAT: recurring IV.
 Keys `schedRecurringTi`, `schedAmortisation`.
 
-- [ ] **Step 1: Failing tests** — plan residue in the last month; run creates a draft (not issued); amortisation run
+- [x] **Step 1: Failing tests** — plan residue in the last month; run creates a draft (not issued); amortisation run
   balances; double run in the same month refused (`schedule.already_run`). e2e: `screenContract` schedules list
   (`both`, forbiddenRole operator) and detail; run-now → a draft TI appears in the TI list's draft view.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.** (AC4: `schedules.test.ts` written first and red on the missing module; every money guard and invariant mutation-checked, see task-AC4-report.md)
 - [ ] **Step 6: Controller commits** — `feat(accounting): recurring templates and amortisation schedules`.
 
 ---

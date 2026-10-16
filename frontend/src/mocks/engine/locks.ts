@@ -6,8 +6,9 @@ import { MockError } from './log';
 import { periodLock } from './periods';
 import { fromSatang, toSatang } from './money';
 import { jvLock } from './journal';
-import { docViewHref } from '@/descriptors';
+import { docEditHref, docViewHref } from '@/descriptors';
 import { itemsOf, plainOpening } from './opening';
+import { scheduleLock } from './schedules';
 import { resolvedBankId } from './settlement';
 
 /** The locks a document READS with (single derivation: the doc GET handler and the fixture predicates both call this).
@@ -18,8 +19,9 @@ export function derivedLocks(st: MockState, d: { id?: string; type?: DocType; lo
   const r = live && d.id ? reconciliationLock(st, d.id) : undefined;
   const s = live && d.id ? settlementLock(st, d.id) : undefined;
   const v = live ? jvLock(st, d) : undefined; // AC1: a reversed JV, and a reversal, are final
+  const sc = live ? scheduleLock(st, d) : undefined; // AC4: a live amortisation run on one of its lines
   const o = live && d.id && d.type === 'OB' && !d.header.obBatchId ? obLock(st, d.id) : undefined; // AC3: an opening item already settled or matched
-  return [...(s ? d.locks.filter((l) => l.kind !== 'settlement') : d.locks), ...(r ? [r] : []), ...(s ? [s] : []), ...(v ? [v] : []), ...(o ? [o] : []), ...(p && !v ? [p] : [])];
+  return [...(s ? d.locks.filter((l) => l.kind !== 'settlement') : d.locks), ...(r ? [r] : []), ...(s ? [s] : []), ...(v ? [v] : []), ...(sc ? [sc] : []), ...(o ? [o] : []), ...(p && !v ? [p] : [])];
 }
 
 /** The cash an RC / PV moves (satang): `totals.cash`, or total - WHT for a document stored without it. */
@@ -72,7 +74,7 @@ export const importedBanks = (st: MockState, d: { id: string; companyId?: string
   (d.opening?.bank ?? []).map((b) => b.accountId).filter((a) => st.bankImports.some((i) => i.accountId === a && (!d.companyId || i.companyId === d.companyId)) || st.bankLines.some((l) => l.accountId === a && (l.matches?.length ?? 0) > 0));
 const importLock = (st: MockState, d: { id: string; opening?: DocOpening }): Lock | undefined => {
   const doc = st.docs.find((x) => x.id === d.id), banks = importedBanks(st, { id: d.id, companyId: doc?.companyId, opening: d.opening });
-  return banks.length ? { kind: 'reconciliation', reason: `บัญชีธนาคารที่ยอดยกมานี้เปิดไว้ (${banks.map((a) => st.bankAccounts.find((b) => b.id === a)?.nameTh ?? a).join(', ')}) มี statement นำเข้าแล้ว`, exits: ['แก้ไขยอดยกมา (ขั้นตอนอื่น รายการอื่น หรือบัญชีอื่นแก้ได้ แต่ยอด statement ของบัญชีนี้และวันตัดยอดต้องคงเดิม)'] } : undefined;
+  return banks.length ? { kind: 'reconciliation', reason: `บัญชีธนาคารที่ยอดยกมานี้เปิดไว้ (${banks.map((a) => st.bankAccounts.find((b) => b.id === a)?.nameTh ?? a).join(', ')}) มี statement นำเข้าแล้ว`, exits: ['แก้ไขยอดยกมา (ขั้นตอนอื่น รายการอื่น หรือบัญชีอื่นแก้ได้ แต่ยอด statement ของบัญชีนี้และวันตัดยอดต้องคงเดิม)'], href: docEditHref('OB', d.id) } : undefined;
 };
 export const obLock = (st: MockState, batchId: string): Lock | undefined => itemLock(st, batchId) ?? importLock(st, { id: batchId, opening: st.docs.find((x) => x.id === batchId)?.opening });
 

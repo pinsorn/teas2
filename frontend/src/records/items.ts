@@ -4,7 +4,7 @@ const f = (key: string) => `records.fields.${key}`;
 const opt = (group: string, values: string[]) => values.map((value) => ({ value, labelKey: `records.options.${group}.${value}` }));
 
 /** The mock `expense-categories` fixture's codes (labels are messages); ST2 turns this into a server-owned list. */
-export const EXPENSE_CATEGORY_CODES = ['rent', 'services', 'advertising', 'transport', 'entertainment', 'supplies', 'capex-equipment', 'cost-of-sales'];
+export const EXPENSE_CATEGORY_CODES = ['rent', 'services', 'advertising', 'transport', 'entertainment', 'supplies', 'capex-equipment', 'cost-of-sales', 'prepaid'];
 
 export const item: RecordDescriptor = {
   kind: 'item', basePath: '/master/items', titleKey: 'records.item.title', searchPlaceholderKey: 'records.item.search',

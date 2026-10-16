@@ -130,6 +130,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
     if (lock.kind === 'settlement') return lock.href ? { onClick: () => router.push(lock.href!) } : { onClick: () => setTab('chain') }; // FN3: a lock from a settlement record leads to it (reverse it there); a receipt's goes to the chain
     if (lock.kind === 'reversal' && lock.exits.length) return { onClick: () => setTab('ledger') }; // a reversal JV: the กลับรายการ action is on its ledger tab
     if (lock.kind === 'reconciliation' && lock.href) return { onClick: () => router.push(lock.href!) }; // the bank line, where the match is cancelled
+    if (lock.kind === 'schedule' && lock.href) return { onClick: () => router.push(lock.href!) }; // AC4: the amortisation schedule, where it is stopped / its runs reversed
     return undefined;
   };
 

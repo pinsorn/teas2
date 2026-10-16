@@ -32,7 +32,7 @@
     "actions": {
       "submit": "Submit for approval", "approve": "Approve", "approveAndIssue": "Approve and issue", "sendBack": "Send back for changes", "whyPaid": "Paid in full, nothing left to pay",
       "label": "Actions", "issueDraft": "Save and issue…", "edit": "Edit", "print": "Print", "copy": "Copy as new",
-      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "lockedReconciliation": "Cannot cancel ({reason}); use “Cancel match” in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyFinal": "This voucher is final (reversed, or itself a reversal), so it cannot be edited", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "receive": "Receive payment", "whyInclusiveNote": "This invoice is priced VAT-inclusive, so a credit / debit note cannot be issued directly. Use Edit (a correction plan) instead.", "issueCn": "Issue credit note", "issueDn": "Issue debit note", "issuePcn": "Record vendor credit note", "issuePdn": "Record vendor debit note", "markDelivered": "Delivered", "markSent": "Mark as sent to vendor", "whyNothingRemaining": "Every line is already converted in full; there is nothing to close", "whyClosed": "The remainder is closed, so it cannot be converted; revise the document to reopen it"
+      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "lockedReconciliation": "Cannot cancel ({reason}); use “Cancel match” in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyFinal": "This voucher is final (reversed, or itself a reversal), so it cannot be edited", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "receive": "Receive payment", "whyInclusiveNote": "This invoice is priced VAT-inclusive, so a credit / debit note cannot be issued directly. Use Edit (a correction plan) instead.", "issueCn": "Issue credit note", "issueDn": "Issue debit note", "issuePcn": "Record vendor credit note", "issuePdn": "Record vendor debit note", "markDelivered": "Delivered", "markSent": "Mark as sent to vendor", "whyNothingRemaining": "Every line is already converted in full; there is nothing to close", "whyClosed": "The remainder is closed, so it cannot be converted; revise the document to reopen it", "makeRecurring": "Make recurring", "makeAmortisation": "Amortise", "needSchedulePermission": "Needs the {permission} permission"
     },
     "print": { "reprintTitle": "Reprint {doc}", "reprintBody": "A reprint is printed as a 'COPY'. The original has already been printed.", "reprintConfirm": "Print a copy", "back": "Back", "logFailed": "The print could not be logged, so nothing was printed. Try again." },
     "agent": { "draftBy": "Drafted by {name} for {owner}", "draftByNoOwner": "Drafted by {name}", "createdBy": "Created by {name} for {owner}", "createdByNoOwner": "Created by {name}", "report": "View the check report" },
@@ -440,6 +440,10 @@
       "obNew": "Opening balances, new wizard",
       "obDraft": "Opening balances draft (wizard)",
       "obIssued": "Opening balances, issued (non-VAT)",
+      "schedulesList": "Recurring and amortisation",
+      "scheduleAmortisation": "Amortisation schedule (insurance, 3 months done)",
+      "scheduleRecurringTi": "Recurring tax invoice",
+      "nscheduleRecurring": "Recurring invoice (non-VAT)",
       "styleGuide": "Style guide"
     },
     "state": { "normal": "Normal", "empty": "Empty", "loading": "Loading", "error": "Error", "forbidden": "Forbidden", "locked": "Locked" },
@@ -958,6 +962,7 @@
     "vendor": { "title": "Vendors", "search": "Search code, name or tax ID", "empty": "No vendors yet" },
     "item": { "title": "Items and services", "search": "Search code or name", "empty": "No items or services yet" },
     "bank-account": { "title": "Bank and cash accounts", "search": "Search account name or GL code", "empty": "No bank or cash accounts yet" },
+    "schedule": { "title": "Recurring and amortisation", "search": "Search by name", "empty": "No recurring templates or amortisation schedules yet. Make one with “Make recurring” or “Amortise” on a document." },
     "account": { "title": "Chart of accounts", "search": "Search account code or name", "empty": "No accounts in the chart yet", "collapse": "Collapse {code}", "expand": "Expand {code}", "actions": "Actions" },
     "fields": {
       "entityKind": "Party type", "code": "Code", "name": "Name", "nameEn": "Name (English)", "taxId": "Tax ID",
@@ -968,7 +973,8 @@
       "kind": "Type", "unit": "Unit", "unitPrice": "Unit price", "taxCode": "VAT", "whtTypeCode": "Withholding type",
       "usage": "Used for", "usageSales": "Use on sales documents", "usagePurchase": "Use on purchase documents", "expenseCategory": "Expense category",
       "accountNo": "Account number", "accountName": "Account name", "accountCode": "GL account", "bankKind": "Account type",
-      "nameTh": "Account name (Thai)", "parent": "Parent header account", "postable": "Postable (not a header)", "accountClass": "Class", "subClass": "Sub-class", "dbdLine": "DBD statement line", "pnd50Box": "ภ.ง.ด.50 box", "dimensionRules": "Dimension rules"
+      "nameTh": "Account name (Thai)", "parent": "Parent header account", "postable": "Postable (not a header)", "accountClass": "Class", "subClass": "Sub-class", "dbdLine": "DBD statement line", "pnd50Box": "ภ.ง.ด.50 box", "dimensionRules": "Dimension rules",
+      "scheduleName": "Name", "scheduleKind": "Kind", "scheduleFrequency": "Frequency", "nextRun": "Next run", "scheduleTotal": "Amount"
     },
     "options": {
       "entityKind": { "individual": "Individual", "juristic": "Company", "foreign": "Foreign" },
@@ -976,9 +982,11 @@
       "itemKind": { "good": "Goods", "service": "Service" },
       "taxCode": { "S7": "VAT 7%", "Z0": "VAT 0%", "EX": "VAT exempt" },
       "itemUsage": { "sales": "Sales", "purchase": "Purchases", "both": "Sales and purchases" },
-      "expenseCategory": { "rent": "Rent", "services": "Services", "advertising": "Advertising", "transport": "Transport", "entertainment": "Entertainment (input VAT not recoverable)", "supplies": "Supplies", "capex-equipment": "Asset purchase (equipment)", "cost-of-sales": "Cost of sales" },
+      "expenseCategory": { "rent": "Rent", "services": "Services", "advertising": "Advertising", "transport": "Transport", "entertainment": "Entertainment (input VAT not recoverable)", "supplies": "Supplies", "capex-equipment": "Asset purchase (equipment)", "cost-of-sales": "Cost of sales", "prepaid": "Prepaid expense (amortised over months)" },
       "bankKind": { "bank": "Bank account", "cash": "Cash" },
       "bankName": { "kbank": "Kasikornbank", "scb": "Siam Commercial Bank", "bbl": "Bangkok Bank", "ktb": "Krungthai Bank", "bay": "Krungsri", "ttb": "TMBThanachart", "gsb": "Government Savings Bank" },
+      "scheduleKind": { "recurring": "Recurring", "amortisation": "Amortisation" },
+      "scheduleFrequency": { "monthly": "Monthly", "quarterly": "Quarterly", "yearly": "Yearly" },
       "accountClass": {"current-asset": "Current asset", "non-current-asset": "Non-current asset", "current-liability": "Current liability", "non-current-liability": "Non-current liability", "equity": "Equity", "sales-revenue": "Revenue from sales / services", "other-income": "Other income", "cost-of-sales": "Cost of sales", "selling-admin-expense": "Selling and administrative expense", "other-expense": "Other expense", "finance-cost": "Finance cost", "income-tax": "Income tax"},
       "accountSubClass": {"header": "Header", "cash": "Cash", "bank": "Bank deposit", "receivable": "Receivable", "prepayment": "Prepayment", "tax-asset": "Tax asset", "current-asset": "Other current asset", "fixed-asset": "Fixed asset", "accumulated-depreciation": "Accumulated depreciation", "payable": "Payable", "accrual": "Accrual", "tax-liability": "Tax payable", "deposit": "Customer deposit", "payroll-liability": "Payroll payable", "current-liability": "Other current liability", "capital": "Capital", "retained": "Retained earnings", "current-year": "Current-year result", "opening": "Opening balance", "sales": "Sales / services", "contra-sales": "Sales returns / discounts", "other-income": "Other income", "expense": "Expense", "payroll-expense": "Payroll expense"},
       "dbdLine": {"bs-cash": "Cash and bank deposits", "bs-receivables": "Trade receivables", "bs-prepaid": "Prepaid expenses", "bs-tax-asset": "Input VAT / withholding tax receivable", "bs-other-current": "Other current assets", "bs-ppe": "Land, buildings and equipment", "bs-accum-dep": "Less accumulated depreciation", "bs-payables": "Trade payables", "bs-accrued": "Accrued expenses", "bs-tax-payable": "Taxes payable", "bs-deposits-received": "Advances received", "bs-payroll-payable": "Payroll and social security payable", "bs-capital": "Share capital", "bs-retained": "Retained earnings (deficit)", "pl-revenue": "Revenue from sales or services", "pl-other-income": "Other income", "pl-cost": "Cost of sales and services", "pl-selling-admin": "Selling and administrative expenses", "pl-other-expense": "Other expenses", "pl-finance-cost": "Finance costs", "pl-income-tax": "Income tax"},
@@ -989,6 +997,28 @@
       "notFoundTitle": "Record not found", "notFoundBody": "It may have been deleted, or it belongs to another company",
       "docsEmpty": "No documents for this party yet", "openEmpty": "Nothing outstanding", "openTotal": "Total outstanding", "number": "Number", "type": "Type",
       "date": "Date", "status": "Status", "total": "Total", "outstanding": "Outstanding", "due": "Due"
+    }
+  },
+  "schedules": {
+    "list": "Recurring and amortisation", "needManage": "Needs the {permission} permission", "cancel": "Cancel", "saving": "Saving…", "choose": "Choose…",
+    "notFoundTitle": "Schedule not found", "notFoundBody": "This schedule is not in the selected company, or it was removed.",
+    "kind": { "recurring": "Recurring (a template that makes drafts)", "amortisation": "Prepaid expense amortisation" },
+    "frequency": { "monthly": "Monthly", "quarterly": "Quarterly", "yearly": "Yearly" },
+    "fields": { "name": "Name", "frequency": "Frequency", "nextRun": "Next run", "endAfter": "Stop after (runs)", "endAfterHint": "Empty = no limit", "line": "Source line", "total": "Amount to amortise", "months": "Months", "startMonth": "First month", "expenseAccount": "Expense account" },
+    "recurring": { "title": "Make {doc} recurring", "body": "A copy of this document is kept as the template. Each run makes a draft dated the next run date (nothing is issued for you; you check and issue it).", "submit": "Make recurring" },
+    "amortise": { "title": "Amortise {doc}", "body": "Spreads the amount of a line posted to the prepaid expense account over monthly runs. The amount, months, accounts and the plan you see are frozen from now on.", "namePrefix": "Amortise", "submit": "Create schedule" },
+    "detail": {
+      "state": { "active": "Active", "stopped": "Stopped", "done": "Fully amortised", "ended": "Finished" },
+      "runNow": "Run now", "running": "Running…", "edit": "Edit", "stop": "Stop",
+      "ranMonth": "Amortised {month}: {amount}", "ranDraft": "Draft dated {date} created",
+      "stoppedTitle": "Stopped on {at} by {by}", "stoppedRemaining": "The remaining {amount} stays on account {account}.", "endedTitle": "Ran {n} times, finished",
+      "summary": "Summary", "source": "Source document", "total": "Amount to amortise", "months": "Months", "from": "from {month}", "expenseAccount": "Expense account", "prepaidAccount": "Prepaid expense account",
+      "runsDone": "Runs done", "remaining": "Balance left on {account}", "docType": "Document type", "copiedFrom": "copied from {number}", "party": "Party", "frequency": "Frequency", "nextRun": "Next run", "endAfter": "Number of runs", "times": "{n} runs", "noEnd": "No limit",
+      "plan": "Amortisation plan", "month": "Month", "amount": "Amount", "status": "Status", "document": "Document", "planStatus": { "run": "Posted", "next": "Next", "pending": "Waiting" },
+      "template": "Template", "templateHint": "A copy frozen when the schedule was made; it does not follow the original document.", "line": "Line", "account": "Account", "qty": "Qty", "side": "Side", "debit": "Debit", "credit": "Credit",
+      "runs": "Runs", "noRuns": "Never run yet", "date": "Date", "reversed": "Reversed", "posted": "Posted", "draftMade": "Draft created", "reverseHint": "If a month was posted wrongly, reverse the latest run's voucher (on its Ledger tab) and run that month again.",
+      "stopTitle": "Stop “{name}”", "stopBodyAmort": "Nothing more will be amortised. The remaining {amount} stays on account {account}. A stopped schedule cannot be restarted. The stop is audited.", "stopBodyRecurring": "No more drafts will be made. The stop is audited.", "stopReason": "Reason (optional)", "cancel": "Back", "stopping": "Stopping…", "stopConfirm": "Stop",
+      "editTitle": "Edit", "frozenHint": "The amount, months, accounts and plan are frozen from creation. Only the name can change.", "templateDoc": "Edit template: copy again from document no.", "templateDocHint": "Number of a {type} document (empty = keep the template)", "save": "Save"
     }
   },
   "settlement": {
@@ -1207,6 +1237,7 @@
     "bank_reconcile": "Reconcile bank accounts",
     "ledger_read": "Read ledger",
     "ledger_coa_manage": "Manage chart of accounts",
+    "ledger_schedule_manage": "Manage recurring documents and amortisation schedules",
     "payroll_read": "Read payroll data",
     "audit_read": "Read audit trail",
     "settings_manage": "Manage settings",

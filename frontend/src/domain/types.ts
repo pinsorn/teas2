@@ -65,7 +65,8 @@ export interface DocHeader { partyId?: string; documentDate: IsoDate; dueDate?: 
   /** PB: the vendor paperwork is complete (เอกสารครบ). Absent = complete; `false` still issues but the Home inbox counts it (HC1). */ complete?: boolean;
   /** OB, server-owned (never accepted from a caller): a frozen open item (`obSide`) or in-transit bank item (`obKind`) of the opening-balance batch `obBatchId`. */ obBatchId?: string; obSide?: ObSide; obKind?: 'DIT' | 'OP';
   /** JV (accrual): on issue the system posts the reversing entry on day 1 of the next month. */ autoReverse?: boolean;
-  /** JV, server-owned (never accepted from a caller): the JV this one reverses; `autoReversal` = the system's own reversal of an `autoReverse` accrual. */ reversalOf?: string; autoReversal?: true }
+  /** JV, server-owned (never accepted from a caller): the JV this one reverses; `autoReversal` = the system's own reversal of an `autoReverse` accrual. */ reversalOf?: string; autoReversal?: true;
+  /** JV, server-owned (AC4): this JV is the run of an amortisation schedule for the plan month `scheduleMonth`. */ scheduleId?: string; scheduleMonth?: string }
 /** AC3 opening balances. `side`: AR / AP = customer / vendor invoices, EMP = owed to an employee (2180), DEP = customer deposit (2140), PRE = vendor prepayment (1140). */
 export type ObSide = 'AR' | 'AP' | 'EMP' | 'DEP' | 'PRE';
 /** `id` and `partyName` are server-owned (set at issue / revise: the id survives a revise that echoes it, the name is the party's AS OF that write and never re-read). */
@@ -82,7 +83,7 @@ export interface ObCheck { debit: Money; credit: Money; plug: Money; plugSide: '
 export interface DocTotals { gross: Money; discount: Money; net: Money; vat: Money; total: Money; wht?: Money; cash?: Money;
   amountInWords: string }
 /** `href`: where an exit button goes when the exit is a page elsewhere (the reconciliation lock: the bank line). */
-export interface Lock { kind: 'period' | 'filing' | 'settlement' | 'reconciliation' | 'reversal'; reason: string; exits: string[]; href?: string }
+export interface Lock { kind: 'period' | 'filing' | 'settlement' | 'reconciliation' | 'reversal' | 'schedule'; reason: string; exits: string[]; href?: string }
 /** Document marks: facts about the document that are not status (customer accepted / rejected a QT, DO delivered, PO sent, SO closed). Never a revision. */
 export type MarkKey = 'accepted' | 'rejected' | 'delivered' | 'sent';
 export interface DocMarks { accepted?: { at: string; by: string }; rejected?: { at: string; by: string; reason: string };
@@ -154,6 +155,16 @@ export interface SettlementRecord { id: string; companyId: string; kind: Settlem
   reversal?: { at: string; by: Actor; reason?: string } }
 /** One unapplied customer deposit (RC) or vendor prepayment (PV): what was kept, what settlements took, what is left. */
 export interface DepositRow { docId: string; type: 'RC' | 'PV'; number: string; documentDate: IsoDate; partyId: string; partyName: string; amount: Money; applied: Money; remaining: Money }
+/** AC4 schedules. Recurring: a frozen copy of the template, "run now" makes a DRAFT dated `nextRun`. Amortisation: everything is FROZEN at creation (total, months, startMonth, both accounts, the plan table);
+ *  a run posts a system JV (`resultDocId`), a reversed run (`reversed`) lets its month run again. `active` is false once stopped, exhausted (recurring `endAfter`) or done (every month run). */
+export type ScheduleFrequency = 'monthly' | 'quarterly' | 'yearly';
+export interface SchedulePlanRow { month: string; amount: Money }
+export interface ScheduleRun { at: IsoDate; resultDocId?: string; amount?: Money; /** amortisation: the plan month */ month?: string; reversed?: boolean }
+export interface ScheduleRecord { id: string; companyId: string; version: number; kind: 'recurring' | 'amortisation'; name: string; active: boolean;
+  frequency: ScheduleFrequency; nextRun: IsoDate; endAfter?: number; /** recurring: the day of month the schedule started on (a 31st is kept through a short month) */ day?: number;
+  template?: { type: DocType; header: Omit<DocHeader, 'documentDate'>; lines: DocLine[] };
+  source?: { docId: string; lineId?: string }; total?: Money; months?: number; startMonth?: string; expenseAccount?: string; prepaidAccount?: string; plan?: SchedulePlanRow[];
+  runs: ScheduleRun[]; stopped?: { at: string; by: Actor; reason?: string }; createdAt: string; createdBy: Actor }
 export interface ActivityEntry{ id: string; at: string; actor: Actor; action: string; detail?: string; reportId?: string }
 export interface FieldChange { path: string; before: string | null; after: string | null }
 export interface Revision { revision: number; at: string; actor: Actor; reason?: string; snapshot: Doc; diff: FieldChange[] }

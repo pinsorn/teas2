@@ -344,7 +344,7 @@ describe('the P2 seed (hand-checked)', () => {
     expect(buildChain(st, 'po-part').nodes.find((x) => x.id === 'po-part')!.progress).toBe('รับวางบิลแล้ว 70/140');
     expect(period(VAT, '2026-10')).toBe(sat('5719.00')); // + pb-prep 70.00 and pb-net 280.00 (FN3)
     expect(period(VAT, '2026-12')).toBe(sat('595.00'));
-    expect(gl(VAT, '2110')).toBe(-sat('64484.00')); // Σ outstanding of the live bills: 0 (pb-1, paid) + 12,305 (pb-2, half paid) + 1,033 (pb-po, 1,000 paid) + 34,240 + 9,095 + 2,461 + 1,070 (pb-prep) + 4,280 (pb-net), FN3
+    expect(gl(VAT, '2110')).toBe(-sat('76484.00')); // Σ outstanding of the live bills: 0 (pb-1, paid) + 12,305 (pb-2, half paid) + 1,033 (pb-po, 1,000 paid) + 34,240 + 9,095 + 2,461 + 1,070 (pb-prep) + 4,280 (pb-net), FN3, + 12,000 (pb-ins, AC4)
   });
   it('pb-incomplete issued with its paperwork flag off; the pb-d1 draft posts nothing', () => {
     expect(get('pb-incomplete')).toMatchObject({ status: 'issued', header: { complete: false } });

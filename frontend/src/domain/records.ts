@@ -14,5 +14,5 @@ export interface FieldSpec { key: string; kind: FieldKind; labelKey: string; req
 export interface RecordColumn { key: string; labelKey: string; align?: 'start' | 'end'; kind?: 'text' | 'money' | 'bool' | 'date';
   /** The value is a code: show the label `records.options.<optionKey>.<value>`. */ optionKey?: string }
 export interface RecordDescriptor { kind: RecordKind; basePath: string; titleKey: string; permissions: { read: string; manage: string };
-  columns: RecordColumn[]; fields: FieldSpec[]; detail: boolean; /** Rendered as an indented tree by `TreeRecordList` (rows carry `parent`). */ tree?: boolean; vat?: VatScope; searchPlaceholderKey: string }
+  columns: RecordColumn[]; fields: FieldSpec[]; detail: boolean; /** No "create" button on the list: records are made from elsewhere (a document's action). */ noCreate?: boolean; /** Rendered as an indented tree by `TreeRecordList` (rows carry `parent`). */ tree?: boolean; vat?: VatScope; searchPlaceholderKey: string }
 export interface RecordRow { id: string; version: number; active: boolean; inUse?: boolean; [field: string]: unknown }

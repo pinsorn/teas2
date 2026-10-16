@@ -17,7 +17,11 @@ const NOB_LINES: [string, string, string, string][] = [
   ['2170', '0.00', '6000.00', 'เงินเดือนค้างจ่าย'], ['3100', '0.00', '30000.00', 'ทุนจดทะเบียน'], ['3200', '0.00', '8000.00', 'กำไรสะสม'],
 ];
 
+/** AC4: the annual fire-insurance bill, one line on the prepaid-expense category (1150): the source of the seeded amortisation schedule (fixtures/specs/schedules.ts). */
+const INS: DocLine = { id: 'pb-ins-l1', description: 'เบี้ยประกันอัคคีภัยอาคารสำนักงาน (1 ก.ค. 69 - 30 มิ.ย. 70)', qty: '1', unit: 'ปี', unitPrice: '12000.00', taxCode: 'EX', expenseCategory: 'prepaid' };
+
 export const ACCOUNTING_SPECS: SeedSpec[] = [
+  { id: 'pb-ins', type: 'PB', companyId: 'co-vat', date: '2026-07-01', partyId: 'pv-02', status: 'issued', header: { vendorDocNumber: 'INS-2026-0701', vendorDocDate: '2026-07-01', dueDate: '2026-07-31' }, lines: [INS] },
   { id: 'nob-1', type: 'OB', companyId: 'co-nonvat', date: '2025-12-31', status: 'issued', header: { notes: 'ยอดยกมา ณ วันเริ่มใช้ระบบ' },
     lines: NOB_LINES.map(([c, d, cr, t], i) => ol('nob-1', i + 1, c, d, cr, t)),
     opening: { openItems: [

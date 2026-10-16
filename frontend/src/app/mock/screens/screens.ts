@@ -28,6 +28,7 @@ export const BANK_BASE = '/finance/bank-accounts';
 export const SETTLEMENT_BASE = '/finance/settlements';
 export const JV_BASE = '/accounting/journal-vouchers';
 export const OB_BASE = '/accounting/opening-balances';
+export const SCHEDULE_BASE = '/accounting/schedules';
 // names are keys of messages `screens.name.*`; fixture keys live in src/mocks/fixtures/ids.ts (later tasks append their screens here)
 export const SCREENS: Screen[] = [
   { name: 'home', route: '/', company: 'both', states: true },
@@ -159,5 +160,9 @@ export const SCREENS: Screen[] = [
   { name: 'obNew', route: `${OB_BASE}/new`, company: 'vat', states: true },
   { name: 'obDraft', route: { fixture: 'obDraft', base: OB_BASE, suffix: '/edit' }, company: 'vat', states: true },
   { name: 'obIssued', route: { fixture: 'obIssued', base: OB_BASE }, company: 'nonvat', states: true },
+  { name: 'schedulesList', route: SCHEDULE_BASE, company: 'both', states: true },
+  { name: 'scheduleAmortisation', route: { fixture: 'schedAmortisation', base: SCHEDULE_BASE }, company: 'vat', states: true },
+  { name: 'scheduleRecurringTi', route: { fixture: 'schedRecurringTi', base: SCHEDULE_BASE }, company: 'vat', states: true },
+  { name: 'nscheduleRecurring', route: { fixture: 'nschedRecurring', base: SCHEDULE_BASE }, company: 'nonvat', states: true },
   { name: 'styleGuide', route: '/style-guide', company: 'both', states: false },
 ];

@@ -82,7 +82,9 @@ export function buildOb(st: MockState, companyId: string, body: Part): { lines: 
     for (const p of new Set(items.map((i) => i.partyId))) line(code, sg * items.filter((i) => i.partyId === p).reduce((n, i) => n + (satOf(i.amount) || 0), 0), `${RULE}: ${def.role} → ${code}`, partyName(p));
   }
   // 1: bank / cash accounts: statement balance + deposits in transit - outstanding payments
-  const bankCodes = new Set([...st.bankAccounts.filter((b) => b.companyId === companyId).map((b) => b.accountCode), ...op.bank.map((b) => op.codes?.[`BANK:${b.accountId}`]).filter((c): c is string => !!c)]);
+  // an account the batch opened is tied by the code it froze (a draft: its live code); the others by their live code - a later re-binding of an opened account moves no tie
+  const opened = new Set(op.bank.map((b) => b.accountId));
+  const bankCodes = new Set([...st.bankAccounts.filter((b) => b.companyId === companyId && !opened.has(b.id)).map((b) => b.accountCode), ...op.bank.map((b) => op.codes?.[`BANK:${b.accountId}`] ?? bankOf(st, companyId, b.accountId)?.accountCode).filter((c): c is string => !!c)]);
   const bankSub = new Map<string, number>();
   for (const b of op.bank) {
     const ba = bankOf(st, companyId, b.accountId);

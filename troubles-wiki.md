@@ -156,3 +156,13 @@ Entry format — terse, greppable by symptom:
 - **Symptom:** an edit form whose `<select>` options load asynchronously (GL account picker) opens on the placeholder instead of the stored value.
 - **Root cause:** react-hook-form sets the select's value at mount; a fallback `<option value={current}>` that is later replaced by the real option (different element) drops the selection.
 - **Fix:** render ONE keyed list that always contains the current value (real option when known, bare code otherwise), so the DOM option is never swapped out (`kit/record-form/fields.tsx`, kind `account`).
+
+## A new seed document breaks older hand-checked tests: account 1150 "unused", AP total (AC4)
+- **Symptom:** after seeding the insurance bill `pb-ins`, `accounts.test.ts` ("1150 is not in use", "code 1150 -> 1140 is taken") and `purchase-vat.test.ts` (GL 2110 = -64,484.00) fail; the item form test lists one category fewer than `EXPENSE_CATEGORIES`.
+- **Root cause:** `pb-ins` (12,000.00 on the new `prepaid` expense category -> 1150, AP 12,000.00) is the first seed line on 1150 for the VAT company, and `records/items.ts` keeps its own copy of the category codes (`EXPENSE_CATEGORY_CODES`) next to `fixtures/expense-categories.ts`.
+- **Fix:** hand-checked totals carry the new bill (76,484.00); tests that need an UNUSED account use 1171; a new expense category is added in BOTH lists (and `th/en.json` `records.options.expenseCategory`). The category is the one balance-sheet category: `items.test.ts` exempts it from the "expense group" check.
+
+## `new Date("2026-13-01T00:00:00Z").toISOString()` throws RangeError, it does not return a different date (AC4)
+- **Symptom:** a record `validate()` that checks a date string by round-tripping through `Date` answers 500 / an unhandled MSW exception for `2026-13-01` instead of a field error.
+- **Root cause:** an out-of-range month gives an Invalid Date, and `toISOString()` throws on it; the round-trip trick only catches days that roll over (`02-30`).
+- **Fix:** guard with `!Number.isNaN(Date.parse(...))` first (`validDate` in `engine/schedules.ts`).

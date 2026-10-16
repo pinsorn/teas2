@@ -113,6 +113,9 @@ export const endpoints = {
     api<RecordRow>('PUT', `/records/${kind}/${encodeURIComponent(id)}`, { ...values, version }),
   setRecordActive: (kind: RecordKind, id: string, active: boolean, version: number) =>
     api<RecordRow>('POST', `/records/${kind}/${encodeURIComponent(id)}/active`, { active, version }),
+  /** AC4 schedules: "รันตอนนี้" (a plan month for an amortisation, a draft for a recurring one) and "หยุด"; both need ledger.schedule.manage, `version` is the record kit's concurrency check. */
+  runSchedule: (id: string, version: number, month?: string) => api<RecordRow>('POST', `/schedules/${encodeURIComponent(id)}/run`, { version, ...(month ? { month } : {}) }),
+  stopSchedule: (id: string, version: number, reason?: string) => api<RecordRow>('POST', `/schedules/${encodeURIComponent(id)}/stop`, { version, ...(reason ? { reason } : {}) }),
   getReport: (kind: ReportKind, params: Record<string, string>) => api<ReportModel>('GET', `/reports/${kind}${qs(params)}`),
   /** The CSV the server builds for the same parameters (text/csv, BOM, CRLF). */
   exportReport: async (kind: ReportKind, params: Record<string, string>): Promise<Blob> => {

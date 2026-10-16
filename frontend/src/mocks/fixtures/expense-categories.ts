@@ -17,4 +17,5 @@ export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   { code: 'supplies', nameTh: 'ค่าวัสดุสิ้นเปลือง', accountCode: '5160', recoverableVat: true },
   { code: 'capex-equipment', nameTh: 'ซื้อสินทรัพย์ (อุปกรณ์)', recoverableVat: true, capex: true, assetClass: 'equipment' },
   { code: 'cost-of-sales', nameTh: 'ต้นทุนขาย', accountCode: '5100', recoverableVat: true },
+  { code: 'prepaid', nameTh: 'ค่าใช้จ่ายจ่ายล่วงหน้า', accountCode: '1150', recoverableVat: true }, // AC4: a bill line on this category lands on the prepaid account (the source of an amortisation schedule)
 ];

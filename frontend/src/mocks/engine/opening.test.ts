@@ -463,3 +463,22 @@ describe('F3: open items keep a server-owned id across revises', () => {
     expect(doc(idA).status).toBe('cancelled');
   });
 });
+
+describe('AC4 carries: the bank-code set of the ties, and the import lock exit', () => {
+  const bank = () => OP({ bank: [{ accountId: 'ba-scb', statement: '10000.00', inTransit: [] }] });
+  it('an opened account is tied by the code frozen at issue; live codes only for the accounts the batch did not open', () => {
+    const ob = post([L('1122', '10000.00', '0.00')], bank()), o = doc(ob.id);
+    st.bankAccounts.find((b) => b.id === 'ba-scb')!.accountCode = '1123'; // re-bound after the batch fixed it
+    const lines = [...o.lines, L('1123', '500.00', '0.00'), L('1121', '300.00', '0.00')]; // a line on the live code of the opened account, and one on a bank account the batch did not open
+    const keys = compute(st, CO, 'OB', { header: o.header, lines, opening: o.opening }, { docId: ob.id }).opening!.ties.map((t) => t.key);
+    expect(keys).toContain('BANK:1122'); // the frozen code
+    expect(keys).not.toContain('BANK:1123'); // not the live code of an account the batch opened
+    expect(keys).toContain('BANK:1121'); // a bank account the batch did not open keeps its live code
+  });
+  it('the import lock exit is a button: it leads to the batch edit page', () => {
+    const ob = post([L('1122', '10000.00', '0.00')], bank());
+    st.bankImports.push({ id: 'imp-p', companyId: CO, accountId: 'ba-scb', from: '2026-07-01', to: '2026-07-31' } as never);
+    const lock = derivedLocks(st, doc(ob.id)).find((l) => l.kind === 'reconciliation')!;
+    expect(lock.href).toBe(`/accounting/opening-balances/${ob.id}/edit`);
+  });
+});

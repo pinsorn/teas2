@@ -5,6 +5,7 @@ import { accountImpl } from './accounts';
 import { bankAccountImpl } from './bank-accounts';
 import { itemImpl } from './items';
 import { partyImpl } from './parties';
+import { scheduleImpl } from './schedules';
 
 /** One implementation per record kind: the handlers in `handlers/records.ts` are generic over this. */
 export interface RecordKindImpl {
@@ -21,4 +22,4 @@ export interface RecordKindImpl {
   canDeactivate?: (st: MockState, companyId: string, id: string) => string | undefined;
 }
 
-export const RECORD_IMPLS: Partial<Record<RecordKind, RecordKindImpl>> = { customer: partyImpl('customer'), vendor: partyImpl('vendor'), item: itemImpl, 'bank-account': bankAccountImpl, account: accountImpl };
+export const RECORD_IMPLS: Partial<Record<RecordKind, RecordKindImpl>> = { customer: partyImpl('customer'), vendor: partyImpl('vendor'), item: itemImpl, 'bank-account': bankAccountImpl, account: accountImpl, schedule: scheduleImpl };

@@ -10,6 +10,7 @@ import { ADJUSTS, CLOSEABLE, convertTargets, DOC_TYPES, LIVE, MARKS, SETTLES } f
 import type { Doc, DocType, MarkKey } from '@/domain/types';
 import { settleable } from '../doc-editor/SettlementPanel';
 import { ApprovalActions } from './ApprovalActions';
+import { ScheduleActions } from './ScheduleActions';
 
 /** A descriptor may list the conversions it allows; the "convert to…" button (and its dialog) exists only for those. */
 export type ConvertibleDescriptor = DocDescriptor & { convertsTo?: DocType[] };
@@ -96,6 +97,7 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, comp
             {(p) => <Button {...p} variant="outline" onClick={() => onMark?.(m)}>{t(MARK_LABEL[m])}</Button>}
           </Guarded>
         )) : null}
+        {live && !system ? <ScheduleActions doc={doc} permissions={permissions} /> : null}
         {live && !system ? (
           <Guarded why={missing(d.permissions.cancel) ?? locked}>
             {(p) => <Button {...p} variant="outline" onClick={onCancel}>{t('cancel')}</Button>}
