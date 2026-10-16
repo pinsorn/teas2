@@ -57,16 +57,21 @@ const bankFloor = (st: MockState, companyId: string, e: JournalEntryPreview): Jo
   return floor && e.date < floor ? { ...e, date: floor, late: true } : e;
 };
 
-/** A correction's reversal (SP0 5.9): on the ORIGINAL entry's date while that period is open, else late on the first open date (never before a bank GL's go-live). Only a user cancel posts its reversal today. */
+/** Where a new entry may post (SP0 5.9 + R2-1): the later of the bank GL's go-live and the first open date. The go-live floor first, THEN the closed-period shift, so a floor that lands in a closed month moves on to an open one. */
+const placed = (st: MockState, companyId: string, e: JournalEntryPreview): JournalEntryPreview => {
+  const shift = (x: JournalEntryPreview): JournalEntryPreview => (!isPinned() && isClosed(st, companyId, x.date) ? { ...x, date: firstOpenDate(st, companyId), late: true } : x);
+  return shift(bankFloor(st, companyId, shift(e)));
+};
+
+/** A correction's reversal (SP0 5.9): on the ORIGINAL entry's date while that period is open, else late on the first open date (never before a bank GL's go-live, never in a closed month). Only a user cancel posts its reversal today. */
 export const correctionReversal = (st: MockState, companyId: string, e: JournalEntryPreview): JournalEntryPreview =>
-  bankFloor(st, companyId, isPinned() || isClosed(st, companyId, e.date) ? reverseEntry(st, companyId, e) : reversalOf(e, e.date, stamp()));
+  placed(st, companyId, isPinned() || isClosed(st, companyId, e.date) ? reverseEntry(st, companyId, e) : reversalOf(e, e.date, stamp()));
 
 /** D-10: a NEW entry for a document dated in a closed month posts on the first open date, late; the document date is unchanged (I9). */
 const postedNow = (st: MockState, companyId: string, p: JournalPreview): JournalPreview => {
   const [first, ...rest] = p.entries;
   if (!first) return p;
-  const f = !isPinned() && isClosed(st, companyId, first.date) ? { ...first, date: firstOpenDate(st, companyId), late: true } : first;
-  return { entries: [bankFloor(st, companyId, f), ...rest] };
+  return { entries: [placed(st, companyId, first), ...rest] };
 };
 
 export const publicDoc = (d: Stored): Doc => { const { companyId, ...r } = d; void companyId; return structuredClone(r); };
@@ -628,7 +633,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
     const live = prev[prev.length - 1];
     const fresh = ledgerFor(st, getDoc(st, id)).entries[0];
     setJournal(st, id, { entries: [...prev, ...(live && live.kind !== 'reversal' ? [correctionReversal(st, d.companyId, live)] : []),
-      ...(fresh ? [bankFloor(st, d.companyId, { ...fresh, kind: 'correction' as const, postedAt: stamp(), ...(!isPinned() && isClosed(st, d.companyId, fresh.date) ? { date: firstOpenDate(st, d.companyId), late: true } : {}) })] : [])] });
+      ...(fresh ? [placed(st, d.companyId, { ...fresh, kind: 'correction' as const, postedAt: stamp() })] : [])] });
   }
   if (d.type === 'PV') { syncWts(st, id, actor); settlePaidUpRecords(st, id, [...(d.allocations ?? []), ...(next.allocations ?? [])].map((a) => a.targetId)); } // changed WHT: the old certificates are cancelled and new ones issued; unchanged WHT keeps them (§7.3 L)
   const at = stamp();

@@ -107,7 +107,7 @@ export interface BankLine { id: string; accountId: string; importId: string; dat
   /** Matched to a transfer journal between two own accounts (instead of documents): `side` is this line's own side of it. */ transfer?: { journalId: string; side: 'out' | 'in' } }
 /** A journal the reconciliation wrote (no document behind it): the fee / rounding difference of a match, an inline journal of a statement line, or the seeded opening balance. A reversal is appended, an entry is never edited. */
 export interface BankJournal { id: string; companyId: string; accountId: string; lineId?: string; kind: 'fee' | 'inline' | 'opening' | 'transfer'; label: string; entries: JournalEntryPreview[];
-  /** A transfer: the account on the other side (the journal is Dr receiving / Cr paying, `accountId` is the one whose line made it). */ otherAccountId?: string }
+  /** A transfer: the account on the other side (the journal is Dr receiving / Cr paying, `accountId` is the one whose line made it). */ otherAccountId?: string; /** every statement line ever matched to a transfer (for the history of a reversal) */ lineIds?: string[] }
 export interface BankImport { id: string; accountId: string; fileName: string; format: 'kbiz-csv' | 'kplus-pdf'; from: IsoDate; to: IsoDate;
   opening: Money; closing: Money; lines: number; at: string; warnings: string[] }
 export interface DocSummary { id: string; type: DocType; number?: string; status: DocStatus; documentDate: IsoDate;
