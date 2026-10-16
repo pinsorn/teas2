@@ -7,3 +7,4 @@
 | 2026-10-16 | SP1c S4 review (receipts, WHT, deposits, reissue bank) | opus-reviewer | money diff — CLAUDE.md money → Opus |
 | 2026-10-16 | SP1c S5 review (CN/DN, rule B, cap, ม.86/10) | opus-reviewer | money + tax compliance diff — CLAUDE.md money → Opus |
 | 2026-10-16 | SP1c P2 review (PB / PCN / PDN, input VAT, claim period) | opus-reviewer | money + tax compliance diff — CLAUDE.md money → Opus |
+| 2026-10-16 | SP1c P3 review (PV, WHT certificates, gross-up, settlement) | opus-reviewer | money + WHT compliance diff — CLAUDE.md money → Opus |

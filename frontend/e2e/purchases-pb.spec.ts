@@ -123,11 +123,32 @@ test('PB view -> บันทึกใบลดหนี้จากผู้ข
   await expect(page.getByRole('link', { name: /PB-\d{6}-\d{4}/ }).first()).toBeVisible(); // the chain also reaches pb-po through pv-multi
 });
 
-test('a bill with a live vendor credit note and a payment voucher cannot be cancelled (pv-pay1 pays pb-1 after pcn-1); the operator cannot cancel or record vendor notes at all', async ({ page }) => {
-  await page.goto('/'); const id = await fixtureId(page, 'pbIssuedUnpaid'); // pb-1 has pcn-1
+test('a settled bill (pv-pay1 pays pb-1 after pcn-1) cannot be cancelled: the settlement lock disables the button', async ({ page }) => {
+  await page.goto('/'); const id = await fixtureId(page, 'pb1Settled'); // pb-1 has pcn-1 AND pv-pay1
   await page.goto(`${BASE}/${id}`);
-  await expect(page.getByRole('button', { name: 'ยกเลิกเอกสาร' })).toBeDisabled(); // pv-pay1 paid it: the settlement lock stops the cancel (cancel the voucher first)
+  await expect(page.getByRole('button', { name: 'ยกเลิกเอกสาร' })).toBeDisabled(); // pv-pay1 paid it: cancel the voucher first
   expect((await doc(page, 'PB', id)).status).toBe('settled');
+});
+
+test('an UNPAID bill with a live vendor credit note cannot be cancelled (the note, not a payment, stops it); the operator cannot cancel or record vendor notes at all', async ({ page }) => {
+  await page.goto('/'); await fixtureId(page, 'pbIssuedUnpaid');
+  const id = await page.evaluate(async () => { // a fresh bill and a credit note on it: no voucher, so only the live note can be what refuses the cancel
+    const h = { 'content-type': 'application/json' };
+    const make = async (type: string, body: unknown) => { const d = await (await fetch(`/bff/v1/docs/${type}`, { method: 'POST', headers: h, body: JSON.stringify(body) })).json(); return (await (await fetch(`/bff/v1/docs/${type}/${d.id}/issue`, { method: 'POST', headers: h, body: JSON.stringify({ version: d.version }) })).json()) as { id: string };
+    };
+    const pb = await make('PB', { header: { partyId: 'pv-03', documentDate: '2026-10-14' }, lines: [{ id: 'l1', description: 'x', qty: '1', unit: 'งาน', unitPrice: '1000.00', taxCode: 'S7', expenseCategory: 'services' }] });
+    await make('PCN', { header: { documentDate: '2026-10-14', refDocId: pb.id, reasonCode: 'PRICE_REDUCTION' }, lines: [{ id: 'c1', description: 'x', qty: '1', unit: 'งาน', unitPrice: '100.00', taxCode: 'S7', sourceLineId: 'l1' }] });
+    return pb.id;
+  });
+  await page.goto(`${BASE}/${id}`);
+  await expect(page.getByRole('button', { name: 'ยกเลิกเอกสาร' })).toBeEnabled(); // not settled: the button works, the server refuses
+  await page.getByRole('button', { name: 'ยกเลิกเอกสาร' }).click();
+  const dlg = page.getByRole('alertdialog');
+  await dlg.getByRole('combobox').click();
+  await page.getByRole('option').first().click();
+  await dlg.getByRole('button', { name: 'ยืนยันยกเลิก' }).click();
+  await expect(dlg.getByText(/มีใบลดหนี้\/ใบเพิ่มหนี้อ้างอิงอยู่/)).toBeVisible();
+  expect((await doc(page, 'PB', id)).status).toBe('issued');
   await page.goto(`${BASE}/${id}?role=operator`);
   await expect(page.getByRole('button', { name: 'ยกเลิกเอกสาร' })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'บันทึกใบลดหนี้จากผู้ขาย' })).toBeDisabled();

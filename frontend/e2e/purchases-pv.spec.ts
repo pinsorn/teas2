@@ -5,7 +5,7 @@ import { screenContract } from './helpers/screen-contract';
 screenContract({ name: 'PV list', path: '/purchases/payment-vouchers', heading: 'ใบสำคัญจ่าย', company: 'both', states: ['empty', 'loading', 'error', 'forbidden'], forbiddenRole: 'admin', roles: ['operator', 'accountant'] });
 screenContract({ name: 'PV view', path: async (p) => `/purchases/payment-vouchers/${await fixtureId(p, 'pvMultiWt')}`, heading: /PV-\d{6}-\d{4}/, company: 'vat', otherCompany: 'not-found', states: ['loading', 'error', 'forbidden', 'locked'], roles: ['operator', 'accountant'] });
 screenContract({ name: 'PV new', path: '/purchases/payment-vouchers/new', heading: 'สร้างใบสำคัญจ่าย', company: 'both', states: ['loading', 'error'] });
-screenContract({ name: 'WT list', path: '/tax/wht-certificates', heading: 'หนังสือรับรองการหักภาษี ณ ที่จ่าย', company: 'both', states: ['empty', 'loading', 'error', 'forbidden'], forbiddenRole: 'operator', roles: ['accountant'] }); // the operator lacks doc.WT.read
+screenContract({ name: 'WT list', path: '/tax/wht-certificates', heading: 'หนังสือรับรองการหักภาษี ณ ที่จ่าย', company: 'both', states: ['empty', 'loading', 'error', 'forbidden'], forbiddenRole: 'admin', roles: ['operator', 'accountant'] }); // the admin lacks doc.WT.read
 screenContract({ name: 'WT view', path: async (p) => `/tax/wht-certificates/${await fixtureId(p, 'wtIssued')}`, heading: /WT-\d{6}-\d{4}/, company: 'vat', otherCompany: 'not-found', states: ['loading', 'error', 'forbidden'], roles: ['accountant'] });
 
 const api = <T,>(page: Page, path: string) => page.evaluate(async (p) => (await fetch(`/bff/v1${p}`)).json(), path) as Promise<T>;

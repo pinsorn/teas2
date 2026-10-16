@@ -4,8 +4,8 @@ const TI = ['doc.TI.read', 'doc.TI.create', 'doc.TI.issue'];
 const PO = ['doc.PO.read', 'doc.PO.create', 'doc.PO.issue']; // operator: author + issue; the accountant adds cancel / correct
 const PB = ['doc.PB.read', 'doc.PB.create', 'doc.PB.issue']; // operator: records and issues a bill; the accountant adds cancel / correct and the vendor notes
 const PB_ALL = [...PB, 'doc.PB.cancel', 'doc.PB.correct', ...['PCN', 'PDN'].flatMap((t) => ['read', 'create', 'issue', 'cancel', 'correct'].map((v) => `doc.${t}.${v}`))];
-const PV = ['doc.PV.read', 'doc.PV.create', 'doc.PV.issue']; // operator: pays vendors; the accountant adds cancel / correct and reads the 50 tawi it issues (WT is read-only for every role)
-const PV_ALL = [...PV, 'doc.PV.cancel', 'doc.PV.correct', 'doc.WT.read'];
+const PV = ['doc.PV.read', 'doc.PV.create', 'doc.PV.issue', 'doc.WT.read']; // operator: pays vendors and hands over the 50 tawi it issues (WT is read-only for every role); the accountant adds cancel / correct
+const PV_ALL = [...PV, 'doc.PV.cancel', 'doc.PV.correct'];
 const READ = ['doc.SO.read', 'doc.DO.read', 'doc.CN.read', 'doc.DN.read'];
 const IV = ['doc.IV.read', 'doc.IV.create', 'doc.IV.issue'], BL = ['doc.BL.read', 'doc.BL.create', 'doc.BL.issue']; // operator: create + issue; the accountant adds cancel / correct
 export const PERMISSIONS_BY_ROLE: Record<Role, string[]> = {

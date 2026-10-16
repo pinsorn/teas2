@@ -4,7 +4,7 @@ import { fromSatang, toSatang } from './money';
 import { MockError } from './log';
 import { type AccountingRole, type PostingContext, resolveRole } from './posting';
 import { categoryOf, isRecoverable } from './purchase-vat';
-import { cashBankId, whtOf } from './settlement';
+import { cashBankId, freezeWht, frozenFigures } from './settlement';
 import { computeDoc, vatBasisOf, vatOf } from './vat';
 
 export interface Totals { net: number; vat: number; total: number; wht: number; cash: number }
@@ -52,7 +52,7 @@ export const POST: Partial<Record<DocType, Rows>> = {
   // PV: payables cleared + expense lines (+ their input VAT) + the WHT we bear (gross-up) = cash paid + WHT payable per return
   // a voucher's own line is a payment with no tax invoice (EX, D-16): per line its category's expense account, or the asset on a capex category - never input VAT (1170), whoever we are (A.4)
   PV: (t, d, st, companyId) => {
-    const w = whtOf(st, companyId, d.header, d.lines, d.allocations); // expense = the part of the tax / gross-up we bear
+    const w = frozenFigures(d.whtFrozen ?? freezeWht(st, companyId, d, d.id)); // the figures fixed at issue (C1); expense = the part of the tax / gross-up we bear
     const rs = computeDoc(d.lines, !!d.header.priceIncludesVat, vatBasisOf(st, companyId, 'PV')).lines;
     const own = d.lines.flatMap((l, i): RolePosting => {
       const cat = categoryOf(st, companyId, l), ctx = { itemId: l.itemId, expenseCategory: cat?.code ?? l.expenseCategory, dimensions: l.dimensions };

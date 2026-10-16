@@ -6,7 +6,7 @@ import { bahtText } from './bahtText';
 import { compute } from './commands';
 import { fromSatang, toSatang } from './money';
 import { notesUpTo } from './notes';
-import { cashBankId, whtOf } from './settlement';
+import { cashBankId, freezeWht } from './settlement';
 type Ctx = ReturnType<typeof ctx>;
 
 const branchLabel = (code?: string) => (!code ? undefined : code === '00000' ? 'สำนักงานใหญ่ (00000)' : `สาขา ${code}`);
@@ -99,7 +99,7 @@ function voucherPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
     const vno = t?.header.vendorDocNumber ? ` (เอกสารผู้ขาย ${t.header.vendorDocNumber})` : '';
     return { description: `${TYPE_TH[a.targetType] ?? a.targetType} ${a.targetNumber ?? a.targetId}${vno}${t ? ` ลงวันที่ ${formatDateBE(t.header.documentDate)}` : ''}`, qty: '', unit: '', unitPrice: '', amount: a.amount, taxCode: 'EX' as const };
   });
-  const whtLines = whtOf(c.st, c.company.id, d.header, d.lines, d.allocations).lines.map((l) => ({ label: `${l.nameTh} ${l.rate} (ฐาน ${formatMoney(l.base)})`, base: l.base, tax: l.tax }));
+  const whtLines = (d.whtFrozen ?? freezeWht(c.st, c.company.id, d, d.id)).lines.map((l) => ({ label: `${l.nameTh} ${l.rate} (ฐาน ${formatMoney(l.base)})`, base: l.base, tax: l.tax }));
   return { ...m, partyLabel: 'ผู้รับเงิน', payment: paymentLine(c, d), whtLines, lines: [...settled, ...m.lines].map((l, i) => ({ ...l, no: i + 1 })) };
 }
 

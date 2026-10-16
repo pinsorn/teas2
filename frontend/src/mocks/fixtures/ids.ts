@@ -12,7 +12,7 @@ export type FixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssued
   | 'ivDraft' | 'ivIssuedUnpaid' | 'ivPartly' | 'ivSettled' | 'blVat' | 'blNonVat'
   | 'poDraft' | 'poSent' | 'poPartlyBilled' | 'poClosed' | 'npoIssued'
   | 'rcMulti' | 'rcNoCert' | 'rcDeposit' | 'nrcCashBill' | 'cnIssued' | 'dnIssued' | 'tiCreditedToZero'
-  | 'pbDraft' | 'pbIssuedUnpaid' | 'pbMixedVat' | 'pbFromPo' | 'pbCapex' | 'pbClaimLate' | 'pbIncomplete' | 'pcnIssued' | 'pdnIssued' | 'npbVatToCost'
+  | 'pbDraft' | 'pbIssuedUnpaid' | 'pb1Settled' | 'pbMixedVat' | 'pbFromPo' | 'pbCapex' | 'pbClaimLate' | 'pbIncomplete' | 'pcnIssued' | 'pdnIssued' | 'npbVatToCost'
   | 'pvMultiWt' | 'pvGrossUp' | 'pvForeign' | 'pvCancelled' | 'wtIssued' | 'wtCancelled'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
 
 /** An issued, untouched TI of pc-01 (the multi-target receipt vector settles two of them). */
@@ -77,7 +77,8 @@ export const FIXTURE_PREDICATES: Record<FixtureKey, (d: D, st: MockState) => boo
   tiCreditedToZero: byId('ti-046', (d) => d.status === 'issued' && d.outstanding === '0.00'), // credited in full by cn-full, never settled
   // P2 purchase bills / vendor notes
   pbDraft: byId('pb-d1', (d) => d.status === 'draft'),
-  pbIssuedUnpaid: byId('pb-1', (d) => LIVE.includes(d.status)), // rent with a vendor credit (pcn-1) against it; paid by pv-pay1 (P3)
+  pbIssuedUnpaid: byId('pb-claim-late', (d) => d.status === 'issued'), // issued, no voucher, no note against it (pb-1 is settled by pv-pay1: pb1Settled)
+  pb1Settled: byId('pb-1', (d) => d.status === 'settled'), // rent with a vendor credit (pcn-1) against it, paid in full by pv-pay1 (P3)
   pbMixedVat: byId('pb-2', (d) => LIVE.includes(d.status)), // services + non-claimable entertainment, with a debit (pdn-1)
   pbFromPo: byId('pb-po', (d) => LIVE.includes(d.status) && !!d.lines[0]?.sourceLineId),
   pbCapex: byId('pb-capex', (d) => d.status === 'issued'),

@@ -1,5 +1,5 @@
 import { ADJUSTS, CREDIT_NOTES, GROUPS, LIVE, SETTLES, isTypeAvailable } from '@/domain/doc-types';
-import type { Allocation, ComputeResult, DocHeader, DocLine, DocTotals, DocType, PartySummary, WhtLine } from '@/domain/types';
+import type { Allocation, ComputeResult, DocHeader, DocLine, DocTotals, DocType, PartySummary, WhtFrozen, WhtLine } from '@/domain/types';
 import type { MockState } from '../store';
 import { bahtText } from './bahtText';
 import { MockError } from './log';
@@ -8,7 +8,7 @@ import { computeDoc, vatBasisOf, vatOf } from './vat';
 import { computeWht, whtTypeOf } from './wht';
 
 type Stored = MockState['docs'][number];
-type Part = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] };
+type Part = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[]; whtFrozen?: WhtFrozen };
 
 const money = (m: string | undefined, code: string): number => {
   try { return m === undefined || m === '' ? 0 : toSatang(m); } catch { throw new MockError(422, code, `จำนวนเงินไม่ถูกต้อง: ${m}`); }
@@ -120,46 +120,62 @@ const placeholderPayee = (): PartySummary => ({ id: '', kind: 'vendor', code: ''
 const payeeOf = (st: MockState, companyId: string, partyId?: string): PartySummary =>
   st.parties.find((p) => p.id === partyId && p.companyId === companyId) ?? placeholderPayee();
 
-/** The WHT bases the bills a voucher pays bring (D-14). A bill's typed lines (its own WHT type, else its item's) stand at their net AFTER the live vendor credit / debit notes that adjust that line
- *  (rule B: a PCN lowers it, a PDN raises it); the payment covers a share of the bill as adjusted (the bill's total less its credits plus its debits), and each line's base is its adjusted net x that
- *  share, rounded half away per line - so a part payment withholds on the part paid and a credit that touched a typed line is not withheld on. Only a PB carries typed lines (EX is P4). */
-export function allocationBases(st: MockState, companyId: string, allocs: Allocation[] | undefined): { net: number; whtTypeCode: string }[] {
-  const out: { net: number; whtTypeCode: string }[] = [];
-  const basis = vatBasisOf(st, companyId, 'PB');
-  for (const a of allocs ?? []) {
-    const bill = st.docs.find((d) => d.id === a.targetId && d.companyId === companyId && d.type === 'PB');
-    if (!bill) continue;
-    const notes = st.docs.filter((n) => LIVE.includes(n.status) && n.companyId === companyId && ADJUSTS[n.type] === 'PB' && n.header.refDocId === bill.id);
-    const sign = (n: { type: DocType }) => (CREDIT_NOTES.includes(n.type) ? -1n : 1n);
-    const adjusted = BigInt(toSatang(bill.totals.total)) + notes.reduce((x, n) => x + sign(n) * BigInt(toSatang(n.totals.total)), 0n);
-    if (adjusted <= 0n) continue;
-    const nets = computeDoc(bill.lines, !!bill.header.priceIncludesVat, basis).lines;
-    bill.lines.forEach((l, i) => {
-      const code = l.whtTypeCode ?? st.items.find((it) => it.id === l.itemId && it.companyId === companyId)?.whtTypeCode;
-      if (!code) return;
-      let net = BigInt(toSatang(nets[i].net));
-      for (const n of notes) {
-        const nn = computeDoc(n.lines, !!n.header.priceIncludesVat, basis).lines;
-        n.lines.forEach((nl, j) => { if (nl.sourceLineId === l.id) net += sign(n) * BigInt(toSatang(nn[j].net)); });
-      }
-      out.push({ net: Number(divRoundHalfAway(net * BigInt(money(a.amount, 'settle.invalid_amount')), adjusted)), whtTypeCode: code });
-    });
-  }
+const noteSign = (n: { type: DocType }) => (CREDIT_NOTES.includes(n.type) ? -1n : 1n);
+const liveNotesOf = (st: MockState, bill: Stored) => st.docs.filter((n) => LIVE.includes(n.status) && n.companyId === bill.companyId && ADJUSTS[n.type] === 'PB' && n.header.refDocId === bill.id);
+
+/** A bill's total as adjusted by its live vendor credit / debit notes (satang): what a full payment of the bill covers. */
+export const adjustedTotal = (st: MockState, bill: Stored): bigint =>
+  BigInt(toSatang(bill.totals.total)) + liveNotesOf(st, bill).reduce((x, n) => x + noteSign(n) * BigInt(toSatang(n.totals.total)), 0n);
+
+/** B: the bill's current WHT base per WHT type (satang) - its typed lines (the type STORED on the line, never the item master) at their pre-VAT net after the live notes that touch that line (rule B:
+ *  a PCN lowers it, a PDN raises it). Only a PB carries typed lines (EX is P4). */
+export function billBases(st: MockState, bill: Stored): Map<string, bigint> {
+  const basis = vatBasisOf(st, bill.companyId, 'PB'), notes = liveNotesOf(st, bill), out = new Map<string, bigint>();
+  const nets = computeDoc(bill.lines, !!bill.header.priceIncludesVat, basis).lines;
+  bill.lines.forEach((l, i) => {
+    if (!l.whtTypeCode) return;
+    let net = BigInt(toSatang(nets[i].net));
+    for (const n of notes) {
+      const nn = computeDoc(n.lines, !!n.header.priceIncludesVat, basis).lines;
+      n.lines.forEach((nl, j) => { if (nl.sourceLineId === l.id) net += noteSign(n) * BigInt(toSatang(nn[j].net)); });
+    }
+    out.set(l.whtTypeCode, (out.get(l.whtTypeCode) ?? 0n) + net);
+  });
   return out;
 }
 
-/** WHT of a PV (D-14): one line per WHT type over its own lines AND the bills it pays, rates from `st.whtTypes`; the vendor basis for VAT (A.4), the formula is `computeWht` (F5). */
-export function whtOf(st: MockState, companyId: string, header: DocHeader, lines: DocLine[], allocations?: Allocation[]) {
-  const nets = computeDoc(lines, !!header.priceIncludesVat, vatBasisOf(st, companyId, 'PV')).lines;
-  return computeWht([...lines.map((l, i) => ({ net: toSatang(nets[i].net), whtTypeCode: l.whtTypeCode })), ...allocationBases(st, companyId, allocations)], header.whtMode ?? 'deduct',
-    payeeOf(st, companyId, header.partyId), header.documentDate, st);
+/** WHT of a PV, fixed at the moment it is issued / re-saved (C1, D-14): one line per WHT type over its own lines AND the bills it pays, rates from `st.whtTypes`, the formula `computeWht` (F5).
+ *  I1 - cumulative per bill and type: this voucher's base = round(B x paid share) - the bases already stored on the bill's other live vouchers, where B is the bill's base NOW and the paid share
+ *  counts every live voucher of the bill plus this one (1 exactly once the bill is paid up). So the last voucher absorbs rounding and every note that landed in between. A negative result
+ *  (an earlier voucher already over-withheld) is 0: WHT is not refunded by a later payment - flagged `clamped`. `selfId`: this voucher's own current links are not counted (revise / preview). */
+export function freezeWht(st: MockState, companyId: string, body: Part, selfId?: string): WhtFrozen {
+  const nets = computeDoc(body.lines, !!body.header.priceIncludesVat, vatBasisOf(st, companyId, 'PV')).lines;
+  const bases: WhtFrozen['bases'] = [];
+  for (const a of body.allocations ?? []) {
+    const bill = st.docs.find((d) => d.id === a.targetId && d.companyId === companyId && d.type === 'PB');
+    const adjusted = bill ? adjustedTotal(st, bill) : 0n;
+    if (!bill || adjusted <= 0n) continue;
+    const paid = BigInt(st.links.filter((l) => l.active && l.kind === 'settles' && l.to === bill.id && l.from !== selfId).reduce((n, l) => n + toSatang(l.amount ?? '0.00'), 0) + money(a.amount, 'settle.invalid_amount'));
+    const others = st.docs.filter((d) => d.type === 'PV' && d.companyId === companyId && d.id !== selfId && LIVE.includes(d.status)).flatMap((d) => d.whtFrozen?.bases ?? []).filter((x) => x.targetId === bill.id);
+    for (const [code, B] of billBases(st, bill)) {
+      if (B <= 0n) continue;
+      const raw = (paid >= adjusted ? B : divRoundHalfAway(B * paid, adjusted)) - others.filter((x) => x.whtTypeCode === code).reduce((n, x) => n + BigInt(toSatang(x.base)), 0n);
+      bases.push({ targetId: bill.id, whtTypeCode: code, base: fromSatang(Number(raw < 0n ? 0n : raw)), ...(raw < 0n ? { clamped: true as const } : {}), ...(paid >= adjusted ? { full: true as const } : {}) });
+    }
+  }
+  const w = computeWht([...body.lines.map((l, i) => ({ net: toSatang(nets[i].net), whtTypeCode: l.whtTypeCode })), ...bases.map((b) => ({ net: toSatang(b.base), whtTypeCode: b.whtTypeCode }))],
+    body.header.whtMode ?? 'deduct', payeeOf(st, companyId, body.header.partyId), body.header.documentDate, st);
+  return { bases, lines: w.lines, expense: fromSatang(w.expense), cashDelta: fromSatang(w.cashDelta) };
 }
+
+/** The stored withholding of a voucher as satang figures: tax, the part we bear (WhtExpense) and what the payee receives less the base (cash delta). */
+export const frozenFigures = (f: WhtFrozen) => ({ lines: f.lines, tax: sum(f.lines.map((l) => toSatang(l.tax))), expense: toSatang(f.expense), cashDelta: toSatang(f.cashDelta) });
 
 /**
  * RC / PV totals. RC: total = Σ allocation amounts + deposit remainder + cash-bill lines; the customer withholds Σ allocation wht; cash = total - wht.
  * PV: total = Σ allocation amounts + Σ line totals; WHT per type from the lines; deduct: cash = total - wht, gross-up: cash = total (we bear the tax).
  */
-export function settleTotals(st: MockState, companyId: string, type: DocType, body: Part, lineTotals: DocTotals): DocTotals {
+export function settleTotals(st: MockState, companyId: string, type: DocType, body: Part, lineTotals: DocTotals, selfId?: string): DocTotals {
   const alloc = sum((body.allocations ?? []).map((a) => money(a.amount, 'settle.invalid_amount')));
   const lines = toSatang(lineTotals.total);
   let total: number, wht: number, cash: number;
@@ -170,7 +186,7 @@ export function settleTotals(st: MockState, companyId: string, type: DocType, bo
     cash = total - wht;
   } else {
     total = alloc + lines;
-    const w = whtOf(st, companyId, body.header, body.lines, body.allocations);
+    const w = frozenFigures(body.whtFrozen ?? freezeWht(st, companyId, body, selfId)); // the voucher's own stored figures when it has them
     wht = w.tax;
     cash = total + w.cashDelta; // deduct: -tax; gross-up always: 0; gross-up once: income - tax - B per type
   }
@@ -272,7 +288,7 @@ export function suggestWht(st: MockState, companyId: string, header: DocHeader, 
 export function settleExtras(st: MockState, companyId: string, type: DocType, body: Part): Pick<ComputeResult, 'whtLines' | 'allocation'> {
   if (!SETTLES[type]) return {};
   const allocated = sum((body.allocations ?? []).map((a) => money(a.amount, 'settle.invalid_amount')));
-  const whtLines: WhtLine[] | undefined = type === 'PV' ? whtOf(st, companyId, body.header, body.lines, body.allocations).lines : undefined;
+  const whtLines: WhtLine[] | undefined = type === 'PV' ? (body.whtFrozen ?? freezeWht(st, companyId, body)).lines : undefined;
   return {
     ...(whtLines?.length ? { whtLines } : {}),
     allocation: {

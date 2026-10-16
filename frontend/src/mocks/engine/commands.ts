@@ -1,5 +1,5 @@
 import type {
-  Actor, Allocation, ComputeResult, Doc, DocHeader, DocLine, DocTotals, DocType, IsoDate, JournalEntryPreview, JournalPreview, Lock, MissingItem, Money, PartySummary, Qty,
+  Actor, Allocation, ComputeResult, Doc, DocHeader, DocLine, DocTotals, DocType, IsoDate, JournalEntryPreview, JournalPreview, Lock, MissingItem, Money, PartySummary, Qty, WhtFrozen,
 } from '@/domain/types';
 import { ADJUSTS, CLASS, CONVERSIONS, DOC_TYPES, GROUPS, LIVE, SETTLES, isTypeAvailable } from '@/domain/doc-types';
 import type { MockState } from '../store';
@@ -12,12 +12,12 @@ import { fromSatang, toSatang } from './money';
 import { adjustSnapshot, hasSnapshot, isNote, noteHeader, noteMissing, noteProblem, withNoteVat } from './notes';
 import { SeriesAllocator } from './numbering';
 import { firstOpenDate, isClosed, monthLabelTh } from './periods';
-import { balanceOf, certError, cleanAllocations, fiscalAllocations, groupTotals, payDefaults, payLines, settleExtras, settleProblem, settleTotals } from './settlement';
+import { balanceOf, certError, cleanAllocations, fiscalAllocations, freezeWht, groupTotals, payDefaults, payLines, settleExtras, settleProblem, settleTotals } from './settlement';
 import { syncWts } from './wht-certificates';
-import { isVendorBill, issueVendorStatus, purchaseProblem, snapshotCategories, withClaimPeriod, withForfeit, withVendorStatus } from './purchase-vat';
+import { isVendorBill, issueVendorStatus, purchaseProblem, snapshotCategories, snapshotWhtTypes, withClaimPeriod, withForfeit, withVendorStatus } from './purchase-vat';
 import { computeDoc, vatBasisOf, vatOf } from './vat';
 
-export type Body = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] };
+export type Body = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[]; whtFrozen?: WhtFrozen };
 type Stored = MockState['docs'][number];
 
 export { LIVE };
@@ -70,7 +70,7 @@ export function calc(body: Body, vatRegistered: boolean) {
 /** Document totals: the lines' totals, plus for an RC / PV the settlement money (total, WHT, cash). One seam for create / update / issue / revise / compute. */
 export function totalsOf(st: MockState, companyId: string, type: DocType, body: Body, selfId?: string): DocTotals {
   const t = calc(withNoteVat(st, companyId, type, body, selfId), vatBasisOf(st, companyId, type)).totals; // a note: each line's VAT is its original line's VAT change (rule B); a vendor's invoice carries the VAT of its tax code (A.4)
-  return SETTLES[type] ? settleTotals(st, companyId, type, body, t) : GROUPS[type] ? groupTotals(body, t) : t;
+  return SETTLES[type] ? settleTotals(st, companyId, type, body, t, selfId) : GROUPS[type] ? groupTotals(body, t) : t;
 }
 function partyOf(st: MockState, companyId: string, id?: string): PartySummary | undefined {
   const p = st.parties.find((x) => x.id === id && x.companyId === companyId);
@@ -135,7 +135,10 @@ export const keepNoteLines = (d: Doc, body: Body): Body =>
   isNote(d.type) && sameLines(body.lines, d.lines) ? { ...body, header: { ...body.header, ...(d.header.priceIncludesVat ? { priceIncludesVat: true } : {}) }, lines: d.lines } : body;
 /** R1-M4: a PB / PCN / PDN line the API sends without a category keeps its stored one (same line id); only an explicit category changes it. */
 const keepCategories = (d: Doc, lines: DocLine[]): DocLine[] =>
-  !isVendorBill(d.type) ? lines : lines.map((l) => { const old = d.lines.find((x) => x.id === l.id)?.expenseCategory; return l.expenseCategory || !old ? l : { ...l, expenseCategory: old }; });
+  !isVendorBill(d.type) ? lines : lines.map((l) => {
+    const o = d.lines.find((x) => x.id === l.id), c = l.expenseCategory || !o?.expenseCategory ? l : { ...l, expenseCategory: o.expenseCategory };
+    return d.type === 'PB' && !c.whtTypeCode && o?.whtTypeCode ? { ...c, whtTypeCode: o.whtTypeCode } : c; // C1: a bill line keeps its stored WHT type unless one is sent
+  });
 /** An API proposal that leaves a field out (or sends a null bank account) means "unchanged", never "cleared": the stored bank account and dimensions stand. */
 export const keepOmitted = (d: Doc, h: DocHeader): DocHeader => ({
   ...h,
@@ -191,7 +194,8 @@ function stored(st: MockState, companyId: string, type: DocType, body: Body, kee
 /** C1: every PB / PCN / PDN line stores its resolved expense category (the item's, when the line names none). A PCN / PDN line takes the category (and item) of the bill line it adjusts,
  *  server-side, at save, revise AND issue: the VAT it gives back is claimable exactly when the bill's was, whatever the draft carried. */
 function vendorNoteLines(st: MockState, companyId: string, type: DocType, body: Body): DocLine[] {
-  const lines = isVendorBill(type) || type === 'PV' ? snapshotCategories(st, companyId, body.lines) : body.lines; // a voucher's own lines too: the category stays what was chosen
+  const snap = isVendorBill(type) || type === 'PV' ? snapshotCategories(st, companyId, body.lines) : body.lines; // a voucher's own lines too: the category stays what was chosen
+  const lines = type === 'PB' ? snapshotWhtTypes(st, companyId, snap) : snap; // C1: a bill stores the WHT type of each line
   const pb = ADJUSTS[type] === 'PB' ? st.docs.find((d) => d.id === body.header.refDocId && d.companyId === companyId && d.type === 'PB') : undefined;
   if (!pb) return lines;
   return lines.map((l) => {
@@ -218,16 +222,24 @@ function insertDraft(st: MockState, companyId: string, type: DocType, raw: Body,
 /** Balance of a target NOW, read from the active links (the stored field is only refreshed on read). */
 const outstandingNow = (st: MockState) => (id: string): number => balanceOf(st, getDoc(st, id)).out;
 
+/** C1: a PV's withholding figures are fixed with the voucher. Kept as stored while nothing that feeds them changed (own lines, allocations, mode, payee, date, price basis), else taken afresh (I1). */
+function withWht(st: MockState, companyId: string, type: DocType, body: Body, own?: Stored): Body {
+  if (type !== 'PV') return body;
+  const same = !!own?.whtFrozen && sameLines(body.lines, own.lines) && fiscalAllocations(body.allocations) === fiscalAllocations(own.allocations) && body.header.whtMode === own.header.whtMode
+    && body.header.partyId === own.header.partyId && body.header.documentDate === own.header.documentDate && !!body.header.priceIncludesVat === !!own.header.priceIncludesVat;
+  return { ...body, whtFrozen: same ? own!.whtFrozen : freezeWht(st, companyId, body, own?.id) };
+}
+
 /** `opts.docId`: the issued document being revised - its own active settlements are given back before the allocations are checked (same as `revise`). */
 export function compute(st: MockState, companyId: string, type: DocType, raw: Body, opts?: { docId?: string }): ComputeResult {
   const own0 = opts?.docId ? st.docs.find((x) => x.id === opts.docId) : undefined;
-  const body = withNoteVat(st, companyId, type, stored(st, companyId, type, raw, own0?.allocations, own0?.header), opts?.docId);
+  const body = withWht(st, companyId, type, withNoteVat(st, companyId, type, stored(st, companyId, type, raw, own0?.allocations, own0?.header), opts?.docId), own0);
   const c = calc(body, vatBasisOf(st, companyId, type));
   const totals = totalsOf(st, companyId, type, body, opts?.docId);
   const doc: Doc = {
     id: 'preview', type, status: 'draft', correctionClass: CLASS[type], revision: 0, version: 1, header: body.header,
     party: partyOf(st, companyId, body.header.partyId), lines: body.lines, totals, locks: [], createdBy: { kind: 'user', id: '', name: '' },
-    ...(body.allocations ? { allocations: body.allocations } : {}),
+    ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}),
   };
   const missing = missingOf(st, companyId, type, body);
   const own = opts?.docId ? st.docs.find((x) => x.id === opts.docId) : undefined;
@@ -332,13 +344,14 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   if (pp) throw pp;
   refuseOverConversion(st, d, body);
   body = { ...body, header: withClaimPeriod(st, d.companyId, d.type, body.header) }; // the document month unless a period was chosen
+  body = withWht(st, d.companyId, d.type, body); // a voucher: the WHT as of now, fixed from here on (C1)
   const bad = settleProblem(st, d.companyId, d.type, body, outstandingNow(st), { partyExempt: opts?.partyExempt, prior: opts?.prior, priorParty: opts?.priorParty });
   if (bad) throw bad; // nothing has been written yet: a refused issue leaves no number, link or journal behind
   if (GROUPS[d.type]) body = { ...body, allocations: cleanAllocations(st, d.companyId, d.type, body.allocations) }; // BL: each target's outstanding AS OF ISSUE, server-read
   body = withNoteVat(st, d.companyId, d.type, body); // a CN / DN keeps the VAT its lines carry at issue
   const totals = totalsOf(st, d.companyId, d.type, body);
   const next: Stored = {
-    ...d, header: body.header, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', totals, party: partyOf(st, d.companyId, d.header.partyId),
+    ...d, header: body.header, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', totals, party: partyOf(st, d.companyId, d.header.partyId),
     version: d.version + 1, issuedAt: stamp(), ...(hasOut(d.type) ? { outstanding: totals.total } : {}),
   };
   if (hasSnapshot(d.type)) next.adjustSnapshot = adjustSnapshot(st, getDoc(st, d.header.refDocId!), next); // the ม.86/10 values as of now: the paper reads them, never recomputes
@@ -451,7 +464,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   const keepBank = keepOmitted(d, raw.header); // absent bank account / dimensions mean "unchanged": the company default must not fill the bank in (it would read as a move)
   const sent = stored(st, d.companyId, d.type, { ...raw, header: keepBank, lines: keepCategories(d, raw.lines), allocations: raw.allocations ?? d.allocations }, d.allocations, d.header);
   const kept = keepNoteLines(d, sent); // an API caller cannot send the engine-set VAT back: the issued lines stand
-  const body = kept;
+  const body = withWht(st, d.companyId, d.type, kept, d); // C1: the stored WHT stands unless the voucher's own money changed
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_revisable', 'แก้ไขได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   checkVersion(d, version);
   if (d.correctionClass === 'T' && isFiscalChange(d, body)) {
@@ -482,7 +495,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   const { allocations: _a, ...rest } = d; void _a;
   const next: Stored = {
     ...rest, header: fin.header, lines: fin.lines, totals: totalsOf(st, d.companyId, d.type, fin, d.id), party: partyOf(st, d.companyId, fin.header.partyId),
-    revision: d.revision + 1, version: d.version + 1, ...(fin.allocations ? { allocations: fin.allocations } : {}),
+    revision: d.revision + 1, version: d.version + 1, ...(fin.allocations ? { allocations: fin.allocations } : {}), ...(fin.whtFrozen ? { whtFrozen: fin.whtFrozen } : {}),
   };
   const marks = afterRevision(d); // a quotation's customer answer is void once it is revised
   if (marks) next.marks = marks; else delete next.marks;
@@ -530,7 +543,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   const missing = missingOf(st, old.companyId, old.type, body);
   if (missing.length) throw incomplete(missing);
   if (isNote(old.type)) { const np = noteProblem(st, old.companyId, old.type, body, old.id); if (np) throw np; }
-  body = withNoteVat(st, old.companyId, old.type, body, old.id);
+  body = withWht(st, old.companyId, old.type, withNoteVat(st, old.companyId, old.type, body, old.id), old);
   const totals = totalsOf(st, old.companyId, old.type, body, old.id);
   if (dated && totals.total !== old.totals.total) {
     throw new MockError(422, 'doc.reissue_total_changed', 'ออกใหม่ต้องใช้ยอดเดิม ยอดต่างต้องใช้ใบลดหนี้/ใบเพิ่มหนี้');
@@ -540,7 +553,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
     companyId: old.companyId, id: newId(st, old.type), type: old.type, number: allocate(st, old.companyId, old.type, body.header.documentDate),
     status: 'issued', correctionClass: old.correctionClass, revision: 0, version: 1, header: body.header,
     party: partyOf(st, old.companyId, body.header.partyId), lines: body.lines, totals, locks: [], createdBy: actor, issuedAt: at, replacesId: old.id,
-    ...(hasOut(old.type) ? { outstanding: totals.total } : {}), ...(body.allocations ? { allocations: body.allocations } : {}),
+    ...(hasOut(old.type) ? { outstanding: totals.total } : {}), ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}),
   };
   const { outstanding: _o, ...oldRest } = old; void _o;
   put(st, { ...oldRest, status: 'replaced', replacedById: created.id, version: old.version + 1, cancel: { reasonCode: 'CORRECTION', reasonText: reason, at } });

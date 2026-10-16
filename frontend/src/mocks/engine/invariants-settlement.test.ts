@@ -77,7 +77,7 @@ describe('receipts and vouchers: allocations, WHT and the PV balance identity (F
     const a = world(); D(a.st, a.pvD.id).totals.wht = bump(D(a.st, a.pvD.id).totals.wht!, 0.01);
     expect(msgs(a.st)).toMatch(/PV wht 150\.01 but .* gives 150\.00/);
     const b = world(); D(b.st, b.pvG.id).lines[0].unitPrice = '6000.00'; // the stored wht no longer follows the line
-    expect(msgs(b.st)).toMatch(/PV wht 154.64 but .* gives/);
+    expect(msgs(b.st)).toMatch(/WHT SVC \(grossup_always\): base 5000\.00 but base 6000\.00 x rate gives 6000\.00/); // the stored line no longer matches the voucher's own line
     const c = world(); D(c.st, c.pvD.id).lines[0].whtTypeCode = 'NOPE';
     expect(msgs(c.st)).toMatch(/unknown WHT type NOPE/);
   });

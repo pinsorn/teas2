@@ -6,7 +6,7 @@ import { consumed, q4 } from './chain';
 import { divRoundHalfAway, fromSatang, toSatang } from './money';
 import { resolveRole } from './posting';
 import { claimPeriodOf, forfeitedOf, isRecoverable } from './purchase-vat';
-import { allocationBases, whtOf } from './settlement';
+import { billBases } from './settlement';
 import { computeDoc, vatBasisOf } from './vat';
 import { wtsOfPv } from './wht-certificates';
 
@@ -45,13 +45,13 @@ export function whtLineProblems(l: WhtLine, base: number, bp: bigint, mode: WhtM
   return out;
 }
 
-/** WHT of a PV recomputed from its lines and the bills it pays (the bases: its own typed lines + `allocationBases`) and the fixture rate table with its own bigint formulas (not `computeWht`),
+/** WHT of a PV recomputed from its lines and the bills it pays (the bases: its own typed lines + the bases STORED on it when it was issued, C1) and the fixture rate table with its own bigint formulas (not `computeWht`),
  *  and the engine's lines checked against it. */
 function expectedWht(st: MockState, d: Stored): { tax: number; expense: number; cashDelta: number; lines: { code: string; tax: bigint }[]; bad?: string } {
   const nets = computeDoc(d.lines, !!d.header.priceIncludesVat, vatBasisOf(st, d.companyId, 'PV')).lines;
   const base = new Map<string, bigint>();
   d.lines.forEach((l, i) => { if (l.whtTypeCode) base.set(l.whtTypeCode, (base.get(l.whtTypeCode) ?? 0n) + BigInt(toSatang(nets[i].net))); });
-  for (const b of allocationBases(st, d.companyId, d.allocations)) base.set(b.whtTypeCode, (base.get(b.whtTypeCode) ?? 0n) + BigInt(b.net));
+  for (const b of d.whtFrozen?.bases ?? []) base.set(b.whtTypeCode, (base.get(b.whtTypeCode) ?? 0n) + BigInt(toSatang(b.base)));
   const mode = d.header.whtMode ?? 'deduct';
   let tax = 0n, expense = 0n, cashDelta = 0n;
   const want: [string, bigint, bigint][] = [], perType: { code: string; tax: bigint }[] = [];
@@ -67,8 +67,8 @@ function expectedWht(st: MockState, d: Stored): { tax: number; expense: number; 
     tax += lt; cashDelta += paid - b; expense += mode === 'deduct' ? 0n : mode === 'grossup_always' ? lt : income - b;
     want.push([code, b, r]);
   }
-  let engine: WhtLine[];
-  try { engine = whtOf(st, d.companyId, d.header, d.lines, d.allocations).lines; } catch (e) { return { tax: 0, expense: 0, cashDelta: 0, lines: [], bad: e instanceof Error ? e.message : String(e) }; }
+  if (!d.whtFrozen) return { tax: 0, expense: 0, cashDelta: 0, lines: [], bad: 'a live voucher without its stored withholding figures' };
+  const engine: WhtLine[] = d.whtFrozen.lines;
   const problems = want.flatMap(([code, b, r]) => {
     const l = engine.find((x) => x.code === code);
     return l ? whtLineProblems(l, Number(b), r, mode) : [`WHT ${code}: the engine produced no line`];
@@ -363,6 +363,18 @@ export function checkInvariants(st: MockState): string[] {
       try { acct = resolveRole(st, 'WhtPayable', { companyId: d.companyId, docType: 'PV', whtForm: wt.header.whtForm }).code; } catch (e) { out.push(`${wt.id}: WhtPayable does not resolve (${(e as Error).message})`); continue; }
       const k = `${d.companyId}|${acct}`;
       wtTax.set(k, (wtTax.get(k) ?? 0) + sat(wt.header.whtTax ?? '0.00', wt.id));
+    }
+  }
+  // 11b. (I1) a bill paid up exactly by a voucher (outstanding 0.00) carries, per WHT type, stored bases on its live vouchers that sum to the bill's base now - unless a voucher was clamped (an earlier over-withholding is never refunded)
+  for (const bill of st.docs) {
+    if (bill.type !== 'PB' || !LIVE.includes(bill.status)) continue;
+    const bal = expectedBalance(st, bill);
+    if (bal.status !== 'settled' || bal.out !== 0) continue;
+    const stored = st.docs.filter((d) => d.type === 'PV' && LIVE.includes(d.status)).flatMap((d) => d.whtFrozen?.bases ?? []).filter((b) => b.targetId === bill.id);
+    if (stored.some((b) => b.clamped) || !stored.some((b) => b.full)) continue; // a bill brought to 0 by a credit alone (no voucher closed it) keeps what its vouchers withheld (C1)
+    for (const [code, B] of billBases(st, bill)) {
+      const got = stored.filter((b) => b.whtTypeCode === code).reduce((n, b) => n + toSatang(b.base), 0);
+      if (got !== Number(B < 0n ? 0n : B)) out.push(`${bill.id}: paid up but its vouchers withheld on ${fromSatang(got)} of ${code} and the bill's base is ${fromSatang(Number(B))}`);
     }
   }
   for (const wt of st.docs) {

@@ -4,7 +4,7 @@ import type { MockState } from '../store';
 import { bahtText } from './bahtText';
 import { logActivity, stamp } from './log';
 import { SeriesAllocator } from './numbering';
-import { whtOf } from './settlement';
+import { freezeWht } from './settlement';
 import { whtTypeOf } from './wht';
 
 type Stored = MockState['docs'][number];
@@ -57,7 +57,7 @@ function issueWt(st: MockState, pv: Stored, l: WhtLine, actor: Actor): void {
  *  (reason "ยกเลิกตามใบสำคัญจ่าย") and a changed or new one is issued afresh. A cancelled / replaced voucher keeps none. Runs inside the voucher's own command. */
 export function syncWts(st: MockState, pvId: string, actor: Actor): void {
   const pv = st.docs.find((d) => d.id === pvId)!;
-  const want = LIVE.includes(pv.status) ? whtOf(st, pv.companyId, pv.header, pv.lines, pv.allocations).lines : [];
+  const want = LIVE.includes(pv.status) ? (pv.whtFrozen ?? freezeWht(st, pv.companyId, pv, pv.id)).lines : [];
   const kept = new Set<string>();
   for (const { link, wt } of wtsOfPv(st, pvId)) {
     const hit = want.find((l) => l.code === wt.header.whtTypeCode && wantKey(l, pv) === haveKey(wt) && !kept.has(l.code));

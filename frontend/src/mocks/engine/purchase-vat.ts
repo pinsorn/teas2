@@ -19,6 +19,14 @@ export const snapshotCategories = (st: MockState, companyId: string, lines: DocL
     return code ? { ...l, expenseCategory: code } : l;
   });
 
+/** C1 (WHT): a PB line with no WHT type of its own takes its picked item's NOW and keeps it, so a later edit of the item master never moves what a voucher withholds (the same pattern as the category). */
+export const snapshotWhtTypes = (st: MockState, companyId: string, lines: DocLine[]): DocLine[] =>
+  lines.map((l) => {
+    if (l.whtTypeCode) return l;
+    const code = st.items.find((i) => i.id === l.itemId && i.companyId === companyId)?.whtTypeCode;
+    return code ? { ...l, whtTypeCode: code } : l;
+  });
+
 /** ม.82/5 and ม.82/3: input VAT is claimed only by a VAT-registered company, and not on a category whose VAT cannot be claimed (e.g. entertainment), nor on a document whose claim window
  *  had already expired when it was recorded (`inputVatForfeited`). Everything else is cost (`InputVatUnclaimed`, or part of the asset on a capex line - TAS 16): the VAT on a vendor's
  *  tax invoice still exists, it is part of what the purchase cost (A.4). */
