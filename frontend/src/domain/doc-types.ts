@@ -33,7 +33,7 @@ export const isTypeAvailable = (t: DocType, vatRegistered: boolean) =>
 /** SP0 §7.7 (no RC: receipts are built from open items - settlement allocations - never by conversion). The engine refuses any pair not listed; a type's task enables its row's UI. */
 export const CONVERSIONS: Partial<Record<DocType, DocType[]>> = {
   QT: ['SO', 'TI', 'IV'], SO: ['DO', 'TI', 'IV'], DO: ['TI', 'IV'], TI: ['BL', 'CN', 'DN'], IV: ['BL'],
-  PO: ['PB', 'PV'], PB: ['PCN', 'PDN', 'PV'], EX: ['PV'],
+  PO: ['PB', 'PV'], PB: ['PV'], EX: ['PV'],
 };
 
 /** D-12 / D-17: the open-item types a document allocates to (RC settles TI / IV; PV settles PB and EX only). The engine refuses any other target. */

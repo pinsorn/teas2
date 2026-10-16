@@ -50,7 +50,10 @@ function RefDocField({ id, refDocId, type }: { id: string; refDocId?: string; ty
   );
 }
 
-/** PB / PCN / PDN of a VAT company: the month the input VAT is claimed in (I6). Shown as the document month until one is chosen; a non-VAT company claims nothing, so it has no field. */
+/** The month a claim period follows until one is chosen: the vendor's tax-invoice month (ม.82/3), else the document month. */
+const anchorMonth = (h: DocHeader): string => (h.vendorDocDate ?? h.documentDate).slice(0, 7);
+
+/** PB / PDN of a VAT company: the month the input VAT is claimed in (I6). Shown as the vendor tax-invoice month until one is chosen (a PCN has none: it is filed in its own month); a non-VAT company claims nothing, so it has no field. */
 function ClaimPeriodField({ id, header, setHeader }: { id: string; header: DocHeader; setHeader: Dispatch<SetStateAction<DocHeader>> }) {
   const t = useTranslations('docEditor');
   const { me } = useMe();
@@ -58,7 +61,7 @@ function ClaimPeriodField({ id, header, setHeader }: { id: string; header: DocHe
   return (
     <div className="grid gap-1.5">
       <Label htmlFor={id}>{t('claimPeriod')}</Label>
-      <Input id={id} type="month" value={header.claimPeriod ?? header.documentDate.slice(0, 7)} onChange={(e) => setHeader((h) => ({ ...h, claimPeriod: e.target.value || undefined }))} />
+      <Input id={id} type="month" value={header.claimPeriod ?? anchorMonth(header)} onChange={(e) => setHeader((h) => ({ ...h, claimPeriod: e.target.value || undefined }))} />
       <p className="text-small text-muted-foreground">{t('claimPeriodHint')}</p>
     </div>
   );
@@ -98,8 +101,8 @@ export function HeaderFields({ type, keys, ids, header, setHeader }: {
         <div className="grid gap-1.5">
           <Label htmlFor={`${ids}-date`}>{t('documentDate')}</Label>
           <Input id={`${ids}-date`} type="date" value={header.documentDate}
-            onChange={(e) => setHeader((h) => ({ ...h, documentDate: e.target.value, // a claim period that was just the document month follows the date; one the user chose stays
-              ...(keys.includes('claimPeriod') && (!h.claimPeriod || h.claimPeriod === h.documentDate.slice(0, 7)) ? { claimPeriod: undefined } : {}) }))} />
+            onChange={(e) => setHeader((h) => ({ ...h, documentDate: e.target.value, // a claim period that was just the anchor month follows the date; one the user chose stays
+              ...(keys.includes('claimPeriod') && (!h.claimPeriod || h.claimPeriod === anchorMonth(h)) ? { claimPeriod: undefined } : {}) }))} />
           {header.documentDate && <p className="text-small text-muted-foreground">{formatDateBE(header.documentDate)}</p>}
         </div>
       );
@@ -132,7 +135,10 @@ export function HeaderFields({ type, keys, ids, header, setHeader }: {
       case 'vendorDocDate': return (
         <div className="grid gap-1.5">
           <Label htmlFor={`${ids}-vdate`}>{t('vendorDocDate')}</Label>
-          <Input id={`${ids}-vdate`} type="date" value={header.vendorDocDate ?? ''} onChange={(e) => setHeader((h) => ({ ...h, vendorDocDate: e.target.value || undefined }))} />
+          {/* PB / PDN: the vendor's tax-invoice date (defaults to the document date, never after it) anchors the claim window; a claim period that was just the old anchor month follows it */}
+          <Input id={`${ids}-vdate`} type="date" max={type === 'PCN' ? undefined : header.documentDate || undefined} value={header.vendorDocDate ?? (type === 'PCN' ? '' : header.documentDate)}
+            onChange={(e) => setHeader((h) => ({ ...h, vendorDocDate: e.target.value || undefined,
+              ...(keys.includes('claimPeriod') && (!h.claimPeriod || h.claimPeriod === anchorMonth(h)) ? { claimPeriod: undefined } : {}) }))} />
         </div>
       );
       case 'claimPeriod': return <ClaimPeriodField id={`${ids}-claim`} header={header} setHeader={setHeader} />;

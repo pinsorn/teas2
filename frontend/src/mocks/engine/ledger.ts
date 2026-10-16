@@ -21,13 +21,15 @@ const netRows = (d: Doc, role: AccountingRole, side: 'Dr' | 'Cr', vatRegistered:
 
 const sales = (role: AccountingRole): Rows => (t, d, st, co) => [['AR', t.total, 0], ...netRows(d, role, 'Cr', vatOf(st, co)), ['OutputVat', 0, t.vat]];
 /** A vendor's invoice (PB / PDN, mirrored for a PCN): per line the net goes to its expense account (a capex category capitalises to its asset class) and its VAT to input VAT when it is
- *  claimable, else to InputVatUnclaimed (cost). The VAT is the tax code's whatever OUR company's status (A.4); AP is the gross. */
+ *  claimable, else to InputVatUnclaimed (cost; on a capex line part of the asset). The VAT is the tax code's whatever OUR company's status (A.4); AP is the gross. */
 const purchase: Rows = (t, d, st, co) => {
   const rs = computeDoc(d.lines, !!d.header.priceIncludesVat, true).lines;
   const rows: RolePosting = d.lines.flatMap((l, i): RolePosting => {
     const cat = categoryOf(st, co, l), ctx = { itemId: l.itemId, expenseCategory: cat?.code ?? l.expenseCategory, dimensions: l.dimensions };
-    return [cat?.capex ? ['FixedAsset', toSatang(rs[i].net), 0, { ...ctx, assetClass: cat.assetClass }] : ['Expense', toSatang(rs[i].net), 0, ctx],
-      [isRecoverable(st, co, l) ? 'InputVat' : 'InputVatUnclaimed', toSatang(rs[i].vat), 0]];
+    const net = toSatang(rs[i].net), vat = toSatang(rs[i].vat), claim = isRecoverable(st, co, l);
+    // I3: VAT that cannot be claimed is cost; on a capex line the cost is the asset's (TAS 16), elsewhere it is InputVatUnclaimed
+    if (cat?.capex) return claim ? [['FixedAsset', net, 0, { ...ctx, assetClass: cat.assetClass }], ['InputVat', vat, 0]] : [['FixedAsset', net + vat, 0, { ...ctx, assetClass: cat.assetClass }]];
+    return [['Expense', net, 0, ctx], [claim ? 'InputVat' : 'InputVatUnclaimed', vat, 0]];
   });
   return [...rows, ['AP', 0, t.total]];
 };

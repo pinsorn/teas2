@@ -150,7 +150,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
           <div><dt className="text-small text-muted-foreground">{t('header.total')}</dt><dd className="tabular-nums">{formatTHB(doc.totals.total)}</dd></div>
           {doc.header.vendorDocNumber ? <div><dt className="text-small text-muted-foreground">{t('header.vendorDoc')}</dt><dd className="tabular-nums">{doc.header.vendorDocNumber}</dd></div> : null}
           {doc.header.vendorDocDate ? <div><dt className="text-small text-muted-foreground">{t('header.vendorDocDate')}</dt><dd className="tabular-nums">{formatDateBE(doc.header.vendorDocDate)}</dd></div> : null}
-          {doc.header.claimPeriod && me?.vatRegistered ? <div><dt className="text-small text-muted-foreground">{t('header.claimPeriod')}</dt><dd className="tabular-nums" data-testid="claim-period">{doc.header.claimPeriod}</dd></div> : null}
+          {(doc.header.claimPeriod ?? (doc.type === 'PCN' && doc.status !== 'draft' ? doc.header.documentDate.slice(0, 7) : undefined)) && me?.vatRegistered ? <div><dt className="text-small text-muted-foreground">{t('header.claimPeriod')}</dt><dd className="tabular-nums" data-testid="claim-period">{doc.header.claimPeriod ?? doc.header.documentDate.slice(0, 7)}</dd></div> : null}
           {doc.progress ? <div><dt className="text-small text-muted-foreground">{t('header.progress')}</dt><dd className="tabular-nums">{doc.progress}</dd></div> : null}
           {doc.outstanding !== undefined ? <div><dt className="text-small text-muted-foreground">{t('header.outstanding')}</dt><dd className="tabular-nums">{formatTHB(doc.outstanding)}</dd></div> : null}
         </dl>

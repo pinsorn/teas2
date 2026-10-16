@@ -487,8 +487,9 @@
     "refDocNonePb": "No purchase bill chosen yet",
     "vendorDocNumber": "Vendor document number",
     "vendorDocDate": "Vendor document date",
+   
     "claimPeriod": "Input VAT claim period",
-    "claimPeriodHint": "The document month up to 6 months after it (Sec. 82/4)",
+    "claimPeriodHint": "The month of the vendor's tax invoice up to 6 months after it (Sec. 82/3)",
     "complete": "Documents complete (the vendor's tax invoice has arrived)",
     "reason": "Reason",
     "reasonPick": "Choose a reason",

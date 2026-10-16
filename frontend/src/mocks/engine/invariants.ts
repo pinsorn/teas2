@@ -103,7 +103,7 @@ export function checkInvariants(st: MockState): string[] {
         gl.set(k, (gl.get(k) ?? 0) + a - b);
         if (l.accountCode === '1130') { const pk = `${d.companyId}|${l.partyName ?? ''}`; arByParty.set(pk, (arByParty.get(pk) ?? 0) + a - b); }
         if (l.accountCode === '2110') { const pk = `${d.companyId}|${l.partyName ?? ''}`; apByParty.set(pk, (apByParty.get(pk) ?? 0) + b - a); }
-        if (l.accountCode === '1170' && (d.type === 'PB' || ADJUSTS[d.type] === 'PB')) { const pk = `${d.companyId}|${claimPeriodOf(d.header)}`; inputVat.set(pk, (inputVat.get(pk) ?? 0) + a - b); }
+        if (l.accountCode === '1170' && (d.type === 'PB' || ADJUSTS[d.type] === 'PB')) { const pk = `${d.companyId}|${claimPeriodOf(d.type, d.header)}`; inputVat.set(pk, (inputVat.get(pk) ?? 0) + a - b); }
       }
       if (dr !== cr) out.push(`${where}: unbalanced (Dr ${fromSatang(dr)} / Cr ${fromSatang(cr)})`);
     }
@@ -163,8 +163,18 @@ export function checkInvariants(st: MockState): string[] {
     if (!LIVE.includes(d.status) || (d.type !== 'PB' && ADJUSTS[d.type] !== 'PB')) continue;
     const rows = computeDoc(d.lines, !!d.header.priceIncludesVat, true).lines;
     const vat = d.lines.reduce((n, l, i) => n + (isRecoverable(st, d.companyId, l) ? sat(rows[i].vat, d.id) : 0), 0);
-    const k = `${d.companyId}|${claimPeriodOf(d.header)}`;
+    const k = `${d.companyId}|${claimPeriodOf(d.type, d.header)}`;
     claimable.set(k, (claimable.get(k) ?? 0) + (CREDIT_NOTES.includes(d.type) ? -vat : vat));
+  }
+  // C1: a live note line carries the category of the live bill line it adjusts (the VAT it gives back / adds is claimable exactly when the bill's was)
+  for (const d of st.docs) {
+    if (!LIVE.includes(d.status) || d.type === 'PB' || ADJUSTS[d.type] !== 'PB') continue;
+    const pb = doc(d.header.refDocId ?? '');
+    if (!pb || !LIVE.includes(pb.status)) continue;
+    for (const l of d.lines) {
+      const src = pb.lines.find((x) => x.id === l.sourceLineId);
+      if (src && (l.expenseCategory ?? '') !== (src.expenseCategory ?? '')) out.push(`${d.id}: line ${l.id} category ${l.expenseCategory ?? 'none'} but the bill line ${src.id} of ${pb.id} has ${src.expenseCategory ?? 'none'}`);
+    }
   }
   for (const k of new Set([...inputVat.keys(), ...claimable.keys()])) {
     if ((inputVat.get(k) ?? 0) !== (claimable.get(k) ?? 0)) {

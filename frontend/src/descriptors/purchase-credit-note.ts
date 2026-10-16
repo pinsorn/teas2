@@ -6,5 +6,5 @@ export const purchaseCreditNote: DocDescriptor = {
   lineEditor: 'item', adjusts: 'PB', basePath: '/purchases/vendor-notes',
   permissions: { read: 'doc.PCN.read', create: 'doc.PCN.create', issue: 'doc.PCN.issue', cancel: 'doc.PCN.cancel', correct: 'doc.PCN.correct' },
   listColumns: ['number', 'date', 'party', 'total', 'reference', 'status'],
-  savedViews: ['draft', 'cancelled'], headerFields: ['documentDate', 'vendorDocNumber', 'vendorDocDate', 'refDoc', 'reason', 'claimPeriod', 'notes'],
+  savedViews: ['draft', 'cancelled'], headerFields: ['documentDate', 'vendorDocNumber', 'vendorDocDate', 'refDoc', 'reason', 'notes'],
 };

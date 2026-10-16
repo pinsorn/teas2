@@ -13,7 +13,7 @@ import { adjustSnapshot, hasSnapshot, isNote, noteHeader, noteMissing, noteProbl
 import { SeriesAllocator } from './numbering';
 import { firstOpenDate, isClosed, monthLabelTh } from './periods';
 import { balanceOf, certError, cleanAllocations, fiscalAllocations, groupTotals, payDefaults, settleExtras, settleProblem, settleTotals } from './settlement';
-import { purchaseProblem, withClaimPeriod } from './purchase-vat';
+import { isVendorBill, purchaseProblem, snapshotCategories, withClaimPeriod, withVendorStatus } from './purchase-vat';
 import { computeDoc, vatBasisOf, vatOf } from './vat';
 
 export type Body = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] };
@@ -177,18 +177,20 @@ export function markReplaced(st: MockState, oldId: string, newId: string, actor:
 }
 
 /** The body as stored: engine header defaults (RC / PV) and the cleaned allocation list. Refuses a malformed allocation, nothing semantic (that is issue's job). */
-function stored(st: MockState, companyId: string, type: DocType, body: Body, keep?: Allocation[]): Body {
+function stored(st: MockState, companyId: string, type: DocType, body: Body, keep?: Allocation[], prev?: DocHeader): Body {
   // D-12: a VAT company's receipt settles tax invoices, it never sells (a cash bill is the non-VAT company's). Shape of the request, so it is refused where the body enters.
   if (type === 'RC' && body.lines.length && vatOf(st, companyId)) throw new MockError(422, 'rc.lines_need_invoice', 'บริษัทที่จดทะเบียน VAT ต้องออกใบกำกับภาษีก่อนรับชำระ');
   const allocations = cleanAllocations(st, companyId, type, body.allocations, keep);
-  return { header: noteHeader(st, companyId, type, payDefaults(st, companyId, type, body.header), body.lines), lines: GROUPS[type] ? [] : vendorNoteLines(st, companyId, type, body), ...(allocations ? { allocations } : {}) };
+  return { header: withVendorStatus(st, companyId, type, noteHeader(st, companyId, type, payDefaults(st, companyId, type, body.header), body.lines), prev), lines: GROUPS[type] ? [] : vendorNoteLines(st, companyId, type, body), ...(allocations ? { allocations } : {}) };
 }
 
-/** A PCN / PDN line takes the expense category (and item) of the bill line it adjusts, server-side: the VAT it gives back is claimable exactly when the bill's was, whatever the client sent. */
+/** C1: every PB / PCN / PDN line stores its resolved expense category (the item's, when the line names none). A PCN / PDN line takes the category (and item) of the bill line it adjusts,
+ *  server-side, at save, revise AND issue: the VAT it gives back is claimable exactly when the bill's was, whatever the draft carried. */
 function vendorNoteLines(st: MockState, companyId: string, type: DocType, body: Body): DocLine[] {
+  const lines = isVendorBill(type) ? snapshotCategories(st, companyId, body.lines) : body.lines;
   const pb = ADJUSTS[type] === 'PB' ? st.docs.find((d) => d.id === body.header.refDocId && d.companyId === companyId && d.type === 'PB') : undefined;
-  if (!pb) return body.lines;
-  return body.lines.map((l) => {
+  if (!pb) return lines;
+  return lines.map((l) => {
     const src = l.sourceLineId ? pb.lines.find((x) => x.id === l.sourceLineId) : undefined;
     if (!src) return l;
     const { expenseCategory: _c, itemId: _i, ...rest } = l; void _c; void _i;
@@ -214,7 +216,8 @@ const outstandingNow = (st: MockState) => (id: string): number => balanceOf(st, 
 
 /** `opts.docId`: the issued document being revised - its own active settlements are given back before the allocations are checked (same as `revise`). */
 export function compute(st: MockState, companyId: string, type: DocType, raw: Body, opts?: { docId?: string }): ComputeResult {
-  const body = withNoteVat(st, companyId, type, stored(st, companyId, type, raw, opts?.docId ? st.docs.find((x) => x.id === opts.docId)?.allocations : undefined), opts?.docId);
+  const own0 = opts?.docId ? st.docs.find((x) => x.id === opts.docId) : undefined;
+  const body = withNoteVat(st, companyId, type, stored(st, companyId, type, raw, own0?.allocations, own0?.header), opts?.docId);
   const c = calc(body, vatBasisOf(st, companyId, type));
   const totals = totalsOf(st, companyId, type, body, opts?.docId);
   const doc: Doc = {
@@ -229,7 +232,7 @@ export function compute(st: MockState, companyId: string, type: DocType, raw: Bo
   const np = noteProblem(st, companyId, type, body, opts?.docId);
   if (np) missing.push({ field: 'lines', message: np.title }); // the cap, the invoice's lines: shown before issue
   const pp = purchaseProblem(st, companyId, type, body); // input VAT rules of a vendor's invoice: shown before issue too
-  if (pp) missing.push({ field: pp.code === 'pb.claim_period_out_of_range' ? 'header.claimPeriod' : 'lines', message: pp.title });
+  if (pp) missing.push({ field: ({ 'pb.claim_period_out_of_range': 'header.claimPeriod', 'pcn.claim_period_fixed': 'header.claimPeriod', 'pb.vendor_invoice_after_document': 'header.vendorDocDate' } as Record<string, string>)[pp.code] ?? 'lines', message: pp.title });
   return { lines: c.lines, totals, missing, journal: ledgerFor(st, { ...doc, companyId }), ...settleExtras(st, companyId, type, body) };
 }
 
@@ -249,7 +252,7 @@ export function updateDraft(st: MockState, id: string, raw: Body, version: numbe
   const d = getDoc(st, id);
   if (d.status !== 'draft') throw new MockError(409, 'doc.not_draft', 'แก้ไขได้เฉพาะเอกสารฉบับร่าง');
   checkVersion(d, version);
-  const body = stored(st, d.companyId, d.type, raw);
+  const body = stored(st, d.companyId, d.type, raw, undefined, d.header);
   const { allocations: _a, ...rest } = d; void _a;
   const next: Stored = { ...rest, header: body.header, lines: body.lines, totals: totalsOf(st, d.companyId, d.type, body), party: partyOf(st, d.companyId, body.header.partyId),
     version: d.version + 1, ...(body.allocations ? { allocations: body.allocations } : {}) };
@@ -312,7 +315,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   const d = getDoc(st, id);
   if (d.status !== 'draft') throw new MockError(409, 'doc.not_draft', 'ออกได้เฉพาะเอกสารฉบับร่าง');
   checkVersion(d, version);
-  let body: Body = { header: d.header, lines: d.lines, ...(d.allocations ? { allocations: d.allocations } : {}) };
+  let body: Body = { header: d.header, lines: vendorNoteLines(st, d.companyId, d.type, { header: d.header, lines: d.lines }), ...(d.allocations ? { allocations: d.allocations } : {}) }; // C1: categories as of now
   const missing = missingOf(st, d.companyId, d.type, body);
   if (missing.length) throw incomplete(missing);
   if (!opts?.keepDate) dateGuards(st, d.companyId, d.header.documentDate); // D-10
@@ -438,9 +441,9 @@ function certNote(d: Stored, body: Body): string | undefined {
 export function revise(st: MockState, id: string, raw: Body, version: number, reason: string, actor: Actor): Doc {
   const d = getDoc(st, id);
   const keepBank = keepOmitted(d, raw.header); // absent bank account / dimensions mean "unchanged": the company default must not fill the bank in (it would read as a move)
-  const sent = stored(st, d.companyId, d.type, { ...raw, header: keepBank, allocations: raw.allocations ?? d.allocations }, d.allocations);
+  const sent = stored(st, d.companyId, d.type, { ...raw, header: keepBank, allocations: raw.allocations ?? d.allocations }, d.allocations, d.header);
   const kept = keepNoteLines(d, sent); // an API caller cannot send the engine-set VAT back: the issued lines stand
-  const body = { ...kept, header: withClaimPeriod(st, d.companyId, d.type, kept.header) }; // a bill is always filed in a claim period: the document month unless one was chosen
+  const body = kept;
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_revisable', 'แก้ไขได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   checkVersion(d, version);
   if (d.correctionClass === 'T' && isFiscalChange(d, body)) {
@@ -466,7 +469,8 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
       throw new MockError(422, 'doc.below_converted', `รายการ “${ol.description}” แปลงไปแล้ว ${fmtQ(taken)} ${ol.unit} ลดต่ำกว่านี้หรือลบไม่ได้ ให้ยกเลิกหรือแก้ไขเอกสารปลายทางก่อน`);
     }
   }
-  const fin = isNote(d.type) ? withNoteVat(st, d.companyId, d.type, body, d.id) : body; // a revised vendor note: rule B again, the note itself not among its own predecessors
+  const fin0 = isNote(d.type) ? withNoteVat(st, d.companyId, d.type, body, d.id) : body; // a revised vendor note: rule B again, the note itself not among its own predecessors
+  const fin = { ...fin0, header: withClaimPeriod(st, d.companyId, d.type, fin0.header) }; // a bill is always filed in a claim period: the vendor invoice month unless one was chosen; a PCN keeps none
   const { allocations: _a, ...rest } = d; void _a;
   const next: Stored = {
     ...rest, header: fin.header, lines: fin.lines, totals: totalsOf(st, d.companyId, d.type, fin, d.id), party: partyOf(st, d.companyId, fin.header.partyId),

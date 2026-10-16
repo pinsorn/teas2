@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -58,6 +58,16 @@ describe('HeaderFields of a purchase bill', () => {
     await userEvent.clear(d2);
     await userEvent.type(d2, '2026-11-02');
     expect(last!.claimPeriod).toBe('2026-12');
+  });
+  it('the vendor tax-invoice date defaults to the document date, and the claim period follows its month (ม.82/3)', async () => {
+    let last: DocHeader | undefined;
+    ui({ documentDate: '2026-10-14' }, (h) => { last = h; });
+    const vt = await screen.findByLabelText('วันที่เอกสารของผู้ขาย');
+    expect(vt).toHaveValue('2026-10-14');
+    expect(vt).toHaveAttribute('max', '2026-10-14');
+    fireEvent.change(vt, { target: { value: '2026-03-05' } });
+    expect(last!.vendorDocDate).toBe('2026-03-05');
+    expect(screen.getByLabelText('งวดที่ขอคืนภาษีซื้อ')).toHaveValue('2026-03');
   });
   it('a non-VAT company has no claim period field', async () => {
     setSettings({ companyKey: 'nonvat' });
