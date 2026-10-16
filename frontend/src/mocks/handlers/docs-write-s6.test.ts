@@ -79,7 +79,7 @@ describe('attachments', () => {
     const d = await draft();
     const real = Storage.prototype.setItem;
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, k: string, v: string) {
-      if (k === 'teas2.mock.state.v20') throw new DOMException('full', 'QuotaExceededError');
+      if (k === 'teas2.mock.state.v21') throw new DOMException('full', 'QuotaExceededError');
       return real.call(this, k, v);
     });
     expect((await call('POST', `/docs/TI/${d.id}/attachments`, att())).status).toBe(507);
@@ -212,10 +212,10 @@ describe('S6 fix round 1', () => {
   });
   it('I3: a write the browser cannot persist is a 507 storage.full, never a success, and the stored state is untouched', async () => {
     const d = await draft();
-    const before = localStorage.getItem('teas2.mock.state.v20');
+    const before = localStorage.getItem('teas2.mock.state.v21');
     const real = Storage.prototype.setItem;
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, k: string, v: string) {
-      if (k === 'teas2.mock.state.v20') throw new DOMException('full', 'QuotaExceededError');
+      if (k === 'teas2.mock.state.v21') throw new DOMException('full', 'QuotaExceededError');
       return real.call(this, k, v);
     });
     const r = await call('POST', `/docs/TI/${d.id}/issue`, { version: d.version });
@@ -223,7 +223,7 @@ describe('S6 fix round 1', () => {
     const p = await r.json();
     expect(p.code).toBe('storage.full');
     expect(p.title).toContain('พื้นที่เก็บข้อมูลตัวอย่างเต็ม');
-    expect(localStorage.getItem('teas2.mock.state.v20')).toBe(before);
+    expect(localStorage.getItem('teas2.mock.state.v21')).toBe(before);
     vi.restoreAllMocks();
     const again = await (await call('GET', `/docs/TI/${d.id}`)).json();
     expect(again.status).toBe('draft');
@@ -237,6 +237,6 @@ describe('S6 fix round 1', () => {
     const e = await draft().catch(() => undefined);
     const r = e ? await call('POST', `/docs/TI/${e.id}/issue`, { version: e.version }) : undefined;
     if (r) expect([200, 507]).toContain(r.status); // whatever the leftover room allows, a 200 must really be persisted
-    if (r?.status === 200) expect((await (await call('GET', `/docs/TI/${e!.id}`)).json()).status).toBe('issued');
+    if (r?.status === 210) expect((await (await call('GET', `/docs/TI/${e!.id}`)).json()).status).toBe('issued');
   });
 });

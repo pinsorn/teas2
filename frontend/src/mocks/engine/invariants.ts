@@ -6,7 +6,6 @@ import { consumed, q4 } from './chain';
 import { divRoundHalfAway, fromSatang, toSatang } from './money';
 import { resolveRole } from './posting';
 import { claimPeriodOf, forfeitedOf, isRecoverable } from './purchase-vat';
-import { billBases } from './settlement';
 import { computeDoc, vatBasisOf } from './vat';
 import { wtsOfPv } from './wht-certificates';
 
@@ -365,16 +364,23 @@ export function checkInvariants(st: MockState): string[] {
       wtTax.set(k, (wtTax.get(k) ?? 0) + sat(wt.header.whtTax ?? '0.00', wt.id));
     }
   }
-  // 11b. (I1) a bill paid up exactly by a voucher (outstanding 0.00) carries, per WHT type, stored bases on its live vouchers that sum to the bill's base now - unless a voucher was clamped (an earlier over-withholding is never refunded)
+  // 11b. (I1) a bill at outstanding 0.00 that a live voucher paid up carries exactly ONE paid-up record (the holder's `billBase` = the bill's base per WHT type when it was paid up, never today's bill: a later note
+  //      must not turn this red). Per WHT type: Σ stored bases of the bill's live vouchers = max(B_paidUp, Σ bases of the OTHER vouchers). Normally the holder's base is the remainder, so Σ = B_paidUp; when an
+  //      earlier over-withholding already exceeds B_paidUp (a credit landed between payments) the holder's base is clamped to 0 and Σ = Σ others (WHT is not refunded). A bill brought to 0 by notes alone
+  //      has no holder and is skipped (C1). Records are cleared by the command that reopens the bill, so none can be stale.
   for (const bill of st.docs) {
     if (bill.type !== 'PB' || !LIVE.includes(bill.status)) continue;
     const bal = expectedBalance(st, bill);
     if (bal.status !== 'settled' || bal.out !== 0) continue;
-    const stored = st.docs.filter((d) => d.type === 'PV' && LIVE.includes(d.status)).flatMap((d) => d.whtFrozen?.bases ?? []).filter((b) => b.targetId === bill.id);
-    if (stored.some((b) => b.clamped) || !stored.some((b) => b.full)) continue; // a bill brought to 0 by a credit alone (no voucher closed it) keeps what its vouchers withheld (C1)
-    for (const [code, B] of billBases(st, bill)) {
-      const got = stored.filter((b) => b.whtTypeCode === code).reduce((n, b) => n + toSatang(b.base), 0);
-      if (got !== Number(B < 0n ? 0n : B)) out.push(`${bill.id}: paid up but its vouchers withheld on ${fromSatang(got)} of ${code} and the bill's base is ${fromSatang(Number(B))}`);
+    const pvs = st.docs.filter((d) => d.type === 'PV' && LIVE.includes(d.status)).map((d) => ({ id: d.id, bases: (d.whtFrozen?.bases ?? []).filter((x) => x.targetId === bill.id) })).filter((x) => x.bases.length);
+    const holders = pvs.filter((x) => x.bases.some((y) => y.full));
+    if (holders.length > 1) { out.push(`${bill.id}: two paid-up records (${holders.map((h) => h.id).join(', ')}), exactly one voucher paid it up last`); continue; }
+    if (!holders.length) continue;
+    for (const h of holders[0].bases.filter((y) => y.full && y.billBase !== undefined)) {
+      const sum = (xs: typeof h[]) => xs.filter((y) => y.whtTypeCode === h.whtTypeCode).reduce((n, y) => n + toSatang(y.base), 0);
+      const got = sum(pvs.flatMap((x) => x.bases)), others = sum(pvs.filter((x) => x.id !== holders[0].id).flatMap((x) => x.bases));
+      const want = Math.max(toSatang(h.billBase!), others);
+      if (got !== want) out.push(`${bill.id}: paid up but its vouchers withheld on ${fromSatang(got)} of ${h.whtTypeCode}; the bill's base when it was paid up was ${h.billBase} and the other vouchers took ${fromSatang(others)}, so ${fromSatang(want)} is expected`);
     }
   }
   for (const wt of st.docs) {

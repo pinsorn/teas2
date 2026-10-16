@@ -137,7 +137,10 @@ export const keepNoteLines = (d: Doc, body: Body): Body =>
 const keepCategories = (d: Doc, lines: DocLine[]): DocLine[] =>
   !isVendorBill(d.type) ? lines : lines.map((l) => {
     const o = d.lines.find((x) => x.id === l.id), c = l.expenseCategory || !o?.expenseCategory ? l : { ...l, expenseCategory: o.expenseCategory };
-    return d.type === 'PB' && !c.whtTypeCode && o?.whtTypeCode ? { ...c, whtTypeCode: o.whtTypeCode } : c; // C1: a bill line keeps its stored WHT type unless one is sent
+    // C1: a bill line keeps its stored WHT type unless one is sent; an explicit null clears it ('' = none, so the item master does not refill it)
+    if (d.type !== 'PB') return c;
+    if ((c.whtTypeCode as string | null | undefined) === null) return { ...c, whtTypeCode: '' };
+    return c.whtTypeCode === undefined && o?.whtTypeCode !== undefined ? { ...c, whtTypeCode: o.whtTypeCode } : c;
   });
 /** An API proposal that leaves a field out (or sends a null bank account) means "unchanged", never "cleared": the stored bank account and dimensions stand. */
 export const keepOmitted = (d: Doc, h: DocHeader): DocHeader => ({
@@ -221,6 +224,21 @@ function insertDraft(st: MockState, companyId: string, type: DocType, raw: Body,
 
 /** Balance of a target NOW, read from the active links (the stored field is only refreshed on read). */
 const outstandingNow = (st: MockState) => (id: string): number => balanceOf(st, getDoc(st, id)).out;
+
+/** Exactly one voucher holds a bill's paid-up record (`full` + `billBase`, I1): the one whose command brought the outstanding to 0 last. After a voucher command: a bill still owing has no record at all
+ *  (the command reopened it), and when this voucher holds the record on a bill, every other voucher's copy on that bill goes. Nothing can be stale, so the invariant never has to choose between records. */
+function settlePaidUpRecords(st: MockState, pvId: string, bills: string[]): void {
+  for (const billId of new Set(bills)) {
+    const bill = st.docs.find((x) => x.id === billId && x.type === 'PB');
+    if (!bill || !LIVE.includes(bill.status)) continue;
+    const owing = balanceOf(st, bill).out > 0;
+    const mine = st.docs.find((x) => x.id === pvId)?.whtFrozen?.bases.some((b) => b.targetId === billId && b.full);
+    for (const d of st.docs.filter((x) => x.type === 'PV' && x.whtFrozen?.bases.some((b) => b.targetId === billId && b.full))) {
+      if (!owing && (mine ? d.id === pvId : true)) continue; // a voucher keeps its record while the bill is paid up (and keeps it when it is not the one that just acted)
+      put(st, { ...d, whtFrozen: { ...d.whtFrozen!, bases: d.whtFrozen!.bases.map((b) => { if (b.targetId !== billId) return b; const { full: _f, billBase: _b, ...rest } = b; void _f; void _b; return rest; }) } });
+    }
+  }
+}
 
 /** C1: a PV's withholding figures are fixed with the voucher. Kept as stored while nothing that feeds them changed (own lines, allocations, mode, payee, date, price basis), else taken afresh (I1). */
 function withWht(st: MockState, companyId: string, type: DocType, body: Body, own?: Stored): Body {
@@ -359,7 +377,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   settleTargets(st, next, body.allocations);
   if (isNote(d.type)) adjustTarget(st, next, totals.total);
   setJournal(st, id, postedNow(st, d.companyId, ledgerFor(st, next)));
-  if (d.type === 'PV') syncWts(st, id, actor); // the 50 tawi, one per WHT type, in the same command (one state write)
+  if (d.type === 'PV') { syncWts(st, id, actor); settlePaidUpRecords(st, id, (next.allocations ?? []).map((a) => a.targetId)); } // the 50 tawi, one per WHT type, in the same command (one state write)
   st.revisions.push({ docId: id, revision: 0, at: next.issuedAt!, actor, snapshot: publicDoc(next), diff: [] });
   logActivity(st, id, actor, 'issue', next.number);
   logAudit(st, actor, d.companyId, 'doc.issue', id, { status: 'draft' }, { status: 'issued', number: next.number });
@@ -384,6 +402,7 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
   const released = st.links.filter((l) => l.from === id && l.active);
   st.links = st.links.map((l) => (l.from === id && l.active ? { ...l, active: false } : l)); // returns converted quantity, un-settles receipts
   for (const l of released) if (l.kind === 'settles' || l.kind === 'adjusts') recomputeSettlement(st, l.to);
+  if (d.type === 'PV') settlePaidUpRecords(st, id, (d.allocations ?? []).map((a) => a.targetId)); // the bills it paid are open again: their paid-up record goes
   const j = st.journals.find((x) => x.docId === id);
   const last = j?.preview.entries[j.preview.entries.length - 1];
   if (j && last && last.kind !== 'reversal') j.preview = { entries: [...j.preview.entries, (opts?.correction ? correctionReversal : reverseEntry)(st, d.companyId, last)] };
@@ -417,10 +436,13 @@ export function refuseOverConversion(st: MockState, d: Stored, body: Body): void
 
 /** A bill a live PCN / PDN adjusts keeps its lines, price basis and date (the notes reference its lines and are dated from it): exit = cancel the notes, or issue a further note. */
 function refuseFrozenByNotes(st: MockState, d: Stored, body: Body): void {
-  if (d.type !== 'PB' || !st.links.some((l) => l.active && l.kind === 'adjusts' && l.to === d.id)) return;
-  if (!sameLines(body.lines, d.lines) || !!body.header.priceIncludesVat !== !!d.header.priceIncludesVat || body.header.documentDate !== d.header.documentDate || (body.header.vendorDocDate || undefined) !== d.header.vendorDocDate) {
-    throw new MockError(422, 'pb.has_notes', 'แก้ไขรายการ ราคา วันที่ หรือวันที่ใบกำกับภาษีของผู้ขายของบันทึกซื้อนี้ไม่ได้ เพราะมีใบลดหนี้/ใบเพิ่มหนี้จากผู้ขายอ้างถึงอยู่ ยกเลิกใบลดหนี้/ใบเพิ่มหนี้ก่อน หรือบันทึกใบลดหนี้/ใบเพิ่มหนี้เพิ่ม');
+  if (d.type !== 'PB') return;
+  const changed = !sameLines(body.lines, d.lines) || !!body.header.priceIncludesVat !== !!d.header.priceIncludesVat || body.header.documentDate !== d.header.documentDate || (body.header.vendorDocDate || undefined) !== d.header.vendorDocDate;
+  if (changed && st.links.some((l) => l.active && l.kind === 'settles' && l.to === d.id)) { // what a voucher withheld on is what the bill said: cancel the voucher (its certificates go with it) to change it
+    throw new MockError(422, 'pb.settled_locked', 'แก้ไขรายการ ราคา วันที่ หรือวันที่ใบกำกับภาษีของผู้ขายของบันทึกซื้อนี้ไม่ได้ เพราะมีใบสำคัญจ่ายชำระอยู่ ยกเลิกใบสำคัญจ่ายก่อน');
   }
+  if (!changed || !st.links.some((l) => l.active && l.kind === 'adjusts' && l.to === d.id)) return;
+  throw new MockError(422, 'pb.has_notes', 'แก้ไขรายการ ราคา วันที่ หรือวันที่ใบกำกับภาษีของผู้ขายของบันทึกซื้อนี้ไม่ได้ เพราะมีใบลดหนี้/ใบเพิ่มหนี้จากผู้ขายอ้างถึงอยู่ ยกเลิกใบลดหนี้/ใบเพิ่มหนี้ก่อน หรือบันทึกใบลดหนี้/ใบเพิ่มหนี้เพิ่ม');
 }
 
 /** Everything that makes a revision of a PB / PCN / PDN unacceptable, judged before anything is written (also for the correction plan, which must not offer what would fail).
@@ -519,7 +541,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
     setJournal(st, id, { entries: [...prev, ...(live && live.kind !== 'reversal' ? [correctionReversal(st, d.companyId, live)] : []),
       ...(fresh ? [{ ...fresh, kind: 'correction' as const, postedAt: stamp(), ...(!isPinned() && isClosed(st, d.companyId, fresh.date) ? { date: firstOpenDate(st, d.companyId), late: true } : {}) }] : [])] });
   }
-  if (d.type === 'PV') syncWts(st, id, actor); // changed WHT: the old certificates are cancelled and new ones issued; unchanged WHT keeps them (§7.3 L)
+  if (d.type === 'PV') { syncWts(st, id, actor); settlePaidUpRecords(st, id, [...(d.allocations ?? []), ...(next.allocations ?? [])].map((a) => a.targetId)); } // changed WHT: the old certificates are cancelled and new ones issued; unchanged WHT keeps them (§7.3 L)
   const at = stamp();
   st.revisions.push({ docId: id, revision: next.revision, at, actor, reason, snapshot: publicDoc(getDoc(st, id)), diff: diffBody(d, fin) });
   logActivity(st, id, actor, 'revise', certNote(d, body) ?? reason);

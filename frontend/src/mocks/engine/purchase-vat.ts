@@ -22,7 +22,7 @@ export const snapshotCategories = (st: MockState, companyId: string, lines: DocL
 /** C1 (WHT): a PB line with no WHT type of its own takes its picked item's NOW and keeps it, so a later edit of the item master never moves what a voucher withholds (the same pattern as the category). */
 export const snapshotWhtTypes = (st: MockState, companyId: string, lines: DocLine[]): DocLine[] =>
   lines.map((l) => {
-    if (l.whtTypeCode) return l;
+    if (l.whtTypeCode !== undefined) return l; // '' = cleared on purpose: the item master does not refill it
     const code = st.items.find((i) => i.id === l.itemId && i.companyId === companyId)?.whtTypeCode;
     return code ? { ...l, whtTypeCode: code } : l;
   });

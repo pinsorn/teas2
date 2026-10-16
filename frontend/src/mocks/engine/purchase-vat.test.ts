@@ -271,9 +271,11 @@ describe('vendor credit / debit notes (PCN / PDN) against a purchase bill', () =
     const low = { header: get(b.id).header, lines: [L('l1', 'S7', '700.00', { expenseCategory: 'rent' })] };
     expect(err(() => revise(st, b.id, low, get(b.id).version, 'x', me)).code).toBe('settle.below_settled');
     expect(err(() => revise(st, b.id, { header: { ...get(b.id).header, partyId: PV3 }, lines: get(b.id).lines }, get(b.id).version, 'x', me)).code).toBe('doc.party_locked');
+    expect(err(() => revise(st, b.id, { header: get(b.id).header, lines: [L('l1', 'S7', '2000.00', { expenseCategory: 'rent' })] }, get(b.id).version, 'x', me)).code).toBe('pb.settled_locked'); // a paid bill's lines are frozen (cancel the voucher first)
+    cancel(st, pv.id, get(pv.id).version, 'OTHER', 'x', me);
     const ok = revise(st, b.id, { header: get(b.id).header, lines: [L('l1', 'S7', '2000.00', { expenseCategory: 'rent' })] }, get(b.id).version, 'x', me);
     expect(ok.totals.total).toBe('2140.00');
-    expect(get(b.id).outstanding).toBe('1340.00'); // 2,140.00 - 800.00
+    expect(get(b.id).outstanding).toBe('2140.00');
     expect(st.journals.find((j) => j.docId === b.id)!.preview.entries.map((e) => e.kind)).toEqual(['original', 'reversal', 'correction']);
     assertBalanced(st);
     // a live note freezes the lines

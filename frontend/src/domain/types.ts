@@ -64,8 +64,8 @@ export interface DocMarks { accepted?: { at: string; by: string }; rejected?: { 
 /** One source line of a convertible document: what was ordered, taken by active conversions (drafts included) and left. */
 export interface RemainingLine { lineId: string; description: string; unit: string; ordered: Qty; converted: Qty; remaining: Qty; closed: boolean }
 /** PV: the withholding as it was when the voucher was issued / last changed by its own save (C1) - the ledger, the certificates, the paper and the invariants read this, never today's bills.
- *  `bases`: per settled bill and WHT type the base this voucher took (I1: cumulative per bill; `full` = the bill was paid up by this voucher, `clamped` = a later credit would have made it negative, so 0). `expense` / `cashDelta` are the gross-up figures (signed). */
-export interface WhtFrozen { bases: { targetId: string; whtTypeCode: string; base: Money; clamped?: true; full?: true }[]; lines: WhtLine[]; expense: Money; cashDelta: Money }
+ *  `bases`: per settled bill and WHT type the base this voucher took (I1: cumulative per bill; `full` = the bill was paid up by this voucher, `billBase` = the bill's base of this type at that moment (B_paidUp, only with `full`), `clamped` = a later credit would have made it negative, so 0). `expense` / `cashDelta` are the gross-up figures (signed). */
+export interface WhtFrozen { bases: { targetId: string; whtTypeCode: string; base: Money; clamped?: true; full?: true; billBase?: Money }[]; lines: WhtLine[]; expense: Money; cashDelta: Money }
 export interface Doc { id: string; type: DocType; number?: string; status: DocStatus; correctionClass: CorrectionClass;
   revision: number; version: number; header: DocHeader; party?: PartySummary; lines: DocLine[]; totals: DocTotals;
   outstanding?: Money; locks: Lock[]; createdBy: Actor; issuedAt?: string; allocations?: Allocation[]; whtFrozen?: WhtFrozen;

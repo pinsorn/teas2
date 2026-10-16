@@ -160,7 +160,7 @@ export function freezeWht(st: MockState, companyId: string, body: Part, selfId?:
     for (const [code, B] of billBases(st, bill)) {
       if (B <= 0n) continue;
       const raw = (paid >= adjusted ? B : divRoundHalfAway(B * paid, adjusted)) - others.filter((x) => x.whtTypeCode === code).reduce((n, x) => n + BigInt(toSatang(x.base)), 0n);
-      bases.push({ targetId: bill.id, whtTypeCode: code, base: fromSatang(Number(raw < 0n ? 0n : raw)), ...(raw < 0n ? { clamped: true as const } : {}), ...(paid >= adjusted ? { full: true as const } : {}) });
+      bases.push({ targetId: bill.id, whtTypeCode: code, base: fromSatang(Number(raw < 0n ? 0n : raw)), ...(raw < 0n ? { clamped: true as const } : {}), ...(paid >= adjusted ? { full: true as const, billBase: fromSatang(Number(B)) } : {}) });
     }
   }
   const w = computeWht([...body.lines.map((l, i) => ({ net: toSatang(nets[i].net), whtTypeCode: l.whtTypeCode })), ...bases.map((b) => ({ net: toSatang(b.base), whtTypeCode: b.whtTypeCode }))],
