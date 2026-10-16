@@ -37,7 +37,9 @@ export interface DocLine { id: string; itemId?: string; description: string; qty
   whtTypeCode?: string; expenseCategory?: string;
   /** PV service line paid to a foreign payee: the service is used in Thailand, so PP.36 reverse-charge VAT applies (feeds TX2). Engine-defaulted for a foreign payee. */ pnd36?: boolean;
   /** EX line with VAT: the vendor's tax invoice behind it (ม.82/3, ม.86/4). Without all four details the line's VAT is cost (InputVatUnclaimed), never input VAT; with them the claim window of the invoice date applies, per line. */
-  vendorInvoice?: VendorInvoice }
+  vendorInvoice?: VendorInvoice;
+  /** JV line (AC1): the account, and ONE of debit / credit (the other '0.00'). The journal posts these verbatim. `partyId` only for an account that needs one (none today). */
+  accountCode?: string; debit?: Money; credit?: Money; partyId?: string }
 /** The vendor's tax invoice an expense-claim line carries: who issued it (name, TIN), its number and its date. */
 export interface VendorInvoice { vendorName: string; vendorTin: string; number: string; date: IsoDate;
   /** The employee confirms it is a FULL tax invoice made out to the company (ม.86/4): only then is its VAT claimable; false or absent = cost. */ fullTaxInvoice?: boolean }
@@ -60,12 +62,14 @@ export interface DocHeader { partyId?: string; documentDate: IsoDate; dueDate?: 
   /** PB / PDN of a VAT company: the claim window of the vendor's tax invoice had closed when the document was recorded (ม.82/3), so its VAT is cost; a PCN follows its bill. Server-derived at issue and revise. */ inputVatForfeited?: boolean;
   /** PB / PCN / PDN: the vendor's VAT status when the document was ISSUED (M2; a PCN inherits its bill's). Server-owned: the ม.82/5 check judges against it, not the live party master. */ vendorVatRegistered?: boolean;
   /** WT (50 ทวิ, server-written when its PV is issued): the return the tax falls on, the WHT type, its income type and the tax withheld. */ whtForm?: 'PND2' | 'PND3' | 'PND53' | 'PND54'; whtTypeCode?: string; whtIncomeType?: string; whtTax?: Money;
-  /** PB: the vendor paperwork is complete (เอกสารครบ). Absent = complete; `false` still issues but the Home inbox counts it (HC1). */ complete?: boolean }
+  /** PB: the vendor paperwork is complete (เอกสารครบ). Absent = complete; `false` still issues but the Home inbox counts it (HC1). */ complete?: boolean;
+  /** JV (accrual): on issue the system posts the reversing entry on day 1 of the next month. */ autoReverse?: boolean;
+  /** JV, server-owned (never accepted from a caller): the JV this one reverses; `autoReversal` = the system's own reversal of an `autoReverse` accrual. */ reversalOf?: string; autoReversal?: true }
 /** `cash` = money that moves: received (RC) / paid (PV). `wht` = withholding tax of the document. */
 export interface DocTotals { gross: Money; discount: Money; net: Money; vat: Money; total: Money; wht?: Money; cash?: Money;
   amountInWords: string }
 /** `href`: where an exit button goes when the exit is a page elsewhere (the reconciliation lock: the bank line). */
-export interface Lock { kind: 'period' | 'filing' | 'settlement' | 'reconciliation'; reason: string; exits: string[]; href?: string }
+export interface Lock { kind: 'period' | 'filing' | 'settlement' | 'reconciliation' | 'reversal'; reason: string; exits: string[]; href?: string }
 /** Document marks: facts about the document that are not status (customer accepted / rejected a QT, DO delivered, PO sent, SO closed). Never a revision. */
 export type MarkKey = 'accepted' | 'rejected' | 'delivered' | 'sent';
 export interface DocMarks { accepted?: { at: string; by: string }; rejected?: { at: string; by: string; reason: string };
@@ -156,6 +160,7 @@ export interface WhtLine { code: string; nameTh: string; form: 'PND2' | 'PND3' |
 export interface OpenItem { id: string; type: DocType; number: string; documentDate: IsoDate; dueDate?: IsoDate; total: Money; outstanding: Money }
 export interface ComputeResult { lines: { id: string; net: Money; vat: Money; total: Money }[]; totals: DocTotals;
   missing: MissingItem[]; /** Omitted without ledger.read (D-09). */ journal?: JournalPreview; whtLines?: WhtLine[];
+  /** JV: the server's Σ debit, Σ credit and their difference (the grid shows these, it never sums). */ balance?: { debit: Money; credit: Money; diff: Money };
   /** The approval policy needs this document approved before it can be issued (server-decided on the computed total, §7.6). */ approvalRequired?: boolean;
   allocation?: { allocated: Money; unallocated: Money; suggestedWht: { targetId: string; wht: Money; whtTypeCode?: string }[] } }
 
@@ -199,6 +204,8 @@ export interface PaperModel {
   /** WT (50 ทวิ, D-21): everything the certificate prints, server-built and frozen at the first print (I7). */
   certificate?: { form: 'PND2' | 'PND3' | 'PND53' | 'PND54'; sequence?: string; incomeType: string; incomeLabel: string; paidOn: IsoDate; income: Money; tax: Money; taxInWords: string;
     condition: 'withhold' | 'forever' | 'once'; voucher?: string };
+  /** JV (ใบสำคัญทั่วไป): the account lines as posted, with the server's totals. */
+  journal?: { lines: { no: number; accountCode: string; accountName: string; description: string; debit: Money; credit: Money }[]; debit: Money; credit: Money };
   replacementNote?: string;                    // 'ยกเลิกและออกแทนฉบับเดิม เลขที่ … ลงวันที่ …' (on the NEW document)
   voidMark?: { label: string; note?: string }; // cancelled / replaced originals: diagonal stamp on every page
   signatures: string[];                        // ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม']

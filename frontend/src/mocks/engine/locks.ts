@@ -5,16 +5,18 @@ import type { MockState } from '../store';
 import { MockError } from './log';
 import { periodLock } from './periods';
 import { fromSatang, toSatang } from './money';
+import { jvLock } from './journal';
 import { resolvedBankId } from './settlement';
 
 /** The locks a document READS with (single derivation: the doc GET handler and the fixture predicates both call this).
  *  Stored locks (filing, settlement) plus the period lock and the reconciliation lock, derived here and never stored. TX1 adds the filing lock. */
-export function derivedLocks(st: MockState, d: { id?: string; locks: Lock[]; companyId: string; status: DocStatus; header: { documentDate: string } }): Lock[] {
+export function derivedLocks(st: MockState, d: { id?: string; type?: DocType; locks: Lock[]; companyId: string; status: DocStatus; header: DocHeader }): Lock[] {
   const live = LIVE.includes(d.status);
   const p = live ? periodLock(st, d.companyId, d.header.documentDate) : undefined;
   const r = live && d.id ? reconciliationLock(st, d.id) : undefined;
   const s = live && d.id ? settlementLock(st, d.id) : undefined;
-  return [...(s ? d.locks.filter((l) => l.kind !== 'settlement') : d.locks), ...(r ? [r] : []), ...(s ? [s] : []), ...(p ? [p] : [])];
+  const v = live ? jvLock(st, d) : undefined; // AC1: a reversed JV, and a reversal, are final
+  return [...(s ? d.locks.filter((l) => l.kind !== 'settlement') : d.locks), ...(r ? [r] : []), ...(s ? [s] : []), ...(v ? [v] : []), ...(p ? [p] : [])];
 }
 
 /** The cash an RC / PV moves (satang): `totals.cash`, or total - WHT for a document stored without it. */

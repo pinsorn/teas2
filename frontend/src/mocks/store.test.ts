@@ -45,7 +45,7 @@ describe('mock store', () => {
     const old = { ...seed(), version: 5, items: [] as unknown[] };
     localStorage.setItem('teas2.mock.state.v5', JSON.stringify(old));
     const s = loadState();
-    expect(s.version).toBe(28);
+    expect(s.version).toBe(29);
     expect(s.items.some((i) => i.id === 'EXP-01')).toBe(true);
     expect(s.parties.some((p) => p.id === 'pv-12')).toBe(true);
   });
@@ -74,7 +74,7 @@ describe('mock store', () => {
     const rcTargets = s.links.filter((l) => l.kind === 'settles' && s.docs.find((d) => d.id === l.to)?.type === 'TI').map((l) => l.to).filter((id) => !id.startsWith('spike-')).sort(); // (S3's receipts settle IVs; rc-multi also pays spike-60, outside this count)
     expect(rcTargets).toEqual(tis.filter((d) => d.status === 'settled' || d.status === 'partly_settled').map((d) => d.id).sort());
     expect(s.links.filter((l) => l.kind === 'replaces')).toHaveLength(3);
-    expect(s.links.filter((l) => l.kind === 'adjusts')).toHaveLength(7); // cn-1, cn-2 + S5's cn-ret, dn-1, cn-full + P2's pcn-1, pdn-1
+    expect(s.links.filter((l) => l.kind === 'adjusts')).toHaveLength(9); // cn-1, cn-2 + S5's cn-ret, dn-1, cn-full + P2's pcn-1, pdn-1 + AC1's jv-1-auto, jv-rev (a reversing JV links `adjusts` to its original)
     expect(kinds('CN')).toHaveLength(4);
     expect(s.links.filter((l) => l.kind === 'converted_from')).toHaveLength(17); // + P2's pb-po
     const delivered = new Set(s.links.filter((l) => l.kind === 'converted_from').map((l) => l.to));

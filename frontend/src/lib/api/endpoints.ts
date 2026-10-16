@@ -87,6 +87,10 @@ export const endpoints = {
   postBankLine: (lineId: string, body: { accountCode: string; description?: string }) =>
     api<BankLine>('POST', `/finance/bank-lines/${encodeURIComponent(lineId)}/post`, body),
   postableAccounts: () => api<PostableAccount[]>('GET', '/finance/postable-accounts'),
+  /** JV: the accounts a journal voucher may post to. */
+  journalAccounts: () => api<PostableAccount[]>('GET', '/accounting/journal-accounts'),
+  /** JV "กลับรายการ": a reversing JV of this one (dated the first open date or later, never in the future); any other document type is refused. */
+  reverseDoc: (type: DocType, id: string, body: { date?: string; reason?: string } = {}) => api<Doc>('POST', `${d(type, id)}/reverse`, body),
   getReconciliation: (accountId: string) => api<Reconciliation>('GET', `/finance/bank-accounts/${encodeURIComponent(accountId)}/reconciliation`),
   lockReconciliation: (accountId: string, date: string) => api<{ reconciledTo: string }>('POST', `/finance/bank-accounts/${encodeURIComponent(accountId)}/reconciled-to`, { date }),
   /** FN3 settlements (D-13): read with bank.read, post / reverse with bank.manage. */

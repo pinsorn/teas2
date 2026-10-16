@@ -155,6 +155,18 @@ export function HeaderFields({ type, keys, ids, header, setHeader }: {
           <Label htmlFor={`${ids}-complete`}>{t('complete')}</Label>
         </div>
       );
+      case 'autoReverse': { // JV accrual: the system posts the reversing entry on day 1 of the next month, at issue
+        const next = header.documentDate ? new Date(Date.UTC(Number(header.documentDate.slice(0, 4)), Number(header.documentDate.slice(5, 7)), 1)).toISOString().slice(0, 10) : ''; // the 1st of the following month (month is 1-based here, so it is the next one)
+        return (
+          <div className="flex items-start gap-2 md:col-span-2">
+            <Checkbox id={`${ids}-autorev`} checked={!!header.autoReverse} onCheckedChange={(c) => setHeader((h) => ({ ...h, autoReverse: c === true ? true : undefined }))} />
+            <div className="grid gap-1">
+              <Label htmlFor={`${ids}-autorev`}>{t('autoReverse')}</Label>
+              <p className="text-small text-muted-foreground">{next ? t('autoReverseHint', { date: formatDateBE(next) }) : t('autoReverseHintNoDate')}</p>
+            </div>
+          </div>
+        );
+      }
       case 'reason': return <ReasonField ids={ids} type={type} header={header} setHeader={setHeader} />;
       case 'bankAccount': return <BankAccountField id={`${ids}-bank`} header={header} setHeader={setHeader} />;
       case 'paymentMethod': return (

@@ -22,6 +22,17 @@ Entry format — terse, greppable by symptom:
 
 <!-- entries below — newest on top -->
 
+## Component test: MISSING_MESSAGE for a key you just added to th.json (the key IS in the file)
+- **Root cause:** the same key already exists LATER in the same JSON object (e.g. docEditor.account as a string); JSON allows duplicate keys and the last one wins, so your object is silently replaced.
+- **Fix:** use a unique key (docEditor.accountGrid); detect with json.load(..., object_pairs_hook=) printing repeated keys per object.
+- **Seen:** 2026-10-16, SP1c AC1
+
+## e2e runs against a stale build: a leftover `next start -p 3100` answers (reuseExistingServer)
+- **Root cause:** playwright.config reuses whatever listens on 3100; an earlier worker's server serves the OLD .next build.
+- **Fix:** stop it, `NEXT_PUBLIC_API_MOCKING=enabled corepack pnpm build`, start `pnpm start -p 3100` yourself, run playwright, stop it after.
+- **Seen:** 2026-10-16, SP1c AC1
+
+
 ## TypeError "Cannot read properties of undefined (reading 'type')" in a seed-wide test, or a GL figure that is short by a settlement's amount (FN3)
 - **Root cause:** a `settles` link's `from` can be a SETTLEMENT RECORD id (`st.settlements`), not a document: `st.docs.find((d) => d.id === l.from)!.type` crashes, and a GL helper that sums only `st.journals` (+ `bankJournals`) misses the settlement journals.
 - **Fix:** resolve `from` with `?.` (a settlement is not a document; invariant 6 resolves it through `st.settlements`), and sum GL through `companyEntries(st, companyId)` (documents + bank journals + settlements) or add `st.settlements[].journal` by hand as the trial-balance test does.

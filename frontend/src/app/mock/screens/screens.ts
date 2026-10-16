@@ -26,6 +26,7 @@ export const EX_BASE = '/purchases/expense-claims';
 export const WT_BASE = '/tax/wht-certificates';
 export const BANK_BASE = '/finance/bank-accounts';
 export const SETTLEMENT_BASE = '/finance/settlements';
+export const JV_BASE = '/accounting/journal-vouchers';
 // names are keys of messages `screens.name.*`; fixture keys live in src/mocks/fixtures/ids.ts (later tasks append their screens here)
 export const SCREENS: Screen[] = [
   { name: 'home', route: '/', company: 'both', states: true },
@@ -143,5 +144,14 @@ export const SCREENS: Screen[] = [
   { name: 'settlementPosted', route: `${SETTLEMENT_BASE}/stl-001`, company: 'vat', states: true }, // the seeded settlement: pc-05's deposit rc-dep2 applied to ti-dep2
   { name: 'rcDepositApplied', route: { fixture: 'rcDepositApplied', base: RC_BASE }, company: 'vat', states: true },
   { name: 'pvPrepayment', route: { fixture: 'pvPrepayment', base: PV_BASE }, company: 'vat', states: true },
+  { name: 'jvList', route: JV_BASE, company: 'both', states: true },
+  { name: 'jvNew', route: `${JV_BASE}/new`, company: 'both', states: true },
+  { name: 'jvDraft', route: { fixture: 'jvDraftUnbalanced', base: JV_BASE }, company: 'vat', states: true },
+  { name: 'jvAccrual', route: { fixture: 'jvAccrual', base: JV_BASE }, company: 'vat', states: true },
+  { name: 'jvIssued', route: { fixture: 'jvIssued', base: JV_BASE }, company: 'vat', states: true },
+  { name: 'jvReversal', route: { fixture: 'jvReversal', base: JV_BASE }, company: 'vat', states: true },
+  { name: 'jvPrint', route: { fixture: 'jvAccrual', base: '/print/JV' }, company: 'vat', states: false },
+  { name: 'njvIssued', route: { fixture: 'njvIssued', base: JV_BASE }, company: 'nonvat', states: true },
+  { name: 'journalsList', route: '/accounting/journals', company: 'both', states: true },
   { name: 'styleGuide', route: '/style-guide', company: 'both', states: false },
 ];

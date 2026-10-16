@@ -13,7 +13,8 @@ async function run(kind: string, url: URL) {
   const gate = await screenGate('item');
   if (gate) return gate;
   const { st, company, perms, s } = ctx();
-  if (!perms.includes(PERM)) return forbidden(PERM);
+  const need = kind === 'general-journal' ? 'ledger.read' : PERM; // the general journal is the ledger itself
+  if (!perms.includes(need)) return forbidden(need);
   if (!isBuilt(kind)) return problem(404, 'report.not_built', 'รายงานนี้ยังไม่เปิดให้ใช้งาน');
   const p = Object.fromEntries(url.searchParams);
   if (DATE_KEYS.some((k) => p[k] && !isDate(p[k]))) return problem(422, 'report.bad_param', 'วันที่ไม่ถูกต้อง');

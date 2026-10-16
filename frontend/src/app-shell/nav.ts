@@ -36,6 +36,7 @@ export const NAV: NavGroup[] = [
   group('finance', [item('bankAccounts', '/finance/bank-accounts', BANK), item('deposits', '/finance/deposits', BANK), item('settlements', '/finance/settlements', BANK)]),
   group('accounting', [
     item('journals', '/accounting/journals', LEDGER),
+    doc('journalVouchers', '/accounting/journal-vouchers', 'JV'),
     item('chartOfAccounts', '/accounting/chart-of-accounts', LEDGER),
     item('openingBalances', '/accounting/opening-balances', LEDGER),
     item('schedules', '/accounting/schedules', LEDGER),

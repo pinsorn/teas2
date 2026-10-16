@@ -4,6 +4,7 @@ import { fromSatang, toSatang } from './money';
 import { MockError } from './log';
 import { type AccountingRole, type PostingContext, resolveRole } from './posting';
 import { categoryOf, exForfeited, isRecoverable } from './purchase-vat';
+import { jvEntryLines } from './journal';
 import { cashBankId, freezeWht, frozenFigures } from './settlement';
 import { computeDoc, vatBasisOf, vatOf } from './vat';
 
@@ -72,13 +73,23 @@ export const reversalOf = (e: JournalEntryPreview, date: string, postedAt?: stri
   lines: e.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit, rule: `${l.rule} (กลับรายการ)` })),
 });
 
+/** The original entry of a document from its journal lines, plus the reversal when it is cancelled or replaced. */
+function withReversal(doc: Doc, lines: JournalLinePreview[]): JournalPreview {
+  if (!lines.length) return { entries: [] };
+  const original: JournalEntryPreview = { date: doc.header.documentDate, kind: 'original', lines, ...(doc.issuedAt ? { postedAt: doc.issuedAt } : {}) };
+  const entries = [original];
+  if (doc.status === 'cancelled' || doc.status === 'replaced') entries.push(reversalOf(original, doc.cancel?.at.slice(0, 10) ?? doc.header.documentDate, doc.cancel?.at));
+  return { entries };
+}
+
 /** Posting for the document as it stands: its original entry, plus the reversal when it is cancelled or replaced.
- *  Types without a ledger effect (N-class, JV, ...) return no entries. */
+ *  Types without a ledger effect (N-class, ...) return no entries. A JV (AC1) posts its account lines verbatim. */
 export function ledgerFor(st: MockState, doc: Doc & { companyId?: string }): JournalPreview {
   const post = POST[doc.type];
-  if (!post) return { entries: [] };
+  if (!post && doc.type !== 'JV') return { entries: [] };
   const companyId = doc.companyId ?? st.docs.find((d) => d.id === doc.id)?.companyId;
   if (!companyId) throw new MockError(500, 'engine.invariant', 'ledgerFor: document has no company');
+  if (!post) return withReversal(doc, jvEntryLines(st, companyId, doc.lines));
   const partyName = doc.party?.name ?? st.parties.find((p) => p.id === doc.header.partyId)?.name;
   const t: Totals = { net: toSatang(doc.totals.net), vat: toSatang(doc.totals.vat), total: toSatang(doc.totals.total), wht: toSatang(doc.totals.wht ?? '0.00'),
     cash: toSatang(doc.totals.cash ?? fromSatang(toSatang(doc.totals.total) - toSatang(doc.totals.wht ?? '0.00'))) };
@@ -96,11 +107,7 @@ export function ledgerFor(st: MockState, doc: Doc & { companyId?: string }): Jou
     accountCode: x.code, accountName: x.name, debit: fromSatang(Math.max(x.net, 0)), credit: fromSatang(Math.max(-x.net, 0)), rule: x.rule,
     ...(x.party ? { partyName: x.party } : {}), ...(x.dims ? { dimensions: x.dims } : {}),
   }));
-  if (!lines.length) return { entries: [] };
-  const original: JournalEntryPreview = { date: doc.header.documentDate, kind: 'original', lines, ...(doc.issuedAt ? { postedAt: doc.issuedAt } : {}) };
-  const entries = [original];
-  if (doc.status === 'cancelled' || doc.status === 'replaced') entries.push(reversalOf(original, doc.cancel?.at.slice(0, 10) ?? doc.header.documentDate, doc.cancel?.at));
-  return { entries };
+  return withReversal(doc, lines);
 }
 
 /** Every journal entry of a company: its documents', the ones the reconciliation wrote itself (fee / inline / opening) and its settlement records'. The one reader for reports. */

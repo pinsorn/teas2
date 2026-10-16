@@ -3,6 +3,7 @@ import type { DocType, WhtLine, WhtMode } from '@/domain/types';
 import type { Doc, JournalEntryPreview } from '@/domain/types';
 import type { MockState } from '../store';
 import { approvalRequired } from './approval';
+import { jvInvariants } from './journal';
 import { appliedOf, docCash, toleranceOf } from './locks';
 import { payoutOf, resolvedBankId } from './settlement';
 import { consumed, q4 } from './chain';
@@ -573,6 +574,8 @@ export function checkInvariants(st: MockState): string[] {
       }
     }
   }
+
+  out.push(...jvInvariants(st)); // 15. journal vouchers (AC1): no controlled account, the journal is the lines, reversals mirror, accruals net to zero
 
   // numbering: gap-free per company x type x month, and the series counter agrees
   const groups = new Map<string, number[]>();

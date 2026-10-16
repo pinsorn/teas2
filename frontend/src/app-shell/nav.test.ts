@@ -45,7 +45,8 @@ describe('docListHref / matchNavItem', () => {
     expect(docListHref('BL', true)).toBe('/sales/billing-statements');
   });
   it('has no route (so no link) for types without a nav page', () => {
-    for (const t of ['JV', 'DP', 'FA', 'PR', 'OB'] as const) expect(docListHref(t, true)).toBeUndefined();
+    for (const t of ['DP', 'FA', 'PR', 'OB'] as const) expect(docListHref(t, true)).toBeUndefined();
+    expect(docListHref('JV', true)).toBe('/accounting/journal-vouchers'); // AC1
     expect(docListHref('WT', true)).toBe('/tax/wht-certificates'); // P3
   });
   it('matches the longest list route, and only on a segment boundary', () => {

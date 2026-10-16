@@ -25,18 +25,19 @@ export function rolesOf(st: MockState, companyId: string, code: string): Account
   const a = st.accounts.find((x) => x.companyId === companyId && x.code === code);
   return [...new Set([...(a?.controlRole ? [a.controlRole] : []), ...st.postingRules.filter((r) => r.companyId === companyId && r.accountCode === code).map((r) => r.role)])];
 }
-/** Why an account is not for an inline journal and what to use instead; undefined = free to post. */
-export function controlExit(st: MockState, companyId: string, code: string): string | undefined {
+/** Why an account is not for an inline journal and what to use instead; undefined = free to post. `scope` 'jv' (AC1): the same list for the journal voucher, where the equity accounts, sales revenue and the payroll accruals
+ *  are the accountant's to post and only 3900 (opening balances) stays with its own screen; every account an invariant ties to documents is refused in both. */
+export function controlExit(st: MockState, companyId: string, code: string, scope: 'inline' | 'jv' = 'inline'): string | undefined {
   const a = st.accounts.find((x) => x.companyId === companyId && x.code === code);
-  const roles = rolesOf(st, companyId, code), has = (...r: AccountingRole[]) => roles.some((x) => r.includes(x)), sub = a?.subClass ?? '';
-  if (a?.class === 'equity' || has('RetainedEarnings', 'OpeningBalanceEquity')) return 'บัญชีส่วนของเจ้าของ ปรับด้วยสมุดรายวันทั่วไป (JV) ไม่ใช่รายการเดินบัญชี';
+  const roles = rolesOf(st, companyId, code), has = (...r: AccountingRole[]) => roles.some((x) => r.includes(x)), sub = a?.subClass ?? '', jv = scope === 'jv';
+  if (jv ? has('OpeningBalanceEquity') || sub === 'opening' : a?.class === 'equity' || has('RetainedEarnings', 'OpeningBalanceEquity')) return jv ? 'บัญชียอดยกมา ปรับที่หน้ายอดยกมา (opening balances) ไม่ใช่ใบสำคัญทั่วไป' : 'บัญชีส่วนของเจ้าของ ปรับด้วยสมุดรายวันทั่วไป (JV) ไม่ใช่รายการเดินบัญชี';
   if (has('Cash') || sub === 'cash' || sub === 'bank') return 'บัญชีเงินสด/ธนาคาร ใช้ปุ่ม "โอนระหว่างบัญชี" ที่รายการเดินบัญชี';
   if (has('AR', 'CustomerDeposit') || sub === 'receivable') return 'บัญชีลูกหนี้/เงินรับล่วงหน้า ใช้ใบเสร็จรับเงิน (RC)';
   if (has('AP', 'EmployeePayable', 'VendorPrepayment') || sub === 'payable') return 'บัญชีเจ้าหนี้/เงินจ่ายล่วงหน้า ใช้ใบสำคัญจ่าย (PV)';
-  if (has('Revenue', 'SalesReturn', 'SalesDiscount') || sub === 'sales' || sub === 'contra-sales') return 'บัญชีรายได้จากการขาย ลงจากใบกำกับภาษี/ใบลดหนี้เท่านั้น (ต้องมีภาษีขาย)';
+  if (!jv && (has('Revenue', 'SalesReturn', 'SalesDiscount') || sub === 'sales' || sub === 'contra-sales')) return 'บัญชีรายได้จากการขาย ลงจากใบกำกับภาษี/ใบลดหนี้เท่านั้น (ต้องมีภาษีขาย)';
   if (has('FixedAsset', 'AccumulatedDepreciation') || sub === 'fixed-asset' || sub === 'accumulated-depreciation') return 'บัญชีสินทรัพย์ถาวร/ค่าเสื่อมราคาสะสม ลงจากทะเบียนสินทรัพย์และใบสำคัญจ่ายเท่านั้น';
-  if (has(...TAX_ROLES) || sub === 'tax-asset' || sub === 'tax-liability') return 'บัญชีควบคุมภาษี ภาษีลงจากเอกสารเท่านั้น';
-  if (has('SalaryPayable', 'PitPayable', 'SsoPayable') || sub === 'payroll-liability') return 'บัญชีเจ้าหนี้เงินเดือน ลงจากเอกสารเงินเดือนเท่านั้น';
+  if ((jv ? has('OutputVat', 'InputVat', 'Pnd36VatPayable', 'WhtReceivable', 'WhtPayable') : has(...TAX_ROLES)) || sub === 'tax-asset' || sub === 'tax-liability') return 'บัญชีควบคุมภาษี ภาษีลงจากเอกสารเท่านั้น';
+  if (!jv && (has('SalaryPayable', 'PitPayable', 'SsoPayable') || sub === 'payroll-liability')) return 'บัญชีเจ้าหนี้เงินเดือน ลงจากเอกสารเงินเดือนเท่านั้น';
   return undefined;
 }
 

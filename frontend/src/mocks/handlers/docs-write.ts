@@ -6,6 +6,8 @@ import { PAPER_BUILDERS } from '../engine/paper';
 import { buildChain } from '../engine/chain';
 import { approve, sendBack } from '../engine/approval';
 import { type Body, keepOmitted, unavailableTh, approveAndIssue, cancel, compute, convert, createDraft, deleteDraft, issue, publicDoc, submitForApproval, updateDraft } from '../engine/commands';
+import { refuseJvRevise, reverseJv } from '../engine/journal';
+import { controlExit } from '../engine/reconcile';
 import { resolvedBankId } from '../engine/settlement';
 import { buildPlan, correctionPlan, executePlan, planStale } from '../engine/corrections';
 import { MockError } from '../engine/log';
@@ -23,6 +25,7 @@ export const stripOverrides = <T extends Body>(b0: T): T => {
   let b = b0;
   // the shape of the request, refused where it enters (create, update, compute, correction plan): an unknown withholding mode would otherwise be read as "deduct" by some paths and as a gross-up by others
   if (b?.header?.whtMode != null && !WHT_MODES.includes(b.header.whtMode)) throw new MockError(422, 'wht.mode_invalid', `โหมดภาษีหัก ณ ที่จ่าย “${String(b.header.whtMode)}” ไม่ถูกต้อง ใช้ได้เฉพาะ: ${WHT_MODES.join(', ')}`);
+  if (b?.header && ('reversalOf' in b.header || 'autoReversal' in b.header)) { const { reversalOf, autoReversal, ...h } = b.header; void reversalOf; void autoReversal; b = { ...b, header: h }; } // JV: a reversal's link is engine-set (reverse / auto-reverse), never accepted from a caller
   if (b?.header && 'bankSnapshot' in b.header) { const { bankSnapshot, ...h } = b.header; void bankSnapshot; b = { ...b, header: h }; } // engine-set at issue (I3): never accepted from a caller
   if (!Array.isArray(b?.lines)) return b;
   const lines = b.lines.map((l) => { if (!l || typeof l !== 'object') return l; const { vatOverride, ...r } = l; void vatOverride; return r; });
@@ -154,9 +157,23 @@ export const docsWriteHandlers = [
     return HttpResponse.json(doc);
   })),
 
+  // AC1 "กลับรายการ": a JV's entry is reversed by a reversing JV; any other document is refused with the exit (its own cancel / correction)
+  http.post('*/bff/v1/docs/:type/:id/reverse', ({ request, params }) => guarded(String(params.type), P('issue'), async (c, t) => {
+    own(c, t, params.id);
+    const body = ((await request.json().catch(() => ({}))) ?? {}) as { date?: string; reason?: string };
+    if (body.date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(body.date))) throw new MockError(422, 'ledger.reverse_date', 'วันที่กลับรายการไม่ถูกต้อง');
+    const r = reverseJv(c.st, String(params.id), ACTOR, { ...(body.date ? { date: body.date } : {}), ...(typeof body.reason === 'string' && body.reason.trim() ? { reason: body.reason.trim() } : {}) });
+    done(c);
+    return HttpResponse.json(publicDoc(r), { status: 201 });
+  })),
+  // the accounts a journal voucher may post to: postable, none a document owns (the server refuses the others at issue)
+  http.get('*/bff/v1/accounting/journal-accounts', () => guarded('JV', P('create'), (c) => HttpResponse.json(
+    c.st.accounts.filter((a) => a.companyId === c.company.id && a.postable && !controlExit(c.st, c.company.id, a.code, 'jv')).map((a) => ({ code: a.code, nameTh: a.nameTh, class: a.class }))))),
+
   http.post('*/bff/v1/docs/:type/:id/correction-plan', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
     const orig = own(c, t, params.id);
     const proposal = stripOverrides((await request.json()) as Body);
+    if (t === 'JV') refuseJvRevise(c.st, orig, proposal); // a reversed JV and a reversal are final: refused before a plan is shown
     refuseInactive(c, t, proposal?.header && keepOmitted(orig, proposal.header), orig.header); // I2: a correction cannot re-point the document to a closed account
     const plan = correctionPlan(c.st, String(params.id), proposal, c.s.role);
     done(c);

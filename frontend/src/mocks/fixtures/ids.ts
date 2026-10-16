@@ -15,7 +15,8 @@ type DocFixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssuedUnpa
   | 'pbDraft' | 'pbIssuedUnpaid' | 'pb1Settled' | 'pbMixedVat' | 'pbFromPo' | 'pbCapex' | 'pbClaimLate' | 'pbIncomplete' | 'pcnIssued' | 'pdnIssued' | 'npbVatToCost'
   | 'pvMultiWt' | 'pvGrossUp' | 'pvForeign' | 'pvCancelled' | 'wtIssued' | 'wtCancelled'
   | 'exDraft' | 'exPending' | 'exApproved' | 'exUnpaid' | 'exPaid' | 'exForfeit' | 'nexIssued'
-  | 'tiDeposit' | 'rcDepositApplied' | 'pvPrepayment'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
+  | 'tiDeposit' | 'rcDepositApplied' | 'pvPrepayment'
+  | 'jvDraftUnbalanced' | 'jvAccrual' | 'jvIssued' | 'jvReversal' | 'njvIssued'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
 
 /** FN1 bank accounts: not documents, so no predicate - a fixed record id that must exist in the seed. `bankEmpty` is the VAT company's account with no imports. */
 export const BANK_FIXTURES = { bankKbank: 'ba-kbank', bankEmpty: 'ba-scb', nbankKbank: 'nba-kbank' } as const;
@@ -113,6 +114,12 @@ export const FIXTURE_PREDICATES: Record<DocFixtureKey, (d: D, st: MockState) => 
   tiDeposit: byId('ti-dep', (d) => d.status === 'issued' && d.outstanding === d.totals.total),
   rcDepositApplied: byId('rc-dep2', (d) => d.status === 'issued'),
   pvPrepayment: byId('pv-prep', (d) => d.status === 'issued' && d.header.depositAmount === '3000.00'),
+  // AC1 journal vouchers: jv-d1 does not balance (1,000.00 / 900.00); jv-1 is an accrual whose auto-reversal jv-1-auto is dated 1 Oct; jv-2 was reversed once by jv-rev (final)
+  jvDraftUnbalanced: byId('jv-d1', (d) => d.status === 'draft'),
+  jvAccrual: byId('jv-1', (d) => d.status === 'issued' && d.header.autoReverse === true),
+  jvIssued: byId('jv-2', (d) => d.status === 'issued'),
+  jvReversal: byId('jv-rev', (d) => d.status === 'issued' && d.header.reversalOf === 'jv-2'),
+  njvIssued: byId('njv-1', (d) => d.status === 'issued' && d.companyId === 'co-nonvat'),
 };
 
 /** Lowest id (string order) matching each predicate in the active seed; throws listing every unresolved key. */

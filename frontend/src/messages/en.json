@@ -58,11 +58,18 @@
     "ledger": {
       "needsPermission": "Requires the View ledger permission (ledger.read)", "empty": "This document has no journal entries yet", "account": "Account", "debit": "Debit", "credit": "Credit",
       "late": "Posted late (closed period)",
-      "kind": { "original": "Original entry", "reversal": "Reversal entry", "correction": "Correction entry" }
+      "kind": { "original": "Original entry", "reversal": "Reversal entry", "correction": "Correction entry" },
+      "autoReverseNote": "This accrual reverses itself automatically; the reversing voucher is on the related-documents tab.",
+      "reverse": {
+        "action": "Reverse", "title": "Reverse {doc}",
+        "body": "A new journal voucher is created that swaps debit and credit on every line of this one. A voucher can be reversed once, and a reversed voucher can no longer be revised or cancelled.",
+        "date": "Reversal date", "dateHint": "Empty = the voucher's own date or the first day of the open period, whichever is later. A later date in an open period may be chosen, never one in the future.",
+        "reason": "Reason (optional)", "back": "Back", "confirm": "Reverse"
+      }
     },
     "activity": {
       "empty": "No activity yet",
-      "action": { "submit": "Submitted for approval", "approve": "Approved", "send_back": "Sent back for changes", "create": "Created draft", "issue": "Issued", "settle": "Payment received", "cancel": "Cancelled", "revise": "Revised", "convert": "Converted", "accept": "Customer accepted", "reject": "Customer rejected", "deliver": "Delivered", "close": "Remainder closed", "send": "Sent to vendor", "settlement": "Netting / deposit applied", "settlement_reverse": "Settlement reversed" }
+      "action": { "submit": "Submitted for approval", "approve": "Approved", "send_back": "Sent back for changes", "create": "Created draft", "issue": "Issued", "settle": "Payment received", "cancel": "Cancelled", "revise": "Revised", "convert": "Converted", "accept": "Customer accepted", "reject": "Customer rejected", "deliver": "Delivered", "close": "Remainder closed", "send": "Sent to vendor", "settlement": "Netting / deposit applied", "settlement_reverse": "Settlement reversed", "reverse": "Reversed" }
     },
     "revisions": {
       "empty": "No history yet", "first": "First issued version", "n": "Revision {n}", "view": "View this version", "hide": "Hide this version",
@@ -224,6 +231,7 @@
       "deposits": "Deposits and advances",
       "settlements": "Netting and settlements",
       "journals": "Journals",
+      "journalVouchers": "Journal vouchers",
       "chartOfAccounts": "Chart of accounts",
       "openingBalances": "Opening balances",
       "schedules": "Recurring and amortisation",
@@ -418,6 +426,15 @@
       "settlementPosted": "Settlement - deposit applied (posted)",
       "rcDepositApplied": "Deposit receipt that was applied (locked)",
       "pvPrepayment": "Payment voucher with a prepayment",
+      "jvList": "Journal vouchers list",
+      "jvNew": "Journal voucher, new",
+      "jvDraft": "Journal voucher, draft that does not balance",
+      "jvAccrual": "Journal voucher, accrual that reverses itself",
+      "jvIssued": "Journal voucher, reversed (final)",
+      "jvReversal": "Journal voucher, a reversal",
+      "jvPrint": "Print journal voucher",
+      "njvIssued": "Journal voucher (non-VAT)",
+      "journalsList": "General journal, every entry of the company",
       "styleGuide": "Style guide"
     },
     "state": { "normal": "Normal", "empty": "Empty", "loading": "Loading", "error": "Error", "forbidden": "Forbidden", "locked": "Locked" },
@@ -575,6 +592,17 @@
       "categoryNone": "From the item / none", "fromSource": "From {qty} {unit} x unit price (change the quantity on the purchase order)", "unitPriceOf": "Unit price of line {n}",
       "taxCode": { "S7": "VAT 7%", "Z0": "VAT 0%", "EX": "No VAT / exempt" }
     },
+    "autoReverse": "Reverse automatically (accrual)",
+    "autoReverseHint": "The system posts the reversing entry on {date}, together with this voucher. Revising or cancelling this voucher takes the reversal with it.",
+    "autoReverseHintNoDate": "The system posts the reversing entry on day 1 of the next month, together with this voucher.",
+    "accountGrid": {
+      "colAccount": "Account", "colDescription": "Description", "colDebit": "Debit", "colCredit": "Credit",
+      "account": "Account of line {n}", "description": "Description of line {n}", "debit": "Debit of line {n}", "credit": "Credit of line {n}",
+      "remove": "Remove line {n}", "add": "Add line",
+      "hint": "Enter or Tab moves to the next cell  ·  Enter on the credit cell of the last row adds a line  ·  one side only per line",
+      "balance": "Voucher totals", "totalDebit": "Total debit", "totalCredit": "Total credit", "diff": "Difference",
+      "computing": "Computing…", "balanced": "Debit and credit are equal", "unbalanced": "Debit and credit differ by {diff}"
+    },
     "bankAccount": "Bank / cash account",
     "bankLoading": "Loading accounts…",
     "bankFailed": "Could not load the accounts",
@@ -729,6 +757,7 @@
     "DN": {"title": "Debit note", "issue": "Save and issue debit note", "create": "Create debit note", "empty": "No debit notes yet"},
     "EX": {"title": "Expense claim", "issue": "Save and issue expense claim", "create": "Create expense claim", "empty": "No expense claims yet"},
     "PV": {"title": "Payment voucher", "issue": "Save and issue payment voucher", "create": "Create payment voucher", "empty": "No payment vouchers yet"},
+    "JV": {"title": "Journal voucher", "issue": "Save and issue the journal voucher", "create": "Create journal voucher", "empty": "No journal vouchers yet"},
     "WT": {"title": "Withholding tax certificate", "issue": "Issue withholding certificate", "create": "Create withholding certificate", "empty": "No withholding certificates yet"}
   },
   "reports": {
@@ -745,6 +774,11 @@
     "tieOut": { "title": "Tie-out does not match", "diff": "Difference {diff} baht", "ok": "Tie-out matches" },
     "tabs": { "label": "Financial statements", "tb": "Trial balance", "pl": "Profit and loss", "bs": "Balance sheet", "gl": "General ledger" },
     "tb": { "title": "Trial balance", "code": "Account code", "name": "Account name", "debit": "Debit", "credit": "Credit", "balanced": "Total debit {left} baht against total credit {right} baht" },
+    "gj": {
+      "title": "General journal", "entry": "Entry / account", "date": "Date", "rule": "Description", "balanced": "Total debit {left} baht against total credit {right} baht",
+      "from": "From", "to": "To", "accountFilter": "Account (code)", "source": "Source",
+      "sources": { "JV": "Journal voucher", "TI": "Tax invoice", "IV": "Invoice", "RC": "Receipt", "CN": "Credit note", "DN": "Debit note", "PB": "Purchase bill", "PCN": "Vendor credit note", "PDN": "Vendor debit note", "PV": "Payment voucher", "EX": "Expense claim", "STL": "Netting and settlements", "BANK": "Bank reconciliation" }
+    },
     "bankRec": { "title": "Bank reconciliation", "item": "Item", "date": "Date", "amount": "Amount", "tie": "Adjusted statement balance {left} baht against adjusted book balance {right} baht" }
   },
   "records": {
