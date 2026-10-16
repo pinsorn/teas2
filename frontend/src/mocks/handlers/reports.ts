@@ -1,4 +1,5 @@
 import { HttpResponse, http } from 'msw';
+import { MockError } from '../engine/log';
 import { buildReport, isBuilt, reportCsv } from '../engine/reports';
 import { ctx, forbidden, problem, screenGate } from './common';
 
@@ -16,7 +17,12 @@ async function run(kind: string, url: URL) {
   if (!isBuilt(kind)) return problem(404, 'report.not_built', 'รายงานนี้ยังไม่เปิดให้ใช้งาน');
   const p = Object.fromEntries(url.searchParams);
   if (DATE_KEYS.some((k) => p[k] && !isDate(p[k]))) return problem(422, 'report.bad_param', 'วันที่ไม่ถูกต้อง');
-  const model = buildReport(st, company.id, kind, p);
+  if (kind === 'bank-reconciliation') { // one account's report: it needs the bank right too, and the account named
+    if (!perms.includes('bank.read')) return forbidden('bank.read');
+    if (!p.account) return problem(422, 'report.bad_param', 'ต้องระบุบัญชีธนาคาร');
+  }
+  let model;
+  try { model = buildReport(st, company.id, kind, p); } catch (e) { if (e instanceof MockError) return problem(e.status, e.code, e.title); throw e; }
   // the toolbar's "empty" state: a successful report with no rows (never an error)
   return { model: s.screenState === 'empty' ? { ...model, rows: [] } : model };
 }

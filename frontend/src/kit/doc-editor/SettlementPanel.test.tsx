@@ -123,6 +123,18 @@ describe('SettlementPanel', () => {
     expect(spy).toHaveBeenLastCalledWith([expect.objectContaining({ wht: '28.50', certNumber: 'ท.2569/0451' })]);
   });
 
+  it('FN3: a party with an unapplied deposit sees it as a credit, with the server amount and the way to apply it; a party without one sees nothing', async () => {
+    mount(<Host partyId="pc-08" />);
+    const note = await screen.findByTestId('deposit-credits');
+    expect(note).toHaveTextContent(/5,000.00/);
+    expect(within(note).getByRole('link')).toHaveAttribute('href', '/finance/deposits');
+    expect(calls).toContain('GET /bff/v1/finance/deposits');
+    cleanup();
+    mount(<Host partyId="pc-01" />);
+    await screen.findByRole('checkbox', { name: `เลือก ${rc().number}` });
+    expect(screen.queryByTestId('deposit-credits')).toBeNull();
+  });
+
   it('read-only lists the allocations without asking the server and without inputs', () => {
     const a = rc();
     mount(<Host readOnly initial={[{ targetId: a.id, targetType: 'TI', targetNumber: a.number, amount: '1000.00', wht: '30.00' }]} />);

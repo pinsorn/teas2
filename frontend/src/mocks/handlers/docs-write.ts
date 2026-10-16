@@ -1,15 +1,17 @@
 import { DOC_TYPES, isTypeAvailable } from '@/domain/doc-types';
 import { HttpResponse, http } from 'msw';
-import type { Actor, AttachmentCategory, DocType, MarkKey, Qty } from '@/domain/types';
+import type { Actor, AttachmentCategory, DocHeader, DocType, MarkKey, Qty } from '@/domain/types';
 import { addAttachment, discardAttachment, listAttachments, markPrinted, removeAttachment } from '../engine/attachments';
 import { PAPER_BUILDERS } from '../engine/paper';
 import { buildChain } from '../engine/chain';
 import { approve, sendBack } from '../engine/approval';
-import { type Body, unavailableTh, approveAndIssue, cancel, compute, convert, createDraft, deleteDraft, issue, publicDoc, submitForApproval, updateDraft } from '../engine/commands';
+import { type Body, keepOmitted, unavailableTh, approveAndIssue, cancel, compute, convert, createDraft, deleteDraft, issue, publicDoc, submitForApproval, updateDraft } from '../engine/commands';
+import { resolvedBankId } from '../engine/settlement';
 import { buildPlan, correctionPlan, executePlan, planStale } from '../engine/corrections';
 import { MockError } from '../engine/log';
 import { closeRemainder, remainingOf, setMark } from '../engine/marks';
 import { CLASS } from '../fixtures/documents';
+import { refuseInactiveBank } from '../records/bank-accounts';
 import { saveState } from '../store';
 import { ctx, forbidden, persist, problem, screenGate } from './common';
 
@@ -17,9 +19,11 @@ const ACTOR: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญ
 
 /** vatOverride (correction notes) and allocation targetNumber are engine-set only: never accepted from an API caller. */
 const WHT_MODES = ['deduct', 'grossup_once', 'grossup_always'];
-export const stripOverrides = <T extends Body>(b: T): T => {
+export const stripOverrides = <T extends Body>(b0: T): T => {
+  let b = b0;
   // the shape of the request, refused where it enters (create, update, compute, correction plan): an unknown withholding mode would otherwise be read as "deduct" by some paths and as a gross-up by others
   if (b?.header?.whtMode != null && !WHT_MODES.includes(b.header.whtMode)) throw new MockError(422, 'wht.mode_invalid', `โหมดภาษีหัก ณ ที่จ่าย “${String(b.header.whtMode)}” ไม่ถูกต้อง ใช้ได้เฉพาะ: ${WHT_MODES.join(', ')}`);
+  if (b?.header && 'bankSnapshot' in b.header) { const { bankSnapshot, ...h } = b.header; void bankSnapshot; b = { ...b, header: h }; } // engine-set at issue (I3): never accepted from a caller
   if (!Array.isArray(b?.lines)) return b;
   const lines = b.lines.map((l) => { if (!l || typeof l !== 'object') return l; const { vatOverride, ...r } = l; void vatOverride; return r; });
   // `targetNumber` is engine-set (the engine re-reads it from the target); only the user's own figures and the certificate number come from the caller
@@ -62,6 +66,10 @@ const versionOf = (req: Request, body?: { version?: number }) => {
 };
 const done = (c: Ctx) => persist(c.st);
 
+/** I1: the rule judges the RESOLVED account (a cash receipt uses the cash box, whatever bank id it carries); `kept` = the stored document's own header, whose account stays allowed. */
+const refuseInactive = (c: Ctx, type: DocType, header: DocHeader | undefined, kept?: DocHeader) =>
+  refuseInactiveBank(c.st, c.company.id, resolvedBankId(c.st, c.company.id, type, header), resolvedBankId(c.st, c.company.id, type, kept));
+
 const P = (perm: string) => (t: DocType) => `doc.${t}.${perm}`;
 
 export const docsWriteHandlers = [
@@ -75,14 +83,17 @@ export const docsWriteHandlers = [
 
   http.post('*/bff/v1/docs/:type', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
     const key = request.headers.get('Idempotency-Key') ?? crypto.randomUUID();
-    const doc = createDraft(c.st, c.company.id, t, stripOverrides((await request.json()) as Body), ACTOR, key);
+    const body = stripOverrides((await request.json()) as Body);
+    refuseInactive(c, t, body?.header); // the shape of the request, refused where it enters: a new document does not pick a closed account
+    const doc = createDraft(c.st, c.company.id, t, body, ACTOR, key);
     done(c);
     return HttpResponse.json(doc, { status: 201 });
   })),
 
   http.put('*/bff/v1/docs/:type/:id', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
-    own(c, t, params.id);
+    const stored = own(c, t, params.id);
     const body = stripOverrides((await request.json()) as Body & { version?: number });
+    refuseInactive(c, t, body?.header, stored.header); // keeping the account it already has is fine
     const doc = updateDraft(c.st, String(params.id), body, versionOf(request, body), ACTOR);
     done(c);
     return HttpResponse.json(doc);
@@ -144,8 +155,10 @@ export const docsWriteHandlers = [
   })),
 
   http.post('*/bff/v1/docs/:type/:id/correction-plan', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
-    own(c, t, params.id);
-    const plan = correctionPlan(c.st, String(params.id), stripOverrides((await request.json()) as Body), c.s.role);
+    const orig = own(c, t, params.id);
+    const proposal = stripOverrides((await request.json()) as Body);
+    refuseInactive(c, t, proposal?.header && keepOmitted(orig, proposal.header), orig.header); // I2: a correction cannot re-point the document to a closed account
+    const plan = correctionPlan(c.st, String(params.id), proposal, c.s.role);
     done(c);
     return HttpResponse.json(plan);
   })),
@@ -160,6 +173,7 @@ export const docsWriteHandlers = [
       const target = stored && c.st.docs.find((d) => d.id === stored.docId && d.companyId === c.company.id);
       if (!stored || !target) throw new MockError(404, 'correction.plan_not_found', 'ไม่พบแผนการแก้ไข');
       let current;
+      refuseInactive(c, target.type, stored.proposed.header && keepOmitted(target, stored.proposed.header), target.header); // I2: the account may have been closed since the plan was made
       try { current = buildPlan(c.st, stored.docId, stored.proposed, c.s.role); } catch { throw planStale(); } // the world moved since the plan: stale, not a raw engine error
       for (const s of current.steps) if (!c.perms.includes(s.permission)) return forbidden(s.permission);
       const result = executePlan(c.st, planId, planHash, ACTOR, c.s.role);

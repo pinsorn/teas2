@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { buildSeed } from '.';
 import { seed } from '../store';
-import { FIXTURE_PREDICATES, fixtureIds } from './ids';
+import { BANK_FIXTURES, FIXTURE_PREDICATES, fixtureIds } from './ids';
 
 describe('named fixture ids', () => {
   for (const role of ['operator', 'accountant', 'admin'] as const) {
     it(`every key resolves in the ${role} seed`, () => {
       const ids = fixtureIds(seed()); // seed() reads the toolbar role via getSettings; buildSeed(role) is checked below
-      expect(Object.keys(ids).sort()).toEqual(Object.keys(FIXTURE_PREDICATES).sort());
+      expect(Object.keys(ids).sort()).toEqual([...Object.keys(FIXTURE_PREDICATES), ...Object.keys(BANK_FIXTURES)].sort());
       expect(buildSeed(role).docs.length).toBeGreaterThan(0);
     });
   }

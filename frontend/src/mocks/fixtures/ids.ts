@@ -5,16 +5,21 @@ import { derivedLocks } from '../engine/locks';
 type D = MockState['docs'][number];
 const isTi = (d: D) => d.type === 'TI';
 
-export type FixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssuedUnpaid' | 'tiPartly' | 'tiSettled' | 'tiFilingLocked'
+type DocFixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssuedUnpaid' | 'tiPartly' | 'tiSettled' | 'tiFilingLocked'
   | 'tiReplaced' | 'tiLong' | 'tiPeriodLocked' | 'rcTargetsA' | 'rcTargetsB'
   | 'qtDraft' | 'qtIssued' | 'qtRejected' | 'qtCancelled' | 'qtRevised' | 'nqtIssued'
   | 'soPartlyDelivered' | 'soClosed' | 'doDelivered' | 'nsoIssued' | 'ndoDelivered'
   | 'ivDraft' | 'ivIssuedUnpaid' | 'ivPartly' | 'ivSettled' | 'blVat' | 'blNonVat'
   | 'poDraft' | 'poSent' | 'poPartlyBilled' | 'poClosed' | 'npoIssued'
-  | 'rcMulti' | 'rcNoCert' | 'rcDeposit' | 'nrcCashBill' | 'cnIssued' | 'dnIssued' | 'tiCreditedToZero'
+  | 'rcStatement' | 'rcMulti' | 'rcNoCert' | 'rcDeposit' | 'nrcCashBill' | 'cnIssued' | 'dnIssued' | 'tiCreditedToZero'
   | 'pbDraft' | 'pbIssuedUnpaid' | 'pb1Settled' | 'pbMixedVat' | 'pbFromPo' | 'pbCapex' | 'pbClaimLate' | 'pbIncomplete' | 'pcnIssued' | 'pdnIssued' | 'npbVatToCost'
   | 'pvMultiWt' | 'pvGrossUp' | 'pvForeign' | 'pvCancelled' | 'wtIssued' | 'wtCancelled'
-  | 'exDraft' | 'exPending' | 'exApproved' | 'exUnpaid' | 'exPaid' | 'exForfeit' | 'nexIssued'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
+  | 'exDraft' | 'exPending' | 'exApproved' | 'exUnpaid' | 'exPaid' | 'exForfeit' | 'nexIssued'
+  | 'tiDeposit' | 'rcDepositApplied' | 'pvPrepayment'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
+
+/** FN1 bank accounts: not documents, so no predicate - a fixed record id that must exist in the seed. `bankEmpty` is the VAT company's account with no imports. */
+export const BANK_FIXTURES = { bankKbank: 'ba-kbank', bankEmpty: 'ba-scb', nbankKbank: 'nba-kbank' } as const;
+export type FixtureKey = DocFixtureKey | keyof typeof BANK_FIXTURES;
 
 /** An issued, untouched TI of pc-01 (the multi-target receipt vector settles two of them). */
 const rcTarget = (d: D, st: MockState) => isTi(d) && d.status === 'issued' && d.party?.id === 'pc-01' && d.outstanding === d.totals.total
@@ -25,7 +30,7 @@ const firstRcTarget = (st: MockState) => st.docs.filter((x) => rcTarget(x, st)).
 const byId = (id: string, ok: (d: D, st: MockState) => boolean = () => true) => (d: D, st: MockState) => d.id === id && ok(d, st);
 
 /** Predicates evaluate the READ model (derivedLocks), never the stored row alone. */
-export const FIXTURE_PREDICATES: Record<FixtureKey, (d: D, st: MockState) => boolean> = {
+export const FIXTURE_PREDICATES: Record<DocFixtureKey, (d: D, st: MockState) => boolean> = {
   tiDraft: (d) => isTi(d) && d.status === 'draft' && d.createdBy.kind === 'user',
   tiAgentDraft: (d) => isTi(d) && d.status === 'draft' && d.createdBy.kind === 'agent',
   tiDraftNoTin: (d) => isTi(d) && d.status === 'draft' && !!d.party?.vatRegistered && !d.party.taxId,
@@ -68,6 +73,7 @@ export const FIXTURE_PREDICATES: Record<FixtureKey, (d: D, st: MockState) => boo
   blVat: byId('bl-1', (d) => d.status === 'issued'),
   blNonVat: byId('nbl-1', (d) => d.status === 'issued'),
   // S4 receipts
+  rcStatement: byId('rc-013', (d) => d.status === 'issued' && d.totals.cash === '6955.00'), // FN2: the September receipt whose cash equals a seeded statement line (bi-001-003)
   rcMulti: byId('rc-multi', (d) => d.status === 'issued'),
   rcNoCert: byId('rc-nocert', (d) => d.status === 'issued' && !!d.allocations?.some((a) => a.wht && !a.certNumber)),
   rcDeposit: byId('rc-dep', (d) => d.status === 'issued'),
@@ -103,15 +109,22 @@ export const FIXTURE_PREDICATES: Record<FixtureKey, (d: D, st: MockState) => boo
   exPaid: byId('ex-paid', (d) => d.status === 'settled'), // paid in full by pv-ex
   exForfeit: byId('ex-late', (d) => d.status === 'issued'), // the vendor invoice is past its claim window: VAT is cost
   nexIssued: byId('nex-1', (d) => d.status === 'issued' && d.companyId === 'co-nonvat'),
+  // FN3 deposits / prepayments: ti-dep waits for the deposit rc-dep of pc-08; rc-dep2 was applied to ti-dep2 by the seeded settlement stl-001 (locked); pv-prep is a 3,000.00 vendor prepayment
+  tiDeposit: byId('ti-dep', (d) => d.status === 'issued' && d.outstanding === d.totals.total),
+  rcDepositApplied: byId('rc-dep2', (d) => d.status === 'issued'),
+  pvPrepayment: byId('pv-prep', (d) => d.status === 'issued' && d.header.depositAmount === '3000.00'),
 };
 
 /** Lowest id (string order) matching each predicate in the active seed; throws listing every unresolved key. */
 export function fixtureIds(st: MockState): Record<FixtureKey, string> {
   const out: Partial<Record<FixtureKey, string>> = {};
   const missing: string[] = [];
-  for (const [k, f] of Object.entries(FIXTURE_PREDICATES) as [FixtureKey, (typeof FIXTURE_PREDICATES)['tiDraft']][]) {
+  for (const [k, f] of Object.entries(FIXTURE_PREDICATES) as [DocFixtureKey, (typeof FIXTURE_PREDICATES)['tiDraft']][]) {
     const hit = st.docs.filter((d) => f(d, st)).map((d) => d.id).sort()[0];
     if (hit) out[k] = hit; else missing.push(k);
+  }
+  for (const [k, id] of Object.entries(BANK_FIXTURES) as [keyof typeof BANK_FIXTURES, string][]) {
+    if (st.bankAccounts.some((b) => b.id === id)) out[k] = id; else missing.push(k);
   }
   if (missing.length) throw new Error(`fixture ids unresolved: ${missing.join(', ')}`);
   return out as Record<FixtureKey, string>;

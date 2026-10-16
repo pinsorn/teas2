@@ -6,7 +6,7 @@ export type ReportKind = 'trial-balance' | 'profit-loss' | 'balance-sheet' | 'ge
   | 'vat-input-register' | 'wht-receivable' | 'missing-wht-cert' | 'number-gaps' | 'audit-log' | 'asset-register'
   | 'bank-reconciliation' | 'tax-summary';
 export interface ReportParamSpec { key: string; kind: 'date' | 'month' | 'year' | 'range' | 'party' | 'account' | 'dimension' | 'select' | 'bool';
-  labelKey: string; options?: { value: string; labelKey: string }[]; required?: boolean }
+  labelKey: string; options?: { value: string; labelKey: string }[]; required?: boolean; /** Carried in the query but not shown (the report is scoped by the page that hosts it). */ hidden?: boolean }
 export interface ReportColumn { key: string; labelKey: string; align?: 'start' | 'end'; kind?: 'money' | 'date' | 'text' | 'qty' }
 export interface ReportRow { level: 0 | 1 | 2; kind: 'group' | 'row' | 'subtotal' | 'total'; cells: Record<string, string>; href?: string }
 export interface TieOut { labelKey: string; left: Money; right: Money; diff: Money } // diff computed by the server

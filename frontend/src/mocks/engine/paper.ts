@@ -71,9 +71,9 @@ function billingPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
   return { ...m, lines };
 }
 
-/** How the money came in, as the server words it: method + the account (or the cheque). */
+/** How the money came in, as the server words it: method + the account (or the cheque). An issued document prints the account as frozen at issue (I3); a draft reads the live one. */
 function paymentLine(c: Ctx, d: Doc): string {
-  const h = d.header, bank = c.st.bankAccounts.find((b) => b.id === cashBankId(c.st, c.company.id, h));
+  const h = d.header, bank = h.bankSnapshot ? { nameTh: h.bankSnapshot.accountName, accountNo: h.bankSnapshot.accountNo } : c.st.bankAccounts.find((b) => b.id === cashBankId(c.st, c.company.id, h));
   const acct = bank ? `${bank.nameTh}${bank.accountNo ? ` ${bank.accountNo}` : ''}` : '';
   if (h.paymentMethod === 'cheque' && h.cheque) return `เช็ค ${h.cheque.number} ลงวันที่ ${formatDateBE(h.cheque.date)} ${h.cheque.bank}`.trim();
   return `${h.paymentMethod === 'cash' ? 'เงินสด' : h.paymentMethod === 'cheque' ? 'เช็ค' : 'โอนเงิน'}${acct ? ` · ${acct}` : ''}`;
@@ -101,7 +101,8 @@ function voucherPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
     return { description: `${TYPE_TH[a.targetType] ?? a.targetType} ${a.targetNumber ?? a.targetId}${vno}${t ? ` ลงวันที่ ${formatDateBE(t.header.documentDate)}` : ''}`, qty: '', unit: '', unitPrice: '', amount: a.amount, taxCode: 'EX' as const };
   });
   const whtLines = (d.whtFrozen ?? freezeWht(c.st, c.company.id, d, d.id)).lines.map((l) => ({ label: `${l.nameTh} ${l.rate} (ฐาน ${formatMoney(l.base)})`, base: l.base, tax: l.tax }));
-  return { ...m, partyLabel: 'ผู้รับเงิน', payment: paymentLine(c, d), whtLines, lines: [...settled, ...m.lines].map((l, i) => ({ ...l, no: i + 1 })) };
+  const prepaid = toSatang(d.header.depositAmount ?? '0.00') > 0 ? [{ description: 'เงินจ่ายล่วงหน้า', qty: '', unit: '', unitPrice: '', amount: d.header.depositAmount!, taxCode: 'EX' as const }] : []; // FN3: the vendor prepayment is part of the total
+  return { ...m, partyLabel: 'ผู้รับเงิน', payment: paymentLine(c, d), whtLines, lines: [...settled, ...prepaid, ...m.lines].map((l, i) => ({ ...l, no: i + 1 })) };
 }
 
 /** EX: the employee is the party; a line with a vendor tax invoice names it (number, vendor, date) under its description, and the approval trail is printed as a note. A claim is an internal record: no VAT rows. */

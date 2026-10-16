@@ -17,7 +17,7 @@ const ROLES = ["operator", "accountant", "admin"] as const;
 // Plain anchors on purpose: the mock layer reads the query once on a full page load (MockProvider).
 const href = (route: string, q: { state?: string; role?: string; company: string }) => {
   const p = new URLSearchParams({ state: q.state ?? "normal", ...(q.role ? { role: q.role } : {}), company: q.company });
-  return `${route}?${p}`;
+  return `${route}${route.includes('?') ? '&' : '?'}${p}`;
 };
 const link = "text-brand underline underline-offset-2";
 

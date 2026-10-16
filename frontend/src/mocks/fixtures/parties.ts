@@ -74,9 +74,12 @@ const extras = (): SeedParty[] => [
   { companyId: 'co-vat', id: 'pv-12', kind: 'vendor', code: 'V12', name: 'Cloudberry Software Ltd. (ไอร์แลนด์)', vatRegistered: false, vatDRegistered: false,
     address: '1 Grand Canal Quay, Dublin, Ireland', paymentTermDays: 30, entityKind: 'foreign', partyGroup: 'foreign', defaultWhtTypeCode: 'FOR-SVC',
     contact: { email: 'billing@cloudberry.example.test' }, bankAccount: { bankName: 'Example Bank Ireland', accountNo: 'IE00 EXMP 9900 1234 5678 90', accountName: 'Cloudberry Software Ltd.' }, version: 1 },
+  // FN3 netting: the printer pc-02 is also our vendor (the same company, linked both ways); AR and AP of the pair can be offset
+  { companyId: 'co-vat', id: 'pv-11', kind: 'vendor', code: 'V11', name: 'บริษัท ปิ่นทองการพิมพ์ จำกัด (ผู้ขาย)', taxId: '0105565077124', branchCode: '00000', vatRegistered: true, address: ADDR[1],
+    paymentTermDays: 30, entityKind: 'juristic', partyGroup: 'general', linkedPartyId: 'pc-02', contact: { email: 'ap11@example.test' }, version: 1 },
 ];
 
-/** Party fixtures the master-data screens and tests name. `vendorForeign` is pv-12: pv-10 exists in the seed and pv-11 is reserved by plan 04 (netting). */
+/** Party fixtures the master-data screens and tests name. `vendorForeign` is pv-12; pv-11 (FN3) is the vendor side of customer pc-02, linked both ways for netting. */
 export const PARTY_FIXTURES = { customerVat: 'pc-01', customerIndividual: 'pc-09', customerInactive: 'pc-13', customerInactiveNonVat: 'nc-09', vendorForeign: 'pv-12' } as const;
 
 /** pv-09 is the S3 payment-voucher payee (D-15): an individual who is not VAT-registered, paid 5,000.00 for a photo shoot with 3 % withheld. */
@@ -86,7 +89,7 @@ const photographer = (p: SeedParty): SeedParty => ({
 
 export const vatParties = (): SeedParty[] => [
   ...build('co-vat', 'pc', 'customer', VAT_CUSTOMERS, (i) =>
-    i === 0 ? ['SV-01'] : [`SV-${pad((i % 9) + 2)}`, `GD-${pad((i % 10) + 1)}`]),
+    i === 0 ? ['SV-01'] : [`SV-${pad((i % 9) + 2)}`, `GD-${pad((i % 10) + 1)}`]).map((p) => (p.id === 'pc-02' ? { ...p, linkedPartyId: 'pv-11' } : p)),
   ...build('co-vat', 'pv', 'vendor', VAT_VENDORS, undefined, 8).map((p) => (p.id === 'pv-09' ? photographer(p) : p)),
   ...extras().filter((p) => p.companyId === 'co-vat'),
 ];

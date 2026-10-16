@@ -1,13 +1,22 @@
 import type {
-  ActivityEntry, Allocation, Attachment, AttachmentCategory, ChainGraph, ComputeResult, CorrectionPlan, CorrectionResult, Doc, DocHeader, DocLine, DocSummary,
+  ActivityEntry, Allocation, Attachment, AttachmentCategory, BankImport, BankLine, ChainGraph, ComputeResult, CorrectionPlan, CorrectionResult, Doc, DocHeader, DocLine, DocSummary,
   DocType, HomeInbox, MarkKey, Money, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, RemainingLine, Revision, SearchHit,
+  DepositRow, SettlementDifferenceRole, SettlementKind, SettlementRecord,
 } from '@/domain/types';
 import type { RecordKind, RecordRow } from '@/domain/records';
 import type { ReportKind, ReportModel } from '@/domain/reports';
 import { api, ApiError, normalizeProblem } from './client';
 
 export type DocInput = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] };
-export interface BankAccountRef { id: string; nameTh: string; accountNo?: string; default?: boolean }
+/** A postable current-asset account a bank / cash account can be bound to; `taken` = another bank account of the company already owns it. */
+export interface BankGlAccount { code: string; nameTh: string; subClass: 'cash' | 'bank'; taken: boolean }
+/** FN2: a receipt / voucher the line could match (`exact` = the suggestion: same cash, within 7 days). */
+export interface BankCandidate { docId: string; type: 'RC' | 'PV' | 'TR'; number: string; documentDate: string; partyName: string; cash: Money; remaining: Money; exact: boolean }
+export interface PostableAccount { code: string; nameTh: string; class: string }
+export interface Reconciliation { reconciledTo: string | null; counts: Record<BankLine['status'], number> }
+/** FN3: what `/finance/deposits` returns: the unapplied customer deposits / vendor prepayments, the company's tolerance for a difference and the customer / vendor pairs that can be netted. */
+export interface DepositsView { items: DepositRow[]; tolerance?: { rounding: Money; smallWriteOff: Money }; pairs?: { customerId: string; customerName: string; vendorId: string; vendorName: string }[] }
+export interface SettleInput { kind: SettlementKind; date: string; partyId: string; sources?: { docId: string; amount: Money }[]; targets: { docId: string; amount: Money }[]; difference?: { role: SettlementDifferenceRole; amount: Money }; reason?: string }
 export interface WhtTypeRef { code: string; nameTh: string; rate: string; incomeType: string }
 export interface ListDocsParams { status?: string; from?: string; to?: string; q?: string; outstanding?: 'positive'; overdue?: '1'; agent?: '1'; limit?: number; cursor?: string }
 
@@ -59,7 +68,33 @@ export const endpoints = {
   getRevisions: (type: DocType, id: string) => api<Revision[]>('GET', `${d(type, id)}/revisions`),
   getLedger: (type: DocType, id: string) => api<JournalPreview>('GET', `${d(type, id)}/ledger`),
   openItems: (p: { partyId: string; types: DocType[] }) => api<{ items: OpenItem[]; total: Money }>('GET', `/docs/open-items${qs({ partyId: p.partyId, types: p.types.join(',') })}`),
-  bankAccounts: () => api<BankAccountRef[]>('GET', '/bank-accounts'),
+  bankGlAccounts: () => api<BankGlAccount[]>('GET', '/finance/bank-gl-accounts'),
+  /** FN1: `content` is the CSV text, or the PDF as base64. The password (K PLUS) is sent once and never kept. */
+  importStatement: (accountId: string, body: { fileName: string; format: BankImport['format']; content: string; password?: string }) =>
+    api<BankImport>('POST', `/finance/bank-accounts/${encodeURIComponent(accountId)}/imports`, body),
+  listBankLines: (accountId: string, p: { status?: BankLine['status']; from?: string; to?: string; line?: string; limit?: number; cursor?: string } = {}) =>
+    api<Page<BankLine>>('GET', `/finance/bank-accounts/${encodeURIComponent(accountId)}/lines${qs(p)}`),
+  /** FN2 reconciliation (bank.reconcile): suggestions / search, match (batch, split share, fee / rounding difference), unmatch, ignore, inline journal, lock to a date. */
+  bankCandidates: (lineId: string, q?: string) => api<{ items: BankCandidate[] }>('GET', `/finance/bank-lines/${encodeURIComponent(lineId)}/candidates${qs({ q })}`),
+  matchBankLine: (lineId: string, body: { docIds: string[]; amounts?: Record<string, Money>; diff?: { role: 'BankFee' | 'RoundingDifference'; amount: Money } }) =>
+    api<BankLine>('POST', `/finance/bank-lines/${encodeURIComponent(lineId)}/match`, body),
+  bankLineCommand: (lineId: string, command: 'unmatch' | 'ignore' | 'unignore', reason?: string) =>
+    api<BankLine>('POST', `/finance/bank-lines/${encodeURIComponent(lineId)}/${command}`, { reason }),
+  /** I2: a line that is money moving to / from another own account. */
+  transferBankLine: (lineId: string, toAccountId: string) => api<BankLine>('POST', `/finance/bank-lines/${encodeURIComponent(lineId)}/transfer`, { toAccountId }),
+  /** R1-1: reverse a transfer journal (both lines unmatched, a reason). */
+  reverseBankTransfer: (journalId: string, reason: string) => api<{ id: string; reversed: boolean }>('POST', `/finance/bank-journals/${encodeURIComponent(journalId)}/reverse`, { reason }),
+  postBankLine: (lineId: string, body: { accountCode: string; description?: string }) =>
+    api<BankLine>('POST', `/finance/bank-lines/${encodeURIComponent(lineId)}/post`, body),
+  postableAccounts: () => api<PostableAccount[]>('GET', '/finance/postable-accounts'),
+  getReconciliation: (accountId: string) => api<Reconciliation>('GET', `/finance/bank-accounts/${encodeURIComponent(accountId)}/reconciliation`),
+  lockReconciliation: (accountId: string, date: string) => api<{ reconciledTo: string }>('POST', `/finance/bank-accounts/${encodeURIComponent(accountId)}/reconciled-to`, { date }),
+  /** FN3 settlements (D-13): read with bank.read, post / reverse with bank.manage. */
+  getDeposits: () => api<DepositsView>('GET', '/finance/deposits'),
+  listSettlements: (p: { q?: string; status?: SettlementRecord['status']; limit?: number; cursor?: string } = {}) => api<Page<SettlementRecord>>('GET', `/finance/settlements${qs(p)}`),
+  getSettlement: (id: string) => api<SettlementRecord>('GET', `/finance/settlements/${encodeURIComponent(id)}`),
+  postSettlement: (body: SettleInput, idempotencyKey: string) => api<SettlementRecord>('POST', '/finance/settlements', body, { idempotencyKey }),
+  reverseSettlement: (id: string, reason: string) => api<SettlementRecord>('POST', `/finance/settlements/${encodeURIComponent(id)}/reverse`, { reason }),
   whtTypes: () => api<WhtTypeRef[]>('GET', '/wht-types'),
   /** Every document of one party, across the types the role can read. */
   docsByParty: (partyId: string) => api<Page<DocSummary>>('GET', `/docs/by-party/${encodeURIComponent(partyId)}`),

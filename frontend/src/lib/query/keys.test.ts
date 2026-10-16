@@ -9,7 +9,9 @@ describe('query keys', () => {
     expect(qk.docs('a', 'TI', {})).not.toEqual(qk.docs('b', 'TI', {}));
     expect(qk.openItems('co-vat', 'pc-01', 'TI,IV')).toEqual(['co-vat', 'open-items', 'pc-01', 'TI,IV']);
     expect(qk.openItems('a', 'p', 't')).not.toEqual(qk.openItems('b', 'p', 't'));
-    expect(qk.bankAccounts('co-vat')[0]).toBe('co-vat');
+    expect(qk.bankGlAccounts('co-vat')[0]).toBe('co-vat');
+    expect(qk.bankLines('co-vat', 'ba-kbank', {})).toEqual(['co-vat', 'bank-lines', 'ba-kbank', {}]);
+    expect(qk.bankLines('a', 'x', {})).not.toEqual(qk.bankLines('b', 'x', {}));
     expect(qk.whtTypes('co-vat')[0]).toBe('co-vat');
     expect(qk.records('co-vat', 'customer', { q: 'a' })).toEqual(['co-vat', 'records', 'customer', { q: 'a' }]);
     expect(qk.record('co-vat', 'customer', 'pc-01')[0]).toBe('co-vat');

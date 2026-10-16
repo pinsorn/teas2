@@ -62,6 +62,17 @@ export function seedAttachment(st: MockState, companyId: string, docId: string, 
   st.attachments.push({ companyId, id: a.id, docId, category: a.category, name: a.name, size: info.bytes, mime: info.mime, at: stamp(), by });
 }
 
+/** FN1: a bank statement's raw file, an attachment of the import (`docId` = the import id, one per import). The bytes go to their own key FIRST: a refused write is a 507 and nothing else has been touched.
+ *  `seed`: no storage is not an error (metadata only), like `seedAttachment`. */
+export function addImportFile(st: MockState, companyId: string, importId: string, f: { name: string; mime: string; size: number; dataUrl: string }, by: string, seed = false): string {
+  const id = seed ? `att-seed-${importId}` : `att-${importId}`; // the seed's own files carry the `att-seed-` prefix like every other seeded attachment
+  try { localStorage.setItem(keyOf(id), f.dataUrl); } catch {
+    if (!seed) throw new MockError(507, 'attachment.storage_full', 'พื้นที่เก็บไฟล์ตัวอย่างเต็ม — ลบไฟล์แนบเก่าหรือรีเซ็ตข้อมูลตัวอย่าง');
+  }
+  st.attachments.push({ companyId, id, docId: importId, category: 'other', name: f.name, size: f.size, mime: f.mime, at: stamp(), by });
+  return id;
+}
+
 /** Undoes `addAttachment` when the metadata could not be persisted either. */
 export function discardAttachment(st: MockState, id: string): void {
   st.attachments = st.attachments.filter((a) => a.id !== id);

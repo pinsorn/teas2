@@ -52,13 +52,13 @@ e2e upload; `ba-scb` no imports; `ba-cash` cash box. Non-VAT `nba-kbank` 8 lines
 
 **Permissions:** operator `bank.read`; accountant `bank.read`, `bank.manage`, `bank.reconcile`; admin `bank.read`, `bank.manage`.
 
-- [ ] **Step 1: Failing tests** — `bank-import.test.ts`: BOM + Thai labels parsed; a tampered balance row →
+- [x] **Step 1: Failing tests** — `bank-import.test.ts`: BOM + Thai labels parsed; a tampered balance row →
   `bank.line_mismatch` naming the row number; wrong account → `bank.account_mismatch`; overlap → warning, not error;
   totals check. e2e: `screenContract` bank list (`both`), bank detail (`bankKbank`, states incl. empty → `bankEmpty`
   shows "ยังไม่มีรายการเดินบัญชี — นำเข้า statement"); upload the October CSV via `setInputFiles` (Buffer from the
   fixture text) → "นำเข้าสำเร็จ 12 รายการ" and the lines table.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(finance): bank and cash accounts with statement import`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.** (FN1 worker: tsc, eslint, unit 111 files / 1154 passed, e2e finance-bank + sales-rc + purchases-pv + screens + routes + 8 neighbouring specs green; full e2e run by the controller)
+- [x] **Step 6: Controller commits** — `feat(finance): bank and cash accounts with statement import`.
 
 ---
 
@@ -94,13 +94,13 @@ Modify `app/(app)/finance/bank-accounts/[id]/page.tsx` (tab "กระทบย�
 (reconciliation identity, asserted in `reconcile.test.ts` on the seed after matching all suggestions); every inline
 journal Dr = Cr.
 
-- [ ] **Step 1: Failing tests** — suggestion window and ranking; batch match sum rule; fee difference journal balances;
+- [x] **Step 1: Failing tests** — suggestion window and ranking; batch match sum rule; fee difference journal balances;
   control-account refusal; matched RC shows the reconciliation lock and cancel is disabled naming the exit; unmatch
   removes the lock. e2e: `screenContract` for the reconcile tab (`both`; forbiddenRole operator); flow "unmatched
   money-in line → ค้นหารายการที่ตรงกัน → pick the RC → matched; open the RC → lock banner with ยกเลิกการจับคู่".
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS**; invariants `[]`.
-- [ ] **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(finance): bank reconciliation with matching, inline journals and locks`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS**; invariants `[]`.
+- [x] **Step 5: Full gate.** (FN2 worker: tsc, eslint, unit 116 files / 1221 passed, e2e finance-reconcile + finance-bank + sales-rc + purchases-pv + screens + routes + reports-tb 134 passed; full e2e by the controller)
+- [x] **Step 6: Controller commits** — `feat(finance): bank reconciliation with matching, inline journals and locks`.
 
 ---
 
@@ -139,19 +139,19 @@ export interface SettlementRecord { id: string; companyId: string; kind: Settlem
 **Money invariants:** `netting: AR cleared = AP cleared`; each target's outstanding follows §7.11 including settlement
 links; `GL(2140) = Σ unapplied customer deposits`; `GL(1140) = Σ unapplied vendor prepayments`; reversing restores all.
 
-- [ ] **Step 1: Failing tests** — apply a deposit to a TI (outstanding drops, 2140 drops); netting clears equal AR /
+- [x] **Step 1: Failing tests** — apply a deposit to a TI (outstanding drops, 2140 drops); netting clears equal AR /
   AP; write-off above tolerance refused; reverse restores; `checkInvariants` `[]`. e2e: `screenContract` deposits
   (`both`) and settlements list (`both`, forbiddenRole operator for create — list is read); flow apply `rcDeposit` to
   an unpaid TI of pc-08.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(finance): deposits, prepayments, netting and settlement differences`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.** (FN3 worker: tsc, eslint, unit 122 files / 1336 passed, e2e finance-settlement + sales-rc + purchases-pv + purchases-pb + finance-reconcile + screens + routes 183 passed, then every other spec 332 passed = all 28 specs; report `.superpowers/sdd/04-finance/task-FN3-report.md`)
+- [x] **Step 6: Controller commits** — `feat(finance): deposits, prepayments, netting and settlement differences`.
 
 ---
 
 ### Task GFN: Ham gate — finance
 
-- [ ] Consolidated gate green; production build / staging.
-- [ ] Send Ham: bank accounts with own GL accounts; CSV import with integrity checks (and the PDF limitation: mock
+- [x] Consolidated gate green; production build / staging.
+- [x] Send Ham: bank accounts with own GL accounts; CSV import with integrity checks (and the PDF limitation: mock
   reads one sample); reconciliation (batch / split / fee); reconciliation lock + exit; deposits / netting as
   settlement records (**D-13 needs Ham's ruling**: record kind vs a new document type with a legal series).
-- [ ] AskUserQuestion "Finance approve?" — approve / approve with changes / rework. Record in `STATUS.md`.
+- [x] AskUserQuestion "Finance approve?" — approve / approve with changes / rework. Record in `STATUS.md`.

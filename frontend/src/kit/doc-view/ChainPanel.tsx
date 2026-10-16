@@ -54,18 +54,19 @@ export function ChainPanel({ type, id }: { type: DocType; id: string }) {
           <ul className="grid gap-1">
             {flatten(q.data).map(({ node, edge, incoming, depth }) => {
               const dead = node.status === 'cancelled' || node.status === 'replaced';
-              const href = docViewHref(node.type, node.id);
-              const label = `${node.type} ${node.number ?? ''}`.trim();
+              const stl = node.type === 'STL'; // FN3: a settlement record (หักกลบ / ใช้เงินมัดจำ), not a document
+              const href = stl ? `/finance/settlements/${node.id}` : docViewHref(node.type as DocType, node.id);
+              const label = stl ? `${t('chain.settlement')} ${node.number ?? ''}`.trim() : `${node.type} ${node.number ?? ''}`.trim();
               return (
                 <li key={node.id} style={{ marginInlineStart: `${Math.min(depth, 4) * 1.5}rem` }} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1">
                   {edge ? <span className="text-small text-muted-foreground">{t(`chain.rel.${edge.kind}.${incoming ? 'in' : 'out'}`)}</span> : null}
                   {node.id === id ? <span className={cn('font-medium', dead && 'line-through')}>{label} <span className="text-small font-normal text-muted-foreground">({t('chain.self')})</span></span>
                     : href ? <Link href={href} className={cn('text-primary hover:underline', dead && 'line-through')}>{label}</Link>
                     : <span className={cn(dead && 'line-through')}>{label}</span>}
-                  <StatusChip status={node.status} />
+                  {stl ? null : <StatusChip status={node.status} />}
                   <span className="tabular-nums text-small text-muted-foreground">{formatTHB(node.total)}</span>
                   {node.progress ? <span className="text-small text-muted-foreground">{node.progress}</span> : null}
-                  {edge && !edge.active ? <span className="text-small text-muted-foreground">{t('chain.inactive')}</span> : null}
+                  {(edge && !edge.active) || (stl && dead) ? <span className="text-small text-muted-foreground">{t('chain.inactive')}</span> : null}
                 </li>
               );
             })}

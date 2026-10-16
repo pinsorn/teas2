@@ -1,9 +1,10 @@
 import type {
-  ActivityEntry, Allocation, ApprovalPolicy, Attachment, AuditEntry, ChainEdge, Company, CorrectionPlan, Doc, DocHeader, DocLine, ItemSummary, JournalPreview, Membership, PaperModel, PartySummary, Revision, Role,
+  ActivityEntry, Allocation, ApprovalPolicy, Attachment, AuditEntry, BankImport, BankJournal, BankLine, ChainEdge, Company, CorrectionPlan, Doc, DocHeader, DocLine, ItemSummary, JournalPreview, Membership, Money, PaperModel, PartySummary, Revision, Role, SettlementRecord,
 } from '@/domain/types';
 import { DOC_TYPES, LIVE } from '@/domain/doc-types';
 import { recomputeSettlement } from './engine/commands';
 import { ledgerFor } from './engine/ledger';
+import { withBankSnapshot } from './engine/settlement';
 import { adjustSnapshot, hasSnapshot } from './engine/notes';
 import type { Period } from './engine/periods';
 import type { PostingRule } from './engine/posting';
@@ -15,9 +16,10 @@ import { runSeed } from './fixtures/seed-runner';
 import { buildSeed } from './fixtures';
 import { clearAttachmentBlobs } from './engine/attachments';
 import { getSettings } from './settings';
+import { seedBankStatements } from './fixtures/statements';
 
 export interface MockState {
-  version: 23;
+  version: 28;
   companies: Company[];
   memberships: (Membership & { userId: string })[];
   /** `active` (default true) and `version` (default 1) are the master record's; documents keep their own party snapshot. */
@@ -33,6 +35,15 @@ export interface MockState {
   postingRules: PostingRule[];
   periods: Period[];
   bankAccounts: BankAccount[];
+  /** FN1: imported statements and their lines (the raw file is an attachment whose `docId` is the import id). Importing posts nothing. */
+  bankImports: (BankImport & { companyId: string; /** content hash of the file bytes (M3: the same file is not imported twice) */ hash?: string })[];
+  bankLines: (BankLine & { companyId: string })[];
+  /** FN2: journals the reconciliation wrote (fee / rounding difference, inline journal, seeded opening balance); no document behind them. */
+  bankJournals: BankJournal[];
+  /** FN3: settlement records (deposits / prepayments applied, netting, write-offs; D-13). Each carries its own journal and its frozen legs; its links are `settles` links whose `from` is the record id. */
+  settlements: SettlementRecord[];
+  /** FN3: per company, the largest difference a settlement may absorb: satang rounding, and a small write-off (also the bank fee) [SP-R]. */
+  settlementTolerance: { companyId: string; rounding: Money; smallWriteOff: Money }[];
   /** [SP-R] mock WHT types per company (fixtures/wht-types.ts). */
   whtTypes: CompanyWhtType[];
   audit: AuditEntry[];
@@ -49,7 +60,7 @@ export interface MockState {
   plans?: Record<string, { docId: string; proposed: { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] }; role: Role; plan: CorrectionPlan }>;
 }
 
-const KEY = 'teas2.mock.state.v23';
+const KEY = 'teas2.mock.state.v26';
 
 /** The seed for a given role (default accountant: the screen index resolves fixture ids on the server, where there is no toolbar). */
 export function buildSeedState(role: Role = 'accountant'): MockState {
@@ -65,6 +76,8 @@ export function buildSeedState(role: Role = 'accountant'): MockState {
     if (ti && !d.adjustSnapshot) d.adjustSnapshot = adjustSnapshot(s, ti, d);
   }
   runSeed(s, SEED_SPECS); // later groups' documents, produced through the engine (D-23)
+  for (const d of s.docs) if (d.issuedAt && !d.header.bankSnapshot) d.header = withBankSnapshot(s, d.companyId, d.type, d.header); // seeded receipts / vouchers entered directly: freeze the account they print, like an issued one (I3)
+  seedBankStatements(s); // FN1: the September statements, imported through the same engine the upload uses
   return s;
 }
 
@@ -73,7 +86,7 @@ export const seed = (): MockState => buildSeedState(getSettings().role);
 export function loadState(): MockState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 23) return s; }
+    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 28) return s; }
   } catch { /* fall through to a fresh seed */ }
   return seed();
 }

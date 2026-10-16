@@ -64,12 +64,12 @@ describe('GET /docs/open-items', () => {
 });
 
 describe('reference lists for the receipt / payment editors', () => {
-  it('bank accounts of the active company with the default flag; non-VAT company sees its own', async () => {
-    const vat = (await (await get('/bank-accounts')).json()) as { id: string; default?: boolean }[];
-    expect(vat.map((b) => b.id)).toEqual(['ba-kbank', 'ba-scb', 'ba-cash']);
+  it('bank accounts are the FN1 records (one source): one list per company, with the default flag', async () => {
+    const vat = ((await (await get('/records/bank-account?active=all')).json()) as { items: { id: string; default?: boolean }[] }).items;
+    expect(vat.map((b) => b.id)).toEqual(['ba-cash', 'ba-kbank', 'ba-scb']); // listed by GL code
     expect(vat.filter((b) => b.default).map((b) => b.id)).toEqual(['ba-kbank']);
     setSettings({ companyKey: 'nonvat', role: 'operator' });
-    expect(((await (await get('/bank-accounts')).json()) as { id: string }[]).map((b) => b.id)).toEqual(['nba-kbank', 'nba-cash']);
+    expect(((await (await get('/records/bank-account?active=all')).json()) as { items: { id: string }[] }).items.map((b) => b.id)).toEqual(['nba-cash', 'nba-kbank']);
   });
   it('WHT types [SP-R]: code, name, rate text; forbidden without a receipt / voucher read', async () => {
     const t = (await (await get('/wht-types')).json()) as { code: string; rate: string }[];
@@ -78,6 +78,5 @@ describe('reference lists for the receipt / payment editors', () => {
     expect(t).toHaveLength(16);
     setSettings({ role: 'admin' });
     expect((await get('/wht-types')).status).toBe(403);
-    expect((await get('/bank-accounts')).status).toBe(403);
   });
 });

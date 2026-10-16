@@ -118,7 +118,7 @@ describe('fix round 1: outstanding, seed validity, cancel blocks (SP0 7.4 / 7.11
       let out = toSatang(d.totals.total);
       for (const l of s.links) {
         if (!l.active || l.to !== d.id) continue;
-        const t = s.docs.find((x) => x.id === l.from)!.type;
+        const t = s.docs.find((x) => x.id === l.from)?.type; // FN3: a settles link may start at a settlement record
         if (l.kind === 'settles' || t === 'CN') out -= toSatang(l.amount!); else if (t === 'DN') out += toSatang(l.amount!);
       }
       expect({ id: d.id, out: d.outstanding }).toEqual({ id: d.id, out: fromSatang(out) });

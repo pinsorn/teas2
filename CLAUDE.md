@@ -98,6 +98,9 @@ risky one.
    Dr=Cr), never just observable field values: "VAT totals are 0" once shipped
    a voucher that under-paid the vendor — the worker followed the spec exactly
    and Tier-2 caught what the spec had authorized (2026-07-25).
+   It also names what is FROZEN at issue: any figure derived from editable data
+   (master records, the documents it settles, policies) is stored on the document,
+   never re-derived — four money REJECTs in one group came from re-derivation (2026-10-16).
 5. Stuck ×2 → tiebreaker: depth/architecture failure → Opus; repeated
    same-error / blind spot → Codex (always with handoff bundle: base
    commit, diff, failed attempts, design decisions, style-pattern file)

@@ -33,7 +33,7 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, comp
   const missing = (p: string) => (can(p) ? undefined : ts('needPermission', { permission: p }));
   // Edit only needs the right to author this type: the correction plan lists the permissions its steps need and offers the approver path. Cancel stays blocked by filing / settlement / reconciliation locks; a period lock does not block it (SP0 7.5), and edit is never lock-blocked (7.3: the plan decides).
   const blocker = doc.locks.find((l) => l.kind !== 'period');
-  const locked = blocker ? t('locked', { reason: blocker.reason }) : undefined;
+  const locked = blocker ? t(blocker.kind === 'reconciliation' ? 'lockedReconciliation' : 'locked', { reason: blocker.reason }) : undefined;
   const live = LIVE.includes(doc.status);
   const system = d.type === 'WT'; // a withholding certificate is written by its voucher: the only thing a person does with it is print it
   const targets = convertTargets(d.convertsTo, vatRegistered, permissions);

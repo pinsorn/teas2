@@ -157,6 +157,8 @@ test('I2: leaving within the idle window still saves the draft', async ({ page }
   await page.getByRole('textbox', { name: 'หมายเหตุ' }).fill('อย่าให้หาย');
   await page.getByRole('link', { name: 'ใบกำกับภาษี' }).first().click();
   await expect(page).toHaveURL(/\/sales\/tax-invoices$/);
+  // the flush on leaving is async: wait until the draft is in the store before a hard navigation can cut it off (a reload mid-save was the flake)
+  await expect.poll(() => page.evaluate(() => (localStorage.getItem('teas2.mock.state.v26') ?? '').includes('อย่าให้หาย'))).toBe(true);
   await page.goto('/sales/tax-invoices?status=draft');
   await expect(page.getByRole('row')).toHaveCount(before + 1); // the new draft exists next to the seeded ones
 });

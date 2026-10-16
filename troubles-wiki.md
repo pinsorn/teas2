@@ -22,6 +22,16 @@ Entry format — terse, greppable by symptom:
 
 <!-- entries below — newest on top -->
 
+## TypeError "Cannot read properties of undefined (reading 'type')" in a seed-wide test, or a GL figure that is short by a settlement's amount (FN3)
+- **Root cause:** a `settles` link's `from` can be a SETTLEMENT RECORD id (`st.settlements`), not a document: `st.docs.find((d) => d.id === l.from)!.type` crashes, and a GL helper that sums only `st.journals` (+ `bankJournals`) misses the settlement journals.
+- **Fix:** resolve `from` with `?.` (a settlement is not a document; invariant 6 resolves it through `st.settlements`), and sum GL through `companyEntries(st, companyId)` (documents + bank journals + settlements) or add `st.settlements[].journal` by hand as the trial-balance test does.
+- **Seen:** 2026-10-16, SP1c FN3
+
+## Netting fixture: customer pc-03 cannot get an issued tax invoice
+- **Root cause:** pc-03 (ห้างหุ้นส่วนจำกัด สมบูรณ์ค้าไม้) is the one VAT customer with no TIN on purpose (the `tiDraftNoTin` fixture); `issue` refuses a TI to a VAT-registered buyer without a TIN, so it can never owe an invoice the netting could clear.
+- **Fix:** the linked pair is pc-02 ⇄ pv-11 (`linkedPartyId` both ways, same company and TIN); the seed carries ti-net (10,700.00) and pb-net (4,280.00). Do not give pc-03 a TIN: it breaks the TIN-less buyer fixtures.
+- **Seen:** 2026-10-16, SP1c FN3
+
 ## A new seed document breaks absolute-number assertions elsewhere (GL totals, an item "not in use", PO progress 0/140)
 - **Root cause:** `runSeed` documents are part of every fixture state. P2's `pb-1` uses item EXP-01 (so `inUse` is true), `pb-po` takes 70 of `po-part`'s 140, and the seed now posts 2110 / 1170 in both companies.
 - **Fix:** in new tests measure a DELTA (`gl(after) - gl(before)`) instead of an absolute GL figure; pick a still-unused fixture (EXP-04) when a test needs an unused item; when a seed spec consumes a fixture another test names, re-point that test in the same change.
@@ -115,3 +125,13 @@ Entry format — terse, greppable by symptom:
 - **Symptom:** after P4 the attachment tests in `docs-write-s6.test.ts` see `teas2.mock.att.att-seed-ex-pend` and a metadata row they did not create; an e2e `getByRole('option')` for a party type-ahead resolves to 12 elements (or `toHaveCount(0)` never holds).
 - **Root cause:** the seed now carries one real attachment (`ex-pend`, the receipt photo; bytes in localStorage, metadata in `st.attachments`). And a native `<select>` (category, tax code) exposes its `<option>`s with role `option` too, so an unscoped locator also counts those.
 - **Fix:** attachment tests filter `att-seed-` (`userAtt()` / `attKeys()`); e2e type-ahead locators are `page.getByRole('listbox').getByRole('option')`. Also: `toHaveURL(//expense-claims/[^/]+$/)` matches `/new` itself - exclude it (`(?!new)`) before reading the id from the URL.
+
+## Playwright "unknown fixture key" / every new screen 404s although the build is fresh (FN1)
+- **Symptom:** a new e2e spec fails on `fixtureId(...)` with "unknown fixture key X (have: ...)" or a new route renders the old UI, while unit tests and `next build` are green.
+- **Root cause:** `playwright.config.ts` has `reuseExistingServer: !CI`; a `next start -p 3100` left over from an earlier run (same worktree, OLD `.next` build) is reused, so the spec runs against stale code. `netstat -ano | findstr :3100` shows it.
+- **Fix:** find the PID (`Get-CimInstance Win32_Process -Filter "ProcessId=<pid>"` shows the worktree in the command line), stop it and its parent cmd.exe, re-run: Playwright then builds and starts its own server and stops it at the end.
+
+## A native `<select>` opened on a saved value shows blank once its options arrive (FN1)
+- **Symptom:** an edit form whose `<select>` options load asynchronously (GL account picker) opens on the placeholder instead of the stored value.
+- **Root cause:** react-hook-form sets the select's value at mount; a fallback `<option value={current}>` that is later replaced by the real option (different element) drops the selection.
+- **Fix:** render ONE keyed list that always contains the current value (real option when known, bare code otherwise), so the DOM option is never swapped out (`kit/record-form/fields.tsx`, kind `account`).

@@ -3,11 +3,13 @@ import en from '@/messages/en.json';
 import th from '@/messages/th.json';
 import type { MockState } from '../../store';
 import { today } from '../log';
+import { bankReconciliation } from './bank-reconciliation';
 import { trialBalance } from './trial-balance';
 
 /** Report kinds the mock engine can compute so far (the rest answer 404 report.not_built until their RP task). */
 const BUILDERS: Partial<Record<ReportKind, (st: MockState, companyId: string, p: Record<string, string>) => ReportModel>> = {
   'trial-balance': (st, c, p) => trialBalance(st, c, { ...p, asOf: p.asOf || today() }),
+  'bank-reconciliation': (st, c, p) => bankReconciliation(st, c, { account: p.account ?? '', to: p.to || today() }),
 };
 export const isBuilt = (k: string): k is ReportKind => Object.hasOwn(BUILDERS, k);
 export const buildReport = (st: MockState, companyId: string, kind: ReportKind, p: Record<string, string>) => BUILDERS[kind]!(st, companyId, p);

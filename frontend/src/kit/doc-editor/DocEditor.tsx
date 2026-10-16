@@ -308,14 +308,14 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
             ) : <div className="flex justify-end"><Button type="button" variant="outline" onClick={() => setQuickOpen(true)}>{t('quickBill.open')}</Button></div>
           )}
 
-          {d.type === 'RC' && ( // the part of the money no document takes: the server keeps it as a customer deposit
+          {(d.type === 'RC' || d.type === 'PV') && ( // the part of the money no document takes: the server keeps it as a customer deposit (RC) or a vendor prepayment (PV, FN3)
             <section className="grid gap-1.5 rounded-xl bg-card p-4 ring-1 ring-foreground/10 md:max-w-md">
-              <Label htmlFor={`${ids}-deposit`}>{ts('deposit')}</Label>
+              <Label htmlFor={`${ids}-deposit`}>{ts(d.type === 'PV' ? 'prepayment' : 'deposit')}</Label>
               <Input id={`${ids}-deposit`} type="text" inputMode="decimal" autoComplete="off" className="text-right tabular-nums" value={header.depositAmount ?? ''}
                 onChange={(e) => setHeader((h) => ({ ...h, depositAmount: cleanDecimal(e.target.value, 2) || undefined }))}
                 onBlur={() => setHeader((h) => (h.depositAmount && moneyText(h.depositAmount) !== h.depositAmount ? { ...h, depositAmount: moneyText(h.depositAmount) } : h))}
                 onFocus={(e) => e.target.select()} />
-              <p className="text-small text-muted-foreground">{ts('depositHint')}</p>
+              <p className="text-small text-muted-foreground">{ts(d.type === 'PV' ? 'prepaymentHint' : 'depositHint')}</p>
             </section>
           )}
 

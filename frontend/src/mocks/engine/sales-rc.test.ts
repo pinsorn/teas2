@@ -31,7 +31,7 @@ const owed = (id: string): number => {
   let out = sat(get(id).totals.total);
   for (const l of st.links) {
     if (!l.active || l.to !== id) continue;
-    const t = get(l.from).type;
+    const t = st.docs.find((x) => x.id === l.from)?.type; // a settles link may start at a settlement record (FN3)
     if (l.kind === 'settles') out -= sat(l.amount!);
     else if (l.kind === 'adjusts') out += t === 'CN' ? -sat(l.amount!) : t === 'DN' ? sat(l.amount!) : 0;
   }

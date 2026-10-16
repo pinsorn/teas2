@@ -24,6 +24,8 @@ export const PDN_BASE = '/purchases/vendor-debit-notes';
 export const PV_BASE = '/purchases/payment-vouchers';
 export const EX_BASE = '/purchases/expense-claims';
 export const WT_BASE = '/tax/wht-certificates';
+export const BANK_BASE = '/finance/bank-accounts';
+export const SETTLEMENT_BASE = '/finance/settlements';
 // names are keys of messages `screens.name.*`; fixture keys live in src/mocks/fixtures/ids.ts (later tasks append their screens here)
 export const SCREENS: Screen[] = [
   { name: 'home', route: '/', company: 'both', states: true },
@@ -131,5 +133,15 @@ export const SCREENS: Screen[] = [
   { name: 'customerView', route: '/master/customers/pc-01', company: 'vat', states: true },
   { name: 'vendors', route: '/master/vendors', company: 'both', states: true },
   { name: 'items', route: '/master/items', company: 'both', states: true },
+  { name: 'bankList', route: BANK_BASE, company: 'both', states: true },
+  { name: 'bankView', route: { fixture: 'bankKbank', base: BANK_BASE }, company: 'vat', states: true },
+  { name: 'bankEmpty', route: { fixture: 'bankEmpty', base: BANK_BASE }, company: 'vat', states: true },
+  { name: 'bankReconcile', route: { fixture: 'bankKbank', base: BANK_BASE, suffix: '?tab=reconcile' }, company: 'vat', states: true },
+  { name: 'nbankView', route: { fixture: 'nbankKbank', base: BANK_BASE }, company: 'nonvat', states: true },
+  { name: 'depositsPage', route: '/finance/deposits', company: 'both', states: true },
+  { name: 'settlementsList', route: SETTLEMENT_BASE, company: 'both', states: true },
+  { name: 'settlementPosted', route: `${SETTLEMENT_BASE}/stl-001`, company: 'vat', states: true }, // the seeded settlement: pc-05's deposit rc-dep2 applied to ti-dep2
+  { name: 'rcDepositApplied', route: { fixture: 'rcDepositApplied', base: RC_BASE }, company: 'vat', states: true },
+  { name: 'pvPrepayment', route: { fixture: 'pvPrepayment', base: PV_BASE }, company: 'vat', states: true },
   { name: 'styleGuide', route: '/style-guide', company: 'both', states: false },
 ];
