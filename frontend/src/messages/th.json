@@ -407,6 +407,10 @@
       "customerView": "ลูกค้า รายละเอียด",
       "vendors": "ผู้ขาย รายการ",
       "items": "สินค้า/บริการ รายการ",
+      "bankList": "บัญชีธนาคารและเงินสด รายการ",
+      "bankView": "บัญชีธนาคาร รายการเดินบัญชี (กสิกรไทย)",
+      "bankEmpty": "บัญชีธนาคาร ยังไม่มีรายการเดินบัญชี",
+      "nbankView": "บัญชีธนาคาร รายการเดินบัญชี (ไม่จด VAT)",
       "styleGuide": "คู่มือการออกแบบ"
     },
     "state": { "normal": "ปกติ", "empty": "ไม่มีข้อมูล", "loading": "กำลังโหลด", "error": "เกิดข้อผิดพลาด", "forbidden": "ไม่มีสิทธิ์", "locked": "ถูกล็อก" },
@@ -567,6 +571,7 @@
     "bankAccount": "บัญชีรับ/จ่ายเงิน",
     "bankLoading": "กำลังโหลดบัญชี…",
     "bankFailed": "โหลดรายการบัญชีไม่สำเร็จ",
+    "bankInactive": "ปิดใช้งาน",
     "paymentMethod": "วิธีชำระเงิน",
     "method": { "transfer": "โอนเงิน", "cash": "เงินสด", "cheque": "เช็ค" },
     "chequeNumber": "เลขที่เช็ค",
@@ -746,6 +751,7 @@
     "customer": { "title": "ลูกค้า", "search": "ค้นหารหัส ชื่อ หรือเลขประจำตัวผู้เสียภาษี", "empty": "ยังไม่มีลูกค้า" },
     "vendor": { "title": "ผู้ขาย", "search": "ค้นหารหัส ชื่อ หรือเลขประจำตัวผู้เสียภาษี", "empty": "ยังไม่มีผู้ขาย" },
     "item": { "title": "สินค้า/บริการ", "search": "ค้นหารหัสหรือชื่อ", "empty": "ยังไม่มีสินค้าหรือบริการ" },
+    "bank-account": { "title": "บัญชีธนาคารและเงินสด", "search": "ค้นหาชื่อบัญชีหรือรหัสบัญชี", "empty": "ยังไม่มีบัญชีธนาคารหรือเงินสด" },
     "fields": {
       "entityKind": "ประเภทคู่ค้า", "code": "รหัส", "name": "ชื่อ", "nameEn": "ชื่อ (อังกฤษ)", "taxId": "เลขประจำตัวผู้เสียภาษี",
       "branchCode": "สาขา", "vatRegistered": "จดทะเบียนภาษีมูลค่าเพิ่ม (VAT)", "address": "ที่อยู่ตามทะเบียน", "phone": "โทรศัพท์",
@@ -753,7 +759,8 @@
       "notes": "หมายเหตุ", "vatDRegistered": "จดทะเบียน VAT-D (ภ.พ.36 ไม่ต้องนำส่ง)", "bankName": "ธนาคาร", "bankAccountNo": "เลขที่บัญชี",
       "bankAccountName": "ชื่อบัญชี", "usualItemIds": "สินค้าและบริการที่ซื้อบ่อย", "active": "สถานะ",
       "kind": "ประเภท", "unit": "หน่วย", "unitPrice": "ราคาต่อหน่วย", "taxCode": "ภาษีมูลค่าเพิ่ม", "whtTypeCode": "ประเภทภาษีหัก ณ ที่จ่าย",
-      "usage": "การใช้งาน", "usageSales": "ใช้ในเอกสารขาย", "usagePurchase": "ใช้ในเอกสารซื้อ", "expenseCategory": "หมวดค่าใช้จ่าย"
+      "usage": "การใช้งาน", "usageSales": "ใช้ในเอกสารขาย", "usagePurchase": "ใช้ในเอกสารซื้อ", "expenseCategory": "หมวดค่าใช้จ่าย",
+      "accountNo": "เลขที่บัญชี", "accountName": "ชื่อบัญชี", "accountCode": "บัญชีแยกประเภท", "bankKind": "ประเภทบัญชี"
     },
     "options": {
       "entityKind": { "individual": "บุคคลธรรมดา", "juristic": "นิติบุคคล", "foreign": "ต่างประเทศ" },
@@ -761,13 +768,33 @@
       "itemKind": { "good": "สินค้า", "service": "บริการ" },
       "taxCode": { "S7": "VAT 7%", "Z0": "VAT 0%", "EX": "ยกเว้น VAT" },
       "itemUsage": { "sales": "ขาย", "purchase": "ซื้อ", "both": "ขายและซื้อ" },
-      "expenseCategory": { "rent": "ค่าเช่า", "services": "ค่าบริการ", "advertising": "ค่าโฆษณา", "transport": "ค่าขนส่ง", "entertainment": "ค่ารับรอง (ภาษีซื้อขอคืนไม่ได้)", "supplies": "ค่าวัสดุสิ้นเปลือง", "capex-equipment": "ซื้อสินทรัพย์ (อุปกรณ์)", "cost-of-sales": "ต้นทุนขาย" }
+      "expenseCategory": { "rent": "ค่าเช่า", "services": "ค่าบริการ", "advertising": "ค่าโฆษณา", "transport": "ค่าขนส่ง", "entertainment": "ค่ารับรอง (ภาษีซื้อขอคืนไม่ได้)", "supplies": "ค่าวัสดุสิ้นเปลือง", "capex-equipment": "ซื้อสินทรัพย์ (อุปกรณ์)", "cost-of-sales": "ต้นทุนขาย" },
+      "bankKind": { "bank": "บัญชีธนาคาร", "cash": "เงินสด" },
+      "bankName": { "kbank": "กสิกรไทย", "scb": "ไทยพาณิชย์", "bbl": "กรุงเทพ", "ktb": "กรุงไทย", "bay": "กรุงศรี", "ttb": "ทหารไทยธนชาต", "gsb": "ออมสิน" }
     },
     "view": {
       "tabs": { "info": "ข้อมูล", "docs": "เอกสาร", "open": "ยอดค้าง" }, "tin": "เลขประจำตัวผู้เสียภาษี", "branch": "สาขา",
       "notFoundTitle": "ไม่พบข้อมูลนี้", "notFoundBody": "ข้อมูลอาจถูกลบ หรืออยู่ในบริษัทอื่นที่ไม่ได้เลือกใช้งานอยู่",
       "docsEmpty": "ยังไม่มีเอกสารของคู่ค้านี้", "openEmpty": "ไม่มียอดค้าง", "openTotal": "ยอดค้างรวม", "number": "เลขที่", "type": "ประเภท",
       "date": "วันที่", "status": "สถานะ", "total": "ยอดรวม", "outstanding": "ค้างชำระ", "due": "ครบกำหนด"
+    }
+  },
+  "bank": {
+    "noStatements": "บัญชีเงินสดไม่มีรายการเดินบัญชี",
+    "gl": "บัญชีแยกประเภท", "accountNo": "เลขที่บัญชี", "bankName": "ธนาคาร", "kind": "ประเภทบัญชี",
+    "glPlaceholder": "— เลือกบัญชีแยกประเภท —",
+    "import": {
+      "open": "นำเข้า statement", "title": "นำเข้า statement", "needManage": "ต้องมีสิทธิ์ bank.manage",
+      "file": "ไฟล์ statement (CSV จาก K BIZ หรือ PDF จาก K PLUS)", "password": "รหัสผ่านไฟล์ PDF (ถ้ามี)",
+      "passwordHint": "ใช้เปิดไฟล์ครั้งนี้เท่านั้น ระบบไม่เก็บรหัสผ่าน", "submit": "นำเข้า", "submitting": "กำลังนำเข้า", "close": "ปิด",
+      "chooseFile": "เลือกไฟล์ statement ก่อน", "unsupported": "รองรับเฉพาะไฟล์ .csv หรือ .pdf", "failed": "นำเข้าไม่สำเร็จ",
+      "success": "นำเข้าสำเร็จ {count} รายการ", "period": "ช่วงวันที่ {from} – {to}", "warnings": "คำเตือน"
+    },
+    "lines": {
+      "title": "รายการเดินบัญชี", "empty": "ยังไม่มีรายการเดินบัญชี — นำเข้า statement", "noMatch": "ไม่พบรายการตามตัวกรอง",
+      "date": "วันที่", "description": "รายการ", "in": "เงินเข้า", "out": "เงินออก", "balance": "ยอดคงเหลือ", "status": "สถานะ",
+      "filterStatus": "สถานะรายการ", "all": "ทั้งหมด", "from": "ตั้งแต่วันที่", "to": "ถึงวันที่", "clear": "ล้างตัวกรอง",
+      "statuses": { "unmatched": "ยังไม่จับคู่", "matched": "จับคู่แล้ว", "ignored": "ข้ามรายการ", "posted": "ลงบัญชีแล้ว" }
     }
   },
   "permissions": {
@@ -892,6 +919,9 @@
     "party_manage": "จัดการคู่ค้า",
     "item_read": "ดูสินค้า",
     "item_manage": "จัดการสินค้าและบริการ",
+    "bank_read": "ดูบัญชีธนาคารและรายการเดินบัญชี",
+    "bank_manage": "จัดการบัญชีธนาคารและนำเข้า statement",
+    "bank_reconcile": "กระทบยอดบัญชีธนาคาร",
     "ledger_read": "ดูบัญชีแยกประเภท",
     "payroll_read": "ดูข้อมูลเงินเดือน",
     "audit_read": "ดูประวัติการตรวจสอบ",

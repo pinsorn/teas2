@@ -1,5 +1,5 @@
 import type {
-  ActivityEntry, Allocation, Attachment, AttachmentCategory, ChainGraph, ComputeResult, CorrectionPlan, CorrectionResult, Doc, DocHeader, DocLine, DocSummary,
+  ActivityEntry, Allocation, Attachment, AttachmentCategory, BankImport, BankLine, ChainGraph, ComputeResult, CorrectionPlan, CorrectionResult, Doc, DocHeader, DocLine, DocSummary,
   DocType, HomeInbox, MarkKey, Money, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, RemainingLine, Revision, SearchHit,
 } from '@/domain/types';
 import type { RecordKind, RecordRow } from '@/domain/records';
@@ -7,7 +7,8 @@ import type { ReportKind, ReportModel } from '@/domain/reports';
 import { api, ApiError, normalizeProblem } from './client';
 
 export type DocInput = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] };
-export interface BankAccountRef { id: string; nameTh: string; accountNo?: string; default?: boolean }
+/** A postable current-asset account a bank / cash account can be bound to; `taken` = another bank account of the company already owns it. */
+export interface BankGlAccount { code: string; nameTh: string; subClass: 'cash' | 'bank'; taken: boolean }
 export interface WhtTypeRef { code: string; nameTh: string; rate: string; incomeType: string }
 export interface ListDocsParams { status?: string; from?: string; to?: string; q?: string; outstanding?: 'positive'; overdue?: '1'; agent?: '1'; limit?: number; cursor?: string }
 
@@ -59,7 +60,12 @@ export const endpoints = {
   getRevisions: (type: DocType, id: string) => api<Revision[]>('GET', `${d(type, id)}/revisions`),
   getLedger: (type: DocType, id: string) => api<JournalPreview>('GET', `${d(type, id)}/ledger`),
   openItems: (p: { partyId: string; types: DocType[] }) => api<{ items: OpenItem[]; total: Money }>('GET', `/docs/open-items${qs({ partyId: p.partyId, types: p.types.join(',') })}`),
-  bankAccounts: () => api<BankAccountRef[]>('GET', '/bank-accounts'),
+  bankGlAccounts: () => api<BankGlAccount[]>('GET', '/finance/bank-gl-accounts'),
+  /** FN1: `content` is the CSV text, or the PDF as base64. The password (K PLUS) is sent once and never kept. */
+  importStatement: (accountId: string, body: { fileName: string; format: BankImport['format']; content: string; password?: string }) =>
+    api<BankImport>('POST', `/finance/bank-accounts/${encodeURIComponent(accountId)}/imports`, body),
+  listBankLines: (accountId: string, p: { status?: BankLine['status']; from?: string; to?: string; limit?: number; cursor?: string } = {}) =>
+    api<Page<BankLine>>('GET', `/finance/bank-accounts/${encodeURIComponent(accountId)}/lines${qs(p)}`),
   whtTypes: () => api<WhtTypeRef[]>('GET', '/wht-types'),
   /** Every document of one party, across the types the role can read. */
   docsByParty: (partyId: string) => api<Page<DocSummary>>('GET', `/docs/by-party/${encodeURIComponent(partyId)}`),

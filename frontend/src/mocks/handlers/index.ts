@@ -1,3 +1,4 @@
+import { bankHandlers } from './bank';
 import { docsReadHandlers } from './docs-read';
 import { docsWriteHandlers } from './docs-write';
 import { financeRefsHandlers } from './finance-refs';
@@ -11,4 +12,4 @@ import { reportsHandlers } from './reports';
 import { searchHandlers } from './search';
 
 export * from './common';
-export const handlers = [...meHandlers, ...homeHandlers, ...partiesHandlers, ...recordsHandlers, ...itemsHandlers, ...docsReadHandlers, ...docsWriteHandlers, ...financeRefsHandlers, ...reportsHandlers, ...searchHandlers, ...mockFixturesHandlers];
+export const handlers = [...meHandlers, ...homeHandlers, ...partiesHandlers, ...recordsHandlers, ...itemsHandlers, ...docsReadHandlers, ...docsWriteHandlers, ...financeRefsHandlers, ...bankHandlers, ...reportsHandlers, ...searchHandlers, ...mockFixturesHandlers];

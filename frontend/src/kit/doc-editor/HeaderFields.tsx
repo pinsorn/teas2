@@ -20,19 +20,21 @@ const selectCls = 'h-(--ctl-h) w-full rounded-lg border border-input bg-card px-
 const METHODS = ['transfer', 'cash', 'cheque'] as const;
 const WHT_MODES: WhtMode[] = ['deduct', 'grossup_once', 'grossup_always'];
 
-/** The company's bank / cash accounts (from the server). The account shown before a choice is the server default the engine will fill in. */
+/** The company's bank / cash accounts (the FN1 records). A closed account is not offered for a new choice but stays shown on a document that already has it. The account shown before a choice is the server default the engine will fill in. */
 function BankAccountField({ id, header, setHeader }: { id: string; header: DocHeader; setHeader: Dispatch<SetStateAction<DocHeader>> }) {
   const t = useTranslations('docEditor');
   const { me } = useMe();
   const companyId = me?.activeCompanyId ?? '';
-  const q = useQuery({ queryKey: qk.bankAccounts(companyId), queryFn: endpoints.bankAccounts, enabled: !!me });
-  const shown = header.bankAccountId ?? q.data?.find((b) => b.default)?.id ?? '';
+  const q = useQuery({ queryKey: qk.records(companyId, 'bank-account', { active: 'all' }), queryFn: () => endpoints.listRecords('bank-account', { active: 'all', limit: 100 }), enabled: !!me });
+  const shown = header.bankAccountId ?? q.data?.items.find((b) => b.default)?.id ?? '';
   return (
     <div className="grid gap-1.5">
       <Label htmlFor={id}>{t('bankAccount')}</Label>
       <select id={id} className={selectCls} value={shown} disabled={!q.data} onChange={(e) => setHeader((h) => ({ ...h, bankAccountId: e.target.value || undefined }))}>
         {q.isError ? <option value="">{t('bankFailed')}</option> : !q.data ? <option value="">{t('bankLoading')}</option> : null}
-        {q.data?.map((b) => <option key={b.id} value={b.id}>{b.accountNo ? `${b.nameTh} ${b.accountNo}` : b.nameTh}</option>)}
+        {q.data?.items.filter((b) => b.active || b.id === shown).map((b) => (
+          <option key={b.id} value={b.id}>{[b.accountName, b.accountNo].filter(Boolean).join(' ')}{b.active ? '' : ` (${t('bankInactive')})`}</option>
+        ))}
       </select>
     </div>
   );

@@ -53,7 +53,7 @@ describe('GET /reports/:kind/export', () => {
   it('quotes a cell that holds a comma or a quote', async () => {
     const s = resetState();
     s.accounts.find((a) => a.companyId === 'co-vat' && a.code === '1130')!.nameTh = 'ลูกหนี้, "การค้า"';
-    localStorage.setItem('teas2.mock.state.v23', JSON.stringify(s));
+    localStorage.setItem('teas2.mock.state.v24', JSON.stringify(s));
     expect(await (await get('/reports/trial-balance/export?asOf=2099-12-31')).text()).toContain('"ลูกหนี้, ""การค้า"""');
   });
 });

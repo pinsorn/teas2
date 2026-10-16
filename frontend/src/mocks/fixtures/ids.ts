@@ -5,7 +5,7 @@ import { derivedLocks } from '../engine/locks';
 type D = MockState['docs'][number];
 const isTi = (d: D) => d.type === 'TI';
 
-export type FixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssuedUnpaid' | 'tiPartly' | 'tiSettled' | 'tiFilingLocked'
+type DocFixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssuedUnpaid' | 'tiPartly' | 'tiSettled' | 'tiFilingLocked'
   | 'tiReplaced' | 'tiLong' | 'tiPeriodLocked' | 'rcTargetsA' | 'rcTargetsB'
   | 'qtDraft' | 'qtIssued' | 'qtRejected' | 'qtCancelled' | 'qtRevised' | 'nqtIssued'
   | 'soPartlyDelivered' | 'soClosed' | 'doDelivered' | 'nsoIssued' | 'ndoDelivered'
@@ -16,6 +16,10 @@ export type FixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssued
   | 'pvMultiWt' | 'pvGrossUp' | 'pvForeign' | 'pvCancelled' | 'wtIssued' | 'wtCancelled'
   | 'exDraft' | 'exPending' | 'exApproved' | 'exUnpaid' | 'exPaid' | 'exForfeit' | 'nexIssued'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
 
+/** FN1 bank accounts: not documents, so no predicate - a fixed record id that must exist in the seed. `bankEmpty` is the VAT company's account with no imports. */
+export const BANK_FIXTURES = { bankKbank: 'ba-kbank', bankEmpty: 'ba-scb', nbankKbank: 'nba-kbank' } as const;
+export type FixtureKey = DocFixtureKey | keyof typeof BANK_FIXTURES;
+
 /** An issued, untouched TI of pc-01 (the multi-target receipt vector settles two of them). */
 const rcTarget = (d: D, st: MockState) => isTi(d) && d.status === 'issued' && d.party?.id === 'pc-01' && d.outstanding === d.totals.total
   && !st.links.some((l) => l.active && l.to === d.id) && !derivedLocks(st, d).some((l) => l.kind !== 'period');
@@ -25,7 +29,7 @@ const firstRcTarget = (st: MockState) => st.docs.filter((x) => rcTarget(x, st)).
 const byId = (id: string, ok: (d: D, st: MockState) => boolean = () => true) => (d: D, st: MockState) => d.id === id && ok(d, st);
 
 /** Predicates evaluate the READ model (derivedLocks), never the stored row alone. */
-export const FIXTURE_PREDICATES: Record<FixtureKey, (d: D, st: MockState) => boolean> = {
+export const FIXTURE_PREDICATES: Record<DocFixtureKey, (d: D, st: MockState) => boolean> = {
   tiDraft: (d) => isTi(d) && d.status === 'draft' && d.createdBy.kind === 'user',
   tiAgentDraft: (d) => isTi(d) && d.status === 'draft' && d.createdBy.kind === 'agent',
   tiDraftNoTin: (d) => isTi(d) && d.status === 'draft' && !!d.party?.vatRegistered && !d.party.taxId,
@@ -109,9 +113,12 @@ export const FIXTURE_PREDICATES: Record<FixtureKey, (d: D, st: MockState) => boo
 export function fixtureIds(st: MockState): Record<FixtureKey, string> {
   const out: Partial<Record<FixtureKey, string>> = {};
   const missing: string[] = [];
-  for (const [k, f] of Object.entries(FIXTURE_PREDICATES) as [FixtureKey, (typeof FIXTURE_PREDICATES)['tiDraft']][]) {
+  for (const [k, f] of Object.entries(FIXTURE_PREDICATES) as [DocFixtureKey, (typeof FIXTURE_PREDICATES)['tiDraft']][]) {
     const hit = st.docs.filter((d) => f(d, st)).map((d) => d.id).sort()[0];
     if (hit) out[k] = hit; else missing.push(k);
+  }
+  for (const [k, id] of Object.entries(BANK_FIXTURES) as [keyof typeof BANK_FIXTURES, string][]) {
+    if (st.bankAccounts.some((b) => b.id === id)) out[k] = id; else missing.push(k);
   }
   if (missing.length) throw new Error(`fixture ids unresolved: ${missing.join(', ')}`);
   return out as Record<FixtureKey, string>;

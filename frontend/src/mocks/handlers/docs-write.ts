@@ -10,6 +10,7 @@ import { buildPlan, correctionPlan, executePlan, planStale } from '../engine/cor
 import { MockError } from '../engine/log';
 import { closeRemainder, remainingOf, setMark } from '../engine/marks';
 import { CLASS } from '../fixtures/documents';
+import { refuseInactiveBank } from '../records/bank-accounts';
 import { saveState } from '../store';
 import { ctx, forbidden, persist, problem, screenGate } from './common';
 
@@ -75,14 +76,17 @@ export const docsWriteHandlers = [
 
   http.post('*/bff/v1/docs/:type', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
     const key = request.headers.get('Idempotency-Key') ?? crypto.randomUUID();
-    const doc = createDraft(c.st, c.company.id, t, stripOverrides((await request.json()) as Body), ACTOR, key);
+    const body = stripOverrides((await request.json()) as Body);
+    refuseInactiveBank(c.st, c.company.id, body?.header?.bankAccountId); // the shape of the request, refused where it enters: a new document does not pick a closed account
+    const doc = createDraft(c.st, c.company.id, t, body, ACTOR, key);
     done(c);
     return HttpResponse.json(doc, { status: 201 });
   })),
 
   http.put('*/bff/v1/docs/:type/:id', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
-    own(c, t, params.id);
+    const stored = own(c, t, params.id);
     const body = stripOverrides((await request.json()) as Body & { version?: number });
+    refuseInactiveBank(c.st, c.company.id, body?.header?.bankAccountId, stored.header.bankAccountId); // keeping the account it already has is fine
     const doc = updateDraft(c.st, String(params.id), body, versionOf(request, body), ACTOR);
     done(c);
     return HttpResponse.json(doc);

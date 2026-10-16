@@ -115,3 +115,13 @@ Entry format — terse, greppable by symptom:
 - **Symptom:** after P4 the attachment tests in `docs-write-s6.test.ts` see `teas2.mock.att.att-seed-ex-pend` and a metadata row they did not create; an e2e `getByRole('option')` for a party type-ahead resolves to 12 elements (or `toHaveCount(0)` never holds).
 - **Root cause:** the seed now carries one real attachment (`ex-pend`, the receipt photo; bytes in localStorage, metadata in `st.attachments`). And a native `<select>` (category, tax code) exposes its `<option>`s with role `option` too, so an unscoped locator also counts those.
 - **Fix:** attachment tests filter `att-seed-` (`userAtt()` / `attKeys()`); e2e type-ahead locators are `page.getByRole('listbox').getByRole('option')`. Also: `toHaveURL(//expense-claims/[^/]+$/)` matches `/new` itself - exclude it (`(?!new)`) before reading the id from the URL.
+
+## Playwright "unknown fixture key" / every new screen 404s although the build is fresh (FN1)
+- **Symptom:** a new e2e spec fails on `fixtureId(...)` with "unknown fixture key X (have: ...)" or a new route renders the old UI, while unit tests and `next build` are green.
+- **Root cause:** `playwright.config.ts` has `reuseExistingServer: !CI`; a `next start -p 3100` left over from an earlier run (same worktree, OLD `.next` build) is reused, so the spec runs against stale code. `netstat -ano | findstr :3100` shows it.
+- **Fix:** find the PID (`Get-CimInstance Win32_Process -Filter "ProcessId=<pid>"` shows the worktree in the command line), stop it and its parent cmd.exe, re-run: Playwright then builds and starts its own server and stops it at the end.
+
+## A native `<select>` opened on a saved value shows blank once its options arrive (FN1)
+- **Symptom:** an edit form whose `<select>` options load asynchronously (GL account picker) opens on the placeholder instead of the stored value.
+- **Root cause:** react-hook-form sets the select's value at mount; a fallback `<option value={current}>` that is later replaced by the real option (different element) drops the selection.
+- **Fix:** render ONE keyed list that always contains the current value (real option when known, bare code otherwise), so the DOM option is never swapped out (`kit/record-form/fields.tsx`, kind `account`).

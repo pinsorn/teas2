@@ -247,9 +247,9 @@ export function allocationError(st: MockState, companyId: string, type: DocType,
   return undefined;
 }
 
-/** The account the Cash role posts to: the chosen bank account, or the company cash account (1110) when paid in cash. */
+/** The account the Cash role posts to: the chosen bank account, or the company's cash box when paid in cash. */
 export function cashBankId(st: MockState, companyId: string, header: DocHeader): string | undefined {
-  if (header.paymentMethod === 'cash') return st.bankAccounts.find((b) => b.companyId === companyId && b.accountCode === '1110')?.id ?? header.bankAccountId;
+  if (header.paymentMethod === 'cash') return st.bankAccounts.find((b) => b.companyId === companyId && b.kind === 'cash')?.id ?? header.bankAccountId;
   return header.bankAccountId;
 }
 

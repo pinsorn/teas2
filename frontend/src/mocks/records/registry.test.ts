@@ -174,7 +174,7 @@ describe('/records handlers', () => {
   it('404 for an unknown kind and for a kind with no implementation; 403 names the manage permission', async () => {
     const unknown = await call('GET', '/records/nonsense');
     expect([unknown.status, (await unknown.json()).code]).toEqual([404, 'record.kind_unknown']);
-    expect((await call('GET', '/records/bank-account')).status).toBe(404); // known kind, not built yet
+    expect((await call('GET', '/records/employee')).status).toBe(404); // known kind, not built yet
     setSettings({ role: 'admin' });
     expect((await call('GET', '/records/customer')).status).toBe(200); // party.read
     const w = await call('POST', '/records/customer', valid);

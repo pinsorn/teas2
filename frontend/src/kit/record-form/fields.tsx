@@ -76,6 +76,8 @@ export function Field({ spec, form, values, error, locked }: { spec: FieldSpec; 
   const wht = useQuery({ queryKey: qk.whtTypes(c), queryFn: endpoints.whtTypes, enabled: !!me && spec.optionsFrom === 'wht-types' });
   const items = useQuery({ queryKey: [...qk.itemOptions(c), spec.itemUsage], queryFn: () => endpoints.searchItems({ limit: 200, usage: spec.itemUsage }), enabled: !!me && spec.kind === 'item' });
 
+  const gl = useQuery({ queryKey: qk.bankGlAccounts(c), queryFn: endpoints.bankGlAccounts, enabled: !!me && spec.kind === 'account' && !locked });
+
   let control: ReactNode;
   if (spec.kind === 'bool') {
     control = <input type="checkbox" {...register(spec.key)} id={id} aria-invalid={!!error} aria-describedby={describedBy} className="size-4 accent-(--color-brand)" />;
@@ -91,6 +93,17 @@ export function Field({ spec, form, values, error, locked }: { spec: FieldSpec; 
         <option value="">{t('records.common.selectPlaceholder')}</option>
         {opts.map((o) => <option key={o.value} value={o.value}>{o.text}</option>)}
         {current && !opts.some((o) => o.value === current) ? <option value={current}>{current}</option> : null}
+      </select>
+    );
+  } else if (spec.kind === 'account' && !locked) { // a GL account for a bank / cash account: the ones of the chosen type that no other bank account owns (§5.13)
+    const current = String(values[spec.key] ?? '');
+    const free = (gl.data ?? []).filter((a) => a.subClass === (values.kind === 'cash' ? 'cash' : 'bank') && (!a.taken || a.code === current));
+    // one keyed list, the current value always in it: the option the form was opened on must survive the list arriving (a select drops its value when its option is replaced)
+    const opts = (free.some((a) => a.code === current) || !current ? free : [...free, { code: current, nameTh: '' }]).sort((x, y) => x.code.localeCompare(y.code));
+    control = (
+      <select {...register(spec.key)} id={id} aria-invalid={!!error} aria-describedby={describedBy} aria-required={common['aria-required']} className={select}>
+        <option value="">{t('bank.glPlaceholder')}</option>
+        {opts.map((a) => <option key={a.code} value={a.code}>{a.nameTh ? `${a.code} · ${a.nameTh}` : a.code}</option>)}
       </select>
     );
   } else if (spec.kind === 'item') {

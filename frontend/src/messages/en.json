@@ -407,6 +407,10 @@
       "customerView": "Customer detail",
       "vendors": "Vendors list",
       "items": "Items list",
+      "bankList": "Bank and cash accounts list",
+      "bankView": "Bank account statement lines (KBank)",
+      "bankEmpty": "Bank account with no statement lines yet",
+      "nbankView": "Bank account statement lines (non-VAT)",
       "styleGuide": "Style guide"
     },
     "state": { "normal": "Normal", "empty": "Empty", "loading": "Loading", "error": "Error", "forbidden": "Forbidden", "locked": "Locked" },
@@ -567,6 +571,7 @@
     "bankAccount": "Bank / cash account",
     "bankLoading": "Loading accounts…",
     "bankFailed": "Could not load the accounts",
+    "bankInactive": "closed",
     "paymentMethod": "Payment method",
     "method": { "transfer": "Transfer", "cash": "Cash", "cheque": "Cheque" },
     "chequeNumber": "Cheque number",
@@ -746,6 +751,7 @@
     "customer": { "title": "Customers", "search": "Search code, name or tax ID", "empty": "No customers yet" },
     "vendor": { "title": "Vendors", "search": "Search code, name or tax ID", "empty": "No vendors yet" },
     "item": { "title": "Items and services", "search": "Search code or name", "empty": "No items or services yet" },
+    "bank-account": { "title": "Bank and cash accounts", "search": "Search account name or GL code", "empty": "No bank or cash accounts yet" },
     "fields": {
       "entityKind": "Party type", "code": "Code", "name": "Name", "nameEn": "Name (English)", "taxId": "Tax ID",
       "branchCode": "Branch", "vatRegistered": "VAT registered", "address": "Registered address", "phone": "Phone",
@@ -753,7 +759,8 @@
       "notes": "Notes", "vatDRegistered": "VAT-D registered (no PP.36 filing)", "bankName": "Bank", "bankAccountNo": "Account number",
       "bankAccountName": "Account name", "usualItemIds": "Items usually bought", "active": "Status",
       "kind": "Type", "unit": "Unit", "unitPrice": "Unit price", "taxCode": "VAT", "whtTypeCode": "Withholding type",
-      "usage": "Used for", "usageSales": "Use on sales documents", "usagePurchase": "Use on purchase documents", "expenseCategory": "Expense category"
+      "usage": "Used for", "usageSales": "Use on sales documents", "usagePurchase": "Use on purchase documents", "expenseCategory": "Expense category",
+      "accountNo": "Account number", "accountName": "Account name", "accountCode": "GL account", "bankKind": "Account type"
     },
     "options": {
       "entityKind": { "individual": "Individual", "juristic": "Company", "foreign": "Foreign" },
@@ -761,13 +768,33 @@
       "itemKind": { "good": "Goods", "service": "Service" },
       "taxCode": { "S7": "VAT 7%", "Z0": "VAT 0%", "EX": "VAT exempt" },
       "itemUsage": { "sales": "Sales", "purchase": "Purchases", "both": "Sales and purchases" },
-      "expenseCategory": { "rent": "Rent", "services": "Services", "advertising": "Advertising", "transport": "Transport", "entertainment": "Entertainment (input VAT not recoverable)", "supplies": "Supplies", "capex-equipment": "Asset purchase (equipment)", "cost-of-sales": "Cost of sales" }
+      "expenseCategory": { "rent": "Rent", "services": "Services", "advertising": "Advertising", "transport": "Transport", "entertainment": "Entertainment (input VAT not recoverable)", "supplies": "Supplies", "capex-equipment": "Asset purchase (equipment)", "cost-of-sales": "Cost of sales" },
+      "bankKind": { "bank": "Bank account", "cash": "Cash" },
+      "bankName": { "kbank": "Kasikornbank", "scb": "Siam Commercial Bank", "bbl": "Bangkok Bank", "ktb": "Krungthai Bank", "bay": "Krungsri", "ttb": "TMBThanachart", "gsb": "Government Savings Bank" }
     },
     "view": {
       "tabs": { "info": "Details", "docs": "Documents", "open": "Outstanding" }, "tin": "Tax ID", "branch": "Branch",
       "notFoundTitle": "Record not found", "notFoundBody": "It may have been deleted, or it belongs to another company",
       "docsEmpty": "No documents for this party yet", "openEmpty": "Nothing outstanding", "openTotal": "Total outstanding", "number": "Number", "type": "Type",
       "date": "Date", "status": "Status", "total": "Total", "outstanding": "Outstanding", "due": "Due"
+    }
+  },
+  "bank": {
+    "noStatements": "A cash box has no statement lines",
+    "gl": "GL account", "accountNo": "Account number", "bankName": "Bank", "kind": "Account type",
+    "glPlaceholder": "— Choose a GL account —",
+    "import": {
+      "open": "Import statement", "title": "Import statement", "needManage": "Requires bank.manage",
+      "file": "Statement file (CSV from K BIZ or PDF from K PLUS)", "password": "PDF password (if any)",
+      "passwordHint": "Used to open this file only; the password is never stored", "submit": "Import", "submitting": "Importing", "close": "Close",
+      "chooseFile": "Choose a statement file first", "unsupported": "Only .csv or .pdf files are supported", "failed": "Import failed",
+      "success": "Imported {count} lines", "period": "Period {from} – {to}", "warnings": "Warnings"
+    },
+    "lines": {
+      "title": "Statement lines", "empty": "No statement lines yet — import a statement", "noMatch": "No lines match the filters",
+      "date": "Date", "description": "Description", "in": "In", "out": "Out", "balance": "Balance", "status": "Status",
+      "filterStatus": "Line status", "all": "All", "from": "From", "to": "To", "clear": "Clear filters",
+      "statuses": { "unmatched": "Unmatched", "matched": "Matched", "ignored": "Ignored", "posted": "Posted" }
     }
   },
   "permissions": {
@@ -892,6 +919,9 @@
     "party_manage": "Manage parties",
     "item_read": "Read items",
     "item_manage": "Manage items and services",
+    "bank_read": "Read bank accounts and statement lines",
+    "bank_manage": "Manage bank accounts and import statements",
+    "bank_reconcile": "Reconcile bank accounts",
     "ledger_read": "Read ledger",
     "payroll_read": "Read payroll data",
     "audit_read": "Read audit trail",

@@ -9,6 +9,7 @@ const group = (key: string, items: NavItem[]): NavGroup => ({ key, labelKey: `na
 const doc = (key: string, href: string, type: DocType, flags?: Pick<NavItem, 'vatOnly' | 'nonVatOnly'>) => item(key, href, `doc.${type}.read`, flags);
 const LEDGER = 'ledger.read';
 const SETTINGS = 'settings.manage';
+const BANK = 'bank.read';
 
 /** SP0 §9.1. Labels live in the messages under `nav.*`. */
 export const NAV: NavGroup[] = [
@@ -32,7 +33,7 @@ export const NAV: NavGroup[] = [
     doc('vendorDebitNotes', '/purchases/vendor-debit-notes', 'PDN'),
     doc('expenseClaims', '/purchases/expense-claims', 'EX'),
   ]),
-  group('finance', [item('bankAccounts', '/finance/bank-accounts', LEDGER), item('deposits', '/finance/deposits', LEDGER)]),
+  group('finance', [item('bankAccounts', '/finance/bank-accounts', BANK), item('deposits', '/finance/deposits', BANK)]),
   group('accounting', [
     item('journals', '/accounting/journals', LEDGER),
     item('chartOfAccounts', '/accounting/chart-of-accounts', LEDGER),

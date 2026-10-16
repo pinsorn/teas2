@@ -1,6 +1,7 @@
 import type { VatScope } from '@/domain/doc-types';
 import type { RecordKind, RecordRow } from '@/domain/records';
 import type { MockState } from '../store';
+import { bankAccountImpl } from './bank-accounts';
 import { itemImpl } from './items';
 import { partyImpl } from './parties';
 
@@ -19,4 +20,4 @@ export interface RecordKindImpl {
   canDeactivate?: (st: MockState, companyId: string, id: string) => string | undefined;
 }
 
-export const RECORD_IMPLS: Partial<Record<RecordKind, RecordKindImpl>> = { customer: partyImpl('customer'), vendor: partyImpl('vendor'), item: itemImpl };
+export const RECORD_IMPLS: Partial<Record<RecordKind, RecordKindImpl>> = { customer: partyImpl('customer'), vendor: partyImpl('vendor'), item: itemImpl, 'bank-account': bankAccountImpl };

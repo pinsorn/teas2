@@ -92,6 +92,11 @@ export interface ApprovalPolicy { companyId: string; docType: DocType; enabled: 
 export type AttachmentCategory = 'customer_po' | 'purchase_order' | 'delivery' | 'vendor_tax_invoice' | 'receipt' | 'transfer_slip'
   | 'contract' | 'photo' | 'wht_certificate' | 'government' | 'other';
 export interface Attachment { id: string; docId: string; category: AttachmentCategory; name: string; size: number; mime: string; dataUrl: string; at: string; by: string }
+/** FN1: a bank statement line. `amount` is signed (+ in, - out); `balance` is the statement's running balance after the line. Importing never posts (FN2 matches / posts). */
+export interface BankLine { id: string; accountId: string; importId: string; date: IsoDate; description: string; amount: Money; balance: Money;
+  status: 'unmatched' | 'matched' | 'ignored' | 'posted'; matchedDocIds?: string[]; journalId?: string }
+export interface BankImport { id: string; accountId: string; fileName: string; format: 'kbiz-csv' | 'kplus-pdf'; from: IsoDate; to: IsoDate;
+  opening: Money; closing: Money; lines: number; at: string; warnings: string[] }
 export interface DocSummary { id: string; type: DocType; number?: string; status: DocStatus; documentDate: IsoDate;
   partyName: string; total: Money; outstanding?: Money; dueDate?: IsoDate; reference?: string; createdByAgent: boolean; marks?: DocMarks; progress?: string }
 export interface Page<T> { items: T[]; nextCursor?: string; total?: number }

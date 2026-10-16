@@ -36,7 +36,7 @@ describe('HeaderFields payment fields', () => {
     expect(seen).toHaveBeenLastCalledWith(expect.objectContaining({ bankAccountId: 'ba-scb' }));
   });
   it('bank account list failing says so instead of showing an empty select', async () => {
-    testServer.use(http.get('*/bff/v1/bank-accounts', () => HttpResponse.json({ status: 500, code: 'x', title: 'x' }, { status: 500, headers: { 'content-type': 'application/problem+json' } })));
+    testServer.use(http.get('*/bff/v1/records/bank-account', () => HttpResponse.json({ status: 500, code: 'x', title: 'x' }, { status: 500, headers: { 'content-type': 'application/problem+json' } })));
     render(<Host keys={['bankAccount']} />);
     expect(await screen.findByRole('option', { name: 'โหลดรายการบัญชีไม่สำเร็จ' })).toBeInTheDocument();
   });

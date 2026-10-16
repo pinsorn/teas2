@@ -52,12 +52,12 @@ e2e upload; `ba-scb` no imports; `ba-cash` cash box. Non-VAT `nba-kbank` 8 lines
 
 **Permissions:** operator `bank.read`; accountant `bank.read`, `bank.manage`, `bank.reconcile`; admin `bank.read`, `bank.manage`.
 
-- [ ] **Step 1: Failing tests** — `bank-import.test.ts`: BOM + Thai labels parsed; a tampered balance row →
+- [x] **Step 1: Failing tests** — `bank-import.test.ts`: BOM + Thai labels parsed; a tampered balance row →
   `bank.line_mismatch` naming the row number; wrong account → `bank.account_mismatch`; overlap → warning, not error;
   totals check. e2e: `screenContract` bank list (`both`), bank detail (`bankKbank`, states incl. empty → `bankEmpty`
   shows "ยังไม่มีรายการเดินบัญชี — นำเข้า statement"); upload the October CSV via `setInputFiles` (Buffer from the
   fixture text) → "นำเข้าสำเร็จ 12 รายการ" and the lines table.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.** (FN1 worker: tsc, eslint, unit 111 files / 1154 passed, e2e finance-bank + sales-rc + purchases-pv + screens + routes + 8 neighbouring specs green; full e2e run by the controller)
 - [ ] **Step 6: Controller commits** — `feat(finance): bank and cash accounts with statement import`.
 
 ---
