@@ -81,11 +81,11 @@ function sourceLine(st: MockState, d: Stored, lineId: string): { account: string
     if (d.header.reversalOf || d.header.autoReverse || userReversalOf(st, d.id)) return undefined;
     const dr = sat(l.debit); return l.accountCode && dr > 0 ? { account: l.accountCode, amount: dr } : undefined;
   }
-  if (d.type !== 'PB') return undefined;
+  if (d.type !== 'PB' && d.type !== 'PCN' && d.type !== 'PDN') return undefined; // a note on the line moves what it holds (PCN less, PDN more)
   const cat = categoryOf(st, d.companyId, l);
   if (cat?.capex) return undefined;
   try {
-    const account = resolveRole(st, 'Expense', { companyId: d.companyId, docType: 'PB', itemId: l.itemId, expenseCategory: cat?.code ?? l.expenseCategory, dimensions: l.dimensions }).code;
+    const account = resolveRole(st, 'Expense', { companyId: d.companyId, docType: d.type, itemId: l.itemId, expenseCategory: cat?.code ?? l.expenseCategory, dimensions: l.dimensions }).code;
     return { account, amount: toSatang(computeDoc(d.lines, !!d.header.priceIncludesVat, true).lines[i].net) };
   } catch { return undefined; }
 }
@@ -93,6 +93,26 @@ const isPrepaid = (st: MockState, companyId: string, code: string) =>
   st.accounts.find((a) => a.companyId === companyId && a.code === code)?.subClass === 'prepayment' && !controlExit(st, companyId, code, 'jv');
 const liveOnLine = (st: MockState, docId: string, lineId: string | undefined) =>
   st.schedules.filter((s) => s.kind === 'amortisation' && !s.stopped && s.source?.docId === docId && s.source.lineId === lineId);
+/** Every amortisation schedule on a source line, stopped or not (a stopped one keeps its live runs on the line). */
+const onLine = (st: MockState, docId: string, lineId: string | undefined) => st.schedules.filter((s) => s.kind === 'amortisation' && s.source?.docId === docId && s.source.lineId === lineId);
+const runsTaken = (st: MockState, ss: ScheduleRecord[]) => ss.reduce((n, s) => liveRuns(st, s).reduce((m, r) => m + sat(r.amount), n), 0);
+/** What a source line holds on `account` right now (satang): the bill line (or a JV's debit) plus its live PDNs less its live PCNs; 0 when the document is gone, the line moved to another account or the JV was undone.
+ *  `src` = the document as a pending change would leave it. */
+export function lineCapacity(st: MockState, docId: string, lineId: string | undefined, account: string, src?: Stored): number {
+  const d = src ?? st.docs.find((x) => x.id === docId);
+  if (!d || !lineId || !LIVE.includes(d.status)) return 0;
+  const base = sourceLine(st, d, lineId);
+  if (!base || base.account !== account) return 0;
+  let cap = base.amount;
+  for (const nd of st.docs) if ((nd.type === 'PCN' || nd.type === 'PDN') && LIVE.includes(nd.status) && nd.header.refDocId === docId) cap += noteMove(st, nd, lineId, account);
+  return cap;
+}
+/** What one note moves on the line it adjusts, signed (satang): a PDN adds, a PCN takes away. */
+function noteMove(st: MockState, nd: Stored, lineId: string, account: string): number {
+  let n = 0;
+  for (const l of nd.lines) { const x = l.sourceLineId === lineId ? sourceLine(st, nd, l.id) : undefined; if (x && x.account === account) n += nd.type === 'PDN' ? x.amount : -x.amount; }
+  return n;
+}
 const accountLine = (code: string): DocLine => ({ id: 'x', description: '', qty: '1', unit: '', unitPrice: '0.00', taxCode: 'EX', accountCode: code, debit: '1.00', credit: '0.00' });
 
 export interface AmortInput { name: string; docId: string; lineId: string; total: Money; months: number; startMonth: string; expenseAccount: string }
@@ -103,7 +123,8 @@ export function createAmortisation(st: MockState, companyId: string, input: Amor
   const src = st.docs.find((d) => d.id === input.docId && d.companyId === companyId);
   const line = src && LIVE.includes(src.status) ? sourceLine(st, src, input.lineId) : undefined;
   if (!src || !line || !isPrepaid(st, companyId, line.account)) throw fail(422, 'schedule.source_invalid', 'ตัดจ่ายได้เฉพาะรายการในใบแจ้งหนี้ซื้อ (PB) หรือใบสำคัญทั่วไป (JV) ที่ออกแล้วและลงบัญชีค่าใช้จ่ายจ่ายล่วงหน้า (1150 หรือบัญชีหมวดเดียวกัน)');
-  if (sat(input.total) > line.amount) throw fail(422, 'schedule.over_source', `ยอดตัดจ่ายเกินยอดของรายการต้นทาง (${fromSatang(line.amount)})`);
+  const room = lineCapacity(st, src.id, input.lineId, line.account) - runsTaken(st, onLine(st, src.id, input.lineId)); // what the line still holds after every schedule's live runs (a stopped one keeps its own)
+  if (sat(input.total) > room) throw fail(422, 'schedule.over_source', `ยอดตัดจ่ายเกินยอดคงเหลือของรายการต้นทาง (${fromSatang(Math.max(room, 0))}) ยอดที่ตารางอื่นตัดจ่ายไปแล้วหักออกแล้ว`);
   const taken = liveOnLine(st, src.id, input.lineId)[0];
   if (taken) throw fail(409, 'schedule.source_taken', `รายการนี้มีตารางตัดจ่าย "${taken.name}" อยู่แล้ว หยุดตารางนั้นก่อนจึงตั้งใหม่ได้`);
   if (input.expenseAccount === line.account) throw fail(422, 'ledger.account_invalid', 'บัญชีค่าใช้จ่ายต้องไม่ใช่บัญชีค่าใช้จ่ายจ่ายล่วงหน้าเดียวกัน');
@@ -218,8 +239,8 @@ export function runSchedule(st: MockState, companyId: string, id: string, actor:
   if (live.length >= n) throw fail(409, 'schedule.done', `ตาราง "${s.name}" ตัดจ่ายครบทุกงวดแล้ว`);
   const row = s.plan![live.length];
   if (opts?.month && opts.month !== row.month) throw fail(422, 'schedule.out_of_order', `ต้องตัดจ่ายตามลำดับ งวดถัดไปคือ ${monthLabelTh(row.month)}`);
-  if (row.month > today().slice(0, 7)) throw fail(422, 'schedule.not_due', `งวด ${monthLabelTh(row.month)} ยังไม่ถึงกำหนด (ตัดจ่ายได้ตั้งแต่เดือนนั้น)`);
   const date = lastDayOf(row.month);
+  if (date > today()) throw fail(422, 'schedule.not_due', `งวด ${monthLabelTh(row.month)} ยังไม่ถึงกำหนด (ตัดจ่ายได้เมื่อสิ้นเดือนนั้นแล้ว ระบบไม่ลงรายการล่วงหน้า)`);
   if (isClosed(st, companyId, date)) throw fail(422, 'period.closed', `งวดบัญชี ${monthLabelTh(row.month)} ปิดแล้ว ตัดจ่ายงวดนี้ไม่ได้ ทางออก: เปิดงวดบัญชีอีกครั้ง (หน้าปิดงวด) แล้วรันใหม่ งวดนี้จะแสดงเป็นรายการที่ยังไม่ได้ตัด`);
   const lines = runLines(s, row);
   const bad = jvAccountProblem(st, companyId, lines);
@@ -264,32 +285,52 @@ function runRecurring(st: MockState, s: ScheduleRecord, actor: Actor): ScheduleR
 
 // ---------------------------------------------------------------- locks and hooks (called from the document commands)
 
-const liveSchedulesOn = (st: MockState, docId: string) => st.schedules.filter((s) => s.kind === 'amortisation' && s.source?.docId === docId && liveRuns(st, s).length > 0);
+/** The schedules that still own their source line: not stopped (done ones too: their runs stand on the line). */
+const heldSchedulesOn = (st: MockState, docId: string) => st.schedules.filter((s) => s.kind === 'amortisation' && !s.stopped && s.source?.docId === docId);
 const scheduleHref = (s: ScheduleRecord) => `/accounting/schedules/${s.id}`;
-const exitOf = (s: ScheduleRecord) => `หยุด/กลับรายการตารางตัดจ่าย ${s.name}`;
+const exitOf = (s: ScheduleRecord) => `หยุดตารางตัดจ่าย ${s.name}`;
+const lockedBy = (s: ScheduleRecord, what: string) => fail(409, 'schedule.source_locked', `ตารางตัดจ่าย "${s.name}" ยังใช้รายการนี้อยู่ — ${what} ทางออก: ${exitOf(s)}`);
 
-/** The lock a source PB / JV reads with while a schedule has a live run on it. Derived at read, never stored. */
+/** The lock a source PB / JV reads with while a schedule is not stopped (with or without a run). Derived at read, never stored. */
 export function scheduleLock(st: MockState, d: { id?: string; status: string }): Lock | undefined {
   if (!d.id || !LIVE.includes(d.status as never)) return undefined;
-  const s = liveSchedulesOn(st, d.id)[0];
-  return s ? { kind: 'schedule', reason: `มีการตัดจ่ายตามตาราง "${s.name}" แล้ว ${liveRuns(st, s).length} งวด`, exits: [exitOf(s)], href: scheduleHref(s) } : undefined;
+  const s = heldSchedulesOn(st, d.id)[0];
+  return s ? { kind: 'schedule', reason: `ตารางตัดจ่าย "${s.name}" ใช้รายการนี้อยู่ (ตัดจ่ายแล้ว ${liveRuns(st, s).length} งวด)`, exits: [exitOf(s)], href: scheduleHref(s) } : undefined;
 }
 const lineKey = (l: DocLine | undefined) => (l ? JSON.stringify([l.qty, l.unitPrice, l.discountPct ?? '', l.taxCode, l.itemId ?? '', l.expenseCategory ?? '', l.accountCode ?? '', l.debit ?? '', l.credit ?? '', l.vatOverride ?? '']) : 'gone');
+const consumedError = (s: ScheduleRecord, held: number, taken: number) => fail(409, 'schedule.source_consumed', `ตารางตัดจ่าย "${s.name}" ตัดจ่ายจากรายการนี้ไปแล้ว ${fromSatang(taken)} ลดยอดหรือเลิกใช้บัญชีนี้ให้เหลือ ${fromSatang(Math.max(held, 0))} ไม่ได้ ทางออก: กลับรายการใบสำคัญตัดจ่ายของตารางนั้นก่อน`);
 
-/** Ruling 3: while a schedule has a live run on a line of this document, the document cannot be cancelled (no `next`) nor have that line's money, account or date revised (`next` = what the revision would make it). */
+/** The source document of a schedule (a PB or JV): while ANY schedule on it is not stopped (a run or not) its cancel / reversal and the money, account or date of the scheduled line cannot change (`next` = what a revision
+ *  would make it; none = cancel / reverse). After the stop the line may shrink only down to what the schedules' live runs took (`schedule.source_consumed`): capacity stays at or above the runs. */
 export function refuseScheduleSource(st: MockState, d: { id: string; header: DocHeader; lines: DocLine[]; priceIncludesVat?: boolean }, next?: { header: DocHeader; lines: DocLine[] }): void {
-  for (const s of liveSchedulesOn(st, d.id)) {
-    const was = d.lines.find((l) => l.id === s.source!.lineId), now = next?.lines.find((l) => l.id === s.source!.lineId);
-    const same = next && lineKey(was) === lineKey(now) && next.header.documentDate === d.header.documentDate && !!next.header.priceIncludesVat === !!d.header.priceIncludesVat;
-    if (same) continue;
-    throw fail(409, 'schedule.source_locked', `มีการตัดจ่ายตามตาราง "${s.name}" แล้ว ${liveRuns(st, s).length} งวด — ${next ? 'แก้ไขยอด บัญชี หรือวันที่ของรายการที่ตัดจ่ายไม่ได้' : 'ยกเลิกหรือกลับรายการเอกสารนี้ไม่ได้'} ทางออก: ${exitOf(s)}`);
+  const lineChanged = (lineId: string) => {
+    const was = d.lines.find((l) => l.id === lineId), now = next?.lines.find((l) => l.id === lineId);
+    return !(next && lineKey(was) === lineKey(now) && next.header.documentDate === d.header.documentDate && !!next.header.priceIncludesVat === !!d.header.priceIncludesVat);
+  };
+  const held = heldSchedulesOn(st, d.id).find((s) => lineChanged(s.source!.lineId!));
+  if (held) throw lockedBy(held, next ? 'แก้ไขยอด บัญชี หรือวันที่ของรายการที่ตัดจ่ายไม่ได้' : 'ยกเลิกหรือกลับรายการเอกสารนี้ไม่ได้');
+  const doc = st.docs.find((x) => x.id === d.id);
+  for (const lineId of new Set(st.schedules.filter((s) => s.kind === 'amortisation' && s.source?.docId === d.id).map((s) => s.source!.lineId!))) {
+    const ss = onLine(st, d.id, lineId), taken = runsTaken(st, ss);
+    if (!taken || !lineChanged(lineId)) continue;
+    const after = next && doc ? lineCapacity(st, d.id, lineId, ss[0].prepaidAccount!, { ...doc, header: next.header, lines: next.lines }) : 0;
+    if (after < taken) throw consumedError(ss[0], after, taken);
   }
 }
-/** The source document was cancelled: its schedules (none has a live run, the cancel was allowed) are cancelled with it. */
-export function cancelSchedulesOf(st: MockState, d: { id: string; companyId: string }, actor: Actor): void {
-  for (const s of st.schedules.filter((x) => x.kind === 'amortisation' && !x.stopped && x.companyId === d.companyId && x.source?.docId === d.id)) {
-    markStopped(st, s, actor, 'ยกเลิกเอกสารต้นทาง');
-    logAudit(st, actor, d.companyId, 'schedule.stop', s.id, { active: true }, { active: false, reason: s.stopped!.reason });
+/** A PCN / PDN on a scheduled line moves what the line holds, so it follows the same rule as the bill: refused while a schedule is not stopped; after the stop only down to the live runs.
+ *  `change`: issue (the note is not yet counted), cancel (it is, and goes), revise (`next` replaces it). */
+export function refuseScheduleNote(st: MockState, d: Stored, change: 'issue' | 'cancel' | 'revise', next?: { header: DocHeader; lines: DocLine[] }): void {
+  const ref = d.header.refDocId;
+  if ((d.type !== 'PCN' && d.type !== 'PDN') || !ref) return;
+  for (const lineId of new Set([...d.lines, ...(next?.lines ?? [])].map((l) => l.sourceLineId).filter((x): x is string => !!x))) {
+    const ss = onLine(st, ref, lineId);
+    if (!ss.length) continue;
+    const held = ss.find((s) => !s.stopped);
+    if (held) throw lockedBy(held, d.type === 'PCN' ? 'ออกหรือแก้ไขใบลดหนี้ซื้อ (PCN) ของรายการที่ตัดจ่ายไม่ได้' : 'ออกหรือแก้ไขใบเพิ่มหนี้ซื้อ (PDN) ของรายการที่ตัดจ่ายไม่ได้');
+    const taken = runsTaken(st, ss), account = ss[0].prepaidAccount!;
+    const now = change === 'issue' ? 0 : noteMove(st, d, lineId, account), later = change === 'cancel' ? 0 : noteMove(st, { ...d, header: next?.header ?? d.header, lines: next?.lines ?? d.lines }, lineId, account);
+    const after = lineCapacity(st, ref, lineId, account) - now + later;
+    if (taken && after < taken) throw consumedError(ss[0], after, taken);
   }
 }
 /** A run JV is the system's: it is reversed (กลับรายการ), never revised or cancelled. `jvLock` shows the banner. */
@@ -362,6 +403,14 @@ export function scheduleInvariants(st: MockState): string[] {
     else if (live.length && !LIVE.includes(src.status)) out.push(`${s.id}: source ${src.id} is ${src.status} under a live run`);
     else if (live.length && src.type === 'JV' && userReversalOf(st, src.id)) out.push(`${s.id}: source JV ${src.id} is reversed under a live run`);
     if (!s.stopped && st.schedules.some((o) => o !== s && o.kind === 'amortisation' && !o.stopped && o.source?.docId === s.source?.docId && o.source?.lineId === s.source?.lineId)) out.push(`${s.id}: another live schedule on source ${s.source?.docId} line ${s.source?.lineId}`);
+  }
+  // per source line: what the live runs took, and what the live schedules still claim, never exceed what the line holds on the prepaid account (bill + live PDNs - live PCNs, or the JV debit)
+  for (const k of new Set(st.schedules.filter((s) => s.kind === 'amortisation').map((s) => `${s.source?.docId}|${s.source?.lineId}`))) {
+    const ss = st.schedules.filter((s) => s.kind === 'amortisation' && `${s.source?.docId}|${s.source?.lineId}` === k);
+    const cap = lineCapacity(st, ss[0].source!.docId, ss[0].source!.lineId, ss[0].prepaidAccount!);
+    const taken = runsTaken(st, ss), claim = ss.reduce((n, s) => n + (s.stopped ? runsTaken(st, [s]) : sat(s.total)), 0);
+    if (taken > cap) out.push(`${ss[0].id}: source line ${k} holds only ${fromSatang(cap)} on ${ss[0].prepaidAccount}, the live runs of its schedules took ${fromSatang(taken)}`);
+    else if (claim > cap) out.push(`${ss[0].id}: source line ${k} holds only ${fromSatang(cap)} on ${ss[0].prepaidAccount}, its schedules claim ${fromSatang(claim)} (live totals + what stopped ones took)`);
   }
   return out;
 }

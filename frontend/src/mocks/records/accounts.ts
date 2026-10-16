@@ -30,7 +30,9 @@ function balanceOf(st: MockState, companyId: string, code: string): number {
 }
 
 /** What points at an account by its code (a code cannot change, and the account cannot be switched off, while one does). The bank account comes first: its own Cash rule is the same binding. */
-function claimedBy(st: MockState, companyId: string, code: string): { code: 'account.bank_bound' | 'account.mapped'; text: string } | undefined {
+function claimedBy(st: MockState, companyId: string, code: string): { code: 'account.bank_bound' | 'account.mapped' | 'account.scheduled'; text: string } | undefined {
+  const sch = st.schedules.find((s) => s.companyId === companyId && s.kind === 'amortisation' && !s.stopped && (s.expenseAccount === code || s.prepaidAccount === code)); // AC4: a schedule froze this account
+  if (sch) return { code: 'account.scheduled', text: `ตารางตัดจ่าย “${sch.name}” ใช้บัญชีนี้อยู่ หยุดตารางนั้นก่อน (หน้าตารางตัดจ่าย → หยุด)` };
   const bank = st.bankAccounts.find((b) => b.companyId === companyId && b.accountCode === code);
   if (bank) return { code: 'account.bank_bound', text: `ผูกกับบัญชีธนาคาร/เงินสด “${bank.nameTh}” แก้ที่ การเงิน → บัญชีธนาคารและเงินสด (ผูกบัญชีแยกประเภทอื่นให้บัญชีนั้นก่อน)` };
   const banks = new Set(st.bankAccounts.filter((b) => b.companyId === companyId).map((b) => b.id));

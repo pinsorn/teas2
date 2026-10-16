@@ -5,7 +5,7 @@ import {
   type Body, LIVE, approvalOnRevise, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, keepNoteLines, keepOmitted, markReplaced, refuseBelowSettled, refuseNonPositive, refusePartyChange, refuseUnissuableReceipt, refuseUnrevisablePurchase, reissue, revise, reviseNeedsApprover, stableJson, totalsOf,
 } from './commands';
 import { refuseObLocked, refuseReconciled, refuseSettled } from './locks';
-import { refuseScheduleSource } from './schedules';
+import { refuseScheduleNote, refuseScheduleSource } from './schedules';
 import { MockError, today } from './log';
 import { fromSatang, toSatang } from './money';
 import { isNote, noteProblem } from './notes';
@@ -104,11 +104,13 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
     refuseReconciled(st, d, { header: proposed.header, totals: totalsOf(st, d.companyId, d.type, proposed, d.id) }); // FN2: a plan that would move a matched document's cash, account or date is never shown
     refuseSettled(st, d, { header: proposed.header, totals: totalsOf(st, d.companyId, d.type, proposed, d.id) }); // FN3: the same for a leg of a posted settlement
     refuseScheduleSource(st, d, { header: proposed.header, lines: proposed.lines }); // AC4: and for a line with a live amortisation run
+    refuseScheduleNote(st, d, 'revise', { header: proposed.header, lines: proposed.lines }); // AC4: and a note on one
     if (d.type === 'OB') refuseObLocked(st, d, { header: proposed.header, lines: proposed.lines, opening: proposed.opening ?? d.opening }); // AC3: a settled / matched opening item keeps the batch as it is
     add('revise', d, `แก้ไข ${label} (เลขที่เดิม เพิ่มรุ่นแก้ไข)`, `doc.${d.type}.correct`);
     explanation = 'การแก้ไขนี้ไม่กระทบภาษี แก้ไขในเอกสารเดิมและเก็บประวัติการแก้ไข';
   } else {
     refuseScheduleSource(st, d); // AC4: a cancel / reissue under a live amortisation run
+    refuseScheduleNote(st, d, 'cancel');
     refuseSettled(st, d); // FN3: a fiscal correction cancels / reissues: a leg of a posted settlement is refused up front (its links come from a settlement, not a document)
     if (d.type === 'TI' && st.links.some((l) => l.to === d.id && l.active && l.kind === 'adjusts')) { // F1: a plan is built from the invoice's original body and cannot account for notes already issued (ledger 184)
       throw new MockError(422, 'correction.notes_exist', `${blockingLocks(d).length ? 'เอกสารถูกล็อก ออกใบลดหนี้เต็มจำนวนไม่ได้ ' : 'แก้ไขเอกสารนี้ไม่ได้ '}เพราะมีใบลดหนี้/ใบเพิ่มหนี้อ้างถึงอยู่ ยกเลิกใบลดหนี้/ใบเพิ่มหนี้ที่อ้างถึงก่อน หรือออกใบลดหนี้/เพิ่มหนี้เพิ่มเติม`);

@@ -23,7 +23,7 @@ const send = (page: Page, method: string, path: string, body: unknown) => page.e
 const cancelDoc = async (page: Page, type: string, id: string) => send(page, 'POST', `/docs/${type}/${id}/cancel`, { version: (await api<{ version: number }>(page, `/docs/${type}/${id}`)).version, reasonCode: 'OTHER', reasonText: 'x' });
 type Ledger = { entries: { kind: string; date: string; lines: { accountCode: string; debit: string; credit: string }[] }[] };
 
-test('amortisation: 3 months done, run now posts October to the ledger, the next month is not due, reversing the run lets it run again', async ({ page }) => {
+test('amortisation: 3 months done, October is not over so it is refused, reversing the last run lets that month run again', async ({ page }) => {
   await page.goto('/'); const id = await fixtureId(page, 'schedAmortisation');
   await page.goto(`${BASE}/${id}`);
   await expect(page.getByRole('heading', { level: 1, name: 'เบี้ยประกันอัคคีภัยอาคาร' })).toBeVisible();
@@ -36,48 +36,47 @@ test('amortisation: 3 months done, run now posts October to the ledger, the next
   await expect(plan.getByTestId('plan-2026-11')).toContainText('รอตัด');
   await shot(page, 'sched-amort');
   await axeClean(page);
-  await page.getByRole('button', { name: 'รันตอนนี้' }).click();
-  await expect(page.getByTestId('run-result')).toContainText('1,000.00');
-  await expect(page.getByTestId('remaining')).toHaveText('8,000.00');
-  await expect(plan.getByTestId('plan-2026-10')).toContainText('ตัดแล้ว');
-  await shot(page, 'sched-amort-ran');
-  // the entry: [expense 5120 Dr, prepaid 1150 Cr], dated the last day of the plan month
-  const run = (await api<{ runs: { resultDocId: string; month: string }[] }>(page, `/records/schedule/${id}`)).runs.at(-1)!;
-  expect(run.month).toBe('2026-10');
-  const ledger = await api<Ledger>(page, `/docs/JV/${run.resultDocId}/ledger`);
-  expect(ledger.entries[0].date).toBe('2026-10-31');
-  expect(ledger.entries[0].lines.map((l) => [l.accountCode, l.debit, l.credit])).toEqual([['5120', '1000.00', '0.00'], ['1150', '0.00', '1000.00']]);
-  // November is not due yet (today is in October): refused in place, nothing posted
+  // October is not over (today is mid October): nothing is posted ahead - refused in place, nothing written
   await page.getByRole('button', { name: 'รันตอนนี้' }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'ยังไม่ถึงกำหนด' })).toBeVisible();
-  await expect(page.getByTestId('remaining')).toHaveText('8,000.00');
-  // the run's voucher cannot be edited / cancelled directly: its lock leads to กลับรายการ
-  const rv = await cancelDoc(page, 'JV', run.resultDocId);
+  await expect(page.getByTestId('remaining')).toHaveText('9,000.00');
+  await shot(page, 'sched-amort-not-due');
+  // the last run's voucher (September) cannot be edited / cancelled directly: its lock leads to กลับรายการ
+  const last = (await api<{ runs: { resultDocId: string; month: string; reversed?: boolean }[] }>(page, `/records/schedule/${id}`)).runs.filter((r) => !r.reversed).at(-1)!;
+  expect(last.month).toBe('2026-09');
+  const rv = await cancelDoc(page, 'JV', last.resultDocId);
   expect(rv.status).toBe(409);
   expect(rv.json.title).toContain('กลับรายการ');
-  // reverse it: the run is marked reversed and October can run again
-  const rev = await send(page, 'POST', `/docs/JV/${run.resultDocId}/reverse`, {});
+  // reverse it: the run is marked reversed and September can run again
+  const rev = await send(page, 'POST', `/docs/JV/${last.resultDocId}/reverse`, {});
   expect(rev.status).toBe(201);
   await page.reload();
-  await expect(page.getByTestId('remaining')).toHaveText('9,000.00');
-  await expect(plan.getByTestId('plan-2026-10')).toContainText('งวดถัดไป');
+  await expect(page.getByTestId('remaining')).toHaveText('10,000.00');
+  await expect(plan.getByTestId('plan-2026-09')).toContainText('งวดถัดไป');
   await expect(page.getByRole('cell', { name: 'กลับรายการแล้ว' })).toBeVisible();
   await page.getByRole('button', { name: 'รันตอนนี้' }).click();
-  await expect(page.getByTestId('remaining')).toHaveText('8,000.00');
+  await expect(page.getByTestId('run-result')).toContainText('1,000.00');
+  await expect(page.getByTestId('remaining')).toHaveText('9,000.00');
+  // the new run: [expense 5120 Dr, prepaid 1150 Cr], dated the last day of the plan month
+  const run = (await api<{ runs: { resultDocId: string; month: string; reversed?: boolean }[] }>(page, `/records/schedule/${id}`)).runs.filter((r) => !r.reversed).at(-1)!;
+  expect(run.month).toBe('2026-09');
+  const ledger = await api<Ledger>(page, `/docs/JV/${run.resultDocId}/ledger`);
+  expect(ledger.entries[0].date).toBe('2026-09-30');
+  expect(ledger.entries[0].lines.map((l) => [l.accountCode, l.debit, l.credit])).toEqual([['5120', '1000.00', '0.00'], ['1150', '0.00', '1000.00']]);
 });
 
-test('source lock: the insurance bill cannot be cancelled while a run stands; its lock banner leads to the schedule; stopping keeps the balance on 1150 and does not undo the runs', async ({ page }) => {
+test('source lock: the insurance bill cannot be cancelled while its schedule is not stopped; its lock banner leads to the schedule; after the stop the runs still hold the bill', async ({ page }) => {
   await page.goto('/');
   await page.goto('/purchases/bills/pb-ins');
   await expect(page.getByTestId('doc-number')).toHaveText(/^PB-/);
   const lock = page.getByRole('status', { name: 'ล็อก' });
-  await expect(lock).toContainText('มีการตัดจ่ายตามตาราง "เบี้ยประกันอัคคีภัยอาคาร" แล้ว 3 งวด');
+  await expect(lock).toContainText('ตารางตัดจ่าย "เบี้ยประกันอัคคีภัยอาคาร" ใช้รายการนี้อยู่ (ตัดจ่ายแล้ว 3 งวด)');
   await expect(page.getByRole('button', { name: 'ยกเลิกเอกสาร' })).toBeDisabled();
   const c = await cancelDoc(page, 'PB', 'pb-ins');
   expect(c.status).toBe(409);
   expect(c.json.code).toBe('schedule.source_locked');
   await shot(page, 'sched-source-lock');
-  await lock.getByRole('button', { name: 'หยุด/กลับรายการตารางตัดจ่าย เบี้ยประกันอัคคีภัยอาคาร' }).click();
+  await lock.getByRole('button', { name: 'หยุดตารางตัดจ่าย เบี้ยประกันอัคคีภัยอาคาร' }).click();
   await expect(page).toHaveURL(/\/accounting\/schedules\/sch-amort$/);
   await page.getByRole('button', { name: 'หยุด', exact: true }).click();
   await page.getByRole('alertdialog').getByLabel('เหตุผล (ไม่บังคับ)').fill('เลิกกรมธรรม์');
@@ -86,9 +85,9 @@ test('source lock: the insurance bill cannot be cancelled while a run stands; it
   await expect(page.getByTestId('schedule-state')).toHaveText('หยุดแล้ว');
   await expect(page.getByRole('button', { name: 'รันตอนนี้' })).toBeDisabled();
   await expect(page.getByTestId('remaining')).toHaveText('9,000.00'); // nothing is posted by a stop
-  // the runs are still live, so the bill is still locked (stopping does not undo them)
+  // the runs are still live and the bill backs them (stopping does not undo them): a cancel is refused until they are reversed
   const c2 = await cancelDoc(page, 'PB', 'pb-ins');
-  expect(c2.json.code).toBe('schedule.source_locked');
+  expect(c2.json.code).toBe('schedule.source_consumed');
 });
 
 test('recurring: run now makes a DRAFT dated the next run (never issued), the run date advances, the draft is in the TI list', async ({ page }) => {

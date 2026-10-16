@@ -8,6 +8,7 @@ import { derivedLocks } from './locks';
 import type { MockError } from './log';
 import { toSatang } from './money';
 import { correctionPlan } from './corrections';
+import { accountImpl } from '../records/accounts';
 import { createAmortisation, createRecurring, liveRuns, planOf, runSchedule, scheduleInvariants, stopSchedule, updateSchedule } from './schedules';
 
 const ME: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
@@ -161,13 +162,6 @@ describe('running an amortisation (ruling 2)', () => {
     expect(again.runs[2]).toMatchObject({ month: '2026-08' });
     expect(checkInvariants(st)).toEqual([]);
   });
-  it('the reversal of a run may carry its own (future) date, never one past it', () => {
-    const s = amort({ startMonth: '2026-10' });
-    const jv = runSchedule(st, CO, s.id, ME).runs[0].resultDocId!; // dated 2026-10-31, today is 2026-10-14
-    expect(err(() => reverseJv(st, jv, ME, { date: '2026-11-01' })).code).toBe('ledger.reverse_date');
-    expect(reverseJv(st, jv, ME).header.documentDate).toBe('2026-10-31'); // nets the run on its own date
-    expect(checkInvariants(st)).toEqual([]);
-  });
   it('reversing the last run of a done schedule brings it back to life', () => {
     const b = prepaidBill('2000.00');
     const s = amort({ total: '2000.00', months: 2 }, b);
@@ -200,9 +194,9 @@ describe('the source lock (ruling 3)', () => {
     const d = doc(b.bill.id);
     const e = err(() => cancel(st, d.id, d.version, 'OTHER', 'x', ME));
     expect(e.code).toBe('schedule.source_locked');
-    expect(e.title).toContain(`หยุด/กลับรายการตารางตัดจ่าย ${s.name}`);
+    expect(e.title).toContain(`หยุดตารางตัดจ่าย ${s.name}`);
     const lock = derivedLocks(st, d).find((l) => l.kind === 'schedule')!;
-    expect(lock.exits[0]).toBe(`หยุด/กลับรายการตารางตัดจ่าย ${s.name}`);
+    expect(lock.exits[0]).toBe(`หยุดตารางตัดจ่าย ${s.name}`);
     expect(lock.href).toBe(`/accounting/schedules/${s.id}`);
     const body = (over: (l: DocLine) => DocLine, headerOver = {}) => ({ header: { ...d.header, ...headerOver }, lines: d.lines.map(over) });
     for (const [what, b2] of [
@@ -212,22 +206,17 @@ describe('the source lock (ruling 3)', () => {
     const ok = revise(st, d.id, body((l) => ({ ...l, description: 'เบี้ยประกัน (แก้คำอธิบาย)' }), { notes: 'หมายเหตุ' }), d.version, 'x', ME);
     expect(ok.revision).toBe(1);
   });
-  it('once every run is reversed the lock is gone; cancelling the source then cancels the schedule', () => {
+  it('reversing the last run does not free the line: the schedule is not stopped; only the stop does (then the cancel is allowed)', () => {
     const b = prepaidBill();
     const s = amort({}, b);
     const jv = runSchedule(st, CO, s.id, ME).runs[0].resultDocId!;
     reverseJv(st, jv, ME);
+    expect(derivedLocks(st, doc(b.bill.id)).some((l) => l.kind === 'schedule')).toBe(true);
+    expect(err(() => cancel(st, b.bill.id, doc(b.bill.id).version, 'OTHER', 'ยกเลิก', ME)).code).toBe('schedule.source_locked');
+    stopSchedule(st, CO, s.id, ME, 'x');
     expect(derivedLocks(st, doc(b.bill.id)).some((l) => l.kind === 'schedule')).toBe(false);
     cancel(st, b.bill.id, doc(b.bill.id).version, 'OTHER', 'ยกเลิก', ME);
-    expect(sched(s.id)).toMatchObject({ active: false, stopped: { reason: expect.stringContaining('ยกเลิกเอกสารต้นทาง') } });
     expect(checkInvariants(st)).toEqual([]);
-  });
-  it('with no run at all, cancelling the source cancels the schedule', () => {
-    const b = prepaidBill();
-    const s = amort({}, b);
-    cancel(st, b.bill.id, doc(b.bill.id).version, 'OTHER', 'ยกเลิก', ME);
-    expect(sched(s.id).active).toBe(false);
-    expect(err(() => runSchedule(st, CO, s.id, ME)).code).toBe('schedule.stopped');
   });
 });
 
@@ -235,20 +224,22 @@ describe('a JV as the source (ruling 3)', () => {
   const jl = (code: string, debit: string, credit: string): DocLine => ({ id: `sj-${++n}`, description: code, qty: '1', unit: '', unitPrice: '0.00', taxCode: 'EX', accountCode: code, debit, credit });
   const srcJv = (header: Record<string, unknown> = {}) => {
     const lines = [jl('1150', '6000.00', '0.00'), jl('2120', '0.00', '6000.00')];
-    const d = createDraft(st, CO, 'JV', { header: { documentDate: '2026-10-01', ...header }, lines }, ME, `k${++n}`);
+    const d = createDraft(st, CO, 'JV', { header: { documentDate: '2026-09-01', ...header }, lines }, ME, `k${++n}`);
     return { jv: issue(st, d.id, d.version, ME), line: lines[0] };
   };
-  const make = (x: ReturnType<typeof srcJv>) => createAmortisation(st, CO, { name: 'JV', docId: x.jv.id, lineId: x.line.id, total: '6000.00', months: 3, startMonth: '2026-10', expenseAccount: '5120' }, ME);
+  const make = (x: ReturnType<typeof srcJv>) => createAmortisation(st, CO, { name: 'JV', docId: x.jv.id, lineId: x.line.id, total: '6000.00', months: 3, startMonth: '2026-09', expenseAccount: '5120' }, ME);
   it('กลับรายการ of the source is refused while a run is live (as cancelling is), and allowed once every run is reversed - then it stops the schedule', () => {
     const x = srcJv(), s = make(x);
     const run = runSchedule(st, CO, s.id, ME).runs[0].resultDocId!;
     const e = err(() => reverseJv(st, x.jv.id, ME));
     expect(e.code).toBe('schedule.source_locked');
-    expect(e.title).toContain(`หยุด/กลับรายการตารางตัดจ่าย ${s.name}`);
+    expect(e.title).toContain(`หยุดตารางตัดจ่าย ${s.name}`);
     expect(userReversalCount(x.jv.id)).toBe(0);
     reverseJv(st, run, ME);
+    expect(err(() => reverseJv(st, x.jv.id, ME)).code).toBe('schedule.source_locked'); // reversing the run does not free the line: the schedule must be stopped
+    stopSchedule(st, CO, s.id, ME, 'x');
     reverseJv(st, x.jv.id, ME);
-    expect(sched(s.id)).toMatchObject({ active: false, stopped: { reason: expect.stringContaining('ยกเลิกเอกสารต้นทาง') } });
+    expect(sched(s.id)).toMatchObject({ active: false, stopped: { reason: 'x' } });
     expect(checkInvariants(st)).toEqual([]);
   });
   it('a reversal, an auto-reversing accrual and a JV somebody reversed are not sources', () => {
@@ -367,8 +358,8 @@ describe('invariants fail on a tampered state (ruling 5)', () => {
     const { s } = setup(); void s;
     const jl = (code: string, debit: string, credit: string): DocLine => ({ id: `tj-${++n}`, description: code, qty: '1', unit: '', unitPrice: '0.00', taxCode: 'EX', accountCode: code, debit, credit });
     const lines = [jl('1150', '6000.00', '0.00'), jl('2120', '0.00', '6000.00')];
-    const d = createDraft(st, CO, 'JV', { header: { documentDate: '2026-10-01' }, lines }, ME, `k${++n}`), jv = issue(st, d.id, d.version, ME);
-    const sc = createAmortisation(st, CO, { name: 'JV', docId: jv.id, lineId: lines[0].id, total: '6000.00', months: 3, startMonth: '2026-10', expenseAccount: '5120' }, ME);
+    const d = createDraft(st, CO, 'JV', { header: { documentDate: '2026-09-01' }, lines }, ME, `k${++n}`), jv = issue(st, d.id, d.version, ME);
+    const sc = createAmortisation(st, CO, { name: 'JV', docId: jv.id, lineId: lines[0].id, total: '6000.00', months: 3, startMonth: '2026-09', expenseAccount: '5120' }, ME);
     runSchedule(st, CO, sc.id, ME);
     st.docs.push({ ...structuredClone(doc(jv.id)), id: 'fake-rev', number: 'JV-X', header: { documentDate: '2026-10-02', reversalOf: jv.id } }); // a reversal that got past the lock
     expect(scheduleInvariants(st).join('|')).toContain('source JV');
@@ -387,5 +378,131 @@ describe('the seed', () => {
     expect(sched('sch-rec-jv').template!.type).toBe('JV');
     expect(sched('nsch-rec-iv')).toMatchObject({ companyId: 'co-nonvat', template: { type: 'IV' } });
     expect(checkInvariants(st)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------- AC4 fix round 1: source capacity is an invariant (S1-S3), no future runs (R-FUT), scheduled accounts stay
+describe('source capacity (fix1: S1 notes, S2 stop + re-schedule, S3 no-run revise)', () => {
+  const note = (b: ReturnType<typeof prepaidBill>, type: 'PCN' | 'PDN', amount: string) =>
+    createDraft(st, CO, type, { header: { documentDate: '2026-10-14', refDocId: b.bill.id, reasonCode: type === 'PCN' ? 'PRICE_REDUCTION' : 'PRICE_INCREASE' }, lines: [{ id: `nl-${++n}`, description: 'ปรับเบี้ย', qty: '1', unit: 'u', unitPrice: amount, taxCode: 'EX', expenseCategory: 'prepaid', sourceLineId: b.line.id }] }, ME, `k${++n}`);
+  const issueNote = (b: ReturnType<typeof prepaidBill>, type: 'PCN' | 'PDN', amount: string) => { const d = note(b, type, amount); return issue(st, d.id, d.version, ME); };
+  const runs = (id: string, k: number) => { for (let i = 0; i < k; i++) runSchedule(st, CO, id, ME); };
+  const reviseLine = (b: ReturnType<typeof prepaidBill>, over: Partial<DocLine>) => { const d = doc(b.bill.id); return revise(st, d.id, { header: d.header, lines: d.lines.map((l) => ({ ...l, ...over })) }, d.version, 'x', ME); };
+
+  it('S1: a PCN / PDN on a line of a non-stopped schedule is refused, with or without a run (exit: stop the schedule)', () => {
+    const b = prepaidBill(); const s = amort({}, b);
+    for (const k of [0, 1]) {
+      if (k) runSchedule(st, CO, s.id, ME);
+      for (const [type, amt] of [['PCN', '12000.00'], ['PCN', '500.00'], ['PDN', '500.00']] as const) {
+        const nd = note(b, type, amt);
+        const e = err(() => issue(st, nd.id, nd.version, ME));
+        expect(e.code, `${type} ${amt} runs=${k}`).toBe('schedule.source_locked');
+        expect(e.title).toContain(`หยุดตารางตัดจ่าย ${s.name}`);
+      }
+    }
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('S1: after stop, a PCN may take the line down only to what the live runs consumed (schedule.source_consumed, exit: reverse the runs)', () => {
+    const b = prepaidBill(); const s = amort({}, b);
+    runs(s.id, 3); stopSchedule(st, CO, s.id, ME, 'x');
+    const nd = note(b, 'PCN', '9500.00');
+    expect(err(() => issue(st, nd.id, nd.version, ME)).code).toBe('schedule.source_consumed');
+    issueNote(b, 'PCN', '9000.00');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('S1: an existing PCN counts against the capacity at creation, and cannot be cancelled under a live schedule', () => {
+    const b = prepaidBill(); const p = issueNote(b, 'PCN', '2000.00');
+    expect(err(() => amort({ total: '10001.00' }, b)).code).toBe('schedule.over_source');
+    const s = amort({ total: '10000.00' }, b);
+    expect(err(() => cancel(st, p.id, doc(p.id).version, 'OTHER', 'x', ME)).code).toBe('schedule.source_locked');
+    runs(s.id, 3); stopSchedule(st, CO, s.id, ME, 'x');
+    cancel(st, p.id, doc(p.id).version, 'OTHER', 'x', ME); // capacity 12000 again, 2500 consumed
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('S2: stopped schedules keep their runs on the line: a new schedule may take only what is left', () => {
+    const b = prepaidBill(); const s1 = amort({}, b);
+    runs(s1.id, 3); stopSchedule(st, CO, s1.id, ME, 'x');
+    expect(err(() => amort({ total: '12000.00', startMonth: '2026-10' }, b)).code).toBe('schedule.over_source');
+    const s2 = amort({ total: '9000.00', startMonth: '2026-10' }, b);
+    expect(s2.total).toBe('9000.00');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('S3: with a schedule that has not run yet, the line money / account cannot be revised, planned or cancelled (exit: stop the schedule); after stop it can', () => {
+    const b = prepaidBill(); const s = amort({}, b);
+    for (const over of [{ unitPrice: '1000.00' }, { expenseCategory: 'services' }]) expect(err(() => reviseLine(b, over)).code).toBe('schedule.source_locked');
+    const d = doc(b.bill.id);
+    expect(err(() => correctionPlan(st, d.id, { header: d.header, lines: d.lines.map((l) => ({ ...l, unitPrice: '500.00' })) }, 'accountant')).code).toBe('schedule.source_locked');
+    expect(err(() => revise(st, d.id, { header: { ...d.header, documentDate: '2026-07-02' }, lines: d.lines }, d.version, 'x', ME)).code).toBe('schedule.source_locked');
+    expect(err(() => cancel(st, d.id, d.version, 'OTHER', 'x', ME)).code).toBe('schedule.source_locked');
+    expect(derivedLocks(st, d).find((l) => l.kind === 'schedule')?.href).toBe(`/accounting/schedules/${s.id}`);
+    stopSchedule(st, CO, s.id, ME, 'x');
+    expect(reviseLine(b, { unitPrice: '1000.00' }).revision).toBe(1);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('S3: after stop with runs, a revise may reduce the line only down to the live runs (source_consumed); a cancel is refused', () => {
+    const b = prepaidBill(); const s = amort({}, b);
+    runs(s.id, 3); stopSchedule(st, CO, s.id, ME, 'x');
+    expect(err(() => reviseLine(b, { unitPrice: '2900.00' })).code).toBe('schedule.source_consumed');
+    expect(err(() => reviseLine(b, { expenseCategory: 'services' })).code).toBe('schedule.source_consumed');
+    const d = doc(b.bill.id);
+    expect(err(() => cancel(st, d.id, d.version, 'OTHER', 'x', ME)).code).toBe('schedule.source_consumed');
+    expect(reviseLine(b, { unitPrice: '3000.00' }).revision).toBe(1);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('S3: a JV source with an unrun schedule cannot be reversed', () => {
+    const lines = [{ id: `fj-${++n}`, description: 'p', qty: '1', unit: '', unitPrice: '0.00', taxCode: 'EX', accountCode: '1150', debit: '6000.00', credit: '0.00' }, { id: `fj-${++n}`, description: 'c', qty: '1', unit: '', unitPrice: '0.00', taxCode: 'EX', accountCode: '2120', debit: '0.00', credit: '6000.00' }] as DocLine[];
+    const d = createDraft(st, CO, 'JV', { header: { documentDate: '2026-10-01' }, lines }, ME, `k${++n}`), jv = issue(st, d.id, d.version, ME);
+    const s = createAmortisation(st, CO, { name: 'JV', docId: jv.id, lineId: lines[0].id, total: '6000.00', months: 3, startMonth: '2026-10', expenseAccount: '5120' }, ME);
+    expect(err(() => reverseJv(st, jv.id, ME)).code).toBe('schedule.source_locked');
+    stopSchedule(st, CO, s.id, ME, 'x');
+    reverseJv(st, jv.id, ME);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('invariant (single fault): sum of live runs on a line <= what the line holds - a line cut under the runs, a PCN grown after the fact', () => {
+    let b = prepaidBill(); let s = amort({}, b); runs(s.id, 3);
+    doc(b.bill.id).lines[0].unitPrice = '1000.00';
+    expect(checkInvariants(st).join('|')).toContain('holds only');
+    st = buildSeedState(); b = prepaidBill(); const p = issueNote(b, 'PCN', '2000.00'); s = amort({ total: '10000.00' }, b); runs(s.id, 3);
+    expect(checkInvariants(st)).toEqual([]);
+    doc(p.id).lines[0].unitPrice = '12000.00';
+    expect(checkInvariants(st).join('|')).toContain('holds only');
+  });
+  it('invariant (single fault): totals of live schedules + runs of stopped ones <= what the line holds', () => {
+    const b = prepaidBill(); const s1 = amort({}, b); runs(s1.id, 3); stopSchedule(st, CO, s1.id, ME, 'x');
+    const s2 = amort({ total: '9000.00', startMonth: '2026-10' }, b);
+    expect(checkInvariants(st)).toEqual([]);
+    s2.total = '9600.00'; s2.plan = planOf('9600.00', 12, '2026-10'); // a schedule re-derived beyond the line
+    expect(checkInvariants(st).join('|')).toContain('holds only');
+  });
+});
+
+describe('no future-dated runs (fix1: R-FUT)', () => {
+  it('a run is refused until its month has ended (today 2026-10-14): September runs, October is not due', () => {
+    const b = prepaidBill('12000.00', '2026-09-01'); const s = amort({ startMonth: '2026-09' }, b);
+    const jv = runSchedule(st, CO, s.id, ME).runs[0].resultDocId!;
+    expect(doc(jv).header.documentDate).toBe('2026-09-30');
+    const docs = st.docs.length;
+    expect(err(() => runSchedule(st, CO, s.id, ME)).code).toBe('schedule.not_due');
+    expect(st.docs).toHaveLength(docs);
+  });
+  it('the reversal of a run follows the plain reversal date rules: today or earlier, never ahead', () => {
+    const s = amort({});
+    const jv = runSchedule(st, CO, s.id, ME).runs[0].resultDocId!;
+    expect(err(() => reverseJv(st, jv, ME, { date: '2026-10-31' })).code).toBe('doc.future_date');
+    expect(reverseJv(st, jv, ME).header.documentDate <= '2026-10-14').toBe(true);
+  });
+});
+
+describe('a scheduled account stays (fix1: ruling 3)', () => {
+  const code = (c: string): string | undefined => { try { accountImpl.canDeactivate!(st, CO, c); } catch (e) { return (e as MockError).code; } return undefined; };
+  it('the expense / prepaid account of a non-stopped schedule cannot be deactivated (account.scheduled, exit names the schedule); after stop it is judged as before', () => {
+    stopSchedule(st, CO, 'sch-amort', ME, 'x'); // the seed's own schedule also holds these accounts
+    const s = amort({});
+    for (const c of ['5120', '1150']) {
+      expect(code(c), c).toBe('account.scheduled');
+      expect(err(() => accountImpl.canDeactivate!(st, CO, c)).title).toContain(s.name);
+    }
+    stopSchedule(st, CO, s.id, ME, 'x');
+    expect(code('5120')).not.toBe('account.scheduled');
   });
 });

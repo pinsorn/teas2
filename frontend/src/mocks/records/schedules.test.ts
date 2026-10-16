@@ -71,15 +71,14 @@ describe('the schedule record kit (AC4)', () => {
     expect((await call('PUT', '/records/schedule/sch-rec-ti', { name: r.name, nextRun: '2026-02-30', version: cleared.json.version })).status).toBe(422);
   });
 
-  it('"รันตอนนี้": the run endpoint posts the month, checks the version, refuses in order and says why', async () => {
+  it('"รันตอนนี้": the run endpoint checks the version and refuses in order and says why - October is not over (today is mid October), so nothing is posted ahead', async () => {
     const a = await get('sch-amort');
-    const ran = await call('POST', '/schedules/sch-amort/run', { version: a.version });
-    expect(ran.status).toBe(200);
-    expect(ran.json).toMatchObject({ runsDone: 4, remaining: '8000.00', version: a.version! + 1 });
-    expect(ran.json.runs!.at(-1)).toMatchObject({ month: '2026-10' });
-    expect((await call('POST', '/schedules/sch-amort/run', { version: a.version })).json.code).toBe('record.version_conflict'); // a double click with the old version
-    expect((await call('POST', '/schedules/sch-amort/run', { month: '2026-10' })).json.code).toBe('schedule.already_run');
-    expect((await call('POST', '/schedules/sch-amort/run', {})).json.code).toBe('schedule.not_due'); // November, and today is in October
+    expect((await call('POST', '/schedules/sch-amort/run', { version: a.version! + 1 })).json.code).toBe('record.version_conflict');
+    expect((await call('POST', '/schedules/sch-amort/run', { month: '2026-09' })).json.code).toBe('schedule.already_run');
+    expect((await call('POST', '/schedules/sch-amort/run', { month: '2026-11' })).json.code).toBe('schedule.out_of_order');
+    const early = await call('POST', '/schedules/sch-amort/run', { version: a.version });
+    expect(early.json.code).toBe('schedule.not_due');
+    expect((await get('sch-amort')).version).toBe(a.version); // refused: nothing written
     expect(checkInvariants(loadState())).toEqual([]);
   });
 
