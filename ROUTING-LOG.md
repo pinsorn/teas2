@@ -11,3 +11,4 @@
 | 2026-10-16 | SP1c P4 review (EX posting, 2180, approval gate) | opus-reviewer | money + control (approval) diff — CLAUDE.md money → Opus; fresh reviewer (new area) |
 | 2026-10-16 | SP1c FN2 review (reconciliation, inline journals, locks) | opus-reviewer | money + lock diff — plan marks Opus |
 | 2026-10-16 | SP1c FN3 review (deposits, prepayments, netting, write-offs) | opus-reviewer | money diff — plan marks Opus |
+| 2026-10-16 | SP1c AC1 review (JV, reversals, accruals) | opus-reviewer | money / ledger — plan marks Opus for all AC tasks |
