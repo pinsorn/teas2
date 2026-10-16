@@ -35,8 +35,11 @@ test('a new quotation starts with the default note; a file attached while creati
   expect(await api<unknown[]>(page, `/docs/QT/${id}/attachments`)).toEqual([]);
 });
 
-test('attachment limits: over 1 MB and a wrong type are refused in place; reset clears the stored files', async ({ page }) => {
+test('attachment limits: over 1 MB and a wrong type are refused in place; reset removes the uploaded file and restores the seed files', async ({ page }) => {
+  const stored = () => page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('teas2.mock.att.')).length);
   await page.goto('/'); const id = await fixtureId(page, 'tiDraft');
+  const seeded = await stored(); // the seed carries its own files (the ex-pend receipt photo): count them, never assume none
+  expect(seeded).toBeGreaterThan(0);
   await page.goto(`/sales/tax-invoices/${id}`);
   await page.getByRole('tab', { name: 'ไฟล์แนบ' }).click();
   await page.getByLabel('เลือกไฟล์').setInputFiles(pdf(1024 * 1024 + 1));
@@ -45,10 +48,10 @@ test('attachment limits: over 1 MB and a wrong type are refused in place; reset 
   await expect(page.getByRole('region', { name: 'ไฟล์แนบ' }).getByRole('alert')).toContainText('PDF, PNG, JPEG');
   await page.getByLabel('เลือกไฟล์').setInputFiles(pdf());
   await expect(page.getByRole('link', { name: 'po.pdf' })).toBeVisible();
-  expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('teas2.mock.att.')).length)).toBe(1);
+  expect(await stored()).toBe(seeded + 1);
   await page.getByRole('button', { name: 'โหมดตัวอย่าง' }).click();
   await page.getByRole('button', { name: 'รีเซ็ตข้อมูลตัวอย่าง' }).click();
-  expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('teas2.mock.att.')).length)).toBe(0);
+  expect(await stored()).toBe(seeded); // reset clears every stored file, then the seed writes its own back: the upload is gone, the seed's photo is there
 });
 
 test('print: the first print is the original, the next asks and prints a copy; both are on the timeline', async ({ page }) => {
