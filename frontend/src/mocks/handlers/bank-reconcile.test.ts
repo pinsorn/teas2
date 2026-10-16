@@ -59,10 +59,11 @@ describe('reconciliation over HTTP', () => {
   });
 
   it('postable accounts hide the VAT / WHT control accounts; a refused journal is a 422 with the rule', async () => {
-    const accts = (await (await call('GET', '/finance/postable-accounts')).json()) as { code: string; party?: string }[];
+    const accts = (await (await call('GET', '/finance/postable-accounts')).json()) as { code: string }[];
     const codes = accts.map((a) => a.code);
-    for (const hidden of ['1170', '2151', '1180', '2131', '2133', '2152']) expect(codes).not.toContain(hidden);
-    expect(accts.find((a) => a.code === '1130')!.party).toBe('customer');
+    for (const hidden of ['1170', '2151', '1180', '2131', '2133', '2152', '1130', '2110', '2180', '2140', '1122', '3900']) expect(codes).not.toContain(hidden);
+    expect(codes).toContain('5200');
+    expect(((await (await call('POST', '/finance/bank-lines/bi-001-017/post', { accountCode: '1130' })).json()) as { code: string }).code).toBe('ledger.control_account');
     const r = await call('POST', '/finance/bank-lines/bi-001-017/post', { accountCode: '2151' });
     expect(r.status).toBe(422);
     expect(((await r.json()) as { code: string }).code).toBe('ledger.control_account');
@@ -101,5 +102,23 @@ describe('the bank-reconciliation report endpoint', () => {
     expect(await csv.text()).toContain('ยอดคงเหลือตาม statement');
     setSettings({ companyKey: 'vat', role: 'operator', screenState: 'normal' });
     expect((await call('GET', '/reports/bank-reconciliation?account=ba-kbank&to=2026-09-30')).status).toBe(403);
+  });
+});
+
+describe('transfer between own accounts over HTTP', () => {
+  it('transfer -> the other side is suggested the journal and matches it; reverse needs both sides unmatched', async () => {
+    const t = await call('POST', '/finance/bank-lines/bi-001-001/transfer', { toAccountId: 'ba-scb' });
+    expect(t.status).toBe(200);
+    expect(((await t.json()) as BankLine)).toMatchObject({ status: 'matched', transfer: { side: 'out' } });
+    const j = loadState().bankJournals.find((x) => x.kind === 'transfer')!;
+    const st = loadState();
+    st.bankLines.push({ companyId: 'co-vat', id: 'scb-1', accountId: 'ba-scb', importId: 'bi-001', date: st.bankLines.find((l) => l.id === 'bi-001-001')!.date, description: 'รับโอน', amount: '35000.00', balance: '35000.00', status: 'unmatched' });
+    localStorage.setItem(Object.keys(localStorage).find((k) => k.startsWith('teas2.mock.state.'))!, JSON.stringify(st));
+    const c = (await (await call('GET', '/finance/bank-lines/scb-1/candidates')).json()) as { items: { docId: string; type: string }[] };
+    expect(c.items).toEqual([expect.objectContaining({ docId: j.id, type: 'TR' })]);
+    expect((await call('POST', '/finance/bank-lines/scb-1/match', { docIds: [j.id] })).status).toBe(200);
+    expect(((await (await call('POST', `/finance/bank-journals/${j.id}/reverse`)).json()) as { code: string }).code).toBe('bank.transfer_matched');
+    const bad = await call('POST', '/finance/bank-lines/bi-001-002/transfer', { toAccountId: 'ba-kbank' });
+    expect(((await bad.json()) as { code: string }).code).toBe('bank.transfer_same_account');
   });
 });

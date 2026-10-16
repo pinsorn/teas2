@@ -76,13 +76,22 @@ test('an inline journal: the fee line is booked to an expense account and is fin
   await expect(report.getByRole('table').getByRole('row', { name: /ยอดตามบัญชีปรับปรุงแล้ว/ })).toBeVisible();
 });
 
-test('a receivable line asks for its customer and says so when it is missing', async ({ page }) => {
+test('a transfer to another own account books one journal, matches the line, and the report still ties out', async ({ page }) => {
   await page.goto(await tabPath(page));
-  await lineRow(page, 'ดอกเบี้ยรับ').getByRole('button', { name: 'บันทึกบัญชี' }).click();
-  const dialog = page.getByRole('dialog', { name: 'บันทึกบัญชีจากรายการเดินบัญชี' });
-  await dialog.getByRole('combobox', { name: 'บัญชีที่รับ (เครดิต)' }).selectOption('1130');
-  await dialog.getByRole('button', { name: 'บันทึกบัญชี' }).click();
-  await expect(dialog.getByRole('alert')).toContainText('ต้องระบุลูกค้า');
+  const report = page.locator('[data-report-region]');
+  const row = lineRow(page, /^2 ก\.ย\. 2569/); // the 35,000 rent payment
+  await row.getByRole('button', { name: 'โอนระหว่างบัญชี' }).click();
+  const dialog = page.getByRole('dialog', { name: 'โอนระหว่างบัญชีของบริษัท' });
+  const other = dialog.getByRole('combobox', { name: 'บัญชีอีกฝั่ง' });
+  await expect(other.locator('option[value="ba-scb"]')).toHaveCount(1);
+  await expect(other.locator('option[value="ba-kbank"]')).toHaveCount(0);
+  await shot(page, 'reconcile-transfer-dialog');
+  await other.selectOption('ba-scb');
+  await dialog.getByRole('button', { name: 'โอน', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(row).toContainText('จับคู่แล้ว');
+  await expect(row).toContainText('โอนระหว่างบัญชี');
+  await expect(report.getByText('ยอดกระทบตรงกัน', { exact: false })).toBeVisible();
 });
 
 test('lock to a date: refused while lines are open; then locked lines need a reason to unmatch', async ({ page }) => {

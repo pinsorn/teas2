@@ -17,18 +17,26 @@ type StoredLine = MockState['bankLines'][number];
 const fail = (status: number, code: string, title: string) => new MockError(status, code, title);
 const abs = (n: number) => Math.abs(n);
 
-/** SP0 G4: the VAT and withholding control accounts are written by documents only. */
+/** SP0 G4 + I1: an inline journal posts only to accounts no subledger or document owns. The roles a document writes (tax, receivable / payable, deposits, prepayments, payroll payables, cash / bank, equity) are refused. */
 const TAX_ROLES: AccountingRole[] = ['OutputVat', 'InputVat', 'InputVatUnclaimed', 'Pnd36VatPayable', 'WhtReceivable', 'WhtPayable', 'WhtExpense'];
-/** SP0 5.2.5: a receivable / payable line is under a party. */
-const PARTY_ROLES: { role: AccountingRole; kind: 'customer' | 'vendor' | 'employee' }[] = [{ role: 'AR', kind: 'customer' }, { role: 'AP', kind: 'vendor' }, { role: 'EmployeePayable', kind: 'employee' }];
 
 /** The roles an account of the company plays: its chart `controlRole` and every posting rule that points at it. */
 export function rolesOf(st: MockState, companyId: string, code: string): AccountingRole[] {
   const a = st.accounts.find((x) => x.companyId === companyId && x.code === code);
   return [...new Set([...(a?.controlRole ? [a.controlRole] : []), ...st.postingRules.filter((r) => r.companyId === companyId && r.accountCode === code).map((r) => r.role)])];
 }
-export const isTaxControl = (st: MockState, companyId: string, code: string) => rolesOf(st, companyId, code).some((r) => TAX_ROLES.includes(r));
-export const partyKindOf = (st: MockState, companyId: string, code: string) => PARTY_ROLES.find((p) => rolesOf(st, companyId, code).includes(p.role))?.kind;
+/** Why an account is not for an inline journal and what to use instead; undefined = free to post. */
+export function controlExit(st: MockState, companyId: string, code: string): string | undefined {
+  const a = st.accounts.find((x) => x.companyId === companyId && x.code === code);
+  const roles = rolesOf(st, companyId, code), has = (...r: AccountingRole[]) => roles.some((x) => r.includes(x)), sub = a?.subClass ?? '';
+  if (a?.class === 'equity' || has('RetainedEarnings', 'OpeningBalanceEquity')) return 'บัญชีส่วนของเจ้าของ ปรับด้วยสมุดรายวันทั่วไป (JV) ไม่ใช่รายการเดินบัญชี';
+  if (has('Cash') || sub === 'cash' || sub === 'bank') return 'บัญชีเงินสด/ธนาคาร ใช้ปุ่ม "โอนระหว่างบัญชี" ที่รายการเดินบัญชี';
+  if (has('AR', 'CustomerDeposit') || sub === 'receivable') return 'บัญชีลูกหนี้/เงินรับล่วงหน้า ใช้ใบเสร็จรับเงิน (RC)';
+  if (has('AP', 'EmployeePayable', 'VendorPrepayment') || sub === 'payable') return 'บัญชีเจ้าหนี้/เงินจ่ายล่วงหน้า ใช้ใบสำคัญจ่าย (PV)';
+  if (has(...TAX_ROLES) || sub === 'tax-asset' || sub === 'tax-liability') return 'บัญชีควบคุมภาษี ภาษีลงจากเอกสารเท่านั้น';
+  if (has('SalaryPayable', 'PitPayable', 'SsoPayable') || sub === 'payroll-liability') return 'บัญชีเจ้าหนี้เงินเดือน ลงจากเอกสารเงินเดือนเท่านั้น';
+  return undefined;
+}
 
 const bankOf = (st: MockState, companyId: string, accountId: string): BankAccount => {
   const b = st.bankAccounts.find((x) => x.id === accountId && x.companyId === companyId);
@@ -56,21 +64,42 @@ const label = (l: { date: IsoDate; amount: Money }) => `${formatDateBE(l.date)} 
 
 // ---------------------------------------------------------------- suggestions and search
 
-export interface BankCandidate { docId: string; type: 'RC' | 'PV'; number: string; documentDate: IsoDate; partyName: string; cash: Money; remaining: Money; exact: boolean }
+export interface BankCandidate { docId: string; type: 'RC' | 'PV' | 'TR'; number: string; documentDate: IsoDate; partyName: string; cash: Money; remaining: Money; exact: boolean }
 const DAYS = 7;
 const daysBetween = (a: string, b: string) => abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000;
+/** I4: the account's go-live = the first statement date it has; documents before it are history, inside the opening balance. */
+export const goLiveOf = (st: MockState, companyId: string, accountId: string): IsoDate | undefined =>
+  st.bankImports.filter((i) => i.companyId === companyId && i.accountId === accountId).map((i) => i.from).sort()[0];
 
-/** Live receipts (money in) / payment vouchers (money out) of the line's own account with something left to match (ruling 1: the same account only).
- *  No `q`: the suggestions - not matched yet, exact cash, within 7 days (A.8). With `q`: the search - any date, any amount, number or party containing it. Ranked: exact, nearest date, number. */
+/** I2: a transfer journal that is still in force (not reversed). */
+const inForce = (j: BankJournal) => j.kind === 'transfer' && j.entries[j.entries.length - 1]?.kind !== 'reversal';
+const pendingTransfer = (st: MockState, companyId: string, lineId: string) => st.bankJournals.find((j) => j.companyId === companyId && j.lineId === lineId && inForce(j));
+const transferLines = (st: MockState, journalId: string) => st.bankLines.filter((x) => x.transfer?.journalId === journalId && x.status === 'matched');
+/** The money a transfer journal moves (satang, positive). */
+const transferAmount = (j: BankJournal) => j.entries[0].lines.reduce((n, g) => n + toSatang(g.debit), 0);
+const sideOf = (l: { amount: Money }): 'out' | 'in' => (toSatang(l.amount) < 0 ? 'out' : 'in');
+
+/** Transfer journals this line (on the receiving / paying account of one made from the other side) may match: in force, not taken on this side, the opposite direction. */
+function transferCandidates(st: MockState, companyId: string, l: StoredLine, needle: string): BankCandidate[] {
+  return st.bankJournals.filter((j) => j.companyId === companyId && inForce(j) && j.otherAccountId === l.accountId && j.lineId)
+    .filter((j) => { const o = st.bankLines.find((x) => x.id === j.lineId); return !!o && sideOf(o) !== sideOf(l) && !transferLines(st, j.id).some((x) => x.accountId === l.accountId); })
+    .map((j) => ({ j, exact: transferAmount(j) === abs(toSatang(l.amount)), days: daysBetween(j.entries[0].date, l.date) }))
+    .filter((x) => (needle ? x.j.label.toLowerCase().includes(needle) : x.exact && x.days <= DAYS))
+    .map(({ j, exact }): BankCandidate => ({ docId: j.id, type: 'TR', number: 'โอนระหว่างบัญชี', documentDate: j.entries[0].date, partyName: j.label, cash: fromSatang(transferAmount(j)), remaining: fromSatang(transferAmount(j)), exact }));
+}
+
+/** Live receipts (money in) / payment vouchers (money out) of the line's own account with something left to match (ruling 1: the same account only), dated on or after the account's go-live, and transfer journals from
+ *  another own account. No `q`: the suggestions - not matched yet, exact cash, within 7 days (A.8). With `q`: the search - any date, any amount, number or party containing it. Ranked: exact, nearest date, number. */
 export function suggest(st: MockState, companyId: string, lineId: string, q?: string): BankCandidate[] {
   const l = lineOf(st, companyId, lineId);
-  const want = toSatang(l.amount) > 0 ? 'RC' : 'PV', needle = (q ?? '').trim().toLowerCase();
-  return st.docs
-    .filter((d) => d.companyId === companyId && d.type === want && LIVE.includes(d.status) && resolvedBankId(st, companyId, d.type, d.header) === l.accountId && remainingOf(st, d) > 0)
+  const want = toSatang(l.amount) > 0 ? 'RC' : 'PV', needle = (q ?? '').trim().toLowerCase(), live = goLiveOf(st, companyId, l.accountId);
+  const docs = st.docs
+    .filter((d) => d.companyId === companyId && d.type === want && LIVE.includes(d.status) && (!live || d.header.documentDate >= live) && resolvedBankId(st, companyId, d.type, d.header) === l.accountId && remainingOf(st, d) > 0)
     .map((d) => ({ d, exact: matchedPortion(st, d.id) === 0 && docCash(d) === abs(toSatang(l.amount)), days: daysBetween(d.header.documentDate, l.date) }))
     .filter((x) => (needle ? `${x.d.number ?? ''} ${x.d.party?.name ?? ''}`.toLowerCase().includes(needle) : x.exact && x.days <= DAYS))
-    .sort((a, b) => Number(b.exact) - Number(a.exact) || a.days - b.days || (a.d.number ?? '').localeCompare(b.d.number ?? ''))
-    .map(({ d, exact }): BankCandidate => ({ docId: d.id, type: want, number: d.number ?? d.id, documentDate: d.header.documentDate, partyName: d.party?.name ?? '', cash: fromSatang(docCash(d)), remaining: fromSatang(remainingOf(st, d)), exact }));
+    .map(({ d, exact, days }) => ({ days, exact, n: d.number ?? '', c: { docId: d.id, type: want, number: d.number ?? d.id, documentDate: d.header.documentDate, partyName: d.party?.name ?? '', cash: fromSatang(docCash(d)), remaining: fromSatang(remainingOf(st, d)), exact } as BankCandidate }));
+  const trs = transferCandidates(st, companyId, l, needle).map((c) => ({ days: daysBetween(c.documentDate, l.date), exact: c.exact, n: c.docId, c }));
+  return [...docs, ...trs].sort((a, b) => Number(b.exact) - Number(a.exact) || a.days - b.days || a.n.localeCompare(b.n)).map((x) => x.c);
 }
 
 // ---------------------------------------------------------------- journals
@@ -91,12 +120,13 @@ function addJournal(st: MockState, j: Omit<BankJournal, 'id'>): BankJournal {
   st.bankJournals.push(nj);
   return nj;
 }
-/** Seed only: the opening balance the statement starts from, so the account's GL carries it (Dr bank / Cr opening-balance equity, reversed for an overdrawn start). */
-export function postOpening(st: MockState, companyId: string, accountId: string, date: IsoDate, amount: Money): void {
-  const b = bankOf(st, companyId, accountId), sat = toSatang(amount);
+/** Seed only (I4): the go-live adjustment. GL(bank) on `date` (the day before the first statement line) is brought to the statement's opening: Dr / Cr bank against opening-balance equity
+ *  for the difference - history before the statement is inside it. */
+export function postOpening(st: MockState, companyId: string, accountId: string, date: IsoDate, opening: Money): void {
+  const b = bankOf(st, companyId, accountId), sat = toSatang(opening) - glBalance(st, companyId, b.accountCode, date);
   if (sat === 0) return;
-  const eq = resolveRole(st, 'OpeningBalanceEquity', { companyId, docType: 'JV' }).code;
-  addJournal(st, { companyId, accountId, kind: 'opening', label: 'ยอดยกมาบัญชีธนาคาร', entries: [entry(st, companyId, date, 'ยอดยกมาบัญชีธนาคาร',
+  const eq = resolveRole(st, 'OpeningBalanceEquity', { companyId, docType: 'JV' }).code, tag = 'ปรับยอดยกมาตาม statement';
+  addJournal(st, { companyId, accountId, kind: 'opening', label: tag, entries: [entry(st, companyId, date, tag,
     [{ code: b.accountCode, debit: Math.max(sat, 0), credit: Math.max(-sat, 0) }, { code: eq, debit: Math.max(-sat, 0), credit: Math.max(sat, 0) }])] });
 }
 
@@ -109,6 +139,8 @@ const reasonOf = (st: MockState, l: StoredLine, reason: string | undefined) => {
   return r;
 };
 
+/** M3: a rounding difference is satang, not a mismatch: up to 1.00. */
+const ROUNDING_MAX = 100;
 export interface MatchRequest { docIds: string[]; /** per-document share of its cash, for a document split over several lines; absent = the document's whole remainder */ amounts?: Record<string, Money>; diff?: { role: 'BankFee' | 'RoundingDifference'; amount: Money } }
 
 /** One line <-> one or several documents (batch), or one share of a document split over several lines. Σ matched cash + diff = line amount (in the line's sign); a document is matched only on the line's own account and never beyond its cash.
@@ -118,11 +150,14 @@ export function match(st: MockState, companyId: string, lineId: string, req: Mat
   if (l.status !== 'unmatched') throw statusError(l, '- จับคู่ไม่ได้');
   const ids = [...new Set(req.docIds ?? [])];
   if (!ids.length) throw fail(422, 'bank.match_empty', 'เลือกเอกสารที่จะจับคู่อย่างน้อยหนึ่งรายการ');
+  refuseIfTransferPending(st, companyId, l);
+  if (ids.some((id) => st.bankJournals.some((j) => j.id === id))) return matchTransfer(st, companyId, l, ids, req, actor);
   const amount = toSatang(l.amount), s = amount < 0 ? -1 : 1, want = s > 0 ? 'RC' : 'PV';
   const diff = req.diff && toSatang(req.diff.amount) !== 0 ? req.diff : undefined, diffSat = diff ? toSatang(diff.amount) : 0;
   if (diff) {
     if (diff.role !== 'BankFee' && diff.role !== 'RoundingDifference') throw fail(422, 'bank.match_diff', 'ผลต่างต้องเป็นค่าธรรมเนียมธนาคารหรือผลต่างจากการปัดเศษ');
     if (diff.role === 'BankFee' && diffSat > 0) throw fail(422, 'bank.match_diff', 'ค่าธรรมเนียมธนาคารต้องทำให้ยอดในบัญชีลดลง (ติดลบ)');
+    if (diff.role === 'RoundingDifference' && abs(diffSat) > ROUNDING_MAX) throw fail(422, 'bank.rounding_too_large', `ผลต่างจากการปัดเศษเกิน ${formatMoney(fromSatang(ROUNDING_MAX))} บาท ไม่ใช่การปัดเศษ บันทึกผลต่างเป็นรายการบัญชีแยกต่างหาก`);
   }
   const bank = bankOf(st, companyId, l.accountId);
   const docs = ids.map((id) => {
@@ -131,6 +166,8 @@ export function match(st: MockState, companyId: string, lineId: string, req: Mat
     const no = d.number ?? d.id;
     if (d.type !== want) throw fail(422, 'bank.match_direction', `${no} เป็น${d.type === 'RC' ? 'ใบเสร็จรับเงิน (เงินเข้า)' : 'ใบสำคัญจ่าย (เงินออก)'} จับคู่กับรายการ${s > 0 ? 'เงินเข้า' : 'เงินออก'}ไม่ได้`);
     if (!LIVE.includes(d.status)) throw fail(422, 'bank.match_doc_status', `${no} ไม่อยู่ในสถานะที่จับคู่ได้`);
+    const live = goLiveOf(st, companyId, l.accountId);
+    if (live && d.header.documentDate < live) throw fail(422, 'bank.match_history', `${no} ลงวันที่ ${formatDateBE(d.header.documentDate)} ก่อนวันเริ่มใช้ระบบกับ statement (${formatDateBE(live)}) อยู่ในยอดยกมาแล้ว จับคู่ไม่ได้`);
     const acct = resolvedBankId(st, companyId, d.type, d.header);
     if (acct !== l.accountId) throw fail(422, 'bank.match_account', `${no} ใช้บัญชี ${st.bankAccounts.find((b) => b.id === acct)?.nameTh ?? 'อื่น'} ไม่ใช่บัญชี ${bank.nameTh} ของรายการนี้ จับคู่ได้เฉพาะเอกสารของบัญชีเดียวกัน`);
     return d;
@@ -166,12 +203,77 @@ export function match(st: MockState, companyId: string, lineId: string, req: Mat
   return publicLine(st, l);
 }
 
+const refuseIfTransferPending = (st: MockState, companyId: string, l: StoredLine) => {
+  if (pendingTransfer(st, companyId, l.id)) throw fail(409, 'bank.transfer_pending', 'รายการนี้มีรายการโอนระหว่างบัญชีค้างอยู่ (ยกเลิกการจับคู่ไว้) บันทึกซ้ำจะนับเงินสองครั้ง กด "โอนระหว่างบัญชี" เพื่อจับคู่ใหม่ หรือกลับรายการโอนก่อน');
+};
+const attachTransfer = (st: MockState, companyId: string, l: StoredLine, j: BankJournal, actor: Actor) => {
+  Object.assign(l, { status: 'matched', transfer: { journalId: j.id, side: sideOf(l) } });
+  logActivity(st, l.id, actor, 'bank.match', `จับคู่กับ ${j.label}`);
+  logAudit(st, actor, companyId, 'bank.match', l.id, { status: 'unmatched' }, { status: 'matched', transfer: j.id });
+  return publicLine(st, l);
+};
+
+/** The other side of a transfer: this line (on the receiving / paying account) takes the journal the first line made. Exact amount, opposite direction, one line per side. */
+function matchTransfer(st: MockState, companyId: string, l: StoredLine, ids: string[], req: MatchRequest, actor: Actor): BankLine {
+  const j = st.bankJournals.find((x) => x.id === ids[0] && x.companyId === companyId);
+  if (ids.length !== 1 || !j || j.kind !== 'transfer' || (req.diff && toSatang(req.diff.amount) !== 0)) throw fail(422, 'bank.match_transfer', 'รายการโอนระหว่างบัญชีจับคู่ได้ครั้งละหนึ่งรายการ และไม่มีผลต่าง');
+  const origin = st.bankLines.find((x) => x.id === j.lineId);
+  if (!inForce(j) || j.otherAccountId !== l.accountId || !origin || sideOf(origin) === sideOf(l)) throw fail(422, 'bank.match_transfer', 'รายการโอนนี้ไม่ใช่ของบัญชีหรือทิศทางเงินของรายการนี้');
+  if (transferLines(st, j.id).some((x) => x.accountId === l.accountId)) throw fail(409, 'bank.match_transfer', 'รายการโอนนี้จับคู่กับรายการเดินบัญชีของบัญชีนี้แล้ว');
+  if (transferAmount(j) !== abs(toSatang(l.amount))) throw fail(422, 'bank.match_amount', `ยอดโอน ${formatMoney(fromSatang(transferAmount(j)))} ไม่เท่ากับยอดรายการเดินบัญชี ${formatMoney(fromSatang(abs(toSatang(l.amount))))} บาท`);
+  return attachTransfer(st, companyId, l, j, actor);
+}
+
+/** I2: a statement line that is money moving between two own accounts. Posts ONE bank journal Dr receiving / Cr paying at the line's date and matches this line to it; the other account's line matches the same
+ *  journal later (suggested at the same amount within 7 days). A journal kept after an unmatch is re-attached, never posted twice. */
+export function transfer(st: MockState, companyId: string, lineId: string, toAccountId: string, actor: Actor): BankLine {
+  const l = lineOf(st, companyId, lineId);
+  if (l.status !== 'unmatched') throw statusError(l, '- โอนระหว่างบัญชีไม่ได้');
+  const bank = bankOf(st, companyId, l.accountId);
+  if (toAccountId === l.accountId) throw fail(422, 'bank.transfer_same_account', 'ต้องเลือกบัญชีอื่นที่ไม่ใช่บัญชีของรายการนี้');
+  const other = bankOf(st, companyId, String(toAccountId));
+  if (bank.active === false || other.active === false) throw fail(422, 'bank.transfer_inactive', 'บัญชีที่เลือกถูกปิดใช้งานแล้ว');
+  const kept = pendingTransfer(st, companyId, l.id);
+  if (kept) {
+    if (kept.otherAccountId !== other.id) throw fail(409, 'bank.transfer_pending', 'รายการนี้มีรายการโอนไปบัญชีอื่นค้างอยู่ ต้องกลับรายการโอนนั้นก่อน');
+    return attachTransfer(st, companyId, l, kept, actor);
+  }
+  dateGuards(st, companyId, l.date);
+  const amount = toSatang(l.amount), out = amount < 0, rx = out ? other : bank, tx = out ? bank : other;
+  const tag = `โอนระหว่างบัญชี ${tx.nameTh} → ${rx.nameTh}`;
+  const j = addJournal(st, { companyId, accountId: bank.id, otherAccountId: other.id, lineId: l.id, kind: 'transfer', label: tag, entries: [entry(st, companyId, l.date, tag, [
+    { code: bank.accountCode, debit: out ? 0 : abs(amount), credit: out ? abs(amount) : 0 }, { code: other.accountCode, debit: out ? abs(amount) : 0, credit: out ? 0 : abs(amount) },
+  ])] });
+  return attachTransfer(st, companyId, l, j, actor);
+}
+
+/** The way out of a transfer: reverse its journal, once, and only while neither line is matched to it (SP0 5.9: the reversal goes on the journal's date while that month is open). */
+export function reverseTransfer(st: MockState, companyId: string, journalId: string, actor: Actor): BankJournal {
+  const j = st.bankJournals.find((x) => x.id === journalId && x.companyId === companyId && x.kind === 'transfer');
+  if (!j) throw fail(404, 'record.not_found', 'ไม่พบรายการโอนนี้');
+  if (!inForce(j)) throw fail(409, 'bank.transfer_reversed', 'รายการโอนนี้กลับรายการไปแล้ว');
+  if (transferLines(st, j.id).length) throw fail(422, 'bank.transfer_matched', 'รายการโอนนี้ยังจับคู่กับรายการเดินบัญชีอยู่ ยกเลิกการจับคู่ทั้งสองฝั่งก่อน');
+  j.entries = [...j.entries, correctionReversal(st, companyId, j.entries[j.entries.length - 1])];
+  logAudit(st, actor, companyId, 'bank.transfer_reverse', j.id, { reversed: false }, { reversed: true });
+  return j;
+}
+
 /** Back to unmatched. A fee / rounding journal is reversed once (SP0 5.9: on its own date while that month is open). A locked line needs a reason, audited on the line and on every document. */
 export function unmatch(st: MockState, companyId: string, lineId: string, actor: Actor, reason?: string): BankLine {
   const l = lineOf(st, companyId, lineId);
   if (l.status !== 'matched') throw statusError(l, '- ยกเลิกการจับคู่ไม่ได้');
   const why = reasonOf(st, l, reason), locked = isLocked(st, l);
-  const before = { status: l.status, matches: l.matches, diff: l.diff };
+  const before = { status: l.status, matches: l.matches, diff: l.diff, transfer: l.transfer };
+  if (l.transfer) { // the journal stays (the other side may still stand on it); the way to undo it is reverseTransfer
+    if (l.transfer.side === 'out' && transferLines(st, l.transfer.journalId).some((x) => x.id !== l.id && x.transfer?.side === 'in')) {
+      throw fail(422, 'bank.transfer_matched', 'ฝั่งรับของรายการโอนนี้ยังจับคู่อยู่ ยกเลิกการจับคู่ฝั่งรับก่อน แล้วจึงยกเลิกการจับคู่ฝั่งจ่าย');
+    }
+    logActivity(st, l.id, actor, 'bank.unmatch', locked ? `ยกเลิกการจับคู่ในช่วงที่ปิดแล้ว เหตุผล: ${why}` : why || 'ยกเลิกการจับคู่รายการโอน');
+    delete l.transfer;
+    l.status = 'unmatched';
+    logAudit(st, actor, companyId, 'bank.unmatch', l.id, before, { status: 'unmatched', ...(why ? { reason: why } : {}), locked });
+    return publicLine(st, l);
+  }
   if (l.diff) {
     const j = st.bankJournals.find((x) => x.id === l.diff!.journalId);
     const last = j?.entries[j.entries.length - 1];
@@ -206,31 +308,31 @@ export function unignore(st: MockState, companyId: string, lineId: string, actor
   return publicLine(st, l);
 }
 
-export interface PostRequest { accountCode: string; description?: string; partyId?: string; dimensions?: Record<string, string> }
+export interface PostRequest { accountCode: string; description?: string; dimensions?: Record<string, string> }
 /** Inline journal for a line nothing matches (a fee, interest, a transfer): two lines, the bank's GL account against the chosen one, dated at the line. Immutable afterwards; the exit is to reverse the journal (AC1). */
 export function post(st: MockState, companyId: string, lineId: string, req: PostRequest, actor: Actor): BankLine {
   const l = lineOf(st, companyId, lineId);
   if (l.status !== 'unmatched') throw statusError(l, '- บันทึกบัญชีไม่ได้');
+  refuseIfTransferPending(st, companyId, l);
   const bank = bankOf(st, companyId, l.accountId);
   const acc = st.accounts.find((a) => a.companyId === companyId && a.code === req.accountCode);
   if (!acc || !acc.postable) throw fail(422, 'ledger.account_invalid', 'เลือกบัญชีที่ลงรายการได้');
   if (acc.code === bank.accountCode) throw fail(422, 'bank.post_same_account', 'บัญชีที่เลือกต้องไม่ใช่บัญชีธนาคารของรายการนี้');
-  if (isTaxControl(st, companyId, acc.code)) throw fail(422, 'ledger.control_account', `${acc.code} ${acc.nameTh} เป็นบัญชีควบคุมภาษี ลงรายการเองไม่ได้ ภาษีลงจากเอกสารเท่านั้น`);
-  const kind = partyKindOf(st, companyId, acc.code);
-  let party: string | undefined;
-  if (kind) {
-    const p = st.parties.find((x) => x.id === req.partyId && x.companyId === companyId);
-    if (!req.partyId) throw fail(422, 'ledger.party_required', `${acc.code} ${acc.nameTh} ต้องระบุ${kind === 'customer' ? 'ลูกค้า' : kind === 'vendor' ? 'ผู้ขาย' : 'พนักงาน'}`);
-    if (!p || p.kind !== kind) throw fail(422, 'ledger.party_invalid', `คู่ค้าที่เลือกไม่ใช่${kind === 'customer' ? 'ลูกค้า' : kind === 'vendor' ? 'ผู้ขาย' : 'พนักงาน'}ของบริษัทนี้`);
-    party = p.name;
-  }
+  const exit = controlExit(st, companyId, acc.code);
+  if (exit) throw fail(422, 'ledger.control_account', `${acc.code} ${acc.nameTh} ลงรายการเองไม่ได้: ${exit}`);
   const dims = req.dimensions && Object.keys(req.dimensions).length ? req.dimensions : undefined;
+  if (dims) { // M4: only dimensions the company's documents already carry (there is no dimension master yet)
+    const known = new Set<string>();
+    for (const d of st.docs) if (d.companyId === companyId) for (const m of [d.header.dimensions, ...d.lines.map((x) => x.dimensions)]) for (const [k, v] of Object.entries(m ?? {})) known.add(`${k}|${v}`);
+    const bad = Object.entries(dims).find(([k, v]) => !known.has(`${k}|${v}`));
+    if (bad) throw fail(422, 'ledger.dimension_invalid', `มิติ ${bad[0]} = ${bad[1]} ไม่มีในมิติของบริษัทนี้`);
+  }
   dateGuards(st, companyId, l.date);
   const amount = toSatang(l.amount), tag = (req.description ?? '').trim() || l.description;
   const incoming = amount > 0;
   const j = addJournal(st, { companyId, accountId: l.accountId, lineId, kind: 'inline', label: tag, entries: [entry(st, companyId, l.date, tag, [
     { code: bank.accountCode, debit: incoming ? abs(amount) : 0, credit: incoming ? 0 : abs(amount), ...(dims ? { dims } : {}) },
-    { code: acc.code, debit: incoming ? 0 : abs(amount), credit: incoming ? abs(amount) : 0, ...(party ? { party } : {}), ...(dims ? { dims } : {}) },
+    { code: acc.code, debit: incoming ? 0 : abs(amount), credit: incoming ? abs(amount) : 0, ...(dims ? { dims } : {}) },
   ])] });
   l.status = 'posted';
   l.journalId = j.id;
@@ -242,7 +344,7 @@ export function post(st: MockState, companyId: string, lineId: string, req: Post
 /** "ปิดการกระทบยอดถึงวันที่": every line on or before `date` must be resolved (matched, posted or ignored); then they read locked. The date only moves forward. */
 export function lockTo(st: MockState, companyId: string, accountId: string, date: IsoDate, actor: Actor): BankAccount {
   const b = bankOf(st, companyId, accountId);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw fail(422, 'bank.lock_date', 'วันที่ไม่ถูกต้อง');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || new Date(Date.parse(`${date}T00:00:00Z`) || 0).toISOString().slice(0, 10) !== date) throw fail(422, 'bank.lock_date', 'วันที่ไม่ถูกต้อง');
   if (date > today()) throw fail(422, 'bank.lock_date', `วันที่อยู่ในอนาคต (วันนี้ ${today()})`);
   if (b.reconciledTo && date < b.reconciledTo) throw fail(422, 'bank.lock_backwards', `ปิดการกระทบยอดถึง ${formatDateBE(b.reconciledTo)} แล้ว เลื่อนวันที่ถอยหลังไม่ได้`);
   const open = st.bankLines.filter((x) => x.companyId === companyId && x.accountId === accountId && x.date <= date && x.status === 'unmatched');

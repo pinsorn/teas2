@@ -46,13 +46,12 @@ describe('InlineJournalDialog', () => {
     expect(codes).toContain('5200');
   });
 
-  it('a receivable asks for its customer; without one the server\'s refusal is shown and nothing is written', async () => {
-    mount('bi-001-018'); // +3.12 interest
-    await choose('1130');
-    expect(await screen.findByLabelText('คู่ค้า')).toBeVisible();
-    await userEvent.click(screen.getByRole('button', { name: 'บันทึกบัญชี' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('ต้องระบุลูกค้า');
-    expect(loadState().bankJournals.filter((j) => j.kind === 'inline')).toHaveLength(0);
-    expect(loadState().bankLines.find((x) => x.id === 'bi-001-018')!.status).toBe('unmatched');
+  it('offers no receivable / payable, deposit, payroll, cash / bank or equity account either (I1)', async () => {
+    mount('bi-001-018');
+    const select = await screen.findByRole('combobox', { name: /บัญชีที่จ่าย|บัญชีที่รับ/ });
+    await waitFor(() => expect(select.querySelectorAll('option').length).toBeGreaterThan(10));
+    const codes = [...select.querySelectorAll('option')].map((o) => o.getAttribute('value'));
+    for (const hidden of ['1130', '2110', '2180', '2140', '1140', '1171', '2153', '2160', '1122', '1110', '3200', '3900']) expect(codes).not.toContain(hidden);
+    expect(screen.queryByLabelText('คู่ค้า')).toBeNull();
   });
 });

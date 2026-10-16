@@ -80,6 +80,7 @@ export function StatementLines({ accountId, onImport, actions, only, onShowAll }
                 <TableCell>
                   {t(`statuses.${l.status}`)}{l.locked ? <span className="ms-2 rounded border px-1.5 text-small">{tr('locked')}</span> : null}
                   {actions && l.matches?.length ? <span className="block text-small text-muted-foreground">{l.matches.map((m) => m.number).join(', ')}{l.diff ? ` · ${tr(`diff.${l.diff.role}`)} ${formatMoney(l.diff.amount)}` : ''}</span> : null}
+                  {actions && l.transfer ? <span className="block text-small text-muted-foreground">{tr('transfer.tag')}</span> : null}
                   {actions && l.note ? <span className="block text-small text-muted-foreground">{l.note}</span> : null}
                 </TableCell>
                 {actions ? <TableCell><div className="flex flex-wrap gap-2">{actions(l)}</div></TableCell> : null}

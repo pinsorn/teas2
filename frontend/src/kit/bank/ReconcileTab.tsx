@@ -23,6 +23,7 @@ import { LoadingState } from '../states/LoadingState';
 import { InlineJournalDialog } from './InlineJournalDialog';
 import { MatchPanel } from './MatchPanel';
 import { StatementLines } from './StatementLines';
+import { TransferDialog } from './TransferDialog';
 
 const PARAMS: ReportParamSpec[] = [
   { key: 'account', kind: 'account', labelKey: 'bank.reconcile.report.account', required: true, hidden: true },
@@ -43,6 +44,7 @@ export function ReconcileTab({ accountId, accountCode, permissions, focusLine, o
   const allowed = permissions.includes('bank.reconcile');
   const [matching, setMatching] = useState<BankLine>();
   const [posting, setPosting] = useState<BankLine>();
+  const [transferring, setTransferring] = useState<BankLine>();
   const [asking, setAsking] = useState<{ line: BankLine; command: 'unmatch' | 'unignore' }>();
   const [reason, setReason] = useState('');
   const [lockDate, setLockDate] = useState('');
@@ -65,7 +67,7 @@ export function ReconcileTab({ accountId, accountCode, permissions, focusLine, o
   const err = command.error ?? lock.error;
   const actions = (l: BankLine) => {
     const b = (label: string, fn: () => void, variant: 'default' | 'outline' = 'outline') => <Button key={label} size="sm" variant={variant} disabled={command.isPending} onClick={fn}>{label}</Button>;
-    if (l.status === 'unmatched') return [b(t('find'), () => setMatching(l), 'default'), b(t('post.open'), () => setPosting(l)), b(t('ignore'), () => command.mutate({ line: l, command: 'ignore' }))];
+    if (l.status === 'unmatched') return [b(t('find'), () => setMatching(l), 'default'), b(t('post.open'), () => setPosting(l)), b(t('transfer.open'), () => setTransferring(l)), b(t('ignore'), () => command.mutate({ line: l, command: 'ignore' }))];
     if (l.status === 'matched') return [b(t('unmatch'), () => { setReason(''); setAsking({ line: l, command: 'unmatch' }); })];
     if (l.status === 'ignored') return [b(t('unignore'), () => { setReason(''); setAsking({ line: l, command: 'unignore' }); })];
     return [<span key="p" className="text-small text-muted-foreground">{t('postedFinal')}</span>];
@@ -106,6 +108,7 @@ export function ReconcileTab({ accountId, accountCode, permissions, focusLine, o
 
       {matching ? <MatchPanel line={matching} onClose={() => setMatching(undefined)} /> : null}
       {posting ? <InlineJournalDialog line={posting} bankAccountCode={accountCode} onClose={() => setPosting(undefined)} /> : null}
+      {transferring ? <TransferDialog line={transferring} accountId={accountId} onClose={() => setTransferring(undefined)} /> : null}
       {asking ? (
         <AlertDialog open onOpenChange={(o) => { if (!o) { setAsking(undefined); command.reset(); } }}>
           <AlertDialogContent>

@@ -24,24 +24,38 @@ export function bankReconciliation(st: MockState, companyId: string, p: BankRecP
   let gl = 0;
   for (const e of companyEntries(st, companyId)) if (e.date <= to) for (const g of e.lines) if (g.accountCode === code) gl += toSatang(g.debit) - toSatang(g.credit);
 
-  // journal side: each live RC / PV of the account, its GL effect up to `to` (the journal is the source), less its matched shares
+  // journal side: what the books carry by `to` that the statement has not shown yet (or the other way round): each live RC / PV of the account dated on or after its go-live (I4: earlier ones are inside the opening
+  // balance), and each transfer journal touching it. The journal is the source; its matched lines (dated <= to) are taken off. M1: the heading is the item's own kind, the sign is its amount.
+  const first = st.bankImports.filter((i) => i.companyId === companyId && i.accountId === bank.id).sort((a, b) => a.from.localeCompare(b.from))[0];
+  const goLive = first?.from;
   const matchedBy = new Map<string, number>(); // docId -> Σ shares on lines <= to
   for (const l of st.bankLines) if (l.companyId === companyId && l.accountId === bank.id && l.date <= to) for (const m of l.matches ?? []) matchedBy.set(m.docId, (matchedBy.get(m.docId) ?? 0) + toSatang(m.amount));
-  const transit: { row: ReportRow; sat: number }[] = [], outstanding: { row: ReportRow; sat: number }[] = [];
+  type Item = { row: ReportRow; sat: number };
+  const transit: Item[] = [], outstanding: Item[] = [];
+  const effectOn = (entries: { date: string; lines: { accountCode: string; debit: string; credit: string }[] }[]) =>
+    entries.filter((e) => e.date <= to).reduce((n, e) => n + e.lines.filter((g) => g.accountCode === code).reduce((x, g) => x + toSatang(g.debit) - toSatang(g.credit), 0), 0);
+  const lineSum = (pick: (l: (typeof st.bankLines)[number]) => boolean) => st.bankLines.filter((l) => l.companyId === companyId && l.accountId === bank.id && l.date <= to && pick(l)).reduce((n, l) => n + toSatang(l.amount), 0);
   for (const d of st.docs) {
     if (d.companyId !== companyId || (d.type !== 'RC' && d.type !== 'PV') || !LIVE.includes(d.status) || resolvedBankId(st, companyId, d.type, d.header) !== bank.id) continue;
-    const j = st.journals.find((x) => x.docId === d.id);
-    const effect = (j?.preview.entries ?? []).filter((e) => e.date <= to).reduce((n, e) => n + e.lines.filter((g) => g.accountCode === code).reduce((x, g) => x + toSatang(g.debit) - toSatang(g.credit), 0), 0);
+    if (goLive && d.header.documentDate < goLive) continue;
+    const effect = effectOn(st.journals.find((x) => x.docId === d.id)?.preview.entries ?? []);
     const left = effect - (d.type === 'RC' ? 1 : -1) * (matchedBy.get(d.id) ?? 0);
     if (left === 0) continue;
-    const row: ReportRow = { level: 1, kind: 'row', cells: { item: `${d.type} ${d.number ?? d.id}${d.party?.name ? ` · ${d.party.name}` : ''}`, date: d.header.documentDate, amount: fromSatang(Math.abs(left)) } };
-    (left > 0 ? transit : outstanding).push({ row, sat: Math.abs(left) });
+    const row: ReportRow = { level: 1, kind: 'row', cells: { item: `${d.type} ${d.number ?? d.id}${d.party?.name ? ` · ${d.party.name}` : ''}`, date: d.header.documentDate, amount: fromSatang(d.type === 'RC' ? left : -left) } };
+    (d.type === 'RC' ? transit : outstanding).push({ row, sat: d.type === 'RC' ? left : -left });
+  }
+  for (const j of st.bankJournals) {
+    if (j.companyId !== companyId || j.kind !== 'transfer' || (j.accountId !== bank.id && j.otherAccountId !== bank.id)) continue;
+    const left = effectOn(j.entries) - lineSum((l) => l.transfer?.journalId === j.id);
+    if (left === 0) continue;
+    const receiving = toSatang(j.entries[0].lines.find((g) => g.accountCode === code)?.debit ?? '0.00') > 0;
+    const row: ReportRow = { level: 1, kind: 'row', cells: { item: j.label, date: j.entries[0].date, amount: fromSatang(receiving ? left : -left) } };
+    (receiving ? transit : outstanding).push({ row, sat: receiving ? left : -left });
   }
   const byDate = (a: { row: ReportRow }, b: { row: ReportRow }) => a.row.cells.date.localeCompare(b.row.cells.date) || a.row.cells.item.localeCompare(b.row.cells.item);
   transit.sort(byDate); outstanding.sort(byDate);
 
   const lines = st.bankLines.filter((l) => l.companyId === companyId && l.accountId === bank.id && l.date <= to).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
-  const first = st.bankImports.filter((i) => i.companyId === companyId && i.accountId === bank.id).sort((a, b) => a.from.localeCompare(b.from))[0];
   const closing = lines.length ? toSatang(lines[lines.length - 1].balance) : first && day(first.from, -1) <= to ? toSatang(first.opening) : 0;
   const open = lines.filter((l) => l.status === 'unmatched' || l.status === 'ignored');
   const unmatched = open.reduce((n, l) => n + toSatang(l.amount), 0);
@@ -69,6 +83,6 @@ export function bankReconciliation(st: MockState, companyId: string, p: BankRecP
     ],
     rows,
     tieOuts: [{ labelKey: 'reports.bankRec.tie', left: fromSatang(adjustedBank), right: fromSatang(adjustedBook), diff: fromSatang(adjustedBank - adjustedBook) }],
-    notes: [bank.nameTh],
+    notes: [bank.nameTh, 'สถานะรายการอ่าน ณ ปัจจุบัน'], // M5: a line unmatched later in a closed month shows here as a difference, by design
   };
 }

@@ -243,7 +243,7 @@ export function executePlan(st: MockState, planId: string, planHash: string, act
   if (!plan || plan.planHash !== planHash) throw stale();
   let current: CorrectionPlan;
   try { current = buildPlan(st, stored.docId, stored.proposed, role ?? stored.role); }
-  catch { throw stale(); }
+  catch (e) { throw e instanceof MockError && e.code === 'doc.reconciled' ? e : stale(); } // M7: a match made after the plan was built is the reason, not "stale"
   if (current.planHash !== planHash || JSON.stringify(current.steps) !== JSON.stringify(plan.steps)) throw stale();
   const granted = PERMISSIONS_BY_ROLE[role ?? stored.role];
   const missing = plan.steps.map((s) => s.note ? `doc.${s.note.type}.issue` : s.permission).filter((p) => !granted.includes(p));

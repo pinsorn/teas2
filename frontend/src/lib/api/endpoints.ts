@@ -10,8 +10,8 @@ export type DocInput = { header: DocHeader; lines: DocLine[]; allocations?: Allo
 /** A postable current-asset account a bank / cash account can be bound to; `taken` = another bank account of the company already owns it. */
 export interface BankGlAccount { code: string; nameTh: string; subClass: 'cash' | 'bank'; taken: boolean }
 /** FN2: a receipt / voucher the line could match (`exact` = the suggestion: same cash, within 7 days). */
-export interface BankCandidate { docId: string; type: 'RC' | 'PV'; number: string; documentDate: string; partyName: string; cash: Money; remaining: Money; exact: boolean }
-export interface PostableAccount { code: string; nameTh: string; class: string; /** the kind of party the account needs (receivable / payable) */ party?: 'customer' | 'vendor' | 'employee' }
+export interface BankCandidate { docId: string; type: 'RC' | 'PV' | 'TR'; number: string; documentDate: string; partyName: string; cash: Money; remaining: Money; exact: boolean }
+export interface PostableAccount { code: string; nameTh: string; class: string }
 export interface Reconciliation { reconciledTo: string | null; counts: Record<BankLine['status'], number> }
 export interface WhtTypeRef { code: string; nameTh: string; rate: string; incomeType: string }
 export interface ListDocsParams { status?: string; from?: string; to?: string; q?: string; outstanding?: 'positive'; overdue?: '1'; agent?: '1'; limit?: number; cursor?: string }
@@ -76,7 +76,9 @@ export const endpoints = {
     api<BankLine>('POST', `/finance/bank-lines/${encodeURIComponent(lineId)}/match`, body),
   bankLineCommand: (lineId: string, command: 'unmatch' | 'ignore' | 'unignore', reason?: string) =>
     api<BankLine>('POST', `/finance/bank-lines/${encodeURIComponent(lineId)}/${command}`, { reason }),
-  postBankLine: (lineId: string, body: { accountCode: string; description?: string; partyId?: string }) =>
+  /** I2: a line that is money moving to / from another own account. */
+  transferBankLine: (lineId: string, toAccountId: string) => api<BankLine>('POST', `/finance/bank-lines/${encodeURIComponent(lineId)}/transfer`, { toAccountId }),
+  postBankLine: (lineId: string, body: { accountCode: string; description?: string }) =>
     api<BankLine>('POST', `/finance/bank-lines/${encodeURIComponent(lineId)}/post`, body),
   postableAccounts: () => api<PostableAccount[]>('GET', '/finance/postable-accounts'),
   getReconciliation: (accountId: string) => api<Reconciliation>('GET', `/finance/bank-accounts/${encodeURIComponent(accountId)}/reconciliation`),

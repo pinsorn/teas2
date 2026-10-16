@@ -1,6 +1,6 @@
 import { ADJUSTS, CREDIT_NOTES, DOC_TYPES, GROUPS, LIVE, SETTLES } from '@/domain/doc-types';
 import type { WhtLine, WhtMode } from '@/domain/types';
-import type { Doc } from '@/domain/types';
+import type { Doc, JournalEntryPreview } from '@/domain/types';
 import type { MockState } from '../store';
 import { approvalRequired } from './approval';
 import { docCash } from './locks';
@@ -93,27 +93,32 @@ export function checkInvariants(st: MockState): string[] {
   const empByParty = new Map<string, number>(); // the same on 2180 (owed to employees)
   const inputVat = new Map<string, number>(); // `${companyId}|${claim period}` -> debit - credit on 1170 posted by PB / PCN / PDN (reversals and corrections included)
 
-  // 1. every journal entry balances, is non-negative and posts to postable accounts of its own company
+  // 1. every journal entry balances, is non-negative and posts to postable accounts of its own company. R0: the reconciliation's own journals (fee / inline / transfer / opening) feed every GL map below like a document's
+  const jsrc: { id: string; companyId: string; d?: Stored; entries: JournalEntryPreview[] }[] = [];
   for (const j of st.journals) {
     const d = doc(j.docId);
     if (!d) { out.push(`journal of unknown document ${j.docId}`); continue; }
-    for (const e of j.preview.entries) {
-      const where = `${d.id} ${e.kind} entry ${e.date}`;
+    jsrc.push({ id: d.id, companyId: d.companyId, d, entries: j.preview.entries });
+  }
+  for (const j of st.bankJournals) jsrc.push({ id: `bank journal ${j.id}`, companyId: j.companyId, entries: j.entries });
+  for (const { id, companyId, d, entries } of jsrc) {
+    for (const e of entries) {
+      const where = `${id} ${e.kind} entry ${e.date}`;
       let dr = 0, cr = 0;
       for (const l of e.lines) {
         const a = sat(l.debit, where), b = sat(l.credit, where);
         if (a < 0 || b < 0) out.push(`${where}: negative amount on ${l.accountCode}`);
         dr += a; cr += b;
-        const acc = st.accounts.find((x) => x.companyId === d.companyId && x.code === l.accountCode);
-        if (!acc) out.push(`${where}: unknown account ${l.accountCode} for ${d.companyId}`);
+        const acc = st.accounts.find((x) => x.companyId === companyId && x.code === l.accountCode);
+        if (!acc) out.push(`${where}: unknown account ${l.accountCode} for ${companyId}`);
         else if (!acc.postable) out.push(`${where}: account ${l.accountCode} is not postable`);
-        const k = `${d.companyId}|${l.accountCode}`;
+        const k = `${companyId}|${l.accountCode}`;
         gl.set(k, (gl.get(k) ?? 0) + a - b);
         credit.set(k, (credit.get(k) ?? 0) + b - a);
-        if (l.accountCode === '1130') { const pk = `${d.companyId}|${l.partyName ?? ''}`; arByParty.set(pk, (arByParty.get(pk) ?? 0) + a - b); }
-        if (l.accountCode === '2110') { const pk = `${d.companyId}|${l.partyName ?? ''}`; apByParty.set(pk, (apByParty.get(pk) ?? 0) + b - a); }
-        if (l.accountCode === '2180') { const pk = `${d.companyId}|${l.partyName ?? ''}`; empByParty.set(pk, (empByParty.get(pk) ?? 0) + b - a); }
-        if (l.accountCode === '1170' && (d.type === 'PB' || d.type === 'EX' || ADJUSTS[d.type] === 'PB')) { const pk = `${d.companyId}|${claimPeriodOf(d.type, d.header)}`; inputVat.set(pk, (inputVat.get(pk) ?? 0) + a - b); }
+        if (l.accountCode === '1130') { const pk = `${companyId}|${l.partyName ?? ''}`; arByParty.set(pk, (arByParty.get(pk) ?? 0) + a - b); }
+        if (l.accountCode === '2110') { const pk = `${companyId}|${l.partyName ?? ''}`; apByParty.set(pk, (apByParty.get(pk) ?? 0) + b - a); }
+        if (l.accountCode === '2180') { const pk = `${companyId}|${l.partyName ?? ''}`; empByParty.set(pk, (empByParty.get(pk) ?? 0) + b - a); }
+        if (l.accountCode === '1170' && (!d || d.type === 'PB' || d.type === 'EX' || ADJUSTS[d.type] === 'PB')) { const pk = `${companyId}|${d ? claimPeriodOf(d.type, d.header) : 'bank journal'}`; inputVat.set(pk, (inputVat.get(pk) ?? 0) + a - b); }
       }
       if (dr !== cr) out.push(`${where}: unbalanced (Dr ${fromSatang(dr)} / Cr ${fromSatang(cr)})`);
     }
@@ -438,7 +443,21 @@ export function checkInvariants(st: MockState): string[] {
     if (l.status !== 'matched' && (ms.length || l.diff)) out.push(`${where}: ${l.status} but carries a match`);
     if (l.status === 'posted' && !l.journalId) out.push(`${where}: posted without its journal`);
     if (l.status === 'posted' && !st.bankJournals.some((j) => j.id === l.journalId && j.lineId === l.id && j.kind === 'inline')) out.push(`${where}: posted but its inline journal is missing`);
+    if (l.transfer && l.status !== 'matched') out.push(`${where}: ${l.status} but carries a transfer match`);
     if (l.status !== 'matched') continue;
+    if (l.transfer) {
+      const tj = st.bankJournals.find((x) => x.id === l.transfer!.journalId && x.companyId === l.companyId && x.kind === 'transfer');
+      if (!tj) out.push(`${where}: matched to a transfer journal that does not exist`);
+      else {
+        if (ms.length || l.diff) out.push(`${where}: matched to a transfer and to documents`);
+        if (tj.accountId !== l.accountId && tj.otherAccountId !== l.accountId) out.push(`${where}: its transfer journal ${tj.id} is not between this account and another`);
+        if (l.transfer.side !== (amount < 0 ? 'out' : 'in')) out.push(`${where}: transfer side ${l.transfer.side} but the amount is ${l.amount}`);
+        const g = tj.entries[0].lines.reduce((n, x) => n + sat(x.debit, where), 0);
+        if (g !== Math.abs(amount)) out.push(`${where}: transfer journal ${tj.id} moves ${fromSatang(g)} but the line is ${l.amount}`);
+        if (st.bankLines.some((x) => x.id !== l.id && x.status === 'matched' && x.transfer?.journalId === tj.id && x.transfer.side === l.transfer!.side)) out.push(`${where}: two lines matched on the same side of transfer ${tj.id}`);
+      }
+      continue;
+    }
     if (!ms.length) out.push(`${where}: matched without a document`);
     const s1 = amount < 0 ? -1 : 1, diff = sat(l.diff?.amount ?? '0.00', where), sum = ms.reduce((n, m) => n + sat(m.amount, where), 0);
     if (s1 * sum + diff !== amount) out.push(`${where}: matched ${fromSatang(sum)} + difference ${fromSatang(diff)} is not the line amount ${l.amount}`);
@@ -469,13 +488,6 @@ export function checkInvariants(st: MockState): string[] {
     if (!b) { out.push(`${where}: unknown bank account ${j.accountId}`); continue; }
     if (j.lineId && !st.bankLines.some((l) => l.id === j.lineId && l.accountId === j.accountId && l.companyId === j.companyId)) out.push(`${where}: line ${j.lineId} is not on its account`);
     for (const e of j.entries) {
-      let dr = 0, cr = 0;
-      for (const g of e.lines) {
-        dr += sat(g.debit, where); cr += sat(g.credit, where);
-        const a = st.accounts.find((x) => x.companyId === j.companyId && x.code === g.accountCode);
-        if (!a?.postable) out.push(`${where}: ${g.accountCode} is not a postable account of the company`);
-      }
-      if (dr !== cr) out.push(`${where} ${e.kind} entry ${e.date}: unbalanced (Dr ${fromSatang(dr)} / Cr ${fromSatang(cr)})`);
       if (!e.lines.some((g) => g.accountCode === b.accountCode)) out.push(`${where} ${e.kind} entry ${e.date}: does not post to the account's GL ${b.accountCode}`);
       if (!e.postedAt) out.push(`${where} ${e.kind} entry ${e.date}: no postedAt`);
       const p = st.periods.find((x) => x.companyId === j.companyId && x.month === e.date.slice(0, 7));

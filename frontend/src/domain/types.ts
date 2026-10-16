@@ -102,9 +102,11 @@ export interface BankMatch { docId: string; type: 'RC' | 'PV'; number: string; a
  *  `diff.amount` is in the line's own sign: Σ matched cash (in the line's direction) + diff = line amount, so a bank fee is negative on a receipt and on a payment alike. */
 export interface BankLine { id: string; accountId: string; importId: string; date: IsoDate; description: string; amount: Money; balance: Money;
   status: 'unmatched' | 'matched' | 'ignored' | 'posted'; matchedDocIds?: string[]; matches?: BankMatch[]; diff?: { role: 'BankFee' | 'RoundingDifference'; amount: Money; journalId: string };
-  journalId?: string; locked?: boolean; note?: string }
+  journalId?: string; locked?: boolean; note?: string;
+  /** Matched to a transfer journal between two own accounts (instead of documents): `side` is this line's own side of it. */ transfer?: { journalId: string; side: 'out' | 'in' } }
 /** A journal the reconciliation wrote (no document behind it): the fee / rounding difference of a match, an inline journal of a statement line, or the seeded opening balance. A reversal is appended, an entry is never edited. */
-export interface BankJournal { id: string; companyId: string; accountId: string; lineId?: string; kind: 'fee' | 'inline' | 'opening'; label: string; entries: JournalEntryPreview[] }
+export interface BankJournal { id: string; companyId: string; accountId: string; lineId?: string; kind: 'fee' | 'inline' | 'opening' | 'transfer'; label: string; entries: JournalEntryPreview[];
+  /** A transfer: the account on the other side (the journal is Dr receiving / Cr paying, `accountId` is the one whose line made it). */ otherAccountId?: string }
 export interface BankImport { id: string; accountId: string; fileName: string; format: 'kbiz-csv' | 'kplus-pdf'; from: IsoDate; to: IsoDate;
   opening: Money; closing: Money; lines: number; at: string; warnings: string[] }
 export interface DocSummary { id: string; type: DocType; number?: string; status: DocStatus; documentDate: IsoDate;

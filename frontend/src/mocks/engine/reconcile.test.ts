@@ -108,8 +108,8 @@ describe('match', () => {
     expect(checkInvariants(st)).toEqual([]);
   });
   it('a difference in a closed month is refused (the existing date guard) and writes nothing', () => {
-    const id = addLine('x-closed', '2026-06-05', '8214.00'); // rc-024 (22 Jun) cash 8,239 less 25
-    const e = err(() => match(st, CO, id, { docIds: ['rc-024'], diff: { role: 'BankFee', amount: '-25.00' } }, ME));
+    const id = addLine('x-closed', '2026-06-05', '6930.00'); // a June line (closed month) against rc-013 (Sep) cash 6,955 less 25
+    const e = err(() => match(st, CO, id, { docIds: ['rc-013'], diff: { role: 'BankFee', amount: '-25.00' } }, ME));
     expect(e.code).toBe('period.closed');
     expect(line(id).status).toBe('unmatched');
     expect(st.bankJournals.filter((j) => j.kind === 'fee')).toHaveLength(0);
@@ -198,18 +198,14 @@ describe('unmatch, ignore and the posted line', () => {
     expect(st.bankJournals.find((x) => x.id === interest.journalId)!.entries[0].lines.map((g) => [g.accountCode, g.debit, g.credit])).toEqual([['1121', '3.12', '0.00'], ['4200', '0.00', '3.12']]);
     assertBalanced(st);
   });
-  it('refuses VAT / WHT control accounts, AR / AP without a party, the bank itself, a closed month, and writes nothing', () => {
+  it('refuses control accounts (tax, AR / AP, payables), the bank itself, a closed month, and writes nothing', () => {
     const n = st.bankJournals.length;
     for (const code of ['1170', '2151', '1180', '2131', '2152', '5170']) expect(err(() => post(st, CO, 'bi-001-017', { accountCode: code }, ME)).code).toBe('ledger.control_account');
-    expect(err(() => post(st, CO, 'bi-001-017', { accountCode: '1130' }, ME)).code).toBe('ledger.party_required');
-    expect(err(() => post(st, CO, 'bi-001-017', { accountCode: '2110' }, ME)).code).toBe('ledger.party_required');
-    expect(err(() => post(st, CO, 'bi-001-017', { accountCode: '1130', partyId: 'pv-03' }, ME)).code).toBe('ledger.party_invalid'); // a vendor on a receivable
+    for (const code of ['1130', '2110', '2180']) expect(err(() => post(st, CO, 'bi-001-017', { accountCode: code }, ME)).code).toBe('ledger.control_account'); // I1: a receivable / payable belongs to RC / PV
     expect(err(() => post(st, CO, 'bi-001-017', { accountCode: '1121' }, ME)).code).toBe('bank.post_same_account');
     expect(err(() => post(st, CO, 'bi-001-017', { accountCode: '5000' }, ME)).code).toBe('ledger.account_invalid'); // a header, not postable
     expect(err(() => post(st, CO, addLine('x-jun', '2026-06-10', '-100.00'), { accountCode: '5200' }, ME)).code).toBe('period.closed');
     expect(st.bankJournals).toHaveLength(n);
-    const ar = post(st, CO, 'bi-001-017', { accountCode: '1130', partyId: 'pc-01' }, ME); // with a customer it is allowed, and carried on the line
-    expect(st.bankJournals.find((x) => x.id === ar.journalId)!.entries[0].lines[1]).toMatchObject({ accountCode: '1130', partyName: expect.any(String) });
   });
 });
 
@@ -294,7 +290,7 @@ describe('the reconciliation identity (ruling 6)', () => {
     for (const d of s.docs) {
       if (d.companyId !== co || (d.type !== 'RC' && d.type !== 'PV') || d.header.documentDate > to) continue;
       const cash = toSatang(d.totals.cash ?? '0.00');
-      const live = d.status === 'issued';
+      const live = d.status === 'issued' && d.header.documentDate >= s.bankImports.find((i) => i.companyId === co && i.accountId === acct)!.from; // I4: history before the go-live is inside the opening
       const used = (d.header.paymentMethod === 'cash' ? 'ba-cash' : d.header.bankAccountId) === acct;
       if (!live || !used) continue;
       const matchedSat = s.bankLines.filter((l) => l.date <= to).flatMap((l) => l.matches ?? []).filter((m) => m.docId === d.id).reduce((n, m) => n + toSatang(m.amount), 0);
@@ -335,8 +331,9 @@ describe('the reconciliation identity (ruling 6)', () => {
     expect(bankReconciliation(st, CO, { account: ACC, to: '2026-09-30' }).tieOuts![0].diff).toBe('0.00');
   });
   it('a missing opening balance shows as the gap in the report instead of being hidden', () => {
+    const g = st.bankJournals.find((j) => j.kind === 'opening' && j.accountId === ACC)!.entries[0].lines[0], gap = fromSatang(toSatang(g.debit) - toSatang(g.credit));
     st.bankJournals = st.bankJournals.filter((j) => !(j.kind === 'opening' && j.accountId === ACC));
-    expect(bankReconciliation(st, CO, { account: ACC, to: '2026-09-30' }).tieOuts![0].diff).toBe('300000.00');
+    expect(bankReconciliation(st, CO, { account: ACC, to: '2026-09-30' }).tieOuts![0].diff).toBe(gap);
   });
 });
 

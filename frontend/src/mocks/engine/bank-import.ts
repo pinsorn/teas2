@@ -159,6 +159,10 @@ export function importStatement(st: MockState, companyId: string, accountId: str
     throw fail(422, 'bank.account_mismatch', `เลขที่บัญชีในไฟล์ไม่ตรงกับบัญชี ${acct.nameTh} ${acct.accountNo} — ไม่นำเข้า`);
   }
 
+  if (acct.reconciledTo && parsed.lines.some((l) => l.date <= acct.reconciledTo!)) { // I3: a reconciled range never takes new lines
+    throw fail(422, 'bank.import_locked_period', `บัญชีนี้ปิดการกระทบยอดถึง ${formatDateBE(acct.reconciledTo)} แล้ว ไฟล์นี้มีรายการวันที่ ${formatDateBE(parsed.from)} – ${formatDateBE(parsed.to)} ซึ่งอยู่ในช่วงที่ปิด — ไม่นำเข้า`);
+  }
+
   const warnings = st.bankImports
     .filter((i) => i.companyId === companyId && i.accountId === accountId && !(parsed.to < i.from || parsed.from > i.to))
     .map((i) => `ช่วงวันที่ ${formatDateBE(parsed.from)} – ${formatDateBE(parsed.to)} ทับซ้อนกับไฟล์ที่นำเข้าแล้ว (${i.fileName}, ${formatDateBE(i.from)} – ${formatDateBE(i.to)})`);

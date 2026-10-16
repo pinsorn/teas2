@@ -807,8 +807,12 @@
       },
       "post": {
         "open": "Book to an account", "title": "Book a statement line", "creditAccount": "Account received from (credit)", "debitAccount": "Account paid to (debit)", "choose": "— choose —",
-        "controlHint": "VAT and withholding-tax accounts are not offered; tax is posted by documents only", "party": "Party", "partySearch": "Search parties", "partyList": "Choose a party",
+        "controlHint": "Control accounts are not offered (tax, receivable / payable, deposits and prepayments, payroll, cash / bank, equity): documents post them, or use \"Transfer between accounts\" for money moving between the company's own accounts",
         "description": "Description", "final": "Once posted it cannot be edited; reverse the journal if it is wrong", "submit": "Book", "submitting": "Booking"
+      },
+      "transfer": {
+        "open": "Transfer between accounts", "title": "Transfer between the company's accounts", "account": "Account on the other side", "choose": "— choose an account —", "tag": "Transfer",
+        "hint": "Booked once: debit the receiving account, credit the paying one, and this line is matched. The other account's line is offered the same journal when an equal amount shows on its statement", "submit": "Transfer", "submitting": "Booking"
       },
       "report": { "title": "Bank reconciliation report", "account": "Account" }
     },

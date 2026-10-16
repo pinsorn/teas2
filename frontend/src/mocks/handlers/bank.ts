@@ -3,7 +3,7 @@ import type { Actor, BankLine, Page } from '@/domain/types';
 import { discardAttachment } from '../engine/attachments';
 import { importStatement, type StatementInput } from '../engine/bank-import';
 import { MockError } from '../engine/log';
-import { type MatchRequest, type PostRequest, ignore, isTaxControl, linesOf, lockTo, match, partyKindOf, post, publicLine, suggest, unignore, unmatch } from '../engine/reconcile';
+import { type MatchRequest, type PostRequest, controlExit, ignore, linesOf, lockTo, match, post, publicLine, reverseTransfer, suggest, transfer, unignore, unmatch } from '../engine/reconcile';
 import { bankGlAccounts, glClaim } from '../records/bank-accounts';
 import { ctx, forbidden, persist, problem, screenGate } from './common';
 
@@ -72,10 +72,22 @@ export const bankHandlers = [
     persist(c.st);
     return HttpResponse.json({ reconciledTo: c.st.bankAccounts.find((b) => b.id === acct.id)?.reconciledTo ?? null });
   })),
-  // the accounts an inline journal can post to: postable, not a tax control account (the page drops the bank's own); `party` = the kind of party it needs
+  // the accounts an inline journal can post to: postable and not a control account (tax, receivable / payable, deposits, payroll, cash / bank, equity); the page drops the bank's own
   http.get('*/bff/v1/finance/postable-accounts', () => guarded('item', RECONCILE, (c) => HttpResponse.json(
-    c.st.accounts.filter((a) => a.companyId === c.company.id && a.postable && !isTaxControl(c.st, c.company.id, a.code))
-      .map((a) => ({ code: a.code, nameTh: a.nameTh, class: a.class, ...(partyKindOf(c.st, c.company.id, a.code) ? { party: partyKindOf(c.st, c.company.id, a.code) } : {}) }))))),
+    c.st.accounts.filter((a) => a.companyId === c.company.id && a.postable && !controlExit(c.st, c.company.id, a.code))
+      .map((a) => ({ code: a.code, nameTh: a.nameTh, class: a.class }))))),
+  // I2: a statement line that is money moving to / from another own account; the way out of the journal
+  http.post('*/bff/v1/finance/bank-lines/:id/transfer', ({ request, params }) => guarded('item', RECONCILE, async (c) => {
+    const body = ((await request.json().catch(() => undefined)) ?? {}) as { toAccountId?: string };
+    const line = transfer(c.st, c.company.id, String(params.id), String(body.toAccountId ?? ''), ACTOR);
+    persist(c.st);
+    return HttpResponse.json(line);
+  })),
+  http.post('*/bff/v1/finance/bank-journals/:id/reverse', ({ params }) => guarded('item', RECONCILE, (c) => {
+    const j = reverseTransfer(c.st, c.company.id, String(params.id), ACTOR);
+    persist(c.st);
+    return HttpResponse.json({ id: j.id, reversed: true });
+  })),
   http.get('*/bff/v1/finance/bank-lines/:id/candidates', ({ request, params }) => guarded('list', RECONCILE, (c) =>
     HttpResponse.json({ items: suggest(c.st, c.company.id, String(params.id), new URL(request.url).searchParams.get('q') ?? undefined) }))),
   ...(['match', 'unmatch', 'ignore', 'unignore', 'post'] as const).map((cmd) => http.post(`*/bff/v1/finance/bank-lines/:id/${cmd}`, ({ request, params }) => guarded('item', RECONCILE, async (c) => {
