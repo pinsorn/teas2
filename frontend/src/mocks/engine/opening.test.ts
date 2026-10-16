@@ -5,6 +5,7 @@ import { bankReconciliation } from './reports/bank-reconciliation';
 import { cancel, compute, createDraft, issue, revise } from './commands';
 import { correctionPlan, executePlan } from './corrections';
 import { checkInvariants } from './invariants';
+import { obInvariants } from './opening';
 import { derivedLocks } from './locks';
 import { toSatang } from './money';
 import { match, suggest, unmatch } from './reconcile';
@@ -214,14 +215,14 @@ describe('cancel and revise (reverse and repost at the cut-off)', () => {
   it('a revise after an item was settled and released keeps the item ids (their old links stay valid) and cancels the items it drops', () => {
     const ob = basic(), o = doc(ob.id), r = rc('pc-01', [{ targetId: `${ob.id}-i1`, targetType: 'OB', amount: '600.00' }]);
     cancel(st, r.id, r.version, 'OTHER', 'x', ME);
-    revise(st, ob.id, { header: o.header, lines: [L('1130', '1100.00', '0.00'), L('1150', '200.00', '0.00'), L('2120', '0.00', '300.00')], opening: OP({ openItems: [AR('pc-01', '1100.00')] }) }, o.version, 'x', ME);
+    revise(st, ob.id, { header: o.header, lines: [L('1130', '1100.00', '0.00'), L('1150', '200.00', '0.00'), L('2120', '0.00', '300.00')], opening: OP({ openItems: [{ ...o.opening!.openItems[0], amount: '1100.00' }] }) }, o.version, 'x', ME); // the wizard echoes the ids it was given
     expect(doc(`${ob.id}-i1`)).toMatchObject({ status: 'issued', outstanding: '1100.00' });
     expect(doc(`${ob.id}-i2`).status).toBe('cancelled');
     expect(checkInvariants(st)).toEqual([]); // no link points at a vanished document
   });
   it('revise reverses and reposts at the cut-off and re-creates the items', () => {
     const ob = basic(), o = doc(ob.id);
-    revise(st, ob.id, { header: o.header, lines: [L('1130', '1600.00', '0.00'), L('1150', '200.00', '0.00'), L('2120', '0.00', '300.00')], opening: OP({ openItems: [AR('pc-01', '1100.00'), AR('pc-02', '500.00')] }) }, o.version, 'แก้ยอด', ME);
+    revise(st, ob.id, { header: o.header, lines: [L('1130', '1600.00', '0.00'), L('1150', '200.00', '0.00'), L('2120', '0.00', '300.00')], opening: OP({ openItems: [{ ...o.opening!.openItems[0], amount: '1100.00' }, o.opening!.openItems[1]] }) }, o.version, 'แก้ยอด', ME);
     expect(ents(ob.id).map((x) => [x.kind, x.date])).toEqual([['original', '2026-06-30'], ['reversal', '2026-06-30'], ['correction', '2026-06-30']]);
     expect(doc(`${ob.id}-i1`).outstanding).toBe('1100.00');
     expect(doc(ob.id).totals.total).toBe('1800.00');
@@ -345,5 +346,120 @@ describe('revise through the correction plan (what the wizard sends)', () => {
     const ob = basic(), o = doc(ob.id);
     rc('pc-01', [{ targetId: `${ob.id}-i1`, targetType: 'OB', amount: '100.00' }]);
     expect(err(() => correctionPlan(st, ob.id, { header: o.header, lines: o.lines, opening: OP({ openItems: [AR('pc-01', '1000.00'), AR('pc-02', '300.00'), AR('pc-02', '200.00', 'IV-second')] }) }, 'accountant')).code).toBe('ob.locked');
+  });
+});
+
+// ---- AC3 fix round 1: F1 freeze at issue, F2 bank statement lock, F3 stable item ids
+const rename = (id: string) => { const p = st.parties.find((x) => x.id === id)!; p.name += ' (ใหม่)'; return p.name; };
+const lastLines = (id: string) => JSON.stringify([...ents(id)].reverse().find((e) => e.kind !== 'reversal')!.lines);
+const itemOf = (ob: { id: string }, partyId: string) => st.docs.find((d) => d.header.obBatchId === ob.id && d.header.partyId === partyId && d.status !== 'cancelled')!;
+const lines3 = (x = '200.00') => [L('1130', '1500.00', '0.00'), L('1150', x, '0.00'), L('2120', '0.00', '300.00')];
+
+describe('F1: what the OB journal derives from editable data is frozen at issue', () => {
+  it('renaming a party after issue changes neither the journal nor the invariants; an RC clears the item under the frozen name', () => {
+    const ob = basic(), before = lastLines(ob.id), oldName = itemOf(ob, 'pc-01').party!.name;
+    rename('pc-01');
+    expect(checkInvariants(st)).toEqual([]);
+    expect(lastLines(ob.id)).toBe(before);
+    rc('pc-01', [{ targetId: itemOf(ob, 'pc-01').id, targetType: 'OB', amount: '1000.00' }]);
+    expect(itemOf(ob, 'pc-01').party!.name).toBe(oldName);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('a plain-line revise (steps unchanged) after a rename keeps the frozen name; so does a notes-only revise of a settled batch', () => {
+    const ob = basic();
+    rename('pc-01');
+    const o = doc(ob.id);
+    revise(st, ob.id, { header: o.header, lines: lines3('250.00'), opening: o.opening }, o.version, 'x', ME);
+    expect(lastLines(ob.id)).toContain('บริษัท นาวาพาณิชย์ จำกัด');
+    expect(lastLines(ob.id)).not.toContain('(ใหม่)');
+    expect(checkInvariants(st)).toEqual([]);
+    rc('pc-01', [{ targetId: itemOf(ob, 'pc-01').id, targetType: 'OB', amount: '1000.00' }]);
+    const o2 = doc(ob.id), before2 = lastLines(ob.id);
+    revise(st, ob.id, { header: { ...o2.header, notes: 'หมายเหตุใหม่' }, lines: o2.lines, opening: OP({ openItems: [AR('pc-01', '1000.00'), AR('pc-02', '500.00')] }) }, o2.version, 'x', ME); // the client sends no server fields
+    expect(lastLines(ob.id)).toBe(before2);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('a money revise after a rename re-freezes the journal and the item together under the new name', () => {
+    const ob = basic(), o = doc(ob.id), name = rename('pc-01');
+    revise(st, ob.id, { header: o.header, lines: [L('1130', '1600.00', '0.00'), L('1150', '200.00', '0.00'), L('2120', '0.00', '300.00')], opening: { ...o.opening!, openItems: [{ ...o.opening!.openItems[0], amount: '1100.00' }, o.opening!.openItems[1]] } }, o.version, 'x', ME);
+    expect(itemOf(ob, 'pc-01').party!.name).toBe(name);
+    expect(lastLines(ob.id)).toContain(name);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('a caller cannot send the frozen name or codes: they are replaced from the master data at the write', () => {
+    const o = OP({ openItems: [{ ...AR('pc-01', '1000.00'), partyName: 'ปลอม' }, AR('pc-02', '500.00')], codes: { AR: '9999' } });
+    const ob = post(lines3(), o);
+    expect(doc(ob.id).opening!.openItems[0].partyName).not.toBe('ปลอม');
+    expect(doc(ob.id).opening!.codes!.AR).toBe('1130');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('a posting-rule remap after issue changes neither the stored journal nor the OB invariant', () => {
+    basic();
+    const a = st.accounts.find((x) => x.companyId === CO && x.code === '1130')!;
+    st.accounts.push({ ...a, code: '1139', nameTh: 'ลูกหนี้อื่น' });
+    st.postingRules.find((r) => r.companyId === CO && r.role === 'AR' && r.level === 'default')!.accountCode = '1139';
+    expect(obInvariants(st)).toEqual([]);
+  });
+});
+
+describe('F2: an imported statement on an account the batch opened locks the parts it fixed', () => {
+  const imp = () => st.bankImports.push({ id: 'imp-p', companyId: CO, accountId: 'ba-scb', from: '2026-07-01', to: '2026-07-31' } as never);
+  const bank = (statement = '10000.00') => OP({ bank: [{ accountId: 'ba-scb', statement, inTransit: [] }] });
+  it('cancel is refused (ob.locked); the go-live and the GL opening stay', () => {
+    const ob = post([L('1122', '10000.00', '0.00')], bank());
+    imp();
+    const e = err(() => cancel(st, ob.id, doc(ob.id).version, 'OTHER', 'x', ME));
+    expect(e.code).toBe('ob.locked');
+    expect(e.title).toContain('แก้ไขยอดยกมา');
+    expect(gl('1122')).toBe(1_000_000);
+  });
+  it('a change of that account statement, of the cut-off, or dropping its step is refused', () => {
+    const ob = post([L('1122', '10000.00', '0.00')], bank()), o = doc(ob.id);
+    imp();
+    expect(err(() => revise(st, ob.id, { header: o.header, lines: [L('1122', '9000.00', '0.00')], opening: bank('9000.00') }, o.version, 'x', ME)).code).toBe('ob.locked');
+    expect(err(() => revise(st, ob.id, { header: { ...o.header, documentDate: '2026-06-29' }, lines: o.lines, opening: o.opening }, o.version, 'x', ME)).code).toBe('ob.locked');
+    expect(err(() => revise(st, ob.id, { header: o.header, lines: [L('1130', '5.00', '0.00')], opening: OP({ openItems: [AR('pc-01', '5.00')] }) }, o.version, 'x', ME)).code).toBe('ob.locked');
+  });
+  it('a revise of a line or step elsewhere is still allowed', () => {
+    const ob = post([L('1122', '10000.00', '0.00'), L('1150', '200.00', '0.00')], bank()), o = doc(ob.id);
+    imp();
+    revise(st, ob.id, { header: o.header, lines: [L('1122', '10000.00', '0.00'), L('1150', '250.00', '0.00')], opening: o.opening }, o.version, 'x', ME);
+    expect(doc(ob.id).totals.total).toBe('10250.00');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+});
+
+describe('F3: open items keep a server-owned id across revises', () => {
+  const three = () => post([L('1130', '1700.00', '0.00')], OP({ openItems: [AR('pc-01', '1000.00', 'IV-A'), AR('pc-01', '500.00', 'IV-B'), AR('pc-01', '200.00', 'IV-C')] }));
+  const dropFirst = (ob: { id: string }) => {
+    const o = doc(ob.id), [, b, c] = o.opening!.openItems;
+    revise(st, ob.id, { header: o.header, lines: [L('1130', '700.00', '0.00')], opening: OP({ openItems: [b, c] }) }, o.version, 'x', ME);
+  };
+  it('after dropping IV-A a draft RC on IV-B still settles IV-B, never IV-C', () => {
+    const ob = three(), idB = doc(ob.id).opening!.openItems[1].id!;
+    const r = createDraft(st, CO, 'RC', { header: { partyId: 'pc-01', documentDate: '2026-10-14' }, lines: [], allocations: [{ targetId: idB, targetType: 'OB', amount: '500.00' }] }, ME, `rc${++n}`);
+    dropFirst(ob);
+    issue(st, r.id, r.version, ME);
+    expect(doc(idB)).toMatchObject({ number: 'IV-B (ยกมา)', status: 'settled' });
+    expect(st.docs.find((d) => d.number === 'IV-C (ยกมา)')!.outstanding).toBe('200.00');
+    expect(st.docs.find((d) => d.number === 'IV-A (ยกมา)')!.status).toBe('cancelled');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('a draft RC on the DROPPED item is refused, not moved to another', () => {
+    const ob = three(), idA = doc(ob.id).opening!.openItems[0].id!;
+    const r = createDraft(st, CO, 'RC', { header: { partyId: 'pc-01', documentDate: '2026-10-14' }, lines: [], allocations: [{ targetId: idA, targetType: 'OB', amount: '500.00' }] }, ME, `rc${++n}`);
+    dropFirst(ob);
+    expect(() => issue(st, r.id, r.version, ME)).toThrow();
+  });
+  it('a caller cannot invent an id or reuse a dropped one: a row with an unknown id gets a fresh one', () => {
+    const ob = three(), idA = doc(ob.id).opening!.openItems[0].id!;
+    dropFirst(ob);
+    const o = doc(ob.id);
+    revise(st, ob.id, { header: o.header, lines: [L('1130', '900.01', '0.00')], opening: OP({ openItems: [...o.opening!.openItems, { ...AR('pc-01', '200.00', 'IV-D'), id: idA }, { ...AR('pc-01', '0.01', 'IV-E'), id: 'someone-elses-i1' }] }) }, o.version, 'x', ME);
+    const ids = doc(ob.id).opening!.openItems.map((i) => i.id);
+    expect(new Set(ids).size).toBe(4);
+    expect(ids).not.toContain(idA);
+    expect(ids).not.toContain('someone-elses-i1');
+    expect(doc(idA).status).toBe('cancelled');
   });
 });

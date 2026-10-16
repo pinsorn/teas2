@@ -7,7 +7,7 @@ import { periodLock } from './periods';
 import { fromSatang, toSatang } from './money';
 import { jvLock } from './journal';
 import { docViewHref } from '@/descriptors';
-import { itemsOf } from './opening';
+import { itemsOf, plainOpening } from './opening';
 import { resolvedBankId } from './settlement';
 
 /** The locks a document READS with (single derivation: the doc GET handler and the fixture predicates both call this).
@@ -54,7 +54,7 @@ export function refuseReconciled(st: MockState, d: { id: string; type: DocType; 
 }
 
 /** AC3 ruling 3: an opening-balance batch whose open item an RC / PV settled (or a CN / DN adjusted), or whose in-transit item a bank line matched, is locked; the exit is to cancel that RC / PV or unmatch. Derived at read, never stored. */
-export function obLock(st: MockState, batchId: string): Lock | undefined {
+function itemLock(st: MockState, batchId: string): Lock | undefined {
   const items = itemsOf(st, batchId).filter((i) => LIVE.includes(i.status));
   const link = (i: { id: string }) => st.links.find((l) => l.active && l.to === i.id && (l.kind === 'settles' || l.kind === 'adjusts'));
   const used = items.find((i) => link(i));
@@ -67,12 +67,28 @@ export function obLock(st: MockState, batchId: string): Lock | undefined {
   return undefined;
 }
 
-/** AC3 ruling 3: while an item is settled or matched the batch cannot be cancelled, nor revised in its money (steps, trial balance, cut-off); `next` = what the revision would make it. A notes-only edit stays free. */
+/** F2: the bank accounts this batch opened that now have an imported statement. The statement runs on from the go-live the batch set, so the opening it fixed (that account's bank step, the cut-off) cannot move or go; there is no way to un-import. */
+export const importedBanks = (st: MockState, d: { id: string; companyId?: string; opening?: DocOpening }): string[] =>
+  (d.opening?.bank ?? []).map((b) => b.accountId).filter((a) => st.bankImports.some((i) => i.accountId === a && (!d.companyId || i.companyId === d.companyId)) || st.bankLines.some((l) => l.accountId === a && (l.matches?.length ?? 0) > 0));
+const importLock = (st: MockState, d: { id: string; opening?: DocOpening }): Lock | undefined => {
+  const doc = st.docs.find((x) => x.id === d.id), banks = importedBanks(st, { id: d.id, companyId: doc?.companyId, opening: d.opening });
+  return banks.length ? { kind: 'reconciliation', reason: `บัญชีธนาคารที่ยอดยกมานี้เปิดไว้ (${banks.map((a) => st.bankAccounts.find((b) => b.id === a)?.nameTh ?? a).join(', ')}) มี statement นำเข้าแล้ว`, exits: ['แก้ไขยอดยกมา (ขั้นตอนอื่น รายการอื่น หรือบัญชีอื่นแก้ได้ แต่ยอด statement ของบัญชีนี้และวันตัดยอดต้องคงเดิม)'] } : undefined;
+};
+export const obLock = (st: MockState, batchId: string): Lock | undefined => itemLock(st, batchId) ?? importLock(st, { id: batchId, opening: st.docs.find((x) => x.id === batchId)?.opening });
+
+/** AC3 ruling 3: while an item is settled or matched the batch cannot be cancelled, nor revised in its money (steps, trial balance, cut-off); `next` = what the revision would make it. A notes-only edit stays free.
+ *  F2: an imported statement on an account it opened locks only that account's bank step and the cut-off (and cancel); everything else stays revisable. */
 export function refuseObLocked(st: MockState, d: { id: string; header: DocHeader; lines: DocLine[]; opening?: DocOpening },
   next?: { header: DocHeader; lines: DocLine[]; opening?: DocOpening }): void {
-  const lock = obLock(st, d.id);
-  if (!lock) return;
-  const key = (x: { header: DocHeader; lines: DocLine[]; opening?: DocOpening }) => JSON.stringify([x.header.documentDate, x.opening ?? null, x.lines.map((l) => [l.accountCode, toSatang(l.debit ?? '0.00'), toSatang(l.credit ?? '0.00'), l.partyId ?? ''])]);
+  const lock = itemLock(st, d.id);
+  if (!lock) {
+    const il = importLock(st, d);
+    if (!il) return;
+    const bankKey = (x: { opening?: DocOpening }, a: string) => JSON.stringify((plainOpening(x.opening) as { bank: unknown[] } | undefined)?.bank.filter((b) => (b as { accountId: string }).accountId === a) ?? []);
+    if (next && next.header.documentDate === d.header.documentDate && importedBanks(st, d).every((a) => bankKey(next, a) === bankKey(d, a))) return;
+    throw new MockError(409, 'ob.locked', `${il.reason} — ${next ? 'แก้ไขยอด statement ของบัญชีนี้หรือวันตัดยอดไม่ได้' : 'ยกเลิกยอดยกมาไม่ได้'} ทางออก: ${il.exits[0]}`);
+  }
+  const key = (x: { header: DocHeader; lines: DocLine[]; opening?: DocOpening }) => JSON.stringify([x.header.documentDate, plainOpening(x.opening) ?? null, x.lines.map((l) => [l.accountCode, toSatang(l.debit ?? '0.00'), toSatang(l.credit ?? '0.00'), l.partyId ?? ''])]);
   if (next && key(next) === key(d)) return;
   throw new MockError(409, 'ob.locked', `${lock.reason} — ${next ? 'แก้ไขยอดยกมาไม่ได้' : 'ยกเลิกยอดยกมาไม่ได้'} ทางออก: ${lock.exits[0]}`);
 }

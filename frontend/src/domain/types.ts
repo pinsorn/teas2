@@ -68,12 +68,14 @@ export interface DocHeader { partyId?: string; documentDate: IsoDate; dueDate?: 
   /** JV, server-owned (never accepted from a caller): the JV this one reverses; `autoReversal` = the system's own reversal of an `autoReverse` accrual. */ reversalOf?: string; autoReversal?: true }
 /** AC3 opening balances. `side`: AR / AP = customer / vendor invoices, EMP = owed to an employee (2180), DEP = customer deposit (2140), PRE = vendor prepayment (1140). */
 export type ObSide = 'AR' | 'AP' | 'EMP' | 'DEP' | 'PRE';
-export interface ObOpenItem { side: ObSide; partyId: string; docNumber: string; docDate: IsoDate; dueDate?: IsoDate; amount: Money }
+/** `id` and `partyName` are server-owned (set at issue / revise: the id survives a revise that echoes it, the name is the party's AS OF that write and never re-read). */
+export interface ObOpenItem { id?: string; partyName?: string; side: ObSide; partyId: string; docNumber: string; docDate: IsoDate; dueDate?: IsoDate; amount: Money }
 export interface ObAsset { name: string; assetClass: string; cost: Money; accumulated: Money; acquired: IsoDate; lifeMonths: number }
 export interface ObPayrollYtd { employeeId: string; income: Money; pit: Money; sso: Money }
 /** One bank / cash account: the statement balance at the cut-off (signed) and its in-transit items (deposits in transit / outstanding payments). GL line = statement + deposits - payments. */
-export interface ObBank { accountId: string; statement: Money; inTransit: { kind: 'deposit' | 'payment'; date: IsoDate; description: string; amount: Money }[] }
-export interface DocOpening { openItems: ObOpenItem[]; assets: ObAsset[]; payrollYtd: ObPayrollYtd[]; bank: ObBank[] }
+export interface ObBank { accountId: string; statement: Money; inTransit: { id?: string; kind: 'deposit' | 'payment'; date: IsoDate; description: string; amount: Money }[] }
+/** `codes` is server-owned: the account each role / asset class / bank account resolved to AS OF the issue or revise that wrote it (the journal reads these, never the live posting rules). */
+export interface DocOpening { openItems: ObOpenItem[]; assets: ObAsset[]; payrollYtd: ObPayrollYtd[]; bank: ObBank[]; codes?: Record<string, string> }
 /** What the opening-balance check says (compute): each controlled account against its step (`tb` = the trial-balance line, `sub` = the step total, both debit-normal), and the 3900 plug. */
 export interface ObCheck { debit: Money; credit: Money; plug: Money; plugSide: 'Dr' | 'Cr' | null; ties: { key: string; label: string; code: string; tb: Money; sub: Money; ok: boolean }[] }
 /** `cash` = money that moves: received (RC) / paid (PV). `wht` = withholding tax of the document. */

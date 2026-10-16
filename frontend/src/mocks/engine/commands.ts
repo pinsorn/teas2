@@ -14,7 +14,7 @@ import { fromSatang, toSatang } from './money';
 import { adjustSnapshot, hasSnapshot, isNote, noteHeader, noteMissing, noteProblem, withNoteVat } from './notes';
 import { SeriesAllocator } from './numbering';
 import { refuseObLocked, refuseReconciled, refuseSettled } from './locks';
-import { buildOb, cancelObItems, obCalc, obMissing, obProblem, obTotals, syncObItems } from './opening';
+import { buildOb, cancelObItems, EMPTY_OPENING, freezeOpening, obCalc, obMissing, obProblem, obTotals, plainOpening, syncObItems } from './opening';
 import { firstOpenDate, isClosed, monthLabelTh } from './periods';
 import { balanceOf, certError, cleanAllocations, fiscalAllocations, freezeWht, groupTotals, payDefaults, payLines, payoutOf, resolvedBankId, settleExtras, settleProblem, settleTotals, withBankSnapshot } from './settlement';
 import { syncWts } from './wht-certificates';
@@ -402,7 +402,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   let body: Body = { header: header0, lines: vendorNoteLines(st, d.companyId, d.type, { header: header0, lines: d.lines }), ...(d.allocations ? { allocations: d.allocations } : {}), ...(d.opening ? { opening: d.opening } : {}) }; // C1: categories as of now
   const missing = missingOf(st, d.companyId, d.type, body);
   if (missing.length) throw incomplete(missing);
-  if (d.type === 'OB') { const op = obProblem(st, d.companyId, body); if (op) throw op; } // AC3: the cut-off, the steps and the ties; the closed-period refusal of D-10 does not apply to an opening balance (D-10 exemption)
+  if (d.type === 'OB') { body = { ...body, opening: freezeOpening(st, d.companyId, id, body.opening ?? EMPTY_OPENING) }; const op = obProblem(st, d.companyId, body); if (op) throw op; } // AC3: the cut-off, the steps and the ties; the closed-period refusal of D-10 does not apply to an opening balance (D-10 exemption). F1 / F3: party names, account codes and item ids are stamped here and never re-read
   else if (!opts?.keepDate) dateGuards(st, d.companyId, d.header.documentDate); // D-10
   if (!opts?.keepDate && !isPinned() && (d.type === 'RC' || d.type === 'PV')) { // R1-2: a new receipt / voucher cannot put an entry on a bank GL before its go-live
     const live = goLiveOf(st, d.companyId, resolvedBankId(st, d.companyId, d.type, d.header));
@@ -587,7 +587,7 @@ export const approvalOnRevise = () => new MockError(422, 'approval.required_on_r
 /** `opts.approver`: the person who also approves this revise (C1) - the caller passes one only if they hold the approve right. */
 export function revise(st: MockState, id: string, raw: Body, version: number, reason: string, actor: Actor, opts?: { approver?: Actor }): Doc {
   const d = getDoc(st, id);
-  const body = reviseBody(st, d, raw);
+  let body = reviseBody(st, d, raw);
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_revisable', 'แก้ไขได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   checkVersion(d, version);
   if (d.correctionClass === 'T' && isFiscalChange(d, body)) {
@@ -595,7 +595,11 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   }
   if (d.correctionClass === 'L' && blockingLocks(d).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก แก้ไขไม่ได้');
   if (d.correctionClass !== 'T') { const m = missingOf(st, d.companyId, d.type, body); if (m.length) throw incomplete(m); }
-  if (d.type === 'OB') { refuseObLocked(st, d, { header: body.header, lines: body.lines, opening: body.opening }); const op = obProblem(st, d.companyId, body, d.id); if (op) throw op; } // AC3: settled / matched items keep the batch as it is (a notes-only edit passes); then the cut-off, the steps and the ties (D-10 exemption)
+  if (d.type === 'OB') {
+    // F1 / F3: a revise that changes the steps or the cut-off re-freezes from this request + the master data NOW (the items are re-synced with it); any other revise keeps what the issue froze, so the journal and the items cannot part
+    const same = stableJson(plainOpening(body.opening ?? d.opening ?? EMPTY_OPENING)) === stableJson(plainOpening(d.opening ?? EMPTY_OPENING)) && body.header.documentDate === d.header.documentDate;
+    body = { ...body, opening: same && d.opening ? d.opening : freezeOpening(st, d.companyId, id, body.opening ?? d.opening ?? EMPTY_OPENING, d.opening) };
+    refuseObLocked(st, d, { header: body.header, lines: body.lines, opening: body.opening }); const op = obProblem(st, d.companyId, body, d.id); if (op) throw op; } // AC3: settled / matched items keep the batch as it is (a notes-only edit passes); then the cut-off, the steps and the ties (D-10 exemption)
   else if (body.header.documentDate !== d.header.documentDate) dateGuards(st, d.companyId, body.header.documentDate); // a moved date follows the issue rules
   refusePartyChange(st, d, body);
   refuseNonPositive(st, d.companyId, d.type, body, d.id);

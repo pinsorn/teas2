@@ -65,11 +65,13 @@ export function buildOb(st: MockState, companyId: string, body: Part): { lines: 
     lines.push({ accountCode: code, accountName: nameOf(st, companyId, code), debit: money(Math.max(net, 0)), credit: money(Math.max(-net, 0)), rule, ...(party ? { partyName: party } : {}) });
   };
   const replaced = new Set<string>(); // accounts whose trial-balance line is stated by a step instead
-  const partyName = (id: string) => st.parties.find((p) => p.id === id && p.companyId === companyId)?.name ?? id;
+  const frozenName = new Map(op.openItems.filter((i) => i.partyName).map((i) => [i.partyId, i.partyName!])); // AS OF the issue / revise that wrote it: a rename later moves nothing
+  const partyName = (id: string) => frozenName.get(id) ?? st.parties.find((p) => p.id === id && p.companyId === companyId)?.name ?? id;
+  const acct = (role: AccountingRole, cls?: string) => op.codes?.[cls ? `${role}:${cls}` : role] ?? codeOf(st, companyId, role, cls); // likewise the account each role resolved to (labels - account names - stay live)
 
   // 2 + 4: the sub-ledgers, per party
   for (const [side, def] of Object.entries(SIDES) as [ObSide, (typeof SIDES)[ObSide]][]) {
-    const items = op.openItems.filter((i) => i.side === side), code = codeOf(st, companyId, def.role), sg = def.dr ? 1 : -1;
+    const items = op.openItems.filter((i) => i.side === side), code = acct(def.role), sg = def.dr ? 1 : -1;
     replaced.add(code);
     tie(side, `${def.label} (ขั้นตอนที่ 2)`, code, tbNet(code), items.reduce((n, i) => n + sg * (satOf(i.amount) || 0), 0), def.dr);
     if (used.some((l) => l.accountCode === code && l.partyId)) { // trial-balance lines named per party: each party's line ties to that party's items
@@ -80,20 +82,21 @@ export function buildOb(st: MockState, companyId: string, body: Part): { lines: 
     for (const p of new Set(items.map((i) => i.partyId))) line(code, sg * items.filter((i) => i.partyId === p).reduce((n, i) => n + (satOf(i.amount) || 0), 0), `${RULE}: ${def.role} → ${code}`, partyName(p));
   }
   // 1: bank / cash accounts: statement balance + deposits in transit - outstanding payments
-  const bankCodes = new Set(st.bankAccounts.filter((b) => b.companyId === companyId).map((b) => b.accountCode));
+  const bankCodes = new Set([...st.bankAccounts.filter((b) => b.companyId === companyId).map((b) => b.accountCode), ...op.bank.map((b) => op.codes?.[`BANK:${b.accountId}`]).filter((c): c is string => !!c)]);
   const bankSub = new Map<string, number>();
   for (const b of op.bank) {
-    const acct = bankOf(st, companyId, b.accountId);
-    if (!acct) continue;
+    const ba = bankOf(st, companyId, b.accountId);
+    if (!ba) continue;
+    const bcode = op.codes?.[`BANK:${b.accountId}`] ?? ba.accountCode;
     const net = (satOf(b.statement) || 0) + b.inTransit.reduce((n, t) => n + (t.kind === 'deposit' ? 1 : -1) * (satOf(t.amount) || 0), 0);
-    bankSub.set(acct.accountCode, (bankSub.get(acct.accountCode) ?? 0) + net);
-    line(acct.accountCode, net, `${RULE}: ${acct.nameTh} (ยอด statement + รายการระหว่างทาง)`);
+    bankSub.set(bcode, (bankSub.get(bcode) ?? 0) + net);
+    line(bcode, net, `${RULE}: ${ba.nameTh} (ยอด statement + รายการระหว่างทาง)`);
   }
   for (const code of bankCodes) { replaced.add(code); tie(`BANK:${code}`, 'เงินสด/ธนาคาร (ขั้นตอนที่ 1 ยอด statement + รายการระหว่างทาง)', code, tbNet(code), bankSub.get(code) ?? 0, true); }
   // 3: fixed assets and their accumulated depreciation, by the account their class posts to
   const assetSub = new Map<string, number>();
   for (const a of op.assets) {
-    const cost = codeOf(st, companyId, 'FixedAsset', a.assetClass), acc = codeOf(st, companyId, 'AccumulatedDepreciation', a.assetClass);
+    const cost = acct('FixedAsset', a.assetClass), acc = acct('AccumulatedDepreciation', a.assetClass);
     assetSub.set(cost, (assetSub.get(cost) ?? 0) + (satOf(a.cost) || 0)); assetSub.set(acc, (assetSub.get(acc) ?? 0) - (satOf(a.accumulated) || 0));
   }
   for (const a of st.accounts) if (a.companyId === companyId && (a.subClass === 'fixed-asset' || a.subClass === 'accumulated-depreciation')) {
@@ -108,7 +111,7 @@ export function buildOb(st: MockState, companyId: string, body: Part): { lines: 
   }
   const dr = lines.reduce((n, l) => n + toSatang(l.debit), 0), cr = lines.reduce((n, l) => n + toSatang(l.credit), 0), diff = dr - cr;
   if (diff !== 0) {
-    const eq = codeOf(st, companyId, 'OpeningBalanceEquity');
+    const eq = acct('OpeningBalanceEquity');
     lines.push({ accountCode: eq, accountName: nameOf(st, companyId, eq), debit: money(Math.max(-diff, 0)), credit: money(Math.max(diff, 0)), rule: PLUG_TH });
   }
   return { lines, check: { debit: money(Math.max(dr, cr)), credit: money(Math.max(dr, cr)), plug: money(Math.abs(diff)), plugSide: diff === 0 ? null : diff > 0 ? 'Cr' : 'Dr', ties } };
@@ -188,6 +191,31 @@ export function obProblem(st: MockState, companyId: string, body: Part, selfId?:
   return undefined;
 }
 
+// ---------------------------------------------------------------- freeze at issue / revise
+
+/** The opening without its server-owned fields (ids, frozen names, frozen codes): what a caller means, to compare a request with the stored batch. */
+export const plainOpening = (op: DocOpening | undefined): unknown => op && ({ openItems: op.openItems.map(({ id: _i, partyName: _n, ...r }) => (void _i, void _n, r)), assets: op.assets, payrollYtd: op.payrollYtd,
+  bank: op.bank.map((b) => ({ ...b, inTransit: b.inTransit.map(({ id: _i, ...r }) => (void _i, r)) })) });
+/** F1 / F3: stamps what the journal derives from editable data onto the opening AS OF this write - each item's party name, the account of every role / asset class / bank account - and gives every item a server-owned id.
+ *  An id the caller echoes is kept only if `prev` (the batch as stored) holds it; anything else gets a fresh id that no item of the batch ever had. A caller's names and codes are replaced. */
+export function freezeOpening(st: MockState, companyId: string, batchId: string, op: DocOpening, prev?: DocOpening): DocOpening {
+  const own = new Set([...(prev?.openItems ?? []).map((i) => i.id), ...(prev?.bank ?? []).flatMap((b) => b.inTransit.map((t) => t.id))].filter((x): x is string => !!x));
+  const taken = new Set(st.docs.filter((d) => d.header.obBatchId === batchId).map((d) => d.id)); // dropped items keep their (cancelled) rows: their ids are never reused
+  const fresh = (prefix: string): string => { let k = 1; while (taken.has(`${prefix}${k}`)) k++; taken.add(`${prefix}${k}`); return `${prefix}${k}`; };
+  const pick = (id: string | undefined, prefix: string): string => { if (id && own.has(id) && !seen.has(id)) { seen.add(id); return id; } return fresh(prefix); };
+  const seen = new Set<string>();
+  for (const id of own) taken.add(id);
+  const codes: Record<string, string> = {};
+  for (const def of Object.values(SIDES)) codes[def.role] = codeOf(st, companyId, def.role);
+  codes.OpeningBalanceEquity = codeOf(st, companyId, 'OpeningBalanceEquity');
+  for (const a of op.assets) for (const r of ['FixedAsset', 'AccumulatedDepreciation'] as const) codes[`${r}:${a.assetClass}`] = codeOf(st, companyId, r, a.assetClass);
+  for (const b of op.bank) { const ba = bankOf(st, companyId, b.accountId); if (ba) codes[`BANK:${b.accountId}`] = ba.accountCode; }
+  const name = (id: string) => st.parties.find((p) => p.id === id && p.companyId === companyId)?.name ?? id;
+  return { ...op, codes,
+    openItems: op.openItems.map((i) => ({ ...i, id: pick(i.id, `${batchId}-i`), partyName: name(i.partyId) })),
+    bank: op.bank.map((b) => ({ ...b, inTransit: b.inTransit.map((t) => ({ ...t, id: pick(t.id, `${batchId}-t${b.accountId}-`) })) })) };
+}
+
 // ---------------------------------------------------------------- issue / revise / cancel side effects
 
 /** (Re)creates the frozen items of a live batch and sets the go-live of its bank accounts. The caller has judged the body. Previous items of the batch are replaced (revise: nothing settled or matched, the lock saw to it). */
@@ -199,15 +227,16 @@ export function syncObItems(st: MockState, ob: Stored, actor: Actor): void {
   const fresh: Stored[] = [];
   op.openItems.forEach((it, i) => {
     const p = st.parties.find((x) => x.id === it.partyId && x.companyId === co)!, { companyId: _c, ...party } = p; void _c;
+    if (it.partyName) party.name = it.partyName; // the name frozen with the journal, whatever the master data says now
     const amount = fromSatang(toSatang(it.amount));
-    fresh.push({ ...base, id: `${ob.id}-i${i + 1}`, number: `${it.docNumber.trim()} (ยกมา)`, party, totals: totals(amount), outstanding: amount,
+    fresh.push({ ...base, id: it.id ?? `${ob.id}-i${i + 1}`, number: `${it.docNumber.trim()} (ยกมา)`, party, totals: totals(amount), outstanding: amount,
       header: { partyId: it.partyId, documentDate: it.docDate, ...(it.dueDate ? { dueDate: it.dueDate } : {}), reference: it.docNumber.trim(), obBatchId: ob.id, obSide: it.side } });
   });
   for (const b of op.bank) {
     const acct = bankOf(st, co, b.accountId)!;
     b.inTransit.forEach((t, i) => {
       const amount = fromSatang(toSatang(t.amount));
-      fresh.push({ ...base, id: `${ob.id}-t${b.accountId}-${i + 1}`, number: `${t.description.trim()} (ยกมา)`, totals: totals(amount, true),
+      fresh.push({ ...base, id: t.id ?? `${ob.id}-t${b.accountId}-${i + 1}`, number: `${t.description.trim()} (ยกมา)`, totals: totals(amount, true),
         header: { documentDate: t.date, reference: t.description.trim(), bankAccountId: b.accountId, obBatchId: ob.id, obKind: t.kind === 'deposit' ? 'DIT' : 'OP' } });
     });
     acct.goLive = nextDay(ob.header.documentDate); acct.goLiveBy = ob.id;
@@ -253,8 +282,8 @@ export function obInvariants(st: MockState): string[] {
     for (const t of built.check.ties) if (!t.ok) out.push(`${d.id}: OB ${t.label} ${t.code}: trial balance ${t.tb} but the step says ${t.sub}`);
     if (toSatang(d.totals.total) !== toSatang(built.check.debit)) out.push(`${d.id}: OB total ${d.totals.total} is not its journal debit ${built.check.debit}`);
     const op = d.opening ?? EMPTY_OPENING, items = itemsOf(st, d.id).filter((x) => LIVE.includes(x.status));
-    const want = [...op.openItems.map((i, n) => `${d.id}-i${n + 1}|${i.side}|${i.partyId}|${satOf(i.amount)}`), ...op.bank.flatMap((b) => b.inTransit.map((t, n) => `${d.id}-t${b.accountId}-${n + 1}|${t.kind === 'deposit' ? 'DIT' : 'OP'}|${b.accountId}|${satOf(t.amount)}`))].sort().join(',');
-    const have = items.map((x) => `${x.id}|${x.header.obSide ?? x.header.obKind}|${x.header.partyId ?? x.header.bankAccountId}|${satOf(x.totals.total)}`).sort().join(',');
+    const want = [...op.openItems.map((i, n) => `${i.id ?? `${d.id}-i${n + 1}`}|${i.side}|${i.partyId}|${satOf(i.amount)}|${i.partyName ?? ''}`), ...op.bank.flatMap((b) => b.inTransit.map((t, n) => `${t.id ?? `${d.id}-t${b.accountId}-${n + 1}`}|${t.kind === 'deposit' ? 'DIT' : 'OP'}|${b.accountId}|${satOf(t.amount)}|`))].sort().join(',');
+    const have = items.map((x) => `${x.id}|${x.header.obSide ?? x.header.obKind}|${x.header.partyId ?? x.header.bankAccountId}|${satOf(x.totals.total)}|${x.header.partyId ? x.party?.name ?? '' : ''}`).sort().join(',');
     if (want !== have) out.push(`${d.id}: OB items [${have}] but its steps list [${want}]`);
     for (const b of op.bank) { const a = bankOf(st, co, b.accountId); if (a?.goLive !== nextDay(d.header.documentDate) || a.goLiveBy !== d.id) out.push(`${d.id}: bank account ${b.accountId} is not in go-live at cut-off + 1 by this batch`); }
   }
