@@ -181,6 +181,8 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   if (!edited && initial?.status === 'approved' && (autosave.status === 'pending' || autosave.status === 'saving')) setEdited(true);
   const needsApproval = mode !== 'revise' && !!compute.data?.approvalRequired && (initial?.status !== 'approved' || edited);
   const bothRights = !!me?.permissions.includes(`doc.${d.type}.approve`) && !!me?.permissions.includes(d.permissions.issue);
+  const canApprove = !!me?.permissions.includes(`doc.${d.type}.approve`);
+  const reviseNeedsApprover = mode === 'revise' && !!compute.data?.approvalRequired; // C1: the revise raises the money above what was approved - the approver saves it, nobody else can
   const submitMode = needsApproval && !bothRights;
   const approveIssueMode = needsApproval && bothRights;
   const canAct = !!me?.permissions.includes(mode === 'revise' || submitMode ? d.permissions.create : d.permissions.issue);
@@ -188,6 +190,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
     : autosave.status === 'conflict' ? 'conflict'
     : amountEditor && withholds && whtTypes.isError ? 'whtTypes'
     : compute.pending || compute.error || partyBusy || picking || (amountEditor && withholds && whtTypes.isPending) ? 'computing'
+    : reviseNeedsApprover && !canApprove ? 'reviseApproval'
     : missing?.length ? 'missing' : undefined;
   const ready = canAct && !why;
   const dialogOpen = confirmOpen || (want === payloadJson && ready);
@@ -255,7 +258,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
 
   const amounts = useMemo(() => Object.fromEntries((compute.data?.lines ?? []).map((l) => [l.id, l.net])), [compute.data]);
   const heading = mode === 'create' ? td('create') : mode === 'edit-draft' ? t('editDraft', { title }) : t('revise', { title });
-  const primaryLabel = mode === 'revise' ? t('saveRevision') : submitMode ? t('submitApproval') : td('issue');
+  const primaryLabel = mode === 'revise' ? (reviseNeedsApprover ? t('approveAndSaveRevision') : t('saveRevision')) : submitMode ? t('submitApproval') : td('issue');
   const conflict = autosave.status === 'conflict' || (issueError instanceof ApiError && issueError.problem.status === 409);
   const reload = <Button size="sm" variant="outline" onClick={() => window.location.reload()}>{t('reload')}</Button>;
 

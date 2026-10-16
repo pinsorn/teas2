@@ -25,10 +25,17 @@ export function approvalRequired(st: MockState, companyId: string, type: DocType
   return !!p?.enabled && (!p.minAmount || toSatang(total) > toSatang(p.minAmount));
 }
 
-/** Self-approval off: the person who created the document cannot approve it. */
+/** C1: does saving this revise of an issued document need an approver? Only when the new total is above both the old total and what was approved (0.00 when nothing was), and the policy wants approval at that total.
+ *  A lower total, or the same money, is free. */
+export function reviseNeedsApproval(st: MockState, d: Stored, newTotal: Money): boolean {
+  const covered = d.approval?.approvedBy ? toSatang(d.approval.amount ?? '0.00') : 0;
+  return approvalRequired(st, d.companyId, d.type, newTotal) && toSatang(newTotal) > toSatang(d.totals.total) && toSatang(newTotal) > covered;
+}
+
+/** Self-approval off: neither the creator, nor whoever last changed the money (I2), nor whoever sent it for approval can approve it. */
 export function refuseSelfApproval(st: MockState, d: Stored, actor: Actor): void {
-  if (policyOf(st, d.companyId, d.type)?.selfApproval === false && d.createdBy.id === actor.id) {
-    throw new MockError(403, 'approval.self_not_allowed', 'ผู้จัดทำอนุมัติเอกสารของตัวเองไม่ได้ (นโยบายการอนุมัติปิดการอนุมัติด้วยตนเอง) ให้ผู้มีสิทธิ์อนุมัติคนอื่นอนุมัติ');
+  if (policyOf(st, d.companyId, d.type)?.selfApproval === false && [d.createdBy.id, d.moneyBy?.id, d.approval?.submittedBy.id].includes(actor.id)) {
+    throw new MockError(403, 'approval.self_not_allowed', 'ผู้จัดทำ ผู้แก้ไขยอด หรือผู้ส่งอนุมัติ อนุมัติเอกสารของตัวเองไม่ได้ (นโยบายการอนุมัติปิดการอนุมัติด้วยตนเอง) ให้ผู้มีสิทธิ์อนุมัติคนอื่นอนุมัติ');
   }
 }
 
@@ -61,7 +68,7 @@ export function approve(st: MockState, id: string, version: number, actor: Actor
   if (d.status !== 'pending') throw new MockError(409, 'approval.not_pending', 'อนุมัติได้เฉพาะเอกสารที่รออนุมัติ');
   checkVersion(d, version);
   refuseSelfApproval(st, d, actor);
-  const next: Stored = { ...d, status: 'approved', approval: { ...d.approval!, approvedBy: actor, approvedAt: stamp() }, version: d.version + 1 };
+  const next: Stored = { ...d, status: 'approved', approval: { ...d.approval!, approvedBy: actor, approvedAt: stamp(), amount: d.totals.total }, version: d.version + 1 };
   put(st, next);
   logActivity(st, id, actor, 'approve');
   logAudit(st, actor, d.companyId, 'doc.approve', id, { status: 'pending' }, { status: 'approved' });

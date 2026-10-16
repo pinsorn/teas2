@@ -3,7 +3,7 @@ import type {
 } from '@/domain/types';
 import { ADJUSTS, CLASS, CONVERSIONS, DOC_TYPES, GROUPS, LIVE, SETTLES, isTypeAvailable } from '@/domain/doc-types';
 import type { MockState } from '../store';
-import { approvalRequired, refuseSelfApproval, refuseUnapprovedIssue, submit } from './approval';
+import { approvalRequired, refuseSelfApproval, refuseUnapprovedIssue, reviseNeedsApproval, submit } from './approval';
 import { dropAttachmentsOf } from './attachments';
 import { consumed, fmtQ, q4 } from './chain';
 import { ledgerFor, reversalOf } from './ledger';
@@ -276,7 +276,7 @@ export function compute(st: MockState, companyId: string, type: DocType, raw: Bo
   const pp = purchaseProblem(st, companyId, type, body); // input VAT rules of a vendor's invoice: shown before issue too
   if (pp) missing.push({ field: ({ 'pb.claim_period_out_of_range': 'header.claimPeriod', 'pcn.claim_period_fixed': 'header.claimPeriod', 'pb.vendor_invoice_after_document': 'header.vendorDocDate' } as Record<string, string>)[pp.code] ?? 'lines', message: pp.title });
   return { lines: c.lines, totals, missing, journal: ledgerFor(st, { ...doc, companyId }), ...settleExtras(st, companyId, type, body),
-    ...(!opts?.docId && approvalRequired(st, companyId, type, totals.total) ? { approvalRequired: true } : {}) }; // the editor swaps issue for submit / approve-and-issue (§7.6)
+    ...((opts?.docId ? !!own0 && LIVE.includes(own0.status) && reviseNeedsApproval(st, own0, totals.total) : approvalRequired(st, companyId, type, totals.total)) ? { approvalRequired: true } : {}) }; // the editor swaps issue for submit / approve-and-issue (§7.6), and a revise that raises the money above what was approved asks for the approver (C1)
 }
 
 /** `opts.id` is used verbatim (seed runner only; handlers never pass it). */
@@ -291,6 +291,10 @@ export function createDraft(st: MockState, companyId: string, type: DocType, bod
   return publicDoc(d);
 }
 
+/** Did a save change the money of the document (its total, its lines or who is paid how much)? That person becomes `moneyBy` (I2). */
+const moneyChanged = (d: Stored, total: Money, body: Body): boolean =>
+  total !== d.totals.total || !sameLines(body.lines, d.lines) || fiscalAllocations(body.allocations) !== fiscalAllocations(d.allocations);
+
 export function updateDraft(st: MockState, id: string, raw: Body, version: number, actor: Actor): Doc {
   const d = getDoc(st, id);
   if (d.status === 'pending') throw new MockError(409, 'approval.pending', 'เอกสารนี้รออนุมัติ แก้ไขไม่ได้ ให้ผู้อนุมัติส่งกลับแก้ไขก่อน');
@@ -298,8 +302,9 @@ export function updateDraft(st: MockState, id: string, raw: Body, version: numbe
   checkVersion(d, version);
   const body = stored(st, d.companyId, d.type, raw, undefined, d.header);
   const { allocations: _a, approval: _ap, ...rest } = d; void _a; void _ap; // editing an approved document returns it to draft (§7.6): the approval goes, it must be sent again
-  const next: Stored = { ...rest, status: 'draft', header: body.header, lines: body.lines, totals: totalsOf(st, d.companyId, d.type, body), party: partyOf(st, d.companyId, body.header.partyId),
-    version: d.version + 1, ...(body.allocations ? { allocations: body.allocations } : {}) };
+  const totals = totalsOf(st, d.companyId, d.type, body);
+  const next: Stored = { ...rest, status: 'draft', header: body.header, lines: body.lines, totals, party: partyOf(st, d.companyId, body.header.partyId),
+    version: d.version + 1, ...(body.allocations ? { allocations: body.allocations } : {}), ...(moneyChanged(d, totals.total, body) ? { moneyBy: actor } : {}) }; // I2: the one who changed the money
   put(st, next);
   if (d.status === 'approved') logActivity(st, id, actor, 'send_back', 'แก้ไขหลังอนุมัติ ต้องส่งอนุมัติใหม่');
   logActivity(st, id, actor, 'update');
@@ -309,7 +314,7 @@ export function updateDraft(st: MockState, id: string, raw: Body, version: numbe
 
 export function deleteDraft(st: MockState, id: string, version: number, actor: Actor): void {
   const d = getDoc(st, id);
-  if (d.status !== 'draft') throw new MockError(409, 'doc.not_draft', 'ลบได้เฉพาะเอกสารฉบับร่าง');
+  if (d.status !== 'draft') throw new MockError(409, 'doc.not_draft', d.status === 'pending' || d.status === 'approved' ? 'ลบเอกสารที่ส่งอนุมัติแล้วไม่ได้ ให้ผู้อนุมัติส่งกลับแก้ไขก่อน แล้วลบฉบับร่าง' : 'ลบได้เฉพาะเอกสารฉบับร่าง');
   checkVersion(d, version);
   st.docs = st.docs.filter((x) => x.id !== id);
   st.links = st.links.filter((l) => l.from !== id && l.to !== id);
@@ -384,7 +389,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   const next: Stored = {
     ...d, header: body.header, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', totals, party: partyOf(st, d.companyId, d.header.partyId),
     version: d.version + 1, issuedAt: stamp(), ...(hasOut(d.type) ? { outstanding: totals.total } : {}),
-    ...(opts?.approver ? { approval: { submittedBy: d.approval?.submittedBy ?? actor, submittedAt: d.approval?.submittedAt ?? stamp(), approvedBy: opts.approver, approvedAt: stamp() } } : {}),
+    ...(opts?.approver ? { approval: { submittedBy: d.approval?.submittedBy ?? actor, submittedAt: d.approval?.submittedAt ?? stamp(), approvedBy: opts.approver, approvedAt: stamp(), amount: totals.total } } : {}),
   };
   if (hasSnapshot(d.type)) next.adjustSnapshot = adjustSnapshot(st, getDoc(st, d.header.refDocId!), next); // the ม.86/10 values as of now: the paper reads them, never recomputes
   put(st, next);
@@ -426,7 +431,7 @@ export function approveAndIssue(st: MockState, id: string, version: number, acto
 /** `opts.correction`: the cancel is a step of a correction plan, so its reversal follows the correction rule (original date while open) instead of today. */
 export function cancel(st: MockState, id: string, version: number, reasonCode: string, reasonText: string, actor: Actor, opts?: { correction?: boolean }): Doc {
   const d = getDoc(st, id);
-  if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_cancellable', 'ยกเลิกได้เฉพาะเอกสารที่ออกแล้ว');
+  if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_cancellable', d.status === 'pending' || d.status === 'approved' ? 'ยังไม่ได้ออกเอกสาร ยกเลิกไม่ได้ ให้ผู้อนุมัติส่งกลับแก้ไขก่อน แล้วลบฉบับร่าง' : 'ยกเลิกได้เฉพาะเอกสารที่ออกแล้ว');
   checkVersion(d, version);
   // SP0 §7.5: a period lock does not block cancel (blockingLocks leaves it out); the other locks do.
   if (blockingLocks(d).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ยกเลิกไม่ได้');
@@ -520,12 +525,21 @@ function certNote(d: Stored, body: Body): string | undefined {
 }
 
 /** Revise in place (classes N and L). A T-class document only accepts non-fiscal changes here; fiscal ones go through a correction plan. */
-export function revise(st: MockState, id: string, raw: Body, version: number, reason: string, actor: Actor): Doc {
-  const d = getDoc(st, id);
+function reviseBody(st: MockState, d: Stored, raw: Body): Body {
   const keepBank = keepOmitted(d, raw.header); // absent bank account / dimensions mean "unchanged": the company default must not fill the bank in (it would read as a move)
   const sent = stored(st, d.companyId, d.type, { ...raw, header: keepBank, lines: keepCategories(d, raw.lines), allocations: raw.allocations ?? d.allocations }, d.allocations, d.header);
   const kept = keepNoteLines(d, sent); // an API caller cannot send the engine-set VAT back: the issued lines stand
-  const body = withWht(st, d.companyId, d.type, kept, d); // C1: the stored WHT stands unless the voucher's own money changed
+  return withWht(st, d.companyId, d.type, kept, d); // C1: the stored WHT stands unless the voucher's own money changed
+}
+
+/** C1: would revising `d` to `raw` need an approver? (A correction plan asks before it is shown.) Throws what the revise itself would on a malformed body. */
+export const reviseNeedsApprover = (st: MockState, d: Stored, raw: Body): boolean => reviseNeedsApproval(st, d, totalsOf(st, d.companyId, d.type, reviseBody(st, d, raw), d.id).total);
+export const approvalOnRevise = () => new MockError(422, 'approval.required_on_revise', 'การแก้ไขนี้ทำให้ยอดสูงกว่ายอดที่ได้รับอนุมัติ ต้องได้รับอนุมัติใหม่ ให้ผู้มีสิทธิ์อนุมัติเป็นผู้แก้ไข (หรือยกเลิกแล้วสร้างใหม่และส่งอนุมัติ)');
+
+/** `opts.approver`: the person who also approves this revise (C1) - the caller passes one only if they hold the approve right. */
+export function revise(st: MockState, id: string, raw: Body, version: number, reason: string, actor: Actor, opts?: { approver?: Actor }): Doc {
+  const d = getDoc(st, id);
+  const body = reviseBody(st, d, raw);
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_revisable', 'แก้ไขได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   checkVersion(d, version);
   if (d.correctionClass === 'T' && isFiscalChange(d, body)) {
@@ -554,9 +568,17 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   const fin0 = isNote(d.type) ? withNoteVat(st, d.companyId, d.type, body, d.id) : body; // a revised vendor note: rule B again, the note itself not among its own predecessors
   const fin = { ...fin0, header: withClaimPeriod(st, d.companyId, d.type, fin0.header) }; // a bill is always filed in a claim period: the vendor invoice month unless one was chosen; a PCN keeps none
   const { allocations: _a, ...rest } = d; void _a;
+  const totals = totalsOf(st, d.companyId, d.type, fin, d.id);
+  const reapprove = reviseNeedsApproval(st, d, totals.total); // C1: more money than was approved needs an approver in the same command
+  if (reapprove) {
+    if (!opts?.approver) throw approvalOnRevise();
+    refuseSelfApproval(st, { ...d, moneyBy: actor }, opts.approver); // the person making this change is now the one who set the money
+  }
   const next: Stored = {
-    ...rest, header: fin.header, lines: fin.lines, totals: totalsOf(st, d.companyId, d.type, fin, d.id), party: partyOf(st, d.companyId, fin.header.partyId),
+    ...rest, header: fin.header, lines: fin.lines, totals, party: partyOf(st, d.companyId, fin.header.partyId),
     revision: d.revision + 1, version: d.version + 1, ...(fin.allocations ? { allocations: fin.allocations } : {}), ...(fin.whtFrozen ? { whtFrozen: fin.whtFrozen } : {}),
+    ...(moneyChanged(d, totals.total, fin) ? { moneyBy: actor } : {}),
+    ...(reapprove ? { approval: { submittedBy: actor, submittedAt: stamp(), approvedBy: opts!.approver, approvedAt: stamp(), amount: totals.total } } : {}),
   };
   const marks = afterRevision(d); // a quotation's customer answer is void once it is revised
   if (marks) next.marks = marks; else delete next.marks;
@@ -584,6 +606,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   const at = stamp();
   st.revisions.push({ docId: id, revision: next.revision, at, actor, reason, snapshot: publicDoc(getDoc(st, id)), diff: diffBody(d, fin) });
   logActivity(st, id, actor, 'revise', certNote(d, body) ?? reason);
+  if (reapprove) { logActivity(st, id, opts!.approver!, 'approve', 'อนุมัติการแก้ไข'); logAudit(st, opts!.approver!, d.companyId, 'doc.approve', id, { amount: d.approval?.amount }, { amount: totals.total }); }
   logAudit(st, actor, d.companyId, 'doc.revise', id, { revision: d.revision }, { revision: next.revision, reason });
   return publicDoc(getDoc(st, id));
 }
@@ -593,7 +616,6 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   const old = getDoc(st, id);
   if (!LIVE.includes(old.status)) throw new MockError(409, 'doc.not_correctable', 'ออกใหม่ได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   if (blockingLocks(old).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ออกใหม่ไม่ได้');
-  if (approvalRequired(st, old.companyId, old.type, old.totals.total)) throw new MockError(422, 'approval.required', 'เอกสารประเภทนี้ต้องได้รับอนุมัติก่อนออก ออกใหม่โดยตรงไม่ได้ ให้ยกเลิกเอกสารเดิมแล้วสร้างฉบับร่างใหม่และส่งอนุมัติ'); // a reissue is an issue path too
   if (st.links.some((l) => l.to === id && l.active)) throw new MockError(409, 'doc.has_dependents', 'มีเอกสารอ้างอิงอยู่ ต้องยกเลิกเอกสารนั้นก่อน');
   let body = stored(st, old.companyId, old.type, { ...raw, allocations: raw.allocations ?? old.allocations }, old.allocations);
   if (SETTLES[old.type] && fiscalAllocations(body.allocations) !== fiscalAllocations(old.allocations)) { // the links are carried as they are
@@ -607,6 +629,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   if (isNote(old.type)) { const np = noteProblem(st, old.companyId, old.type, body, old.id); if (np) throw np; }
   body = withWht(st, old.companyId, old.type, withNoteVat(st, old.companyId, old.type, body, old.id), old);
   const totals = totalsOf(st, old.companyId, old.type, body, old.id);
+  if (approvalRequired(st, old.companyId, old.type, totals.total)) throw new MockError(422, 'approval.required', 'เอกสารประเภทนี้ต้องได้รับอนุมัติก่อนออก ออกใหม่โดยตรงไม่ได้ ให้ยกเลิกเอกสารเดิมแล้วสร้างฉบับร่างใหม่และส่งอนุมัติ'); // a reissue is an issue path too: the NEW total is judged (M1)
   if (dated && totals.total !== old.totals.total) {
     throw new MockError(422, 'doc.reissue_total_changed', 'ออกใหม่ต้องใช้ยอดเดิม ยอดต่างต้องใช้ใบลดหนี้/ใบเพิ่มหนี้');
   }

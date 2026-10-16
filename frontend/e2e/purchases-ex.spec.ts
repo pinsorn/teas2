@@ -79,6 +79,7 @@ test('the vendor tax invoice of a line: with it the VAT is claimed (1170), witho
   await page.getByLabel('เลขประจำตัวผู้เสียภาษีผู้ขาย').fill('1234567890123'); // wrong check digit
   await page.getByLabel('เลขที่ใบกำกับภาษี').fill('INV-9');
   await page.getByLabel('วันที่ใบกำกับภาษี').fill('2026-10-12');
+  await page.getByRole('checkbox', { name: /ใบกำกับภาษีเต็มรูป/ }).check(); // ม.86/4: only a full tax invoice made out to the company is claimable
   await expect(missing(page)).toContainText('เลขประจำตัวผู้เสียภาษีของผู้ขายไม่ถูกต้อง'); // the server's rule, shown before issue
   await page.getByLabel('เลขประจำตัวผู้เสียภาษีผู้ขาย').fill('0105560001235');
   await expect(missing(page)).toHaveText(/ครบแล้ว/);

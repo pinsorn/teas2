@@ -2,6 +2,7 @@
 import { useTranslations } from 'next-intl';
 import { useId } from 'react';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { inputVatExpired } from '@/domain/claim-window';
@@ -19,7 +20,8 @@ export function VendorInvoiceFields({ lines, documentDate, onChange }: { lines: 
   const id = useId();
   const taxed = lines.map((l, i) => ({ l, n: i + 1 })).filter(({ l }) => l.taxCode === 'S7' && !isBlankLine(l));
   if (!taxed.length) return null;
-  const set = (lineId: string, k: keyof VendorInvoice, v: string) =>
+  type Field = 'vendorName' | 'vendorTin' | 'number' | 'date';
+  const set = (lineId: string, k: Field | 'fullTaxInvoice', v: string | boolean) =>
     onChange(lines.map((l) => (l.id === lineId ? { ...l, vendorInvoice: { ...(l.vendorInvoice ?? BLANK), [k]: v } } : l)));
   return (
     <section aria-labelledby={`${id}-t`} className="grid gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
@@ -27,7 +29,7 @@ export function VendorInvoiceFields({ lines, documentDate, onChange }: { lines: 
       <p className="text-small text-muted-foreground">{t('hint')}</p>
       {taxed.map(({ l, n }) => {
         const v = l.vendorInvoice ?? BLANK;
-        const field = (k: keyof VendorInvoice, extra: Record<string, unknown> = {}) => (
+        const field = (k: Field, extra: Record<string, unknown> = {}) => (
           <div className="grid gap-1.5">
             <Label htmlFor={`${id}-${l.id}-${k}`}>{t(k)}<span className="sr-only"> {n}</span></Label>
             <Input id={`${id}-${l.id}-${k}`} autoComplete="off" value={v[k]} onChange={(e) => set(l.id, k, e.target.value)} {...extra} />
@@ -41,6 +43,10 @@ export function VendorInvoiceFields({ lines, documentDate, onChange }: { lines: 
               {field('vendorTin', { inputMode: 'numeric', maxLength: 13 })}
               {field('number')}
               {field('date', { type: 'date', max: documentDate || undefined })}
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox id={`${id}-${l.id}-full`} checked={v.fullTaxInvoice === true} onCheckedChange={(c) => set(l.id, 'fullTaxInvoice', c === true)} />
+              <Label htmlFor={`${id}-${l.id}-full`}>{t('fullTaxInvoice')}<span className="sr-only"> {n}</span></Label>
             </div>
             {v.date && documentDate && inputVatExpired(documentDate, v.date) ? <Badge variant="outline" data-testid="line-invoice-expired" className="w-fit">{t('expired')}</Badge> : null}
           </fieldset>

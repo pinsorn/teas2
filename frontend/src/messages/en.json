@@ -494,8 +494,8 @@
     "confirmSubmit": { "body": "The document waits for approval: no document number and nothing posted until it is approved and issued." },
     "confirmApprove": { "body": "The system approves and issues the document in one step: it gets its number and is posted now." },
     "vendorInvoice": {
-      "title": "Vendor tax invoice (input VAT)", "hint": "Input VAT is claimed only on a line with the vendor's complete tax invoice (Revenue Code s.82/3, s.86/4). Leave it empty and that line's VAT is cost.",
-      "line": "Line {n}: {description}", "vendorName": "Vendor name", "vendorTin": "Vendor tax ID", "number": "Tax invoice number", "date": "Tax invoice date",
+      "title": "Vendor tax invoice (input VAT)", "hint": "Input VAT is claimed only on a line with the vendor's complete full tax invoice made out to the company (Revenue Code s.82/3, s.86/4). Leave it empty and that line's VAT is cost.",
+      "line": "Line {n}: {description}", "vendorName": "Vendor name", "vendorTin": "Vendor tax ID", "number": "Tax invoice number", "date": "Tax invoice date", "fullTaxInvoice": "Full tax invoice made out to the company",
       "expired": "Past the claim window (s.82/3) — this line's VAT is recorded as cost"
     },
     "editDraft": "Edit draft {title}",
@@ -660,6 +660,7 @@
     },
     "save": "Save draft",
     "saveRevision": "Save changes",
+    "approveAndSaveRevision": "Approve and save changes",
     "preview": "Document preview",
     "journal": "View journal entry", "journalNeedsPermission": "Requires the View ledger permission (ledger.read)",
     "status": {
@@ -679,6 +680,7 @@
       "missing": "Not complete yet, see \"What is still missing\"",
       "conflict": "Someone changed this document first. Reload before issuing.",
       "permission": "You do not have permission to do this",
+      "reviseApproval": "The new total is above the approved amount. Ask someone who can approve to make this change.",
       "saving": "Saving the draft"
     },
     "shortcuts": "Ctrl+Enter issue  ·  Ctrl+S save draft",

@@ -38,7 +38,8 @@ export interface DocLine { id: string; itemId?: string; description: string; qty
   /** EX line with VAT: the vendor's tax invoice behind it (ม.82/3, ม.86/4). Without all four details the line's VAT is cost (InputVatUnclaimed), never input VAT; with them the claim window of the invoice date applies, per line. */
   vendorInvoice?: VendorInvoice }
 /** The vendor's tax invoice an expense-claim line carries: who issued it (name, TIN), its number and its date. */
-export interface VendorInvoice { vendorName: string; vendorTin: string; number: string; date: IsoDate }
+export interface VendorInvoice { vendorName: string; vendorTin: string; number: string; date: IsoDate;
+  /** The employee confirms it is a FULL tax invoice made out to the company (ม.86/4): only then is its VAT claimable; false or absent = cost. */ fullTaxInvoice?: boolean }
 export type WhtMode = 'deduct' | 'grossup_once' | 'grossup_always';
 /** One settled open item of an RC / PV: `amount` clears the target, `wht` is what the customer withheld (RC) on that part. */
 export interface Allocation { targetId: string; targetType: DocType; targetNumber?: string; amount: Money; wht?: Money;
@@ -80,7 +81,9 @@ export interface Doc { id: string; type: DocType; number?: string; status: DocSt
   /** How many times the print action was used on this issued document (derived from the print log on every read, never stored); 0 / absent = not printed yet, so the next print is the ต้นฉบับ. */ printCount?: number;
   /** An agent-created document: the id of the agent's check report ("ดูรายงานการตรวจ"). */ agentReportId?: string;
   /** Approval trail (§7.6), server-written: who sent the document for approval and who approved it. Gone when the document goes back to draft. */
-  approval?: { submittedBy: Actor; submittedAt: string; approvedBy?: Actor; approvedAt?: string };
+  approval?: { submittedBy: Actor; submittedAt: string; approvedBy?: Actor; approvedAt?: string; /** The total the approver approved (server-written): a later revise above it needs approval again (C1). */ amount?: Money };
+  /** Who last changed the money of this document (a draft save, a revise; server-written): with self-approval off this person cannot approve it either (I2). Absent = the creator. */
+  moneyBy?: Actor;
   /** A DRAFT the approval policy wants approved before it can be issued (derived on every read from the policy and the total, never stored): the screen offers submit / approve-and-issue. */
   approvalRequired?: boolean }
 /** One approval rule of a company (ST3 edits them): `minAmount` = approval is needed only ABOVE this total; `selfApproval` = the creator may approve their own document. */

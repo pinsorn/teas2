@@ -2,7 +2,7 @@ import type { Actor, Allocation, ChainEdge, CorrectionNote, CorrectionPlan, Corr
 import { PERMISSIONS_BY_ROLE } from '../permissions';
 import type { MockState } from '../store';
 import {
-  type Body, LIVE, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, keepNoteLines, keepOmitted, markReplaced, refuseBelowSettled, refuseNonPositive, refusePartyChange, refuseUnissuableReceipt, refuseUnrevisablePurchase, reissue, revise, stableJson, totalsOf,
+  type Body, LIVE, approvalOnRevise, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, keepNoteLines, keepOmitted, markReplaced, refuseBelowSettled, refuseNonPositive, refusePartyChange, refuseUnissuableReceipt, refuseUnrevisablePurchase, reissue, revise, reviseNeedsApprover, stableJson, totalsOf,
 } from './commands';
 import { MockError, today } from './log';
 import { fromSatang, toSatang } from './money';
@@ -97,6 +97,7 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
     refuseNonPositive(st, d.companyId, d.type, proposed);
     refuseBelowSettled(st, d, proposed); // an IV / PB cannot be revised below what is already received / paid: say so before the plan is shown
     refuseUnrevisablePurchase(st, d, proposed); // a PB under live notes, an unregistered vendor's VAT, a claim period out of range, more than the PO has left
+    if (reviseNeedsApprover(st, d, proposed) && !PERMISSIONS_BY_ROLE[role].includes(`doc.${d.type}.approve`)) throw approvalOnRevise(); // C1: more money than was approved - a plan nobody here may run is never shown
     add('revise', d, `แก้ไข ${label} (เลขที่เดิม เพิ่มรุ่นแก้ไข)`, `doc.${d.type}.correct`);
     explanation = 'การแก้ไขนี้ไม่กระทบภาษี แก้ไขในเอกสารเดิมและเก็บประวัติการแก้ไข';
   } else {
@@ -174,7 +175,7 @@ export function correctionPlan(st: MockState, id: string, proposed: Body, role: 
 
 /** `rcLinks`: what each receipt of the plan had active BEFORE the plan's cancel step (amount + WHT per target), captured when the plan starts to run.
  *  `moved`: invoices reissued by the plan (old id -> new id), so a receipt's link follows its invoice. */
-interface Ctx { planId: string; planDocId: string; newTi?: string; touched: string[]; rcLinks: Map<string, (ChainEdge & { companyId: string })[]>; moved: Map<string, string> }
+interface Ctx { granted: string[]; planId: string; planDocId: string; newTi?: string; touched: string[]; rcLinks: Map<string, (ChainEdge & { companyId: string })[]>; moved: Map<string, string> }
 
 /** The reason a correction's note is issued with (reference data [SP-R]): a partial note is a price change, a full credit is "other" with the correction as the text. */
 const reasonOf = (n: CorrectionNote) => n.type === 'DN' ? { reasonCode: 'PRICE_INCREASE' }
@@ -184,7 +185,7 @@ function runStep(w: MockState, s: CorrectionStep, proposed: Body, actor: Actor, 
   const doc = getDoc(w, s.docId);
   const touch = (...ids: string[]) => { for (const x of ids) if (!c.touched.includes(x)) c.touched.push(x); };
   if (s.action === 'revise') {
-    revise(w, doc.id, proposed, doc.version, 'แก้ไขตามแผนการแก้ไข', actor);
+    revise(w, doc.id, proposed, doc.version, 'แก้ไขตามแผนการแก้ไข', actor, c.granted.includes(`doc.${doc.type}.approve`) ? { approver: actor } : undefined); // C1: the plan's runner approves the raise if their role holds the right
     touch(doc.id);
   } else if (s.action === 'cancel') {
     cancel(w, doc.id, doc.version, 'CORRECTION', 'ยกเลิกเพื่อแก้ไขเอกสารต้นทาง', actor, { correction: true });
@@ -246,7 +247,7 @@ export function executePlan(st: MockState, planId: string, planHash: string, act
   if (missing.length) throw new MockError(403, 'auth.forbidden', `ต้องมีสิทธิ์ ${missing.join(', ')}`);
   if (!plan.steps.length) throw new MockError(422, 'correction.empty_plan', 'แผนนี้ไม่มีขั้นตอน');
   const work = structuredClone(st);
-  const c: Ctx = { planId, planDocId: stored.docId, touched: [], rcLinks: new Map(), moved: new Map() };
+  const c: Ctx = { granted, planId, planDocId: stored.docId, touched: [], rcLinks: new Map(), moved: new Map() };
   for (const s of plan.steps) {
     if (s.action === 'reissue' && s.docType === 'RC') c.rcLinks.set(s.docId, work.links.filter((l) => l.from === s.docId && l.kind === 'settles' && l.active).map((l) => structuredClone(l)));
   }

@@ -9,7 +9,7 @@ import { MockError } from './log';
 
 /** EX (expense claim, §7.6): owed to an employee (2180), VAT only with the vendor's tax invoice behind the line, paid by a PV with nothing withheld. Every scenario drives the real commands. */
 const TIN = '010556000123' + tinCheckDigit('010556000123');
-const inv = (date: string, p: Partial<VendorInvoice> = {}): VendorInvoice => ({ vendorName: 'ร้านเครื่องเขียนสยาม', vendorTin: TIN, number: 'INV-1', date, ...p });
+const inv = (date: string, p: Partial<VendorInvoice> = {}): VendorInvoice => ({ vendorName: 'ร้านเครื่องเขียนสยาม', vendorTin: TIN, number: 'INV-1', date, fullTaxInvoice: true, ...p });
 const L = (id: string, taxCode: DocLine['taxCode'], price: string, p: Partial<DocLine> = {}): DocLine => ({ id, description: `รายการ ${id}`, qty: '1', unit: 'ครั้ง', unitPrice: price, taxCode, expenseCategory: 'supplies', ...p });
 const get = (st: MockState, id: string) => st.docs.find((d) => d.id === id)!;
 let n = 0;
@@ -190,7 +190,7 @@ describe('revising an issued claim (L-class)', () => {
     const st = buildSeedState();
     const d = claim(st, [L('a', 'EX', '500.00', { expenseCategory: 'transport' })]);
     const x = get(st, d.id);
-    revise(st, x.id, { header: x.header, lines: [{ ...x.lines[0], unitPrice: '650.00' }] }, x.version, 'ราคาผิด', me);
+    revise(st, x.id, { header: x.header, lines: [{ ...x.lines[0], unitPrice: '650.00' }] }, x.version, 'ราคาผิด', me, { approver: me }); // 650.00 is above the 500.00 that was approved: approved in the same command (C1)
     const entries = st.journals.find((j) => j.docId === d.id)!.preview.entries;
     expect(entries.map((e) => e.kind)).toEqual(['original', 'reversal', 'correction']);
     expect(entries.every((e) => !!e.postedAt)).toBe(true);

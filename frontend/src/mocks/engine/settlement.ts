@@ -246,6 +246,10 @@ export function payError(st: MockState, companyId: string, type: DocType, body: 
   if (!SETTLES[type]) return undefined;
   const h = body.header;
   if (h.bankAccountId && !st.bankAccounts.some((b) => b.id === h.bankAccountId && b.companyId === companyId)) return new MockError(422, 'pay.invalid_bank_account', 'บัญชีธนาคารที่เลือกไม่ใช่ของบริษัทนี้');
+  // I1: money to an employee is a reimbursement of claims only - no own lines (their WHT would be a ภ.ง.ด.3 certificate to an employee, and no approval stands behind them)
+  if (type === 'PV' && payeeOf(st, companyId, h.partyId).kind === 'employee' && (body.lines.length > 0 || !body.allocations?.length || body.allocations.some((x) => x.targetType !== 'EX'))) {
+    return new MockError(422, 'pv.employee_claims_only', 'ใบสำคัญจ่ายถึงพนักงานจ่ายได้เฉพาะใบเบิกค่าใช้จ่ายที่อนุมัติแล้ว ไม่มีรายการของตัวเอง บันทึกเป็นใบเบิกค่าใช้จ่ายแล้วจ่ายจากใบเบิก');
+  }
   if (type === 'RC' && money(h.depositAmount, 'rc.invalid_deposit') < 0) return new MockError(422, 'rc.invalid_deposit', 'เงินรับล่วงหน้าต้องไม่ติดลบ');
   if (type === 'PV' && body.lines.some((l) => l.taxCode !== 'EX')) {
     return new MockError(422, 'pv.input_vat_needs_bill', 'ใบสำคัญจ่ายไม่มีภาษีซื้อ รายการที่มีภาษีซื้อต้องมีใบกำกับภาษี กด “บันทึกซื้อ (มีใบกำกับภาษี)” เพื่อบันทึกเป็นบันทึกซื้อแล้วจ่ายชำระ');

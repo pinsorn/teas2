@@ -13,7 +13,7 @@ export const isVendorBill = (t: DocType): boolean => t === 'PB' || t === 'PCN' |
  *  Judged on what the line CARRIES: a line with no tax invoice has VAT that is cost, whatever its tax code says. */
 export const invoiceComplete = (v: Partial<VendorInvoice> | undefined): v is VendorInvoice => !!v && !!v.vendorName?.trim() && !!v.vendorTin?.trim() && !!v.number?.trim() && !!v.date;
 /** True when the input VAT of this EX line is NOT claimable: no complete vendor tax invoice, or the invoice's window had closed when the claim was recorded (D > V+6). */
-export const exForfeited = (h: Pick<DocHeader, 'documentDate'>, l: DocLine): boolean => !invoiceComplete(l.vendorInvoice) || inputVatExpired(h.documentDate, l.vendorInvoice.date);
+export const exForfeited = (h: Pick<DocHeader, 'documentDate'>, l: DocLine): boolean => !invoiceComplete(l.vendorInvoice) || l.vendorInvoice.fullTaxInvoice !== true || inputVatExpired(h.documentDate, l.vendorInvoice.date); // ม.86/4: only a FULL tax invoice made out to the company is claimable (M2)
 
 /** The expense category of a purchase line: the code STORED on the line (C1). A posted line never reads the item master; `snapshotCategories` copies the item's category onto the line at save / revise / issue. */
 export const categoryOf = (_st: MockState, _companyId: string, l: DocLine): ExpenseCategory | undefined => EXPENSE_CATEGORIES.find((c) => c.code === l.expenseCategory);
@@ -30,9 +30,9 @@ export const snapshotCategories = (st: MockState, companyId: string, lines: DocL
 export const cleanInvoices = (lines: DocLine[]): DocLine[] => lines.map((l) => {
   const v = l.vendorInvoice;
   if (!v) return l;
-  const t: VendorInvoice = { vendorName: (v.vendorName ?? '').trim(), vendorTin: (v.vendorTin ?? '').trim(), number: (v.number ?? '').trim(), date: v.date ?? '' };
+  const t: VendorInvoice = { vendorName: (v.vendorName ?? '').trim(), vendorTin: (v.vendorTin ?? '').trim(), number: (v.number ?? '').trim(), date: v.date ?? '', ...(v.fullTaxInvoice === true ? { fullTaxInvoice: true } : {}) };
   const { vendorInvoice: _v, ...rest } = l; void _v;
-  return Object.values(t).every((x) => !x) ? rest : { ...rest, vendorInvoice: t };
+  return [t.vendorName, t.vendorTin, t.number, t.date].every((x) => !x) ? rest : { ...rest, vendorInvoice: t };
 });
 
 /** C1 (WHT): a PB line with no WHT type of its own takes its picked item's NOW and keeps it, so a later edit of the item master never moves what a voucher withholds (the same pattern as the category). */

@@ -18,7 +18,7 @@ const vendorDoc = (no: string, date: string, extra: Partial<DocHeader> = {}): Pa
 const mark = (id: string, key: MarkKey) => (st: MockState) => { setMark(st, id, key, st.docs.find((d) => d.id === id)!.version, USER); };
 const due = (date: string) => ({ dueDate: date }); // PO: "กำหนดรับของ"
 /** The vendor's tax invoice behind an expense-claim line (a fictional TIN with a correct check digit). */
-const inv = (vendorName: string, first12: string, number: string, date: string): { vendorInvoice: VendorInvoice } => ({ vendorInvoice: { vendorName, vendorTin: first12 + tinCheckDigit(first12), number, date } });
+const inv = (vendorName: string, first12: string, number: string, date: string): { vendorInvoice: VendorInvoice } => ({ vendorInvoice: { vendorName, vendorTin: first12 + tinCheckDigit(first12), number, date, fullTaxInvoice: true } });
 /** A 1 x 1 PNG: the photo of a receipt. */
 const PHOTO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 

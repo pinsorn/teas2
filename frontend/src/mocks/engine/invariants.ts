@@ -2,6 +2,7 @@ import { ADJUSTS, CREDIT_NOTES, DOC_TYPES, GROUPS, LIVE, SETTLES } from '@/domai
 import type { WhtLine, WhtMode } from '@/domain/types';
 import type { Doc } from '@/domain/types';
 import type { MockState } from '../store';
+import { approvalRequired } from './approval';
 import { consumed, q4 } from './chain';
 import { divRoundHalfAway, fromSatang, toSatang } from './money';
 import { resolveRole } from './posting';
@@ -421,6 +422,10 @@ export function checkInvariants(st: MockState): string[] {
       if (!d.approval?.submittedBy) out.push(`${d.id}: ${d.status} without an approval record (who sent it)`);
       if (d.status === 'approved' && !d.approval?.approvedBy) out.push(`${d.id}: approved without an approval record (who approved it)`);
     } else if (d.approval && !d.approval.approvedBy) out.push(`${d.id}: ${d.status} with an approval record that nobody approved`);
+    // C1: a live document the policy wants approved at its CURRENT total carries an approval that covers it (a revise above the approved amount is approved in the same command)
+    if (LIVE.includes(d.status) && approvalRequired(st, d.companyId, d.type, d.totals.total) && (!d.approval?.approvedBy || toSatang(d.approval.amount ?? '0.00') < toSatang(d.totals.total))) {
+      out.push(`${d.id}: ${d.type} total ${d.totals.total} needs approval but the approval ${d.approval?.approvedBy ? `covers only ${d.approval.amount ?? '0.00'}` : 'is missing'}`);
+    }
   }
 
   // numbering: gap-free per company x type x month, and the series counter agrees
