@@ -74,29 +74,17 @@ describe('C1 - a purchase line carries its resolved expense category; posting ne
   });
 });
 
-describe('I1 - the claim window starts at the vendor\'s tax-invoice date (ม.82/3)', () => {
+describe('I1 (round 2: D .. V+6, see purchase-fix2.test.ts) - the claim window starts at the vendor\'s tax-invoice month (ม.82/3)', () => {
   const issueWith = (header: Partial<Doc['header']>) => err(() => issueDraft(draftPb(VAT, 'pv-01', [L('a', 'S7', '100.00')], { documentDate: '2026-10-14', ...header }))).code ?? 'ok';
-  it('vendor invoice 2026-03, bill 2026-10: period 2027-04 is refused, 2026-09 is fine', () => {
-    expect(issueWith({ vendorDocDate: '2026-03-05', claimPeriod: '2027-04' })).toBe('pb.claim_period_out_of_range');
-    expect(issueWith({ vendorDocDate: '2026-03-05', claimPeriod: '2026-09' })).toBe('ok');
-    expect(issueWith({ vendorDocDate: '2026-03-05', claimPeriod: '2026-10' })).toBe('pb.claim_period_out_of_range');
-  });
-  it('the default period is the vendor invoice month; without a vendor date it is the document month', () => {
-    const a = pb(VAT, 'pv-01', [L('a', 'S7', '100.00')], { vendorDocDate: '2026-09-30' });
-    expect(get(a.id).header.claimPeriod).toBe('2026-09');
-    const b = pb(VAT, 'pv-01', [L('a', 'S7', '100.00')]);
-    expect(get(b.id).header.claimPeriod).toBe('2026-10');
-    assertBalanced(st);
-  });
   it('a vendor invoice dated after the bill is refused', () => {
     expect(issueWith({ vendorDocDate: '2026-10-15' })).toBe('pb.vendor_invoice_after_document');
   });
-  it('a PDN\'s window is anchored on its own vendor tax-invoice date', () => {
+  it('a PDN is judged on its own vendor invoice: inside the window it claims, outside it is cost', () => {
     const b = pb(VAT, 'pv-03', [L('a', 'S7', '1000.00', { expenseCategory: 'services' })]);
-    const bad = noteDraft(VAT, 'PDN', b, [L('n', 'S7', '100.00', { sourceLineId: 'a' })], { vendorDocDate: '2026-03-05', claimPeriod: '2027-04' });
-    expect(err(() => issueDraft(bad)).code).toBe('pb.claim_period_out_of_range');
-    const ok = noteDraft(VAT, 'PDN', b, [L('n', 'S7', '100.00', { sourceLineId: 'a' })], { vendorDocDate: '2026-03-05', claimPeriod: '2026-09' });
-    expect(err(() => issueDraft(ok)).code).toBeUndefined();
+    const late = issueDraft(noteDraft(VAT, 'PDN', b, [L('n', 'S7', '100.00', { sourceLineId: 'a' })], { vendorDocDate: '2026-03-05', claimPeriod: '2027-04' }));
+    expect(get(late.id).header.inputVatForfeited).toBe(true);
+    const ok = issueDraft(noteDraft(VAT, 'PDN', b, [L('n', 'S7', '100.00', { sourceLineId: 'a' })], { vendorDocDate: '2026-09-05', claimPeriod: '2027-03' }));
+    expect(get(ok.id).header.claimPeriod).toBe('2027-03');
     assertBalanced(st);
   });
 });
@@ -136,8 +124,8 @@ describe('I3 - unclaimable VAT on a capex line is part of the asset cost (TAS 16
   });
 });
 
-describe('M2 - the vendor\'s VAT status is a snapshot taken when the document is first saved', () => {
-  it('editing only the notes of an old bill still works after the vendor deregisters; a new bill takes a fresh snapshot', () => {
+describe('M2 - the vendor\'s VAT status is a snapshot taken at issue (round 2: R1-M1 / M2 in purchase-fix2.test.ts)', () => {
+  it('editing only the notes of an old bill still works after the vendor deregisters; a new bill is judged on the vendor as it is', () => {
     const b = pb(VAT, 'pv-03', [L('a', 'S7', '1000.00', { expenseCategory: 'services' })]);
     expect(get(b.id).header.vendorVatRegistered).toBe(true);
     st.parties.find((p) => p.id === 'pv-03' && p.companyId === VAT)!.vatRegistered = false;
@@ -147,7 +135,6 @@ describe('M2 - the vendor\'s VAT status is a snapshot taken when the document is
     const forged = revise(st, b.id, { header: { ...get(b.id).header, vendorVatRegistered: false }, lines: get(b.id).lines }, get(b.id).version, 'x', me);
     expect(forged.header.vendorVatRegistered).toBe(true);
     const fresh = draftPb(VAT, 'pv-03', [L('a', 'S7', '100.00')]);
-    expect(fresh.header.vendorVatRegistered).toBe(false);
     expect(err(() => issueDraft(fresh)).code).toBe('pb.vendor_not_vat_registered');
     expect(checkInvariants(st)).toEqual([]);
   });

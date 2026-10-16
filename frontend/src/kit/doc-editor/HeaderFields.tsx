@@ -3,9 +3,11 @@ import { useQuery } from '@tanstack/react-query';
 import { Fragment, type Dispatch, type SetStateAction } from 'react';
 import { useTranslations } from 'next-intl';
 import { useMe } from '@/app-shell/useMe';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { inputVatExpired } from '@/domain/claim-window';
 import type { HeaderFieldKey } from '@/domain/descriptors';
 import { ADJUSTS, REASON_CODES } from '@/domain/doc-types';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -50,14 +52,17 @@ function RefDocField({ id, refDocId, type }: { id: string; refDocId?: string; ty
   );
 }
 
-/** The month a claim period follows until one is chosen: the vendor's tax-invoice month (ม.82/3), else the document month. */
-const anchorMonth = (h: DocHeader): string => (h.vendorDocDate ?? h.documentDate).slice(0, 7);
+/** The month a claim period follows until one is chosen: the month the document is recorded in. */
+const anchorMonth = (h: DocHeader): string => h.documentDate.slice(0, 7);
 
-/** PB / PDN of a VAT company: the month the input VAT is claimed in (I6). Shown as the vendor tax-invoice month until one is chosen (a PCN has none: it is filed in its own month); a non-VAT company claims nothing, so it has no field. */
+/** PB / PDN of a VAT company: the month the input VAT is claimed in (I6). Shown as the document month until one is chosen (a PCN has none: it is filed in its own month); a non-VAT company claims nothing, so it has no field. */
 function ClaimPeriodField({ id, header, setHeader }: { id: string; header: DocHeader; setHeader: Dispatch<SetStateAction<DocHeader>> }) {
   const t = useTranslations('docEditor');
   const { me } = useMe();
   if (me?.vatRegistered === false) return null;
+  if (header.documentDate && inputVatExpired(header.documentDate, header.vendorDocDate)) { // R1-I1: nothing to claim - the server books the VAT as cost
+    return <Badge variant="outline" className="self-end" data-testid="input-vat-forfeited">{t('inputVatForfeited')}</Badge>;
+  }
   return (
     <div className="grid gap-1.5">
       <Label htmlFor={id}>{t('claimPeriod')}</Label>
@@ -135,10 +140,10 @@ export function HeaderFields({ type, keys, ids, header, setHeader }: {
       case 'vendorDocDate': return (
         <div className="grid gap-1.5">
           <Label htmlFor={`${ids}-vdate`}>{t('vendorDocDate')}</Label>
-          {/* PB / PDN: the vendor's tax-invoice date (defaults to the document date, never after it) anchors the claim window; a claim period that was just the old anchor month follows it */}
+          {/* PB / PDN: the vendor's tax-invoice date (defaults to the document date, never after it) starts the 6-month claim window */}
           <Input id={`${ids}-vdate`} type="date" max={type === 'PCN' ? undefined : header.documentDate || undefined} value={header.vendorDocDate ?? (type === 'PCN' ? '' : header.documentDate)}
             onChange={(e) => setHeader((h) => ({ ...h, vendorDocDate: e.target.value || undefined,
-              ...(keys.includes('claimPeriod') && (!h.claimPeriod || h.claimPeriod === anchorMonth(h)) ? { claimPeriod: undefined } : {}) }))} />
+            }))} />
         </div>
       );
       case 'claimPeriod': return <ClaimPeriodField id={`${ids}-claim`} header={header} setHeader={setHeader} />;

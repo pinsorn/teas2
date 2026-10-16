@@ -141,6 +141,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
           <StatusChip status={doc.status} />
           <MarksChips marks={doc.marks} />
           {doc.revision > 0 ? <span className="text-small text-muted-foreground">{t('header.revised', { n: doc.revision })}</span> : null}
+          {doc.header.inputVatForfeited ? <Badge variant="outline" data-testid="input-vat-forfeited">{t('header.inputVatForfeited')}</Badge> : null}
           {doc.header.complete === false ? <Badge variant="outline" data-testid="doc-incomplete">{t('header.incomplete')}</Badge> : null}
         </div>
         <h1 className="text-h1 font-semibold tabular-nums" data-testid="doc-number">{doc.number ?? tc('draftNoNumber')}</h1>

@@ -48,7 +48,8 @@ export interface DocHeader { partyId?: string; documentDate: IsoDate; dueDate?: 
   /** CN / DN: a code from REASON_CODES (reference data [SP-R]); OTHER needs reasonText. The paper prints the Thai wording, never the code. */ reasonCode?: string; reasonText?: string;
   /** PB / PCN / PDN: the number and date printed on the VENDOR's document (we record it, the vendor issued it). On a PB / PDN the date is the vendor's TAX INVOICE date (ม.82/3): the claim window starts at its month; absent = the document date, never after it. */ vendorDocNumber?: string; vendorDocDate?: IsoDate;
   /** PB / PCN / PDN (VAT company): the month 'YYYY-MM' the input VAT is claimed in, the month of the vendor's tax invoice .. +6 (I6, ม.82/3); the server fills that month at issue. A PCN has none: it is filed in the month of its document date. */ claimPeriod?: string;
-  /** PB / PCN / PDN: the vendor's VAT status when the document was first saved (M2). Server-owned: the ม.82/5 check judges against it, not the live party master. */ vendorVatRegistered?: boolean;
+  /** PB / PDN of a VAT company: the claim window of the vendor's tax invoice had closed when the document was recorded (ม.82/3), so its VAT is cost; a PCN follows its bill. Server-derived at issue and revise. */ inputVatForfeited?: boolean;
+  /** PB / PCN / PDN: the vendor's VAT status when the document was ISSUED (M2; a PCN inherits its bill's). Server-owned: the ม.82/5 check judges against it, not the live party master. */ vendorVatRegistered?: boolean;
   /** PB: the vendor paperwork is complete (เอกสารครบ). Absent = complete; `false` still issues but the Home inbox counts it (HC1). */ complete?: boolean }
 /** `cash` = money that moves: received (RC) / paid (PV). `wht` = withholding tax of the document. */
 export interface DocTotals { gross: Money; discount: Money; net: Money; vat: Money; total: Money; wht?: Money; cash?: Money;

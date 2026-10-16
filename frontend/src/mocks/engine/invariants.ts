@@ -5,7 +5,7 @@ import type { MockState } from '../store';
 import { consumed, q4 } from './chain';
 import { divRoundHalfAway, fromSatang, toSatang } from './money';
 import { resolveRole } from './posting';
-import { claimPeriodOf, isRecoverable } from './purchase-vat';
+import { claimPeriodOf, forfeitedOf, isRecoverable } from './purchase-vat';
 import { whtOf } from './settlement';
 import { computeDoc, vatOf } from './vat';
 
@@ -161,8 +161,9 @@ export function checkInvariants(st: MockState): string[] {
   const claimable = new Map<string, number>();
   for (const d of st.docs) {
     if (!LIVE.includes(d.status) || (d.type !== 'PB' && ADJUSTS[d.type] !== 'PB')) continue;
+    if (!!d.header.inputVatForfeited !== forfeitedOf(st, d.companyId, d.type, d.header)) out.push(`${d.id}: inputVatForfeited ${!!d.header.inputVatForfeited} but the claim window says ${!d.header.inputVatForfeited} (ม.82/3)`);
     const rows = computeDoc(d.lines, !!d.header.priceIncludesVat, true).lines;
-    const vat = d.lines.reduce((n, l, i) => n + (isRecoverable(st, d.companyId, l) ? sat(rows[i].vat, d.id) : 0), 0);
+    const vat = d.lines.reduce((n, l, i) => n + (isRecoverable(st, d.companyId, l, d.header.inputVatForfeited) ? sat(rows[i].vat, d.id) : 0), 0);
     const k = `${d.companyId}|${claimPeriodOf(d.type, d.header)}`;
     claimable.set(k, (claimable.get(k) ?? 0) + (CREDIT_NOTES.includes(d.type) ? -vat : vat));
   }

@@ -26,7 +26,7 @@ const purchase: Rows = (t, d, st, co) => {
   const rs = computeDoc(d.lines, !!d.header.priceIncludesVat, true).lines;
   const rows: RolePosting = d.lines.flatMap((l, i): RolePosting => {
     const cat = categoryOf(st, co, l), ctx = { itemId: l.itemId, expenseCategory: cat?.code ?? l.expenseCategory, dimensions: l.dimensions };
-    const net = toSatang(rs[i].net), vat = toSatang(rs[i].vat), claim = isRecoverable(st, co, l);
+    const net = toSatang(rs[i].net), vat = toSatang(rs[i].vat), claim = isRecoverable(st, co, l, d.header.inputVatForfeited);
     // I3: VAT that cannot be claimed is cost; on a capex line the cost is the asset's (TAS 16), elsewhere it is InputVatUnclaimed
     if (cat?.capex) return claim ? [['FixedAsset', net, 0, { ...ctx, assetClass: cat.assetClass }], ['InputVat', vat, 0]] : [['FixedAsset', net + vat, 0, { ...ctx, assetClass: cat.assetClass }]];
     return [['Expense', net, 0, ctx], [claim ? 'InputVat' : 'InputVatUnclaimed', vat, 0]];

@@ -3,7 +3,7 @@
   "docView": {
     "tabs": { "paper": "Paper", "chain": "Related documents", "ledger": "Ledger effect", "activity": "Activity", "revisions": "Revision history", "attachments": "Attachments" },
     "header": { "party": "Counterparty", "date": "Document date", "total": "Total", "outstanding": "Outstanding", "revised": "Revised {n} times", "progress": "Progress",
-      "vendorDoc": "Vendor document no.", "vendorDocDate": "Vendor document date", "claimPeriod": "Input VAT claim period", "incomplete": "Documents incomplete" },
+      "vendorDoc": "Vendor document no.", "vendorDocDate": "Vendor document date", "claimPeriod": "Input VAT claim period", "incomplete": "Documents incomplete", "inputVatForfeited": "Input VAT claim window expired (Sec. 82/3) - recorded as cost" },
     "lock": { "label": "Locked", "exits": "Ways forward" },
     "marks": { "accepted": "Customer accepted", "rejected": "Customer rejected", "delivered": "Delivered", "sent": "Sent to vendor", "closed": "Closed", "rejectedWhy": "Reason: {reason}" },
     "closedAlert": "The remainder of this document is closed, so nothing more can be converted; revise the document to reopen it",
@@ -489,7 +489,8 @@
     "vendorDocDate": "Vendor document date",
    
     "claimPeriod": "Input VAT claim period",
-    "claimPeriodHint": "The month of the vendor's tax invoice up to 6 months after it (Sec. 82/3)",
+    "claimPeriodHint": "From the month the document is recorded, up to 6 months after the vendor's tax invoice month (Sec. 82/3)",
+    "inputVatForfeited": "Input VAT claim window expired (Sec. 82/3) - recorded as cost",
     "complete": "Documents complete (the vendor's tax invoice has arrived)",
     "reason": "Reason",
     "reasonPick": "Choose a reason",

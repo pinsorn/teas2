@@ -59,15 +59,20 @@ describe('HeaderFields of a purchase bill', () => {
     await userEvent.type(d2, '2026-11-02');
     expect(last!.claimPeriod).toBe('2026-12');
   });
-  it('the vendor tax-invoice date defaults to the document date, and the claim period follows its month (ม.82/3)', async () => {
+  it('the vendor tax-invoice date defaults to the document date and may not pass it; the claim period stays the document month', async () => {
     let last: DocHeader | undefined;
     ui({ documentDate: '2026-10-14' }, (h) => { last = h; });
     const vt = await screen.findByLabelText('วันที่เอกสารของผู้ขาย');
     expect(vt).toHaveValue('2026-10-14');
     expect(vt).toHaveAttribute('max', '2026-10-14');
-    fireEvent.change(vt, { target: { value: '2026-03-05' } });
-    expect(last!.vendorDocDate).toBe('2026-03-05');
-    expect(screen.getByLabelText('งวดที่ขอคืนภาษีซื้อ')).toHaveValue('2026-03');
+    fireEvent.change(vt, { target: { value: '2026-09-05' } });
+    expect(last!.vendorDocDate).toBe('2026-09-05');
+    expect(screen.getByLabelText('งวดที่ขอคืนภาษีซื้อ')).toHaveValue('2026-10');
+  });
+  it('a bill recorded after the vendor invoice window closed shows the forfeit warning instead of a claim period', async () => {
+    ui({ documentDate: '2026-10-14', vendorDocDate: '2026-03-05' });
+    expect(await screen.findByTestId('input-vat-forfeited')).toHaveTextContent('ภาษีซื้อเกินกำหนดขอคืน');
+    expect(screen.queryByLabelText('งวดที่ขอคืนภาษีซื้อ')).toBeNull();
   });
   it('a non-VAT company has no claim period field', async () => {
     setSettings({ companyKey: 'nonvat' });

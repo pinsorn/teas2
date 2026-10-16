@@ -13,7 +13,7 @@ import { adjustSnapshot, hasSnapshot, isNote, noteHeader, noteMissing, noteProbl
 import { SeriesAllocator } from './numbering';
 import { firstOpenDate, isClosed, monthLabelTh } from './periods';
 import { balanceOf, certError, cleanAllocations, fiscalAllocations, groupTotals, payDefaults, settleExtras, settleProblem, settleTotals } from './settlement';
-import { isVendorBill, purchaseProblem, snapshotCategories, withClaimPeriod, withVendorStatus } from './purchase-vat';
+import { isVendorBill, issueVendorStatus, purchaseProblem, snapshotCategories, withClaimPeriod, withForfeit, withVendorStatus } from './purchase-vat';
 import { computeDoc, vatBasisOf, vatOf } from './vat';
 
 export type Body = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] };
@@ -132,6 +132,9 @@ export const sameLines = (a: DocLine[], b: DocLine[]) => JSON.stringify(a.map(({
 /** A note whose lines are unchanged keeps its issued lines (and their VAT) and its price basis: an API caller cannot send the engine-set VAT back, and the VAT is never recomputed from today's siblings (F4). */
 export const keepNoteLines = (d: Doc, body: Body): Body =>
   isNote(d.type) && sameLines(body.lines, d.lines) ? { ...body, header: { ...body.header, ...(d.header.priceIncludesVat ? { priceIncludesVat: true } : {}) }, lines: d.lines } : body;
+/** R1-M4: a PB / PCN / PDN line the API sends without a category keeps its stored one (same line id); only an explicit category changes it. */
+const keepCategories = (d: Doc, lines: DocLine[]): DocLine[] =>
+  !isVendorBill(d.type) ? lines : lines.map((l) => { const old = d.lines.find((x) => x.id === l.id)?.expenseCategory; return l.expenseCategory || !old ? l : { ...l, expenseCategory: old }; });
 /** An API proposal that leaves a field out (or sends a null bank account) means "unchanged", never "cleared": the stored bank account and dimensions stand. */
 export const keepOmitted = (d: Doc, h: DocHeader): DocHeader => ({
   ...h,
@@ -181,7 +184,7 @@ function stored(st: MockState, companyId: string, type: DocType, body: Body, kee
   // D-12: a VAT company's receipt settles tax invoices, it never sells (a cash bill is the non-VAT company's). Shape of the request, so it is refused where the body enters.
   if (type === 'RC' && body.lines.length && vatOf(st, companyId)) throw new MockError(422, 'rc.lines_need_invoice', 'บริษัทที่จดทะเบียน VAT ต้องออกใบกำกับภาษีก่อนรับชำระ');
   const allocations = cleanAllocations(st, companyId, type, body.allocations, keep);
-  return { header: withVendorStatus(st, companyId, type, noteHeader(st, companyId, type, payDefaults(st, companyId, type, body.header), body.lines), prev), lines: GROUPS[type] ? [] : vendorNoteLines(st, companyId, type, body), ...(allocations ? { allocations } : {}) };
+  return { header: withForfeit(st, companyId, type, withVendorStatus(st, companyId, type, noteHeader(st, companyId, type, payDefaults(st, companyId, type, body.header), body.lines), prev)), lines: GROUPS[type] ? [] : vendorNoteLines(st, companyId, type, body), ...(allocations ? { allocations } : {}) };
 }
 
 /** C1: every PB / PCN / PDN line stores its resolved expense category (the item's, when the line names none). A PCN / PDN line takes the category (and item) of the bill line it adjusts,
@@ -315,7 +318,8 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   const d = getDoc(st, id);
   if (d.status !== 'draft') throw new MockError(409, 'doc.not_draft', 'ออกได้เฉพาะเอกสารฉบับร่าง');
   checkVersion(d, version);
-  let body: Body = { header: d.header, lines: vendorNoteLines(st, d.companyId, d.type, { header: d.header, lines: d.lines }), ...(d.allocations ? { allocations: d.allocations } : {}) }; // C1: categories as of now
+  const header0 = issueVendorStatus(st, d.companyId, d.type, d.header); // R1-M2: the vendor's VAT status as of issue
+  let body: Body = { header: header0, lines: vendorNoteLines(st, d.companyId, d.type, { header: header0, lines: d.lines }), ...(d.allocations ? { allocations: d.allocations } : {}) }; // C1: categories as of now
   const missing = missingOf(st, d.companyId, d.type, body);
   if (missing.length) throw incomplete(missing);
   if (!opts?.keepDate) dateGuards(st, d.companyId, d.header.documentDate); // D-10
@@ -397,8 +401,8 @@ export function refuseOverConversion(st: MockState, d: Stored, body: Body): void
 /** A bill a live PCN / PDN adjusts keeps its lines, price basis and date (the notes reference its lines and are dated from it): exit = cancel the notes, or issue a further note. */
 function refuseFrozenByNotes(st: MockState, d: Stored, body: Body): void {
   if (d.type !== 'PB' || !st.links.some((l) => l.active && l.kind === 'adjusts' && l.to === d.id)) return;
-  if (!sameLines(body.lines, d.lines) || !!body.header.priceIncludesVat !== !!d.header.priceIncludesVat || body.header.documentDate !== d.header.documentDate) {
-    throw new MockError(422, 'pb.has_notes', 'แก้ไขรายการ ราคา หรือวันที่ของบันทึกซื้อนี้ไม่ได้ เพราะมีใบลดหนี้/ใบเพิ่มหนี้จากผู้ขายอ้างถึงอยู่ ยกเลิกใบลดหนี้/ใบเพิ่มหนี้ก่อน หรือบันทึกใบลดหนี้/ใบเพิ่มหนี้เพิ่ม');
+  if (!sameLines(body.lines, d.lines) || !!body.header.priceIncludesVat !== !!d.header.priceIncludesVat || body.header.documentDate !== d.header.documentDate || (body.header.vendorDocDate || undefined) !== d.header.vendorDocDate) {
+    throw new MockError(422, 'pb.has_notes', 'แก้ไขรายการ ราคา วันที่ หรือวันที่ใบกำกับภาษีของผู้ขายของบันทึกซื้อนี้ไม่ได้ เพราะมีใบลดหนี้/ใบเพิ่มหนี้จากผู้ขายอ้างถึงอยู่ ยกเลิกใบลดหนี้/ใบเพิ่มหนี้ก่อน หรือบันทึกใบลดหนี้/ใบเพิ่มหนี้เพิ่ม');
   }
 }
 
@@ -441,7 +445,7 @@ function certNote(d: Stored, body: Body): string | undefined {
 export function revise(st: MockState, id: string, raw: Body, version: number, reason: string, actor: Actor): Doc {
   const d = getDoc(st, id);
   const keepBank = keepOmitted(d, raw.header); // absent bank account / dimensions mean "unchanged": the company default must not fill the bank in (it would read as a move)
-  const sent = stored(st, d.companyId, d.type, { ...raw, header: keepBank, allocations: raw.allocations ?? d.allocations }, d.allocations, d.header);
+  const sent = stored(st, d.companyId, d.type, { ...raw, header: keepBank, lines: keepCategories(d, raw.lines), allocations: raw.allocations ?? d.allocations }, d.allocations, d.header);
   const kept = keepNoteLines(d, sent); // an API caller cannot send the engine-set VAT back: the issued lines stand
   const body = kept;
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_revisable', 'แก้ไขได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
