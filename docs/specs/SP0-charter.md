@@ -464,7 +464,7 @@ template — not copying a service. TEAS 1 evidence: the lifecycle was re-implem
 |---|---|---|---|---|
 | QT, SO, DO, BL, PO | edit / delete | revision (N) | yes, with reason | convert, duplicate, close (PO) |
 | IV | edit / delete | revision (L) | yes; blocked while settlements exist → exit: un-apply them first | duplicate |
-| TI | edit / delete | non-fiscal edit; reissue; CN / DN | yes; blocked while a receipt is applied → exit: cancel / reissue the receipt first | duplicate |
+| TI | edit / delete | non-fiscal edit; reissue; CN / DN | yes; blocked while a receipt is applied → exit: cancel / reissue the receipt first; blocked while a live CN / DN adjusts it → exit: cancel the notes first (ADR-0002) | duplicate |
 | RC | edit / delete | non-fiscal edit; reissue | yes; blocked when bank-reconciled → exit: unmatch first | — |
 | CN, DN | edit / delete | non-fiscal edit; reissue | yes | — |
 | PB, PCN, PDN | edit / delete | revision (L), subject to filing lock | yes | PCN / PDN for vendor-issued corrections |
