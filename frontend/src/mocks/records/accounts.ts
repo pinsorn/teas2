@@ -81,6 +81,10 @@ export const accountImpl: RecordKindImpl = {
       if (changed.length) throw new MockError(422, 'account.in_use', `แก้${changed.join(' / ')}ของบัญชี ${prev.code} ไม่ได้ เพราะมีรายการบัญชีแล้ว (แก้ชื่อและการจับคู่งบการเงินได้ ถ้าต้องการเปลี่ยนให้เปิดบัญชีใหม่แล้วโอนยอดด้วยสมุดรายวัน)`);
     }
 
+    // a controlled account (one a document / screen owns) is never reclassified out of control, used or not
+    if (prev && (cls !== prev.class || sub !== prev.subClass) && (controlExit(st, companyId, prev.code) || controlExit(st, companyId, prev.code, 'jv'))) {
+      throw new MockError(422, 'account.controlled', `แก้หมวดบัญชี/ประเภทย่อยของบัญชี ${prev.code} ไม่ได้ เพราะเป็นบัญชีควบคุมที่เอกสารหรือหน้าจอเฉพาะเป็นเจ้าของ (${controlExit(st, companyId, prev.code, 'jv') ?? controlExit(st, companyId, prev.code)})`);
+    }
     if (!code || !/^\d{4,6}$/.test(code)) add('code', 'รหัสบัญชีต้องเป็นตัวเลข 4–6 หลัก');
     else if (mine(st, companyId).some((a) => a.code === code && a.code !== id)) add('code', 'รหัสบัญชีนี้ใช้แล้ว');
     else if (prev && code !== prev.code) {

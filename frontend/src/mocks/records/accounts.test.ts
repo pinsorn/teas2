@@ -61,6 +61,24 @@ describe('chart of accounts record (AC2)', () => {
     expect((await put('1150', { code: '1140' })).json.fieldErrors?.code).toEqual(['รหัสบัญชีนี้ใช้แล้ว']);
   });
 
+  it('renaming the header 1100 does not break bank accounts: the GL picker still lists the cash / bank accounts and a bank-account edit saves (review F1)', async () => {
+    expect((await put('1100', { code: '1101' })).status).toBe(200);
+    const gl = (await call('GET', '/finance/bank-gl-accounts')).json as unknown as { code: string }[];
+    expect(gl.map((a) => a.code)).toEqual(['1110', '1120', '1121', '1122', '1123']);
+    const b = (await call('GET', '/records/bank-account/ba-scb')).json as RecordRow;
+    const r = await call('PUT', '/records/bank-account/ba-scb', { kind: 'bank', bankName: 'scb', accountNo: '405-2-11223-4', accountName: 'ไทยพาณิชย์ ออมทรัพย์ 2', accountCode: '1122', version: b.version });
+    expect(r.status).toBe(200);
+  });
+
+  it('a controlled account keeps its class and sub-class even when unused and unmapped (review N1): 1171 and 1123 cannot be reclassified out of control', async () => {
+    for (const [id, over] of [['1171', { subClass: 'current-asset' }], ['1123', { subClass: 'current-asset' }]] as const) {
+      const r = await put(id, over);
+      expect(r.json.code, id).toBe('account.controlled');
+      expect((await get(id)).subClass, id).not.toBe(over.subClass);
+    }
+    expect((await put('1171', { nameTh: 'ภาษีซื้อรอเครดิต' })).status).toBe(200); // a rename is fine
+  });
+
   it('shape: name required; class and sub-class valid and of the same group; a postable account needs a header parent; a header cannot be the parent of nothing postable-wise', async () => {
     expect((await create({ nameTh: ' ' })).json.fieldErrors?.nameTh).toHaveLength(1);
     expect((await create({ class: 'nonsense' })).json.fieldErrors?.class).toHaveLength(1);

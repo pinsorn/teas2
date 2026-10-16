@@ -102,6 +102,12 @@ describe('JV money rules (ruling 4)', () => {
     expect(d.status).toBe('issued');
     expect(checkInvariants(st)).toEqual([]);
   });
+  it('renaming the party after posting keeps the journal = its lines invariant clean (review F1b)', () => {
+    const p = st.parties.find((x) => x.companyId === CO)!;
+    post([L('5110', '1000.00', '0.00', { partyId: p.id }), L('2120', '0.00', '1000.00')]);
+    p.name = `${p.name} (เปลี่ยนชื่อ)`;
+    expect(checkInvariants(st)).toEqual([]);
+  });
   it('an unknown or non-postable account is refused: ledger.account_invalid', () => {
     for (const code of ['9999', '5000']) {
       const d = draft(pair(code, '2120'));
@@ -179,6 +185,15 @@ describe('กลับรายการ (reverse): JV only (ruling 2)', () => {
     expect(err(() => revise(st, r.id, { header: doc(r.id).header, lines: doc(r.id).lines }, doc(r.id).version, 'x', ME)).code).toBe('ledger.reversal_final');
     expect(err(() => cancel(st, r.id, doc(r.id).version, 'OTHER', 'x', ME)).code).toBe('ledger.reversal_final');
     expect(derivedLocks(st, doc(o.id)).some((l) => l.kind === 'reversal')).toBe(true);
+  });
+  it('a reversal JV made by a person reads locked too, with the exit "กลับรายการใบนี้"; once reversed it has no exit (M3)', () => {
+    const o = post(pair('5110', '5160'));
+    const r = reverseJv(st, o.id, ME);
+    const lock = derivedLocks(st, doc(r.id)).find((l) => l.kind === 'reversal')!;
+    expect(lock.exits).toEqual(['กลับรายการใบนี้']);
+    expect(lock.reason).toContain(doc(o.id).number!);
+    reverseJv(st, r.id, ME);
+    expect(derivedLocks(st, doc(r.id)).find((l) => l.kind === 'reversal')!.exits).toEqual([]);
   });
   it('a reversed JV in a closed month reads with ONE banner: the reversal-final lock replaces the period lock (M1)', () => {
     const o = post(pair('5110', '5160'), { documentDate: '2026-09-20' });

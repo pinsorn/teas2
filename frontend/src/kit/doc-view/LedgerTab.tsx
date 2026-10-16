@@ -71,7 +71,7 @@ export function LedgerTab({ type, id }: { type: DocType; id: string }) {
   if (q.error) return isForbidden(q.error) ? <ForbiddenState permission="ledger.read" /> : <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
   if (!q.data.entries.length) return <p className="text-body text-muted-foreground">{t('empty')}</p>;
   const d = doc.data;
-  const canReverse = type === 'JV' && !!d && LIVE.includes(d.status) && !d.locks.some((l) => l.kind === 'reversal') && !d.header.autoReverse && !!me?.permissions.includes('doc.JV.issue');
+  const canReverse = type === 'JV' && !!d && LIVE.includes(d.status) && !d.locks.some((l) => l.kind === 'reversal' && !l.exits.length) && !d.header.autoReverse && !!me?.permissions.includes('doc.JV.issue');
   const live = [...q.data.entries].reverse().find((e) => e.kind !== 'reversal');
   return (
     <div className="grid gap-4">

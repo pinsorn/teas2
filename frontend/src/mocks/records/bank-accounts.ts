@@ -13,7 +13,7 @@ const sub = (kind: unknown) => (kind === 'cash' ? 'cash' : 'bank');
 
 /** SP0 §5.13: a bank / cash account's GL account is a postable current-asset account of the matching sub-class (cash box: เงินสด, bank: เงินฝากธนาคาร). */
 export const bankGlAccounts = (st: MockState, companyId: string): CompanyAccount[] =>
-  st.accounts.filter((a) => a.companyId === companyId && a.postable && a.active !== false && a.class === 'current-asset' && a.parent === '1100' && (a.subClass === 'cash' || a.subClass === 'bank'));
+  st.accounts.filter((a) => a.companyId === companyId && a.postable && a.active !== false && a.class === 'current-asset' && (a.subClass === 'cash' || a.subClass === 'bank'));
 
 /** Read-only-after-use (M1): any journal line of the company already posts to the account. History carries the code itself, so a later edit could never move it - this only refuses the edit. */
 export function glUsed(st: MockState, companyId: string, accountCode: string): boolean {
