@@ -68,8 +68,8 @@ describe('m2: after approval, which documents a gated voucher pays is part of th
   });
 });
 
-describe('P3 R2-M2: a voucher withholds on no more than it paid', () => {
-  it('after a PDN on the service line, a partial 1,000.00 payment gets its own pre-VAT share as base; the paying-up voucher carries the rest; the sum is exact', () => {
+describe('GP-I1: each voucher withholds on its own share of what the bill still owed; the paying-up voucher takes the remainder', () => {
+  const setup = () => {
     const st = buildSeedState();
     const b = pb(st, [svc('10000.00'), L('g', 'S7', '10000.00', { expenseCategory: 'supplies' })]);
     const mk = (amount: string) => { const d = pvDraft(st, [alloc(b, amount)]); return issue(st, d.id, d.version, me).id; };
@@ -77,11 +77,26 @@ describe('P3 R2-M2: a voucher withholds on no more than it paid', () => {
     const p1 = mk('21400.00');
     const pdn = createDraft(st, 'co-vat', 'PDN', { header: { documentDate: '2026-10-14', refDocId: b, reasonCode: 'PRICE_INCREASE' }, lines: [L('c', 'S7', '2000.00', { sourceLineId: 's' })] }, me, k());
     issue(st, pdn.id, pdn.version, me);
+    const preVat = (id: string) => Math.round(Number(g(st, id).totals.total) * 100 / 1.07) / 100;
+    return { st, b, mk, base, p1, preVat };
+  };
+  it('H2: after a PDN on the service line, 1,000.00 then the rest: 934.58 and 1,065.42, never more than the pre-VAT payment; the sum is exact', () => {
+    const { st, b, mk, base, p1, preVat } = setup();
     const p2 = mk('1000.00');
-    expect(base(p2)).toBe(509.77); // 12,000.00 x 1,000.00 / 23,540.00, not the 1,418.86 the cumulative share lagged to
     const p3 = mk(g(st, b).outstanding!);
+    expect([base(p2), base(p3)]).toEqual([934.58, 1065.42]);
+    for (const id of [p2, p3]) expect(base(id)).toBeLessThanOrEqual(preVat(id) + 0.005);
     expect(base(p1) + base(p2) + base(p3)).toBe(12000);
-    expect(base(p3)).toBe(1490.23);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('H1: a near-full partial, then the last 10.00 in deduct mode: 1,990.65 and 9.35, and the pay-up issues', () => {
+    const { st, b, mk, base, preVat } = setup();
+    const p2 = mk('2130.00');
+    expect(g(st, b).outstanding).toBe('10.00');
+    const p3 = mk('10.00');
+    expect([base(p2), base(p3)]).toEqual([1990.65, 9.35]);
+    for (const id of [p2, p3]) expect(base(id)).toBeLessThanOrEqual(preVat(id) + 0.005);
+    expect(g(st, b).status).toBe('settled');
     expect(checkInvariants(st)).toEqual([]);
   });
 });

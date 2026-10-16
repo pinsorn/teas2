@@ -159,10 +159,12 @@ export function freezeWht(st: MockState, companyId: string, body: Part, selfId?:
     const others = st.docs.filter((d) => d.type === 'PV' && d.companyId === companyId && d.id !== selfId && LIVE.includes(d.status)).flatMap((d) => d.whtFrozen?.bases ?? []).filter((x) => x.targetId === bill.id);
     for (const [code, B] of billBases(st, bill)) {
       if (B <= 0n) continue;
-      const raw = (paid >= adjusted ? B : divRoundHalfAway(B * paid, adjusted)) - others.filter((x) => x.whtTypeCode === code).reduce((n, x) => n + BigInt(toSatang(x.base)), 0n);
-      // R2-M2: a voucher that does not pay the bill up withholds on no more than its own pre-VAT share of the typed lines (the rest waits for the voucher that pays it up, so the sum stays B)
-      const own = divRoundHalfAway(B * BigInt(money(a.amount, 'settle.invalid_amount')), adjusted);
-      const base = raw < 0n ? 0n : paid >= adjusted || raw <= own ? raw : own;
+      // remaining-balance rule: what is still to be withheld on the bill (B less the bases on its other live vouchers), shared by this payment's part of what the bill still owed just before it;
+      // the voucher that pays the bill up takes exactly the remainder, so the sum is B and no base exceeds its own pre-VAT payment (GP-I1)
+      const left = B - others.filter((x) => x.whtTypeCode === code).reduce((n, x) => n + BigInt(toSatang(x.base)), 0n);
+      const owed = adjusted - (paid - BigInt(money(a.amount, 'settle.invalid_amount'))); // the bill's outstanding just before this voucher
+      const raw = paid >= adjusted || owed <= 0n ? left : divRoundHalfAway(left * BigInt(money(a.amount, 'settle.invalid_amount')), owed);
+      const base = raw < 0n ? 0n : raw;
       bases.push({ targetId: bill.id, whtTypeCode: code, base: fromSatang(Number(base)), ...(raw < 0n ? { clamped: true as const } : {}), ...(paid >= adjusted ? { full: true as const, billBase: fromSatang(Number(B)) } : {}) });
     }
   }
