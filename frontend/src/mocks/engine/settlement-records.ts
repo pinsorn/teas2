@@ -2,7 +2,7 @@ import { DOC_TYPES, LIVE } from '@/domain/doc-types';
 import type { Actor, DepositRow, DocType, IsoDate, JournalEntryPreview, Money, SettlementDifferenceRole, SettlementKind, SettlementLeg, SettlementRecord } from '@/domain/types';
 import type { MockState } from '../store';
 import { correctionReversal, dateGuards, recomputeSettlement } from './commands';
-import { appliedOf } from './locks';
+import { appliedOf, differenceUsed, toleranceOf } from './locks';
 import { MockError, logActivity, logAudit, stamp } from './log';
 import { fromSatang, toSatang } from './money';
 import { type AccountingRole, resolveRole } from './posting';
@@ -40,11 +40,7 @@ export function depositsOf(st: MockState, companyId: string): DepositRow[] {
     .sort((a, b) => a.documentDate.localeCompare(b.documentDate) || a.number.localeCompare(b.number));
 }
 
-/** The company's tolerance for a difference role (satang). A bank fee is limited like a small write-off. [SP-R] */
-export function toleranceOf(st: MockState, companyId: string, role: SettlementDifferenceRole): number {
-  const t = st.settlementTolerance.find((x) => x.companyId === companyId);
-  return toSatang(role === 'RoundingDifference' ? t?.rounding ?? '0.00' : t?.smallWriteOff ?? '0.00');
-}
+export { toleranceOf };
 
 const positive = (m: unknown, code: string, what: string): number => {
   let n: number;
@@ -143,11 +139,11 @@ export function postSettlement(st: MockState, companyId: string, req: SettleRequ
     throw fail(422, 'settle.incomplete', req.kind === 'write_off' ? 'ต้องเลือกเอกสารที่ต้องการตัดส่วนต่าง' : 'ต้องเลือกทั้งเอกสารต้นทางและเอกสารปลายทาง');
   }
 
-  // who is on which side: a netting pairs a customer with the vendor it is linked to (either one may be named), every other kind has one party
+  // who is on which side: a netting pairs a customer with the vendor it is linked to (either one may be named; both name each other), every other kind has one party
   let sourceParty = party.id, targetParty = party.id, counterPartyId: string | undefined, partyId = party.id;
   if (req.kind === 'netting') {
-    // linked either way: the party names the other, or the other names the party
-    const other = st.parties.find((p) => p.companyId === companyId && (p.id === party.linkedPartyId || p.linkedPartyId === party.id));
+    // linked both ways: the party names the other AND the other names the party
+    const other = st.parties.find((p) => p.companyId === companyId && p.id === party.linkedPartyId && p.linkedPartyId === party.id);
     const cust = party.kind === 'customer' ? party : other, vend = party.kind === 'vendor' ? party : other;
     if (!cust || !vend || cust.kind !== 'customer' || vend.kind !== 'vendor') {
       throw fail(422, 'settle.not_linked', 'หักกลบได้เฉพาะลูกค้าและผู้ขายที่เป็นคู่ค้ารายเดียวกัน (เชื่อมโยงกันในข้อมูลหลัก)');
@@ -171,7 +167,12 @@ export function postSettlement(st: MockState, companyId: string, req: SettleRequ
     if (req.kind === 'netting') throw fail(422, 'settle.netting_difference', 'การหักกลบต้องหักด้วยยอดเท่ากันทั้งสองฝั่ง ไม่มีส่วนต่าง');
     if (!DIFFERENCE_ROLES.includes(req.difference.role)) throw fail(422, 'settle.invalid_difference', 'ประเภทส่วนต่างไม่ถูกต้อง');
     diff = { role: req.difference.role, amount: positive(req.difference.amount, 'settle.invalid_amount', 'ส่วนต่าง') };
-    if (diff.amount > toleranceOf(st, companyId, diff.role)) throw fail(422, 'settle.beyond_tolerance', 'เกินเกณฑ์ที่กำหนด ต้องออกใบลดหนี้หรือรับชำระเพิ่ม');
+    // cumulative per target and role: what its live settlements already took plus this request must stay within the tolerance
+    const limit = toleranceOf(st, companyId, diff.role);
+    for (const t of tgt.docs) {
+      const used = differenceUsed(st, t.id, diff.role);
+      if (used + diff.amount > limit) throw fail(422, 'settle.beyond_tolerance', `${t.number ?? t.id}: เกินเกณฑ์ที่กำหนด (ใช้ไปแล้ว ${fromSatang(used)} / ขอ ${fromSatang(diff.amount)} / เกณฑ์ ${fromSatang(limit)} บาท) ต้องออกใบลดหนี้หรือรับชำระเพิ่ม`);
+    }
   }
   if (req.kind === 'write_off' && !diff) throw fail(422, 'settle.incomplete', 'ต้องระบุส่วนต่างที่ตัด');
   const ts = sum(tgt.legs), ss = sum(src.legs);

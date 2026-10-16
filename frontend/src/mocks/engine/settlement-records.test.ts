@@ -90,7 +90,7 @@ describe('differences within the company tolerance', () => {
     expect(checkInvariants(st)).toEqual([]);
   });
   it('above the tolerance is refused: rounding over 1.00, a write-off or a bank fee over 100.00 (settle.beyond_tolerance)', () => {
-    expect(err(() => postSettlement(st, CO, near('RoundingDifference', '1.01', '3208.99'), ME))).toMatchObject({ code: 'settle.beyond_tolerance', title: 'เกินเกณฑ์ที่กำหนด ต้องออกใบลดหนี้หรือรับชำระเพิ่ม' });
+    expect(err(() => postSettlement(st, CO, near('RoundingDifference', '1.01', '3208.99'), ME))).toMatchObject({ code: 'settle.beyond_tolerance', title: expect.stringContaining('ใช้ไปแล้ว 0.00 / ขอ 1.01 / เกณฑ์ 1.00') });
     expect(err(() => postSettlement(st, CO, near('SmallWriteOff', '100.01', '3109.99'), ME)).code).toBe('settle.beyond_tolerance');
     expect(err(() => postSettlement(st, CO, near('BankFee', '100.01', '3109.99'), ME)).code).toBe('settle.beyond_tolerance');
     expect(st.settlements).toHaveLength(1);
@@ -261,11 +261,13 @@ describe('netting', () => {
     expect(postSettlement(st, CO, net('1000.00', 'pv-11'), ME).partyId).toBe('pc-02'); // named from the vendor side
     expect(checkInvariants(st)).toEqual([]);
   });
-  it('the pair is linked either way: one side naming the other is enough, none is refused', () => {
+  it('the pair must name each other: a one-way link is refused (ruling 2)', () => {
+    expect(postSettlement(st, CO, net('1000.00', 'pv-11'), ME).partyId).toBe('pc-02'); // the seed links both ways
     delete st.parties.find((p) => p.id === 'pv-11')!.linkedPartyId; // only the customer names the vendor
-    expect(postSettlement(st, CO, net('1000.00', 'pv-11'), ME).partyId).toBe('pc-02');
-    expect(postSettlement(st, CO, net('1000.00', 'pc-02'), ME).counterPartyId).toBe('pv-11');
-    delete st.parties.find((p) => p.id === 'pc-02')!.linkedPartyId; // nobody does
+    expect(err(() => postSettlement(st, CO, net('1000.00', 'pv-11'), ME)).code).toBe('settle.not_linked');
+    expect(err(() => postSettlement(st, CO, net('1000.00', 'pc-02'), ME)).code).toBe('settle.not_linked');
+    st.parties.find((p) => p.id === 'pv-11')!.linkedPartyId = 'pc-02';
+    delete st.parties.find((p) => p.id === 'pc-02')!.linkedPartyId; // only the vendor names the customer
     expect(err(() => postSettlement(st, CO, net('1000.00', 'pv-11'), ME)).code).toBe('settle.not_linked');
     expect(err(() => postSettlement(st, CO, net('1000.00', 'pc-02'), ME)).code).toBe('settle.not_linked');
   });
@@ -327,5 +329,50 @@ describe('every money invariant fails on a tampered state', () => {
     postSettlement(st, CO, deposit(), ME);
     doc('rc-dep').header = { ...doc('rc-dep').header, depositAmount: '3000.00' };
     expect(checkInvariants(st).some((m) => m.includes('rc-dep: 3210.00 applied from a deposit of 3000.00'))).toBe(true);
+  });
+});
+
+describe('the tolerance is cumulative per target and role (ruling 1)', () => {
+  const wo = (amount = '100.00', docId = 'ti-net', role: 'SmallWriteOff' | 'RoundingDifference' | 'BankFee' = 'SmallWriteOff'): SettleRequest =>
+    ({ kind: 'write_off', date: DAY, partyId: 'pc-02', targets: [{ docId, amount }], difference: { role, amount } });
+  it('five 100.00 small write-offs on one invoice: the second is refused, a reversal frees the room', () => {
+    const first = postSettlement(st, CO, wo(), ME);
+    const e = err(() => postSettlement(st, CO, wo(), ME));
+    expect(e.code).toBe('settle.beyond_tolerance');
+    expect(e.message).toMatch(/100\.00/);
+    expect(doc('ti-net').outstanding).toBe('10600.00');
+    reverseSettlement(st, CO, first.id, ME);
+    expect(postSettlement(st, CO, wo(), ME).status).toBe('posted');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('counts per role, and the room left is what is still free', () => {
+    postSettlement(st, CO, wo('60.00'), ME);
+    expect(err(() => postSettlement(st, CO, wo('40.01'), ME)).code).toBe('settle.beyond_tolerance');
+    expect(postSettlement(st, CO, wo('40.00'), ME).status).toBe('posted');
+    expect(postSettlement(st, CO, wo('1.00', 'ti-net', 'RoundingDifference'), ME).status).toBe('posted'); // another role, its own room
+  });
+  it('a deposit application with a difference counts too', () => {
+    const near = (amount: string, diff: string): SettleRequest => deposit({ sources: [{ docId: 'rc-dep', amount }], targets: [{ docId: 'ti-dep', amount: (Number(amount) + Number(diff)).toFixed(2) }], difference: { role: 'SmallWriteOff', amount: diff } });
+    postSettlement(st, CO, near('1000.00', '100.00'), ME);
+    expect(err(() => postSettlement(st, CO, near('1000.00', '0.01'), ME)).code).toBe('settle.beyond_tolerance');
+  });
+  it('a tampered state with more live differences than the tolerance is reported', () => {
+    postSettlement(st, CO, wo(), ME);
+    expect(checkInvariants(st)).toEqual([]);
+    const s = structuredClone(st.settlements[st.settlements.length - 1]);
+    s.id = 'stl-099';
+    st.settlements.push(s);
+    expect(checkInvariants(st).some((m) => m.includes('ti-net') && m.includes('tolerance'))).toBe(true);
+  });
+});
+
+describe('one lock banner on a settled document (ruling 3)', () => {
+  it('the derived settlement lock replaces the stored generic one', () => {
+    postSettlement(st, CO, deposit(), ME);
+    const ti = doc('ti-dep');
+    ti.locks = [{ kind: 'settlement', reason: 'มีใบเสร็จ/การชำระที่ผูกอยู่', exits: ['ยกเลิกหรือถอนการชำระก่อน'] }, { kind: 'filing', reason: 'x', exits: [] } as never];
+    const ls = derivedLocks(st, ti);
+    expect(ls.filter((l) => l.kind === 'settlement')).toEqual([expect.objectContaining({ href: expect.stringContaining('/finance/settlements/') })]);
+    expect(ls.some((l) => l.kind === 'filing')).toBe(true);
   });
 });

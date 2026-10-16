@@ -14,7 +14,7 @@ export function derivedLocks(st: MockState, d: { id?: string; locks: Lock[]; com
   const p = live ? periodLock(st, d.companyId, d.header.documentDate) : undefined;
   const r = live && d.id ? reconciliationLock(st, d.id) : undefined;
   const s = live && d.id ? settlementLock(st, d.id) : undefined;
-  return [...d.locks, ...(r ? [r] : []), ...(s ? [s] : []), ...(p ? [p] : [])];
+  return [...(s ? d.locks.filter((l) => l.kind !== 'settlement') : d.locks), ...(r ? [r] : []), ...(s ? [s] : []), ...(p ? [p] : [])];
 }
 
 /** The cash an RC / PV moves (satang): `totals.cash`, or total - WHT for a document stored without it. */
@@ -52,6 +52,16 @@ export function refuseReconciled(st: MockState, d: { id: string; type: DocType; 
 /** FN3: the posted settlement records a document is a leg of (a deposit / prepayment source, a target, a netting side). Reads the store only, so the lock never depends on the settlement engine. */
 export const settlementsOf = (st: MockState, docId: string) =>
   st.settlements.filter((s) => s.status === 'posted' && (s.sources.some((l) => l.docId === docId) || s.targets.some((l) => l.docId === docId)));
+
+/** The company's tolerance for a difference role (satang). A bank fee is limited like a small write-off. [SP-R] */
+export function toleranceOf(st: MockState, companyId: string, role: string): number {
+  const t = st.settlementTolerance.find((x) => x.companyId === companyId);
+  return toSatang(role === 'RoundingDifference' ? t?.rounding ?? '0.00' : t?.smallWriteOff ?? '0.00');
+}
+
+/** Ruling 1 (FN3): what the live settlements already took from one target in one difference role (satang). A record with several targets charges its FULL difference to each. */
+export const differenceUsed = (st: MockState, docId: string, role: string): number =>
+  st.settlements.filter((s) => s.status === 'posted' && s.difference?.role === role && s.targets.some((l) => l.docId === docId)).reduce((n, s) => n + toSatang(s.difference!.amount), 0);
 
 /** What posted settlements took FROM a deposit / prepayment (satang). */
 export const appliedOf = (st: MockState, docId: string): number =>

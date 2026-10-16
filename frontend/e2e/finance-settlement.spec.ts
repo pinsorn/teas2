@@ -125,7 +125,7 @@ test('netting the linked customer / vendor pair, then a write-off above the tole
   await w.getByLabel(`จำนวนที่หักของ ${tiNo}`).fill('100.01');
   await w.getByLabel('จำนวนส่วนต่าง').fill('100.01');
   await w.getByRole('button', { name: 'ลงรายการ', exact: true }).click();
-  await expect(w.getByRole('alert')).toContainText('เกินเกณฑ์ที่กำหนด ต้องออกใบลดหนี้หรือรับชำระเพิ่ม');
+  await expect(w.getByRole('alert')).toContainText('เกินเกณฑ์ที่กำหนด (ใช้ไปแล้ว 0.00 / ขอ 100.01 / เกณฑ์ 100.00 บาท)');
   await shot(page, 'settlement-beyond-tolerance');
   await axeClean(page);
 });

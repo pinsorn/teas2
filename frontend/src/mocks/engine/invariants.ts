@@ -3,7 +3,7 @@ import type { DocType, WhtLine, WhtMode } from '@/domain/types';
 import type { Doc, JournalEntryPreview } from '@/domain/types';
 import type { MockState } from '../store';
 import { approvalRequired } from './approval';
-import { appliedOf, docCash } from './locks';
+import { appliedOf, docCash, toleranceOf } from './locks';
 import { payoutOf, resolvedBankId } from './settlement';
 import { consumed, q4 } from './chain';
 import { divRoundHalfAway, fromSatang, toSatang } from './money';
@@ -541,6 +541,13 @@ export function checkInvariants(st: MockState): string[] {
           : payable ? [['AP', 'debit', ts], [diffRole, 'credit', diff]] : [['AR', 'credit', ts], [diffRole, 'debit', diff]];
     for (const [role, side, n] of jwant) if (j(role, side) !== n) out.push(`${where}: journal ${role} ${side} ${fromSatang(j(role, side))} but its legs say ${fromSatang(n)}`);
   }
+  // per target and difference role, Σ the live differences stays within the company's tolerance (ruling 1)
+  const taken = new Map<string, { co: string; role: string; n: number }>();
+  for (const s of st.settlements) {
+    if (s.status !== 'posted' || !s.difference) continue;
+    for (const t of s.targets) { const k = `${t.docId}|${s.difference.role}`, p = taken.get(k); taken.set(k, { co: s.companyId, role: s.difference.role, n: (p?.n ?? 0) + sat(s.difference.amount, `settlement ${s.id}`) }); }
+  }
+  for (const [k, v] of taken) if (v.n > toleranceOf(st, v.co, v.role)) out.push(`${k.split('|')[0]}: live ${v.role} differences ${fromSatang(v.n)} exceed the tolerance ${fromSatang(toleranceOf(st, v.co, v.role))}`);
   for (const l of st.links) {
     const s = l.kind === 'settles' ? st.settlements.find((x) => x.id === l.from) : undefined;
     if (s && l.active && s.status !== 'posted') out.push(`link ${l.from} → ${l.to} is active but ${l.from} is ${s.status}`);
