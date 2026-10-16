@@ -3,6 +3,7 @@ import type {
 } from '@/domain/types';
 import { ADJUSTS, CLASS, CONVERSIONS, DOC_TYPES, GROUPS, LIVE, SETTLES, isTypeAvailable } from '@/domain/doc-types';
 import type { MockState } from '../store';
+import { approvalRequired, refuseSelfApproval, refuseUnapprovedIssue, submit } from './approval';
 import { dropAttachmentsOf } from './attachments';
 import { consumed, fmtQ, q4 } from './chain';
 import { ledgerFor, reversalOf } from './ledger';
@@ -14,7 +15,7 @@ import { SeriesAllocator } from './numbering';
 import { firstOpenDate, isClosed, monthLabelTh } from './periods';
 import { balanceOf, certError, cleanAllocations, fiscalAllocations, freezeWht, groupTotals, payDefaults, payLines, settleExtras, settleProblem, settleTotals } from './settlement';
 import { syncWts } from './wht-certificates';
-import { isVendorBill, issueVendorStatus, purchaseProblem, snapshotCategories, snapshotWhtTypes, withClaimPeriod, withForfeit, withVendorStatus } from './purchase-vat';
+import { cleanInvoices, isVendorBill, issueVendorStatus, purchaseProblem, snapshotCategories, snapshotWhtTypes, withClaimPeriod, withForfeit, withVendorStatus } from './purchase-vat';
 import { computeDoc, vatBasisOf, vatOf } from './vat';
 
 export type Body = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[]; whtFrozen?: WhtFrozen };
@@ -105,7 +106,9 @@ export function missingOf(st: MockState, companyId: string, type: DocType, body:
   else {
     const p = partyOf(st, companyId, body.header.partyId);
     if (!p) out.push({ field: 'header.partyId', message: 'ไม่พบคู่ค้า' });
-    else if (TAX_BUYER.includes(type) && p.vatRegistered && (!p.taxId || !p.branchCode)) {
+    else if ((type === 'EX') !== (p.kind === 'employee') && (type !== 'PV' || p.kind !== 'employee')) { // employees are their own party kind: an expense claim is owed to one, no other document (but a voucher that pays the claim) is made out to one
+      out.push({ field: 'header.partyId', message: type === 'EX' ? 'ใบเบิกค่าใช้จ่ายต้องเลือกพนักงานผู้เบิก' : 'เลือกพนักงานเป็นคู่ค้าของเอกสารนี้ไม่ได้' });
+    } else if (TAX_BUYER.includes(type) && p.vatRegistered && (!p.taxId || !p.branchCode)) {
       out.push({ field: 'header.partyId', message: 'ผู้ซื้อจดทะเบียน VAT ต้องมีเลขผู้เสียภาษีและสาขา' });
     }
   }
@@ -135,8 +138,13 @@ export const keepNoteLines = (d: Doc, body: Body): Body =>
   isNote(d.type) && sameLines(body.lines, d.lines) ? { ...body, header: { ...body.header, ...(d.header.priceIncludesVat ? { priceIncludesVat: true } : {}) }, lines: d.lines } : body;
 /** R1-M4: a PB / PCN / PDN line the API sends without a category keeps its stored one (same line id); only an explicit category changes it. */
 const keepCategories = (d: Doc, lines: DocLine[]): DocLine[] =>
-  !isVendorBill(d.type) ? lines : lines.map((l) => {
+  !isVendorBill(d.type) && d.type !== 'EX' ? lines : lines.map((l) => {
     const o = d.lines.find((x) => x.id === l.id), c = l.expenseCategory || !o?.expenseCategory ? l : { ...l, expenseCategory: o.expenseCategory };
+    // EX: the vendor tax invoice of a line is what its VAT claim rests on - omitted = unchanged, an explicit null clears it (that line's VAT becomes cost), anything else replaces it
+    if (d.type === 'EX') {
+      if ((c.vendorInvoice as unknown) === null) { const { vendorInvoice: _v, ...rest } = c; void _v; return rest; }
+      return c.vendorInvoice === undefined && o?.vendorInvoice ? { ...c, vendorInvoice: o.vendorInvoice } : c;
+    }
     // C1: a bill line keeps its stored WHT type unless one is sent; an explicit null clears it ('' = none, so the item master does not refill it)
     if (d.type !== 'PB') return c;
     if ((c.whtTypeCode as string | null | undefined) === null) return { ...c, whtTypeCode: '' };
@@ -197,7 +205,7 @@ function stored(st: MockState, companyId: string, type: DocType, body: Body, kee
 /** C1: every PB / PCN / PDN line stores its resolved expense category (the item's, when the line names none). A PCN / PDN line takes the category (and item) of the bill line it adjusts,
  *  server-side, at save, revise AND issue: the VAT it gives back is claimable exactly when the bill's was, whatever the draft carried. */
 function vendorNoteLines(st: MockState, companyId: string, type: DocType, body: Body): DocLine[] {
-  const snap = isVendorBill(type) || type === 'PV' ? snapshotCategories(st, companyId, body.lines) : body.lines; // a voucher's own lines too: the category stays what was chosen
+  const snap = isVendorBill(type) || type === 'PV' || type === 'EX' ? snapshotCategories(st, companyId, type === 'EX' ? cleanInvoices(body.lines) : body.lines) : body.lines; // a voucher's own lines too: the category stays what was chosen
   const lines = type === 'PB' ? snapshotWhtTypes(st, companyId, snap) : snap; // C1: a bill stores the WHT type of each line
   const pb = ADJUSTS[type] === 'PB' ? st.docs.find((d) => d.id === body.header.refDocId && d.companyId === companyId && d.type === 'PB') : undefined;
   if (!pb) return lines;
@@ -267,7 +275,8 @@ export function compute(st: MockState, companyId: string, type: DocType, raw: Bo
   if (np) missing.push({ field: 'lines', message: np.title }); // the cap, the invoice's lines: shown before issue
   const pp = purchaseProblem(st, companyId, type, body); // input VAT rules of a vendor's invoice: shown before issue too
   if (pp) missing.push({ field: ({ 'pb.claim_period_out_of_range': 'header.claimPeriod', 'pcn.claim_period_fixed': 'header.claimPeriod', 'pb.vendor_invoice_after_document': 'header.vendorDocDate' } as Record<string, string>)[pp.code] ?? 'lines', message: pp.title });
-  return { lines: c.lines, totals, missing, journal: ledgerFor(st, { ...doc, companyId }), ...settleExtras(st, companyId, type, body) };
+  return { lines: c.lines, totals, missing, journal: ledgerFor(st, { ...doc, companyId }), ...settleExtras(st, companyId, type, body),
+    ...(!opts?.docId && approvalRequired(st, companyId, type, totals.total) ? { approvalRequired: true } : {}) }; // the editor swaps issue for submit / approve-and-issue (§7.6)
 }
 
 /** `opts.id` is used verbatim (seed runner only; handlers never pass it). */
@@ -284,13 +293,15 @@ export function createDraft(st: MockState, companyId: string, type: DocType, bod
 
 export function updateDraft(st: MockState, id: string, raw: Body, version: number, actor: Actor): Doc {
   const d = getDoc(st, id);
-  if (d.status !== 'draft') throw new MockError(409, 'doc.not_draft', 'แก้ไขได้เฉพาะเอกสารฉบับร่าง');
+  if (d.status === 'pending') throw new MockError(409, 'approval.pending', 'เอกสารนี้รออนุมัติ แก้ไขไม่ได้ ให้ผู้อนุมัติส่งกลับแก้ไขก่อน');
+  if (d.status !== 'draft' && d.status !== 'approved') throw new MockError(409, 'doc.not_draft', 'แก้ไขได้เฉพาะเอกสารฉบับร่าง');
   checkVersion(d, version);
   const body = stored(st, d.companyId, d.type, raw, undefined, d.header);
-  const { allocations: _a, ...rest } = d; void _a;
-  const next: Stored = { ...rest, header: body.header, lines: body.lines, totals: totalsOf(st, d.companyId, d.type, body), party: partyOf(st, d.companyId, body.header.partyId),
+  const { allocations: _a, approval: _ap, ...rest } = d; void _a; void _ap; // editing an approved document returns it to draft (§7.6): the approval goes, it must be sent again
+  const next: Stored = { ...rest, status: 'draft', header: body.header, lines: body.lines, totals: totalsOf(st, d.companyId, d.type, body), party: partyOf(st, d.companyId, body.header.partyId),
     version: d.version + 1, ...(body.allocations ? { allocations: body.allocations } : {}) };
   put(st, next);
+  if (d.status === 'approved') logActivity(st, id, actor, 'send_back', 'แก้ไขหลังอนุมัติ ต้องส่งอนุมัติใหม่');
   logActivity(st, id, actor, 'update');
   logAudit(st, actor, d.companyId, 'doc.update', id, { version: d.version }, { version: next.version });
   return publicDoc(next);
@@ -327,15 +338,16 @@ function dateGuards(st: MockState, companyId: string, date: IsoDate): void {
 
 /** An invoice, a purchase bill or a note of 0.00 or less is not a document: cancel it instead. */
 export function refuseNonPositive(st: MockState, companyId: string, type: DocType, body: Body, selfId?: string): void {
-  if (type !== 'IV' && type !== 'PB' && !isNote(type)) return;
+  if (type !== 'IV' && type !== 'PB' && type !== 'EX' && !isNote(type)) return;
   if (toSatang(totalsOf(st, companyId, type, body, selfId).total) <= 0) {
-    throw new MockError(422, 'doc.total_not_positive', `ยอดรวม${({ IV: 'ใบแจ้งหนี้', PB: 'บันทึกซื้อ', CN: 'ใบลดหนี้', PCN: 'ใบลดหนี้จากผู้ขาย', PDN: 'ใบเพิ่มหนี้จากผู้ขาย' } as Partial<Record<DocType, string>>)[type] ?? 'ใบเพิ่มหนี้'}ต้องมากกว่า 0.00 บาท ถ้าไม่ต้องการเอกสารนี้ให้ยกเลิกเอกสาร`);
+    throw new MockError(422, 'doc.total_not_positive', `ยอดรวม${({ IV: 'ใบแจ้งหนี้', PB: 'บันทึกซื้อ', EX: 'ใบเบิกค่าใช้จ่าย', CN: 'ใบลดหนี้', PCN: 'ใบลดหนี้จากผู้ขาย', PDN: 'ใบเพิ่มหนี้จากผู้ขาย' } as Partial<Record<DocType, string>>)[type] ?? 'ใบเพิ่มหนี้'}ต้องมากกว่า 0.00 บาท ถ้าไม่ต้องการเอกสารนี้ให้ยกเลิกเอกสาร`);
   }
 }
 
 /** A document that receipts / vouchers (`settles`), a billing statement (`groups`) or a note (`adjusts`) point at keeps its customer / vendor: their AR / AP and the note's own party belong to it. */
 export function refusePartyChange(st: MockState, d: Stored, body: Body): void {
   if (body.header.partyId === d.header.partyId) return;
+  if (d.type === 'EX') throw new MockError(422, 'doc.party_locked', 'เปลี่ยนพนักงานผู้เบิกของใบเบิกค่าใช้จ่ายที่ออกแล้วไม่ได้ เพราะเจ้าหนี้พนักงาน (2180) บันทึกในชื่อพนักงานเดิม ยกเลิกใบเบิกแล้วบันทึกใหม่');
   if (d.type === 'PV') throw new MockError(422, 'doc.party_locked', 'เปลี่ยนผู้รับเงินของใบสำคัญจ่ายที่ออกแล้วไม่ได้ เพราะหนังสือรับรองหัก ณ ที่จ่ายออกในนามผู้รับเงินเดิม ยกเลิกใบสำคัญจ่ายแล้วออกใบใหม่');
   if (st.links.some((l) => l.active && l.to === d.id && (l.kind === 'settles' || l.kind === 'groups' || l.kind === 'adjusts'))) {
     const notes = !st.links.some((l) => l.active && l.to === d.id && (l.kind === 'settles' || l.kind === 'groups'));
@@ -346,10 +358,11 @@ export function refusePartyChange(st: MockState, d: Stored, body: Body): void {
 
 /** `keepDate`: a correction re-issues a document at its original date (I9), so the period / future checks do not apply.
  *  `partyExempt`: target ids a correction plan retargeted to a reissued invoice, whose customer may differ from the receipt's. */
-export function issue(st: MockState, id: string, version: number, actor: Actor, opts?: { keepDate?: boolean; partyExempt?: string[]; prior?: Allocation[]; priorParty?: string }): Doc {
+export function issue(st: MockState, id: string, version: number, actor: Actor, opts?: { keepDate?: boolean; partyExempt?: string[]; prior?: Allocation[]; priorParty?: string; /** approve-and-issue (§7.6): this person approves in the same command */ approver?: Actor }): Doc {
   const d = getDoc(st, id);
-  if (d.status !== 'draft') throw new MockError(409, 'doc.not_draft', 'ออกได้เฉพาะเอกสารฉบับร่าง');
+  if (d.status !== 'draft' && d.status !== 'approved' && d.status !== 'pending') throw new MockError(409, 'doc.not_draft', 'ออกได้เฉพาะเอกสารฉบับร่าง');
   checkVersion(d, version);
+  if (!opts?.approver) refuseUnapprovedIssue(st, d); // a document the policy wants approved issues only from `approved`: nothing below has run, so a refusal leaves no number, link or journal
   const header0 = issueVendorStatus(st, d.companyId, d.type, d.header); // R1-M2: the vendor's VAT status as of issue
   let body: Body = { header: header0, lines: vendorNoteLines(st, d.companyId, d.type, { header: header0, lines: d.lines }), ...(d.allocations ? { allocations: d.allocations } : {}) }; // C1: categories as of now
   const missing = missingOf(st, d.companyId, d.type, body);
@@ -371,6 +384,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   const next: Stored = {
     ...d, header: body.header, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', totals, party: partyOf(st, d.companyId, d.header.partyId),
     version: d.version + 1, issuedAt: stamp(), ...(hasOut(d.type) ? { outstanding: totals.total } : {}),
+    ...(opts?.approver ? { approval: { submittedBy: d.approval?.submittedBy ?? actor, submittedAt: d.approval?.submittedAt ?? stamp(), approvedBy: opts.approver, approvedAt: stamp() } } : {}),
   };
   if (hasSnapshot(d.type)) next.adjustSnapshot = adjustSnapshot(st, getDoc(st, d.header.refDocId!), next); // the ม.86/10 values as of now: the paper reads them, never recomputes
   put(st, next);
@@ -379,9 +393,34 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   setJournal(st, id, postedNow(st, d.companyId, ledgerFor(st, next)));
   if (d.type === 'PV') { syncWts(st, id, actor); settlePaidUpRecords(st, id, (next.allocations ?? []).map((a) => a.targetId)); } // the 50 tawi, one per WHT type, in the same command (one state write)
   st.revisions.push({ docId: id, revision: 0, at: next.issuedAt!, actor, snapshot: publicDoc(next), diff: [] });
+  if (opts?.approver) { if (d.status === 'draft') logActivity(st, id, actor, 'submit'); logActivity(st, id, opts.approver, 'approve'); }
   logActivity(st, id, actor, 'issue', next.number);
-  logAudit(st, actor, d.companyId, 'doc.issue', id, { status: 'draft' }, { status: 'issued', number: next.number });
+  logAudit(st, actor, d.companyId, 'doc.issue', id, { status: d.status }, { status: 'issued', number: next.number });
   return publicDoc(next);
+}
+
+/** Sends a draft for approval (§7.6) - but only a document that could be issued: the approver never receives an incomplete one. */
+export function submitForApproval(st: MockState, id: string, version: number, actor: Actor): Doc {
+  const d = getDoc(st, id);
+  if (d.status === 'draft') {
+    const body: Body = { header: d.header, lines: d.lines, ...(d.allocations ? { allocations: d.allocations } : {}) };
+    const missing = missingOf(st, d.companyId, d.type, body);
+    if (missing.length) throw incomplete(missing);
+    refuseNonPositive(st, d.companyId, d.type, body);
+    const pp = purchaseProblem(st, d.companyId, d.type, body);
+    if (pp) throw pp;
+  }
+  return submit(st, id, version, actor);
+}
+
+/** One action for a person who holds both rights (§7.6): approve and issue in a single command - one number, one journal. A document the policy does not need approved simply issues. */
+export function approveAndIssue(st: MockState, id: string, version: number, actor: Actor): Doc {
+  const d = getDoc(st, id);
+  if (d.status !== 'draft' && d.status !== 'pending') throw new MockError(409, 'approval.not_approvable', 'อนุมัติและออกได้เฉพาะเอกสารฉบับร่างหรือที่รออนุมัติ');
+  checkVersion(d, version);
+  if (d.status === 'draft' && !approvalRequired(st, d.companyId, d.type, d.totals.total)) return issue(st, id, version, actor);
+  refuseSelfApproval(st, d, actor);
+  return issue(st, id, version, actor, { approver: actor });
 }
 
 /** `opts.correction`: the cancel is a step of a correction plan, so its reversal follows the correction rule (original date while open) instead of today. */
@@ -413,11 +452,11 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
 
 /** An IV or a PB (L-class, receivable / payable): a revision cannot take the total below what active settlements already took (T5). Equal is fine (outstanding 0.00). */
 export function refuseBelowSettled(st: MockState, d: Stored, body: Body): void {
-  if (d.type !== 'IV' && d.type !== 'PB') return; // EX keeps its own rule (P4)
+  if (d.type !== 'IV' && d.type !== 'PB' && d.type !== 'EX') return;
   const paid = sumSat(st.links.filter((l) => l.active && l.kind === 'settles' && l.to === d.id).map((l) => l.amount));
   const total = totalsOf(st, d.companyId, d.type, body).total;
   if (toSatang(total) < paid) {
-    throw new MockError(422, 'settle.below_settled', d.type === 'PB' ? `ยอดใหม่ ${total} บาท ต่ำกว่ายอดที่จ่ายชำระแล้ว ${fromSatang(paid)} บาท ยกเลิกหรือถอนการจ่ายชำระก่อน` : `ยอดใหม่ ${total} บาท ต่ำกว่ายอดที่รับชำระแล้ว ${fromSatang(paid)} บาท ยกเลิกหรือถอนการรับชำระก่อน`);
+    throw new MockError(422, 'settle.below_settled', d.type === 'PB' || d.type === 'EX' ? `ยอดใหม่ ${total} บาท ต่ำกว่ายอดที่จ่ายชำระแล้ว ${fromSatang(paid)} บาท ยกเลิกหรือถอนการจ่ายชำระก่อน` : `ยอดใหม่ ${total} บาท ต่ำกว่ายอดที่รับชำระแล้ว ${fromSatang(paid)} บาท ยกเลิกหรือถอนการรับชำระก่อน`);
   }
 }
 
@@ -453,7 +492,7 @@ export function refuseUnrevisablePurchase(st: MockState, d: Stored, body: Body):
     const np = noteProblem(st, d.companyId, d.type, body, d.id);
     if (np) throw np;
   } else if (d.type === 'PB') refuseFrozenByNotes(st, d, body);
-  else return;
+  else if (d.type !== 'EX') return;
   const pp = purchaseProblem(st, d.companyId, d.type, body);
   if (pp) throw pp;
   refuseOverConversion(st, d, body);
@@ -554,6 +593,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   const old = getDoc(st, id);
   if (!LIVE.includes(old.status)) throw new MockError(409, 'doc.not_correctable', 'ออกใหม่ได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   if (blockingLocks(old).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ออกใหม่ไม่ได้');
+  if (approvalRequired(st, old.companyId, old.type, old.totals.total)) throw new MockError(422, 'approval.required', 'เอกสารประเภทนี้ต้องได้รับอนุมัติก่อนออก ออกใหม่โดยตรงไม่ได้ ให้ยกเลิกเอกสารเดิมแล้วสร้างฉบับร่างใหม่และส่งอนุมัติ'); // a reissue is an issue path too
   if (st.links.some((l) => l.to === id && l.active)) throw new MockError(409, 'doc.has_dependents', 'มีเอกสารอ้างอิงอยู่ ต้องยกเลิกเอกสารนั้นก่อน');
   let body = stored(st, old.companyId, old.type, { ...raw, allocations: raw.allocations ?? old.allocations }, old.allocations);
   if (SETTLES[old.type] && fiscalAllocations(body.allocations) !== fiscalAllocations(old.allocations)) { // the links are carried as they are
@@ -605,6 +645,15 @@ export function convert(st: MockState, id: string, targetType: DocType, lines: {
   if (!LIVE.includes(src.status)) throw new MockError(409, 'doc.not_convertible', 'แปลงได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   refuseRejected(src);
   refuseClosed(src);
+  if (SETTLES[targetType]?.includes(src.type) && CONVERSIONS[src.type]?.includes(targetType) && src.type === 'EX') { // EX -> PV: the voucher pays what the claim still owes (an allocation, no quantities); the settles link is made at the voucher's issue
+    const out = balanceOf(st, src).out;
+    if (out <= 0) throw new MockError(422, 'doc.nothing_to_pay', 'ใบเบิกนี้ไม่มียอดค้างจ่ายแล้ว');
+    const d = insertDraft(st, src.companyId, targetType, { header: { partyId: src.header.partyId, documentDate: today(), ...(src.number ? { reference: src.number } : {}) }, lines: [],
+      allocations: [{ targetId: src.id, targetType: src.type, amount: fromSatang(out) }] }, actor, opts?.id);
+    logActivity(st, d.id, actor, 'create', `จ่ายตาม ${src.number}`);
+    logAudit(st, actor, src.companyId, 'doc.convert', src.id, undefined, { target: d.id, type: targetType });
+    return publicDoc(getDoc(st, d.id));
+  }
   if (SETTLES[targetType]) throw new MockError(422, 'doc.conversion_not_allowed', `แปลง ${src.type} เป็น ${targetType} ด้วยวิธีนี้ไม่ได้ (เอกสารรับ/จ่ายชำระต้องจัดสรรกับเอกสารที่ค้างชำระ)`);
   if (!CONVERSIONS[src.type]?.includes(targetType)) throw new MockError(422, 'doc.conversion_not_allowed', `แปลง ${src.type} เป็น ${targetType} ไม่ได้`);
   if (!isTypeAvailable(targetType, !!st.companies.find((c) => c.id === src.companyId)?.vatRegistered)) {

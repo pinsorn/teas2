@@ -11,6 +11,8 @@ import { PURCHASE_SPECS } from './specs/purchases';
 import { SALES_SPECS } from './specs/sales';
 import { nonVatItems, vatItems } from './items';
 import { whtTypesFor } from './wht-types';
+import { approvalPolicies } from './approval-policy';
+import { nonVatEmployees, vatEmployees } from './employees';
 import { nonVatParties, vatParties } from './parties';
 
 /** Documents later groups seed THROUGH the engine (`fixtures/specs/<group>.ts`, appended here in group order). */
@@ -30,17 +32,17 @@ export function buildSeed(role: Role): MockState {
     void _f;
     return { id: `co-${key}`, ...c };
   });
-  const parties = [...vatParties(), ...nonVatParties()];
+  const parties = [...vatParties(), ...nonVatParties(), ...vatEmployees(), ...nonVatEmployees()];
   const items = [...vatItems(), ...nonVatItems()];
   const { docs, links, activity, revisions, series } = buildDocs(parties, items);
   return {
-    version: 21,
+    version: 22,
     companies,
     memberships: companies.map((c) => ({ userId: 'u-1', companyId: c.id, companyName: c.legalNameTh, role: c.vatRegistered ? role : 'operator' })),
     parties, items, docs, links, activity, revisions, journals: [], audit: [], series, attachments: [], prints: [],
     accounts: companies.flatMap((c) => chartOfAccounts().map((a) => ({ ...a, companyId: c.id }))),
     bankAccounts: bankAccounts(), whtTypes: companies.flatMap((c) => whtTypesFor(c.id)),
     postingRules: companies.flatMap((c) => postingRulesFor(c.id, Object.fromEntries(bankAccounts().filter((b) => b.companyId === c.id).map((b) => [b.id, b.accountCode])))),
-    periods: companies.flatMap((c) => periodsFor(c.id)),
+    periods: companies.flatMap((c) => periodsFor(c.id)), approvalPolicies: approvalPolicies(),
   };
 }

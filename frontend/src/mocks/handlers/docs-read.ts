@@ -4,6 +4,7 @@ import type { Doc, DocType, DocSummary, Lock, OpenItem, Page } from '@/domain/ty
 import { ctx, forbidden, problem, screenGate } from './common';
 
 import { recomputeSettlement, unavailableTh } from '../engine/commands';
+import { approvalRequired } from '../engine/approval';
 import { printCountOf } from '../engine/attachments';
 import { progressOf } from '../engine/chain';
 import { today } from '../engine/log';
@@ -100,6 +101,7 @@ export const docsReadHandlers = [
     const locks = s.screenState === 'locked' && LOCKABLE.includes(doc.status) && !own.some((l) => l.kind === 'filing') ? [...own, LOCKED] : own;
     const progress = progressOf(st, cur);
     const printCount = printCountOf(st, cur.id);
-    return HttpResponse.json({ ...doc, locks, ...(progress && ['SO', 'DO', 'PO'].includes(cur.type) ? { progress } : {}), ...(printCount ? { printCount } : {}) } satisfies Doc);
+    return HttpResponse.json({ ...doc, locks, ...(progress && ['SO', 'DO', 'PO'].includes(cur.type) ? { progress } : {}), ...(printCount ? { printCount } : {}),
+      ...(cur.status === 'draft' && approvalRequired(st, company.id, cur.type, cur.totals.total) ? { approvalRequired: true } : {}) } satisfies Doc);
   }),
 ];

@@ -13,7 +13,8 @@ export type FixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssued
   | 'poDraft' | 'poSent' | 'poPartlyBilled' | 'poClosed' | 'npoIssued'
   | 'rcMulti' | 'rcNoCert' | 'rcDeposit' | 'nrcCashBill' | 'cnIssued' | 'dnIssued' | 'tiCreditedToZero'
   | 'pbDraft' | 'pbIssuedUnpaid' | 'pb1Settled' | 'pbMixedVat' | 'pbFromPo' | 'pbCapex' | 'pbClaimLate' | 'pbIncomplete' | 'pcnIssued' | 'pdnIssued' | 'npbVatToCost'
-  | 'pvMultiWt' | 'pvGrossUp' | 'pvForeign' | 'pvCancelled' | 'wtIssued' | 'wtCancelled'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
+  | 'pvMultiWt' | 'pvGrossUp' | 'pvForeign' | 'pvCancelled' | 'wtIssued' | 'wtCancelled'
+  | 'exDraft' | 'exPending' | 'exApproved' | 'exUnpaid' | 'exPaid' | 'exForfeit' | 'nexIssued'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
 
 /** An issued, untouched TI of pc-01 (the multi-target receipt vector settles two of them). */
 const rcTarget = (d: D, st: MockState) => isTi(d) && d.status === 'issued' && d.party?.id === 'pc-01' && d.outstanding === d.totals.total
@@ -94,6 +95,14 @@ export const FIXTURE_PREDICATES: Record<FixtureKey, (d: D, st: MockState) => boo
   pvCancelled: byId('pv-can', (d) => d.status === 'cancelled'),
   wtIssued: (d, st) => d.type === 'WT' && d.status === 'issued' && st.links.some((l) => l.kind === 'issues' && l.from === 'pv-pay1' && l.to === d.id),
   wtCancelled: (d, st) => d.type === 'WT' && d.status === 'cancelled' && st.links.some((l) => l.kind === 'issues' && l.from === 'pv-can' && l.to === d.id),
+  // P4 expense claims
+  exDraft: byId('ex-d1', (d) => d.status === 'draft'),
+  exPending: byId('ex-pend', (d) => d.status === 'pending'),
+  exApproved: byId('ex-appr', (d) => d.status === 'approved'),
+  exUnpaid: byId('ex-1', (d) => d.status === 'issued' && d.outstanding === d.totals.total), // issued by approve-and-issue, nothing paid, claims VAT on one line only
+  exPaid: byId('ex-paid', (d) => d.status === 'settled'), // paid in full by pv-ex
+  exForfeit: byId('ex-late', (d) => d.status === 'issued'), // the vendor invoice is past its claim window: VAT is cost
+  nexIssued: byId('nex-1', (d) => d.status === 'issued' && d.companyId === 'co-nonvat'),
 };
 
 /** Lowest id (string order) matching each predicate in the active seed; throws listing every unresolved key. */

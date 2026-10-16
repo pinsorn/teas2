@@ -16,7 +16,7 @@ export interface Me { userId: string; displayName: string; memberships: Membersh
   /** The server's business date ("today" for document dates, ageing, as-of defaults); the browser clock is never a business date. */ businessDate: IsoDate }
 export interface Actor { kind: 'user' | 'agent'; id: string; name: string; ownerName?: string }
 
-export interface PartySummary { id: string; kind: 'customer' | 'vendor'; code: string; name: string; taxId?: string;
+export interface PartySummary { id: string; kind: 'customer' | 'vendor' | 'employee'; code: string; name: string; taxId?: string;
   branchCode?: string; vatRegistered: boolean; address?: string; paymentTermDays: number; defaultWhtTypeCode?: string;
   usualItemIds?: string[]; entityKind: 'individual' | 'juristic' | 'foreign';
   nameEn?: string; notes?: string; partyGroup?: string; contact?: { phone?: string; email?: string };
@@ -34,7 +34,11 @@ export interface DocLine { id: string; itemId?: string; description: string; qty
   vatOverride?: Money;
   /** PV lines: the WHT type of this line's income (fixture `[SP-R]`); `expenseCategory` picks the expense account (SP0 5.5). */
   whtTypeCode?: string; expenseCategory?: string;
-  /** PV service line paid to a foreign payee: the service is used in Thailand, so PP.36 reverse-charge VAT applies (feeds TX2). Engine-defaulted for a foreign payee. */ pnd36?: boolean }
+  /** PV service line paid to a foreign payee: the service is used in Thailand, so PP.36 reverse-charge VAT applies (feeds TX2). Engine-defaulted for a foreign payee. */ pnd36?: boolean;
+  /** EX line with VAT: the vendor's tax invoice behind it (ม.82/3, ม.86/4). Without all four details the line's VAT is cost (InputVatUnclaimed), never input VAT; with them the claim window of the invoice date applies, per line. */
+  vendorInvoice?: VendorInvoice }
+/** The vendor's tax invoice an expense-claim line carries: who issued it (name, TIN), its number and its date. */
+export interface VendorInvoice { vendorName: string; vendorTin: string; number: string; date: IsoDate }
 export type WhtMode = 'deduct' | 'grossup_once' | 'grossup_always';
 /** One settled open item of an RC / PV: `amount` clears the target, `wht` is what the customer withheld (RC) on that part. */
 export interface Allocation { targetId: string; targetType: DocType; targetNumber?: string; amount: Money; wht?: Money;
@@ -74,7 +78,13 @@ export interface Doc { id: string; type: DocType; number?: string; status: DocSt
   cancel?: { reasonCode: string; reasonText: string; at: string }; replacedById?: string; replacesId?: string; marks?: DocMarks;
   /** SO / DO / PO / QT: conversion progress text, derived on every read from the active links (never stored). */ progress?: string;
   /** How many times the print action was used on this issued document (derived from the print log on every read, never stored); 0 / absent = not printed yet, so the next print is the ต้นฉบับ. */ printCount?: number;
-  /** An agent-created document: the id of the agent's check report ("ดูรายงานการตรวจ"). */ agentReportId?: string }
+  /** An agent-created document: the id of the agent's check report ("ดูรายงานการตรวจ"). */ agentReportId?: string;
+  /** Approval trail (§7.6), server-written: who sent the document for approval and who approved it. Gone when the document goes back to draft. */
+  approval?: { submittedBy: Actor; submittedAt: string; approvedBy?: Actor; approvedAt?: string };
+  /** A DRAFT the approval policy wants approved before it can be issued (derived on every read from the policy and the total, never stored): the screen offers submit / approve-and-issue. */
+  approvalRequired?: boolean }
+/** One approval rule of a company (ST3 edits them): `minAmount` = approval is needed only ABOVE this total; `selfApproval` = the creator may approve their own document. */
+export interface ApprovalPolicy { companyId: string; docType: DocType; enabled: boolean; minAmount?: Money; selfApproval: boolean }
 /** D-30: what an attached file is evidence of. Labels live in messages (`attachments.category.*`). */
 export type AttachmentCategory = 'customer_po' | 'purchase_order' | 'delivery' | 'vendor_tax_invoice' | 'receipt' | 'transfer_slip'
   | 'contract' | 'photo' | 'wht_certificate' | 'government' | 'other';
@@ -109,6 +119,7 @@ export interface WhtLine { code: string; nameTh: string; form: 'PND2' | 'PND3' |
 export interface OpenItem { id: string; type: DocType; number: string; documentDate: IsoDate; dueDate?: IsoDate; total: Money; outstanding: Money }
 export interface ComputeResult { lines: { id: string; net: Money; vat: Money; total: Money }[]; totals: DocTotals;
   missing: MissingItem[]; /** Omitted without ledger.read (D-09). */ journal?: JournalPreview; whtLines?: WhtLine[];
+  /** The approval policy needs this document approved before it can be issued (server-decided on the computed total, §7.6). */ approvalRequired?: boolean;
   allocation?: { allocated: Money; unallocated: Money; suggestedWht: { targetId: string; wht: Money; whtTypeCode?: string }[] } }
 
 export interface CorrectionNote { type: 'CN' | 'DN'; fullCredit: boolean; priceIncludesVat: boolean;

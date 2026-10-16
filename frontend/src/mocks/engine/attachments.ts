@@ -55,6 +55,13 @@ export function addAttachment(st: MockState, doc: Doc & { companyId: string }, i
   return { ...publicMeta(meta), dataUrl: input.dataUrl };
 }
 
+/** Seed data only: a file already attached to a document, under a fixed id (the bytes are a best-effort write: with no storage the list shows the metadata and an empty link). */
+export function seedAttachment(st: MockState, companyId: string, docId: string, a: { id: string; category: AttachmentCategory; name: string; dataUrl: string }, by: string): void {
+  const info = parse(a.dataUrl)!;
+  try { localStorage.setItem(keyOf(a.id), a.dataUrl); } catch { /* no storage: metadata only */ }
+  st.attachments.push({ companyId, id: a.id, docId, category: a.category, name: a.name, size: info.bytes, mime: info.mime, at: stamp(), by });
+}
+
 /** Undoes `addAttachment` when the metadata could not be persisted either. */
 export function discardAttachment(st: MockState, id: string): void {
   st.attachments = st.attachments.filter((a) => a.id !== id);

@@ -4,7 +4,8 @@ import type { Actor, AttachmentCategory, DocType, MarkKey, Qty } from '@/domain/
 import { addAttachment, discardAttachment, listAttachments, markPrinted, removeAttachment } from '../engine/attachments';
 import { PAPER_BUILDERS } from '../engine/paper';
 import { buildChain } from '../engine/chain';
-import { type Body, unavailableTh, cancel, compute, convert, createDraft, deleteDraft, issue, publicDoc, updateDraft } from '../engine/commands';
+import { approve, sendBack } from '../engine/approval';
+import { type Body, unavailableTh, approveAndIssue, cancel, compute, convert, createDraft, deleteDraft, issue, publicDoc, submitForApproval, updateDraft } from '../engine/commands';
 import { buildPlan, correctionPlan, executePlan, planStale } from '../engine/corrections';
 import { MockError } from '../engine/log';
 import { closeRemainder, remainingOf, setMark } from '../engine/marks';
@@ -96,6 +97,37 @@ export const docsWriteHandlers = [
     own(c, t, params.id);
     const body = (await request.json().catch(() => ({}))) as { version?: number };
     const doc = issue(c.st, String(params.id), versionOf(request, body), ACTOR);
+    done(c);
+    return HttpResponse.json(doc);
+  })),
+
+  // §7.6 approval. The gate itself is in the engine (issue refuses an unapproved document); these are the ways through it, each with its own right.
+  http.post('*/bff/v1/docs/:type/:id/submit', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
+    own(c, t, params.id);
+    const body = (await request.json().catch(() => ({}))) as { version?: number };
+    const doc = submitForApproval(c.st, String(params.id), versionOf(request, body), ACTOR);
+    done(c);
+    return HttpResponse.json(doc);
+  })),
+  http.post('*/bff/v1/docs/:type/:id/approve', ({ request, params }) => guarded(String(params.type), P('approve'), async (c, t) => {
+    own(c, t, params.id);
+    const body = (await request.json().catch(() => ({}))) as { version?: number };
+    const doc = approve(c.st, String(params.id), versionOf(request, body), ACTOR);
+    done(c);
+    return HttpResponse.json(doc);
+  })),
+  http.post('*/bff/v1/docs/:type/:id/approve-and-issue', ({ request, params }) => guarded(String(params.type), P('approve'), async (c, t) => {
+    own(c, t, params.id);
+    if (!c.perms.includes(`doc.${t}.issue`)) return forbidden(`doc.${t}.issue`); // one action only for a person who holds BOTH rights
+    const body = (await request.json().catch(() => ({}))) as { version?: number };
+    const doc = approveAndIssue(c.st, String(params.id), versionOf(request, body), ACTOR);
+    done(c);
+    return HttpResponse.json(doc);
+  })),
+  http.post('*/bff/v1/docs/:type/:id/send-back', ({ request, params }) => guarded(String(params.type), P('approve'), async (c, t) => {
+    own(c, t, params.id);
+    const body = (await request.json().catch(() => ({}))) as { version?: number; reason?: string };
+    const doc = sendBack(c.st, String(params.id), versionOf(request, body), typeof body.reason === 'string' ? body.reason : '', ACTOR);
     done(c);
     return HttpResponse.json(doc);
   })),

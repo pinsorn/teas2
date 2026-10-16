@@ -1,12 +1,13 @@
 import type { Actor, Allocation, DocHeader, DocLine, DocType, IsoDate, Qty } from '@/domain/types';
-import { cancel, convert, createDraft, issue, updateDraft } from '../engine/commands';
+import { approve, approvalRequired, submit } from '../engine/approval';
+import { approveAndIssue, cancel, convert, createDraft, issue, updateDraft } from '../engine/commands';
 import { withFixedClock } from '../engine/log';
 import type { MockState } from '../store';
 import { USER } from './documents';
 
 export interface SeedSpec {
   id: string; type: DocType; companyId: string; date: IsoDate; partyId?: string; lines: DocLine[];
-  header?: Partial<DocHeader>; allocations?: Allocation[]; status: 'draft' | 'issued' | 'cancelled';
+  header?: Partial<DocHeader>; allocations?: Allocation[]; status: 'draft' | 'pending' | 'approved' | 'issued' | 'cancelled';
   convertFrom?: { id: string; lines: { sourceLineId: string; qty: Qty }[] }; by?: Actor; after?: (st: MockState) => void;
 }
 
@@ -35,7 +36,10 @@ function runOne(st: MockState, s: SeedSpec): void {
     ? convert(st, s.convertFrom.id, s.type, s.convertFrom.lines, actor, { id: s.id })
     : createDraft(st, s.companyId, s.type, { header, lines: s.lines, ...(s.allocations ? { allocations: s.allocations } : {}) }, actor, `seed-${s.id}`, { id: s.id });
   if (s.convertFrom) d = updateDraft(st, d.id, { header: { ...d.header, ...header, partyId: header.partyId ?? d.header.partyId }, lines: d.lines }, d.version, actor);
-  if (s.status !== 'draft') d = issue(st, d.id, d.version, actor);
+  if (s.status === 'pending' || s.status === 'approved') { // waiting for (or past) approval: sent through the real commands, never written as a status
+    d = submit(st, d.id, d.version, actor);
+    if (s.status === 'approved') d = approve(st, d.id, d.version, actor);
+  } else if (s.status !== 'draft') d = approvalRequired(st, s.companyId, s.type, d.totals.total) ? approveAndIssue(st, d.id, d.version, actor) : issue(st, d.id, d.version, actor); // a document the policy wants approved is approved by the seed's own user (self-approval is on)
   if (s.status === 'cancelled') cancel(st, d.id, d.version, 'OTHER', 'ยกเลิกในข้อมูลตั้งต้น', actor);
   s.after?.(st);
 }

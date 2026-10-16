@@ -5,7 +5,7 @@ import type { MockState } from '../store';
 import { consumed, q4 } from './chain';
 import { divRoundHalfAway, fromSatang, toSatang } from './money';
 import { resolveRole } from './posting';
-import { claimPeriodOf, forfeitedOf, isRecoverable } from './purchase-vat';
+import { claimPeriodOf, exForfeited, forfeitedOf, isRecoverable } from './purchase-vat';
 import { computeDoc, vatBasisOf } from './vat';
 import { wtsOfPv } from './wht-certificates';
 
@@ -87,6 +87,7 @@ export function checkInvariants(st: MockState): string[] {
   const credit = new Map<string, number>(); // the same, credit - debit (WHT payable accounts)
   const arByParty = new Map<string, number>(); // `${companyId}|${party}` -> debit - credit on 1130
   const apByParty = new Map<string, number>(); // the same on 2110 (payables)
+  const empByParty = new Map<string, number>(); // the same on 2180 (owed to employees)
   const inputVat = new Map<string, number>(); // `${companyId}|${claim period}` -> debit - credit on 1170 posted by PB / PCN / PDN (reversals and corrections included)
 
   // 1. every journal entry balances, is non-negative and posts to postable accounts of its own company
@@ -108,7 +109,8 @@ export function checkInvariants(st: MockState): string[] {
         credit.set(k, (credit.get(k) ?? 0) + b - a);
         if (l.accountCode === '1130') { const pk = `${d.companyId}|${l.partyName ?? ''}`; arByParty.set(pk, (arByParty.get(pk) ?? 0) + a - b); }
         if (l.accountCode === '2110') { const pk = `${d.companyId}|${l.partyName ?? ''}`; apByParty.set(pk, (apByParty.get(pk) ?? 0) + b - a); }
-        if (l.accountCode === '1170' && (d.type === 'PB' || ADJUSTS[d.type] === 'PB')) { const pk = `${d.companyId}|${claimPeriodOf(d.type, d.header)}`; inputVat.set(pk, (inputVat.get(pk) ?? 0) + a - b); }
+        if (l.accountCode === '2180') { const pk = `${d.companyId}|${l.partyName ?? ''}`; empByParty.set(pk, (empByParty.get(pk) ?? 0) + b - a); }
+        if (l.accountCode === '1170' && (d.type === 'PB' || d.type === 'EX' || ADJUSTS[d.type] === 'PB')) { const pk = `${d.companyId}|${claimPeriodOf(d.type, d.header)}`; inputVat.set(pk, (inputVat.get(pk) ?? 0) + a - b); }
       }
       if (dr !== cr) out.push(`${where}: unbalanced (Dr ${fromSatang(dr)} / Cr ${fromSatang(cr)})`);
     }
@@ -162,13 +164,27 @@ export function checkInvariants(st: MockState): string[] {
     }
   }
 
-  // 4d. input VAT (ม.82/3, ม.82/5, I6): per claim period, the 1170 posted by PB / PCN / PDN = the claimable VAT of the live ones filed in it (a PCN gives back, a PDN adds); a company outside VAT claims nothing
+  // 4e. each employee's 2180 (lines labelled with their name) = Σ that employee's live EX outstanding (a voucher that pays a claim clears it under the same name)
+  const empSub = new Map<string, number>();
+  for (const d of st.docs) {
+    if (!LIVE.includes(d.status) || d.type !== 'EX') continue;
+    const k = `${d.companyId}|${d.party?.name ?? ''}`;
+    empSub.set(k, (empSub.get(k) ?? 0) + sat(d.outstanding ?? '0.00', d.id));
+  }
+  for (const k of new Set([...empByParty.keys(), ...empSub.keys()])) {
+    if ((empByParty.get(k) ?? 0) !== (empSub.get(k) ?? 0)) {
+      const [company, name] = k.split('|');
+      out.push(`${company}: employee payable 2180 of ${name}: GL ${fromSatang(empByParty.get(k) ?? 0)} but outstanding of their live EX is ${fromSatang(empSub.get(k) ?? 0)}`);
+    }
+  }
+
+  // 4d. input VAT (ม.82/3, ม.82/5, I6): per claim period, the 1170 posted by PB / PCN / PDN / EX = the claimable VAT of the live ones filed in it (a PCN gives back, a PDN adds; an EX claims a line only with the vendor's tax invoice behind it); a company outside VAT claims nothing
   const claimable = new Map<string, number>();
   for (const d of st.docs) {
-    if (!LIVE.includes(d.status) || (d.type !== 'PB' && ADJUSTS[d.type] !== 'PB')) continue;
-    if (!!d.header.inputVatForfeited !== forfeitedOf(st, d.companyId, d.type, d.header)) out.push(`${d.id}: inputVatForfeited ${!!d.header.inputVatForfeited} but the claim window says ${!d.header.inputVatForfeited} (ม.82/3)`);
+    if (!LIVE.includes(d.status) || (d.type !== 'PB' && d.type !== 'EX' && ADJUSTS[d.type] !== 'PB')) continue;
+    if (d.type !== 'EX' && !!d.header.inputVatForfeited !== forfeitedOf(st, d.companyId, d.type, d.header)) out.push(`${d.id}: inputVatForfeited ${!!d.header.inputVatForfeited} but the claim window says ${!d.header.inputVatForfeited} (ม.82/3)`);
     const rows = computeDoc(d.lines, !!d.header.priceIncludesVat, true).lines;
-    const vat = d.lines.reduce((n, l, i) => n + (isRecoverable(st, d.companyId, l, d.header.inputVatForfeited) ? sat(rows[i].vat, d.id) : 0), 0);
+    const vat = d.lines.reduce((n, l, i) => n + (isRecoverable(st, d.companyId, l, d.type === 'EX' ? exForfeited(d.header, l) : d.header.inputVatForfeited) ? sat(rows[i].vat, d.id) : 0), 0);
     const k = `${d.companyId}|${claimPeriodOf(d.type, d.header)}`;
     claimable.set(k, (claimable.get(k) ?? 0) + (CREDIT_NOTES.includes(d.type) ? -vat : vat));
   }
@@ -208,7 +224,7 @@ export function checkInvariants(st: MockState): string[] {
     else if (a.companyId !== b.companyId || (l.companyId !== undefined && l.companyId !== a.companyId)) out.push(`link ${l.from} → ${l.to} joins different companies`);
   }
   for (const d of st.docs) {
-    if (d.status === 'draft' || !DOC_TYPES[d.type].ledger || d.totals.total === '0.00') continue;
+    if (d.status === 'draft' || d.status === 'pending' || d.status === 'approved' || !DOC_TYPES[d.type].ledger || d.totals.total === '0.00') continue;
     const entries = st.journals.find((j) => j.docId === d.id)?.preview.entries;
     if (!entries?.length) { out.push(`${d.id}: ${d.status} ${d.type} has no journal`); continue; }
     if ((d.status === 'cancelled' || d.status === 'replaced') && entries[entries.length - 1].kind !== 'reversal') out.push(`${d.id}: ${d.status} but its journal ends without a reversal`);
@@ -394,6 +410,17 @@ export function checkInvariants(st: MockState): string[] {
     for (const a of accounts) if ((credit.get(`${c.id}|${a}`) ?? 0) !== (wtTax.get(`${c.id}|${a}`) ?? 0)) {
       out.push(`${c.id}: GL ${a} (WHT payable) credit movement ${fromSatang(credit.get(`${c.id}|${a}`) ?? 0)} but the live WTs of that return carry ${fromSatang(wtTax.get(`${c.id}|${a}`) ?? 0)}`);
     }
+  }
+
+  // 12. approval (§7.6): a pending / approved document is not issued - no number, no journal, no link - and carries who sent it (and who approved it); an issued one never carries an approval nobody gave
+  for (const d of st.docs) {
+    if (d.status === 'pending' || d.status === 'approved') {
+      if (d.number) out.push(`${d.id}: ${d.status} but has the number ${d.number} (the number is allocated once, at issue)`);
+      if (st.journals.some((j) => j.docId === d.id)) out.push(`${d.id}: ${d.status} but has a journal`);
+      if (st.links.some((l) => l.active && l.from === d.id)) out.push(`${d.id}: ${d.status} but has an active link`);
+      if (!d.approval?.submittedBy) out.push(`${d.id}: ${d.status} without an approval record (who sent it)`);
+      if (d.status === 'approved' && !d.approval?.approvedBy) out.push(`${d.id}: approved without an approval record (who approved it)`);
+    } else if (d.approval && !d.approval.approvedBy) out.push(`${d.id}: ${d.status} with an approval record that nobody approved`);
   }
 
   // numbering: gap-free per company x type x month, and the series counter agrees

@@ -23,6 +23,7 @@ const LOOK: Partial<Record<DocType, Look>> = {
   DN: { titleTh: 'ใบเพิ่มหนี้', titleEn: 'DEBIT NOTE', signatures: ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม'] },
   PO: { titleTh: 'ใบสั่งซื้อ', titleEn: 'PURCHASE ORDER', signatures: ['ผู้สั่งซื้อ', 'ผู้อนุมัติ'], dueLabel: 'กำหนดรับของ' },
   PV: { titleTh: 'ใบสำคัญจ่าย', titleEn: 'PAYMENT VOUCHER', signatures: ['ผู้จัดทำ', 'ผู้ตรวจ', 'ผู้อนุมัติ', 'ผู้รับเงิน'] },
+  EX: { titleTh: 'ใบเบิกค่าใช้จ่าย', titleEn: 'EXPENSE CLAIM', signatures: ['ผู้เบิก', 'ผู้ตรวจ', 'ผู้อนุมัติ'] },
   WT: { titleTh: 'หนังสือรับรองการหักภาษี ณ ที่จ่าย', titleEn: 'WITHHOLDING TAX CERTIFICATE', signatures: ['ผู้จ่ายเงิน', 'ผู้มีอำนาจลงนาม'] },
   QT: { titleTh: 'ใบเสนอราคา', titleEn: 'QUOTATION', signatures: ['ผู้เสนอราคา', 'ผู้อนุมัติ', 'ลูกค้ายืนยันสั่งซื้อ'], dueLabel: 'ยืนราคาถึง' },
 };
@@ -103,6 +104,18 @@ function voucherPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
   return { ...m, partyLabel: 'ผู้รับเงิน', payment: paymentLine(c, d), whtLines, lines: [...settled, ...m.lines].map((l, i) => ({ ...l, no: i + 1 })) };
 }
 
+/** EX: the employee is the party; a line with a vendor tax invoice names it (number, vendor, date) under its description, and the approval trail is printed as a note. A claim is an internal record: no VAT rows. */
+function claimPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
+  const { vatLines, ...m } = paperOf(c, d, copy); void vatLines;
+  const lines = m.lines.map((l, i) => {
+    const v = d.lines[i].vendorInvoice;
+    return v ? { ...l, description: `${l.description} (ใบกำกับภาษี ${v.number} ${v.vendorName} ลงวันที่ ${formatDateBE(v.date)})` } : l;
+  });
+  const a = d.approval;
+  const trail = a?.approvedBy ? `ส่งอนุมัติโดย ${a.submittedBy.name} · อนุมัติโดย ${a.approvedBy.name} เมื่อ ${formatDateBE(a.approvedAt!.slice(0, 10))}` : undefined;
+  return { ...m, partyLabel: 'ผู้เบิก', lines, ...(trail || m.notes ? { notes: [m.notes, trail].filter(Boolean).join('\n') } : {}) };
+}
+
 /** WT (50 ทวิ, D-21): payer = our company, payee = the voucher's payee, one income type and its tax. Built from the stored certificate and the voucher that issued it; after the first print the
  *  paper IS the stored snapshot (I7) - only the copy label and the void stamp follow the document as it is now. */
 function certificatePaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
@@ -139,4 +152,4 @@ function adjustmentPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
   return { ...m, adjusts: { number: ti.number ?? '-', date: ti.header.documentDate, originalNet: ti.totals.net, correctNet: fromSatang(correct), diffNet: d.totals.net, reason: reasonTh(d.header) } };
 }
 
-export const PAPER_BUILDERS: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf, QT: paperOf, SO: paperOf, DO: paperOf, IV: paperOf, BL: billingPaper, RC: receiptPaper, CN: adjustmentPaper, DN: adjustmentPaper, PO: paperOf, PV: voucherPaper, WT: certificatePaper };
+export const PAPER_BUILDERS: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf, QT: paperOf, SO: paperOf, DO: paperOf, IV: paperOf, BL: billingPaper, RC: receiptPaper, CN: adjustmentPaper, DN: adjustmentPaper, PO: paperOf, PV: voucherPaper, EX: claimPaper, WT: certificatePaper };

@@ -22,6 +22,7 @@ export const PB_BASE = '/purchases/bills';
 export const PCN_BASE = '/purchases/vendor-notes';
 export const PDN_BASE = '/purchases/vendor-debit-notes';
 export const PV_BASE = '/purchases/payment-vouchers';
+export const EX_BASE = '/purchases/expense-claims';
 export const WT_BASE = '/tax/wht-certificates';
 // names are keys of messages `screens.name.*`; fixture keys live in src/mocks/fixtures/ids.ts (later tasks append their screens here)
 export const SCREENS: Screen[] = [
@@ -82,6 +83,16 @@ export const SCREENS: Screen[] = [
   { name: 'pvForeign', route: { fixture: 'pvForeign', base: PV_BASE }, company: 'vat', states: true },
   { name: 'pvCancelled', route: { fixture: 'pvCancelled', base: PV_BASE }, company: 'vat', states: true },
   { name: 'pvPrint', route: { fixture: 'pvMultiWt', base: '/print/PV' }, company: 'vat', states: false },
+  { name: 'exList', route: EX_BASE, company: 'both', states: true },
+  { name: 'exNew', route: `${EX_BASE}/new`, company: 'both', states: true },
+  { name: 'exDraft', route: { fixture: 'exDraft', base: EX_BASE }, company: 'vat', states: true },
+  { name: 'exPending', route: { fixture: 'exPending', base: EX_BASE }, company: 'vat', states: true },
+  { name: 'exApproved', route: { fixture: 'exApproved', base: EX_BASE }, company: 'vat', states: true },
+  { name: 'exUnpaid', route: { fixture: 'exUnpaid', base: EX_BASE }, company: 'vat', states: true },
+  { name: 'exPaid', route: { fixture: 'exPaid', base: EX_BASE }, company: 'vat', states: true },
+  { name: 'exForfeit', route: { fixture: 'exForfeit', base: EX_BASE }, company: 'vat', states: true },
+  { name: 'nexIssued', route: { fixture: 'nexIssued', base: EX_BASE }, company: 'nonvat', states: true },
+  { name: 'exPrint', route: { fixture: 'exUnpaid', base: '/print/EX' }, company: 'vat', states: false },
   { name: 'wtList', route: WT_BASE, company: 'both', states: true },
   { name: 'wtIssued', route: { fixture: 'wtIssued', base: WT_BASE }, company: 'vat', states: true },
   { name: 'wtCancelled', route: { fixture: 'wtCancelled', base: WT_BASE }, company: 'vat', states: true },

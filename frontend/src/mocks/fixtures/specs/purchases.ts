@@ -1,4 +1,6 @@
-import type { DocHeader, DocLine, MarkKey } from '@/domain/types';
+import type { DocHeader, DocLine, MarkKey, VendorInvoice } from '@/domain/types';
+import { tinCheckDigit } from '@/domain/tin';
+import { seedAttachment } from '../../engine/attachments';
 import { closeRemainder, setMark } from '../../engine/marks';
 import type { MockState } from '../../store';
 import { USER } from '../documents';
@@ -15,6 +17,10 @@ const exp = (doc: string, n: number, description: string, unit: string, unitPric
 const vendorDoc = (no: string, date: string, extra: Partial<DocHeader> = {}): Partial<DocHeader> => ({ vendorDocNumber: no, vendorDocDate: date, ...extra });
 const mark = (id: string, key: MarkKey) => (st: MockState) => { setMark(st, id, key, st.docs.find((d) => d.id === id)!.version, USER); };
 const due = (date: string) => ({ dueDate: date }); // PO: "กำหนดรับของ"
+/** The vendor's tax invoice behind an expense-claim line (a fictional TIN with a correct check digit). */
+const inv = (vendorName: string, first12: string, number: string, date: string): { vendorInvoice: VendorInvoice } => ({ vendorInvoice: { vendorName, vendorTin: first12 + tinCheckDigit(first12), number, date } });
+/** A 1 x 1 PNG: the photo of a receipt. */
+const PHOTO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
 export const PURCHASE_SPECS: SeedSpec[] = [
   // ---- P1: purchase orders ----
@@ -66,6 +72,34 @@ export const PURCHASE_SPECS: SeedSpec[] = [
     lines: [line('npb-1', 1, 'ค่าซ่อมแซมอุปกรณ์โรงสี', '1', 'งาน', '1000.00', 'S7', { expenseCategory: 'services' })] },
   { id: 'npb-2', type: 'PB', companyId: NV, date: '2026-10-08', partyId: 'nv-01', status: 'issued', header: vendorDoc('R-204', '2026-10-08'),
     lines: [exp('npb-2', 1, 'ข้าวเปลือก', 'กก.', '12.00', 'nv-EXP-02', 'cost-of-sales', 'EX', '500')] },
+
+  // ---- P4: expense claims (EX, owed to an employee: 2180) - the approval policy of the VAT company wants every claim approved (the seed's own user approves, self-approval is on) ----
+  // ex-d1: a draft, taxi + a meal, nothing with VAT
+  { id: 'ex-d1', type: 'EX', companyId: VAT, date: '2026-10-13', partyId: 'emp-02', status: 'draft', header: {},
+    lines: [line('ex-d1', 1, 'ค่าแท็กซี่ไปพบลูกค้า', '1', 'เที่ยว', '180.00', 'EX', { expenseCategory: 'transport' }), line('ex-d1', 2, 'ค่าอาหารระหว่างเดินทาง', '1', 'มื้อ', '320.00', 'EX', { expenseCategory: 'transport' })] },
+  // ex-pend: waiting for approval, a receipt photo attached; the stationery line carries its vendor tax invoice
+  { id: 'ex-pend', type: 'EX', companyId: VAT, date: '2026-10-13', partyId: 'emp-03', status: 'pending', header: {},
+    lines: [line('ex-pend', 1, 'ค่าอุปกรณ์สำนักงานซื้อด่วน', '1', 'ชุด', '1000.00', 'S7', { expenseCategory: 'supplies', ...inv('ร้านเครื่องเขียนสยาม', '010556000123', 'INV-5521', '2026-10-13') })],
+    after: (st) => seedAttachment(st, VAT, 'ex-pend', { id: 'att-seed-ex-pend', category: 'receipt', name: 'ใบเสร็จร้านเครื่องเขียน.png', dataUrl: PHOTO }, USER.name) },
+  // ex-appr: approved, not issued yet (VAT 175.00 has no tax invoice: it will be cost)
+  { id: 'ex-appr', type: 'EX', companyId: VAT, date: '2026-10-12', partyId: 'emp-01', status: 'approved', header: {},
+    lines: [line('ex-appr', 1, 'ค่าซ่อมโปรเจกเตอร์ห้องประชุม', '1', 'งาน', '2500.00', 'S7', { expenseCategory: 'services' })] },
+  // ex-1: issued, unpaid. Taxi 180.00 (no VAT) + supplies 2,000.00 with its tax invoice (VAT 140.00 -> 1170) + a meal 500.00 whose VAT 35.00 has no invoice (cost, 5170) = 2,855.00
+  { id: 'ex-1', type: 'EX', companyId: VAT, date: '2026-10-10', partyId: 'emp-02', status: 'issued', header: {},
+    lines: [line('ex-1', 1, 'ค่าแท็กซี่', '1', 'เที่ยว', '180.00', 'EX', { expenseCategory: 'transport' }),
+      line('ex-1', 2, 'ค่าวัสดุสิ้นเปลือง', '1', 'ชุด', '2000.00', 'S7', { expenseCategory: 'supplies', ...inv('บริษัท เครื่องเขียนอเนกประสงค์ จำกัด', '010556000771', 'TX-77/1024', '2026-10-09') }),
+      line('ex-1', 3, 'ค่าอาหารลูกค้า', '1', 'มื้อ', '500.00', 'S7', { expenseCategory: 'entertainment' })] },
+  // ex-late: the vendor's tax invoice is from 2026-03: the window of ม.82/3 closed in 2026-09, so its VAT 70.00 is cost
+  { id: 'ex-late', type: 'EX', companyId: VAT, date: '2026-10-09', partyId: 'emp-03', status: 'issued', header: {},
+    lines: [line('ex-late', 1, 'ค่าบริการรายเดือน มี.ค.', '1', 'เดือน', '1000.00', 'S7', { expenseCategory: 'services', ...inv('บริษัท คลาวด์โฮสต์ไทย จำกัด', '010556000345', 'CH-0315', '2026-03-15') })] },
+  // ex-paid: 1,200.00 travel, paid by pv-ex in full (no tax is withheld on a reimbursement)
+  { id: 'ex-paid', type: 'EX', companyId: VAT, date: '2026-10-08', partyId: 'emp-01', status: 'issued', header: {},
+    lines: [line('ex-paid', 1, 'ค่าเดินทางไปประชุม', '1', 'ครั้ง', '1200.00', 'EX', { expenseCategory: 'transport' })] },
+  { id: 'pv-ex', type: 'PV', companyId: VAT, date: '2026-10-14', partyId: 'emp-01', status: 'issued', header: { reference: 'จ่ายคืนค่าเดินทาง' }, lines: [],
+    allocations: [{ targetId: 'ex-paid', targetType: 'EX', amount: '1200.00' }] },
+  // non-VAT company: no approval policy, issued directly; the VAT of a vendor's receipt is cost
+  { id: 'nex-1', type: 'EX', companyId: NV, date: '2026-10-09', partyId: 'nemp-01', status: 'issued', header: {},
+    lines: [line('nex-1', 1, 'ค่าน้ำมันรถส่งของ', '1', 'ครั้ง', '800.00', 'S7', { expenseCategory: 'transport' })] },
 
   // ---- P3: payment vouchers and the 50 tawi they issue (WHT from the typed lines of the bills paid, and from the voucher's own lines) ----
   // pv-pay1: pb-1 paid in full (24,075.00 after pcn-1); RENT 5 % deduct of the net 22,500.00 = 1,125.00 -> cash 22,950.00, one WT

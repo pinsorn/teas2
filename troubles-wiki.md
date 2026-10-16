@@ -110,3 +110,8 @@ Entry format — terse, greppable by symptom:
 - **Symptom:** `getByRole('heading', { level: 1 })` / `getByText('ส่งมอบแล้ว')` resolve to 2 elements on GitHub CI only; green locally.
 - **Root cause:** a race, not an environment difference. Locally the second element (the paper's lazily fetched seller `h1`; the activity-tab entry) had not rendered yet when the assertion ran, so the locator matched one element and passed vacuously. Slower CI runners render both first. The paper seller name was also a real a11y defect (an extra `h1` per sheet).
 - **Fix:** the paper seller name is an `h2`; scope text locators to their region (`getByRole('tabpanel', { name })`). Never `.first()`.
+
+## An attachment test counts one file too many / an e2e option locator matches 12 elements (P4)
+- **Symptom:** after P4 the attachment tests in `docs-write-s6.test.ts` see `teas2.mock.att.att-seed-ex-pend` and a metadata row they did not create; an e2e `getByRole('option')` for a party type-ahead resolves to 12 elements (or `toHaveCount(0)` never holds).
+- **Root cause:** the seed now carries one real attachment (`ex-pend`, the receipt photo; bytes in localStorage, metadata in `st.attachments`). And a native `<select>` (category, tax code) exposes its `<option>`s with role `option` too, so an unscoped locator also counts those.
+- **Fix:** attachment tests filter `att-seed-` (`userAtt()` / `attKeys()`); e2e type-ahead locators are `page.getByRole('listbox').getByRole('option')`. Also: `toHaveURL(//expense-claims/[^/]+$/)` matches `/new` itself - exclude it (`(?!new)`) before reading the id from the URL.

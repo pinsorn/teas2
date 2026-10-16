@@ -21,7 +21,7 @@ export const searchHandlers = [
       .slice(0, 5).map((d) => ({ kind: 'doc', id: d.id, label: `${d.number} · ${d.party?.name ?? ''}`, href: docViewHref(d.type, d.id) }));
     const parties: SearchHit[] = perms.includes('party.read')
       ? st.parties.filter((p) => p.companyId === company.id && p.name.toLowerCase().includes(q)).slice(0, 5)
-        .map((p) => ({ kind: 'party', id: p.id, label: p.name, href: `/master/${p.kind === 'customer' ? 'customers' : 'vendors'}/${p.id}` }))
+        .map((p) => ({ kind: 'party', id: p.id, label: p.name, href: p.kind === 'employee' ? undefined : `/master/${p.kind === 'customer' ? 'customers' : 'vendors'}/${p.id}` }))
       : [];
     const pages: SearchHit[] = PAGES.filter((p) => p.label.toLowerCase().includes(q))
       .map((p) => ({ label: p.label, href: p.type ? docListHref(p.type, company.vatRegistered) : p.href }))

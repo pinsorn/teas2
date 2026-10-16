@@ -1,30 +1,21 @@
 'use client';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { useId, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { Guarded } from './Guarded';
 import { routesOf, type DocDescriptor } from '@/domain/descriptors';
 import { docListHref } from '@/descriptors';
 import { ADJUSTS, CLOSEABLE, convertTargets, DOC_TYPES, LIVE, MARKS, SETTLES } from '@/domain/doc-types';
 import type { Doc, DocType, MarkKey } from '@/domain/types';
 import { settleable } from '../doc-editor/SettlementPanel';
+import { ApprovalActions } from './ApprovalActions';
 
 /** A descriptor may list the conversions it allows; the "convert to…" button (and its dialog) exists only for those. */
 export type ConvertibleDescriptor = DocDescriptor & { convertsTo?: DocType[] };
 
 
-/** A disabled action keeps its place and says why (aria-describedby + tooltip), never just goes grey. */
-export function Guarded({ why, children }: { why?: string; children: (p: { disabled: boolean; 'aria-describedby'?: string }) => ReactNode }) {
-  const id = useId();
-  if (!why) return <>{children({ disabled: false })}</>;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild><span tabIndex={0} className="inline-flex">{children({ disabled: true, 'aria-describedby': id })}<span id={id} className="sr-only">{why}</span></span></TooltipTrigger>
-      <TooltipContent>{why}</TooltipContent>
-    </Tooltip>
-  );
-}
+export { Guarded };
 
 /** Marks that have a button. */
 const MARK_BUTTONS: MarkKey[] = ['accepted', 'rejected', 'delivered', 'sent'];
@@ -32,8 +23,8 @@ const MARK_LABEL = { accepted: 'markAccepted', rejected: 'markRejected', deliver
 /** The notes made from a document (never by conversion): their buttons open the note's editor on `?adjust=<this document>`. */
 const NOTE_LABEL = { CN: 'issueCn', DN: 'issueDn', PCN: 'issuePcn', PDN: 'issuePdn' } as const;
 
-export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCancel, onConvert, onMark, onCloseRemainder, nothingRemaining, onReprint }: {
-  descriptor: ConvertibleDescriptor; doc: Doc; permissions: string[]; /** The active company's VAT status (conversion targets depend on it). */ vatRegistered: boolean; onCancel: () => void; onConvert?: () => void; onMark?: (mark: MarkKey) => void; onCloseRemainder?: () => void; /** Every line is already converted in full: there is nothing to close. */ nothingRemaining?: boolean; /** The original was printed: the print action asks first (a reprint is a สำเนา). */ onReprint?: () => void;
+export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, companyId = '', onCancel, onConvert, onMark, onCloseRemainder, nothingRemaining, onReprint }: {
+  descriptor: ConvertibleDescriptor; doc: Doc; permissions: string[]; /** The active company's VAT status (conversion targets depend on it). */ vatRegistered: boolean; /** The active company: the approval buttons refresh its queries. */ companyId?: string; onCancel: () => void; onConvert?: () => void; onMark?: (mark: MarkKey) => void; onCloseRemainder?: () => void; /** Every line is already converted in full: there is nothing to close. */ nothingRemaining?: boolean; /** The original was printed: the print action asks first (a reprint is a สำเนา). */ onReprint?: () => void;
 }) {
   const t = useTranslations('docView.actions');
   const ts = useTranslations('state');
@@ -56,7 +47,7 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCa
       <div role="group" aria-label={t('label')} className="flex flex-wrap items-center gap-2">
         {system ? null : doc.status === 'draft' ? (
           <Guarded why={missing(d.permissions.issue)}>
-            {(p) => <Button {...p} asChild={!p.disabled}>{p.disabled ? <span>{t('issueDraft')}</span> : <Link href={routes.edit(doc.id)}>{t('issueDraft')}</Link>}</Button>}
+            {(p) => <Button {...p} variant={doc.approvalRequired ? 'outline' : 'default'} asChild={!p.disabled}>{p.disabled ? <span>{t(doc.approvalRequired ? 'edit' : 'issueDraft')}</span> : <Link href={routes.edit(doc.id)}>{t(doc.approvalRequired ? 'edit' : 'issueDraft')}</Link>}</Button>}
           </Guarded>
         ) : doc.status === 'pending' ? (
           <Guarded why={t('whyPending')}>{(p) => <Button {...p}><span>{t('issueDraft')}</span></Button>}</Guarded>
@@ -69,7 +60,8 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCa
             {(p) => <Button {...p} asChild={!p.disabled}>{p.disabled ? <span>{t('edit')}</span> : <Link href={routes.edit(doc.id)}>{t('edit')}</Link>}</Button>}
           </Guarded>
         )}
-        {doc.status !== 'draft' && DOC_TYPES[d.type].printable ? ( // a vendor's document is recorded, not printed
+        {!system && (doc.status === 'pending' || doc.status === 'approved' || (doc.status === 'draft' && doc.approvalRequired)) ? <ApprovalActions descriptor={d} doc={doc} permissions={permissions} companyId={companyId} /> : null}
+        {doc.status !== 'draft' && DOC_TYPES[d.type].printable && doc.status !== 'pending' && doc.status !== 'approved' ? ( // a vendor's document is recorded, not printed
           <Guarded why={missing(d.permissions.read)}>
             {(p) => (doc.printCount ?? 0) > 0 && !p.disabled
               ? <Button {...p} variant="outline" onClick={onReprint}>{t('print')}</Button>
@@ -80,7 +72,7 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, onCa
           {(p) => <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t('copy')}</span> : <Link href={`${routes.create}?copyFrom=${doc.id}`}>{t('copy')}</Link>}</Button>}
         </Guarded>}
         {d.convertsTo?.length && live ? (
-          <Guarded why={d.type === 'QT' && doc.marks?.rejected ? t('whyRejected') : doc.marks?.closed ? t('whyClosed') : targets.length ? undefined : t('whyNoTarget')}>
+          <Guarded why={d.type === 'QT' && doc.marks?.rejected ? t('whyRejected') : doc.marks?.closed ? t('whyClosed') : d.type === 'EX' && doc.outstanding !== undefined && !settleable(doc.outstanding) ? t('whyPaid') : targets.length ? undefined : t('whyNoTarget')}>
             {(p) => <Button {...p} variant="outline" onClick={onConvert}>{t('convert')}</Button>}
           </Guarded>
         ) : null}

@@ -31,6 +31,7 @@ import { SettlementPanel } from './SettlementPanel';
 import { TotalsPanel } from './TotalsPanel';
 import { useAutosave } from './useAutosave';
 import { useCompute } from './useCompute';
+import { VendorInvoiceFields } from './VendorInvoiceFields';
 import { cleanDecimal, isComposing, moneyText, qtyText } from './useLineGridKeys';
 
 export interface DocEditorProps {
@@ -106,7 +107,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   const [dateAdopted, setDateAdopted] = useState(!!initial || !!me?.businessDate);
   if (!dateAdopted && me?.businessDate) { setDateAdopted(true); setHeader((h) => (h.documentDate ? h : { ...h, documentDate: me.businessDate })); }
   const exemptOnly = d.lineEditor === 'amount' && d.headerFields.includes('whtMode'); // a voucher: input VAT only through a bill (PB)
-  const [lines, setLines] = useState<DocLine[]>(initial?.lines.length ? initial.lines : [newLine(exemptOnly || (me && !me.vatRegistered) ? 'EX' : 'S7')]); // a non-VAT company sells without VAT
+  const [lines, setLines] = useState<DocLine[]>(initial?.lines.length ? initial.lines : [newLine(exemptOnly || (me && !me.vatRegistered) || d.type === 'EX' ? 'EX' : 'S7')]); // a claim starts exempt: most receipts (taxi, meals) carry no tax invoice // a non-VAT company sells without VAT
   const [party, setParty] = useState<PartySummary | undefined>(initial?.party);
   const [allocations, setAllocations] = useState<Allocation[]>(initial?.allocations ?? []); // RC / PV: the open items this document settles
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -174,7 +175,15 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   const foreignLine = (l: DocLine): DocLine => (isBlankLine(l) || l.pnd36 !== undefined ? l : { ...l, pnd36: true, whtTypeCode: l.whtTypeCode ?? 'FOR-SVC' });
   const changeLines = (ls: DocLine[]) => setLines(withholds && party?.entityKind === 'foreign' ? ls.map(foreignLine) : ls);
   const missing = compute.data?.missing; // gates the actions: only a settled answer to the current input counts
-  const canAct = !!me?.permissions.includes(mode === 'revise' ? d.permissions.create : d.permissions.issue);
+  // §7.6: a document the policy wants approved is not issued from here - a person who cannot approve SUBMITS it, one who holds approve + issue approves and issues in one action (the server is the gate either way)
+  // editing an approved document returns it to draft (§7.6): from the first change it needs approval again (an untouched approved document is simply issued)
+  const [edited, setEdited] = useState(false);
+  if (!edited && initial?.status === 'approved' && (autosave.status === 'pending' || autosave.status === 'saving')) setEdited(true);
+  const needsApproval = mode !== 'revise' && !!compute.data?.approvalRequired && (initial?.status !== 'approved' || edited);
+  const bothRights = !!me?.permissions.includes(`doc.${d.type}.approve`) && !!me?.permissions.includes(d.permissions.issue);
+  const submitMode = needsApproval && !bothRights;
+  const approveIssueMode = needsApproval && bothRights;
+  const canAct = !!me?.permissions.includes(mode === 'revise' || submitMode ? d.permissions.create : d.permissions.issue);
   const why = me && !canAct ? 'permission'
     : autosave.status === 'conflict' ? 'conflict'
     : amountEditor && withholds && whtTypes.isError ? 'whtTypes'
@@ -205,7 +214,9 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
       const saved = await autosave.flush(); // the draft must hold exactly what was confirmed
       if (!saved) return; // the save failure is already on screen
       if (saved.json !== confirmed) { setStale(true); return; } // never issue content the user did not confirm
-      const doc = await endpoints.issueDoc(d.type, saved.id, saved.version);
+      const doc = submitMode ? await endpoints.submitDoc(d.type, saved.id, saved.version)
+        : approveIssueMode ? await endpoints.approveAndIssueDoc(d.type, saved.id, saved.version)
+        : await endpoints.issueDoc(d.type, saved.id, saved.version);
       invalidate();
       onIssued(doc);
     } catch (e) {
@@ -244,7 +255,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
 
   const amounts = useMemo(() => Object.fromEntries((compute.data?.lines ?? []).map((l) => [l.id, l.net])), [compute.data]);
   const heading = mode === 'create' ? td('create') : mode === 'edit-draft' ? t('editDraft', { title }) : t('revise', { title });
-  const primaryLabel = mode === 'revise' ? t('saveRevision') : td('issue');
+  const primaryLabel = mode === 'revise' ? t('saveRevision') : submitMode ? t('submitApproval') : td('issue');
   const conflict = autosave.status === 'conflict' || (issueError instanceof ApiError && issueError.problem.status === 409);
   const reload = <Button size="sm" variant="outline" onClick={() => window.location.reload()}>{t('reload')}</Button>;
 
@@ -253,7 +264,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-title font-semibold">{heading}</h1>
         {initial?.number && <span className="tabular-nums text-muted-foreground">{initial.number}</span>}
-        <StatusChip status={initial?.status ?? 'draft'} />
+        <StatusChip status={edited ? 'draft' : initial?.status ?? 'draft'} />
       </div>
 
       {initial?.createdBy.kind === 'agent' && initial.id ? <AgentBanner actor={initial.createdBy} status={initial.status} reportId={initial.agentReportId} /> : null}
@@ -273,9 +284,9 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
               </div>
             ) : partyKind && (
               <div className="md:col-span-2">
-                <PartyField kind={partyKind} value={party} onPick={(p) => void onPickParty(p)} canCreate={me ? me.permissions.includes('party.manage') : undefined}
+                <PartyField kind={party?.kind === 'employee' && partyKind === 'vendor' ? 'employee' : partyKind} value={party} onPick={(p) => void onPickParty(p)} canCreate={me ? me.permissions.includes('party.manage') : undefined}
                   onPending={setPartyBusy} onClear={() => { pickGen.current++; setPicking(false); setParty(undefined); setAllocations([]); setHeader((h) => ({ ...h, partyId: undefined })); }}
-                  search={(q) => endpoints.searchParties({ kind: partyKind === 'employee' ? undefined : partyKind, q, limit: 8 }).then((p) => p.items)} />
+                  search={(q) => endpoints.searchParties({ kind: party?.kind === 'employee' && partyKind === 'vendor' ? 'employee' : partyKind, q, limit: 8 }).then((p) => p.items)} />
               </div>
             )}
             <HeaderFields type={d.type} keys={d.headerFields} ids={ids} header={header} setHeader={setHeader} />
@@ -317,6 +328,8 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
                 whtError={withholds && whtTypes.isError ? whtTypes.error : undefined} onWhtRetry={() => void whtTypes.refetch()} exemptOnly={exemptOnly} />
             </section>
           )}
+
+          {d.type === 'EX' && <VendorInvoiceFields lines={lines} documentDate={header.documentDate} onChange={changeLines} />}
 
           <div className="grid gap-6 lg:grid-cols-2">
             <MissingSummary ref={missingRef} missing={compute.last?.missing} pending={compute.pending || !!compute.error} partyChosen={!!header.partyId}
@@ -365,7 +378,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
       )}
       <JournalDrawer open={journalOpen} onOpenChange={setJournalOpen} journal={compute.data?.journal} pending={compute.pending} error={compute.error} onRetry={compute.retry} />
       {compute.data && (
-        <ConfirmIssueDialog open={dialogOpen} title={t('confirm.title', { title })} totals={compute.data.totals}
+        <ConfirmIssueDialog open={dialogOpen} title={submitMode ? t('submitApproval') : t('confirm.title', { title })} body={submitMode ? t('confirmSubmit.body') : approveIssueMode ? t('confirmApprove.body') : undefined} totals={compute.data.totals}
           onConfirm={() => void confirmIssue()} onCancel={() => { setConfirmOpen(false); setWant(undefined); }} />
       )}
     </div>

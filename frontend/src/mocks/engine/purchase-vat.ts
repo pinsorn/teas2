@@ -1,5 +1,6 @@
 import { inputVatExpired } from '@/domain/claim-window';
-import type { DocHeader, DocLine, DocType } from '@/domain/types';
+import { isValidTin } from '@/domain/tin';
+import type { DocHeader, DocLine, DocType, VendorInvoice } from '@/domain/types';
 import { EXPENSE_CATEGORIES, type ExpenseCategory } from '../fixtures/expense-categories';
 import type { MockState } from '../store';
 import { MockError } from './log';
@@ -7,6 +8,12 @@ import { RATE_BP, vatOf } from './vat';
 
 /** Input VAT rules of the vendor documents (PB, and the notes PCN / PDN that adjust one). [SP-R] - the statute references are the cited sections of the Revenue Code. */
 export const isVendorBill = (t: DocType): boolean => t === 'PB' || t === 'PCN' || t === 'PDN';
+
+/** EX (expense claim, §7.6): the vendor tax invoice behind a line. All four details or none; with them, the invoice date opens the same claim window as a bill's (ม.82/3), per line.
+ *  Judged on what the line CARRIES: a line with no tax invoice has VAT that is cost, whatever its tax code says. */
+export const invoiceComplete = (v: Partial<VendorInvoice> | undefined): v is VendorInvoice => !!v && !!v.vendorName?.trim() && !!v.vendorTin?.trim() && !!v.number?.trim() && !!v.date;
+/** True when the input VAT of this EX line is NOT claimable: no complete vendor tax invoice, or the invoice's window had closed when the claim was recorded (D > V+6). */
+export const exForfeited = (h: Pick<DocHeader, 'documentDate'>, l: DocLine): boolean => !invoiceComplete(l.vendorInvoice) || inputVatExpired(h.documentDate, l.vendorInvoice.date);
 
 /** The expense category of a purchase line: the code STORED on the line (C1). A posted line never reads the item master; `snapshotCategories` copies the item's category onto the line at save / revise / issue. */
 export const categoryOf = (_st: MockState, _companyId: string, l: DocLine): ExpenseCategory | undefined => EXPENSE_CATEGORIES.find((c) => c.code === l.expenseCategory);
@@ -18,6 +25,15 @@ export const snapshotCategories = (st: MockState, companyId: string, lines: DocL
     const code = st.items.find((i) => i.id === l.itemId && i.companyId === companyId)?.expenseCategory;
     return code ? { ...l, expenseCategory: code } : l;
   });
+
+/** EX: a line's vendor tax invoice is stored trimmed; one with nothing in it is no invoice at all (the line's VAT is cost). */
+export const cleanInvoices = (lines: DocLine[]): DocLine[] => lines.map((l) => {
+  const v = l.vendorInvoice;
+  if (!v) return l;
+  const t: VendorInvoice = { vendorName: (v.vendorName ?? '').trim(), vendorTin: (v.vendorTin ?? '').trim(), number: (v.number ?? '').trim(), date: v.date ?? '' };
+  const { vendorInvoice: _v, ...rest } = l; void _v;
+  return Object.values(t).every((x) => !x) ? rest : { ...rest, vendorInvoice: t };
+});
 
 /** C1 (WHT): a PB line with no WHT type of its own takes its picked item's NOW and keeps it, so a later edit of the item master never moves what a voucher withholds (the same pattern as the category). */
 export const snapshotWhtTypes = (st: MockState, companyId: string, lines: DocLine[]): DocLine[] =>
@@ -35,7 +51,7 @@ export const isRecoverable = (st: MockState, companyId: string, l: DocLine, forf
 const YM = /^(\d{4})-(0[1-9]|1[0-2])$/;
 const monthIndex = (ym: string): number => { const m = YM.exec(ym)!; return Number(m[1]) * 12 + Number(m[2]) - 1; };
 /** The claim period a document is filed in: a PB / PDN the one chosen, else the month it is recorded in (D); a PCN always the month of its document date (I2). */
-export const claimPeriodOf = (type: DocType, h: Pick<DocHeader, 'claimPeriod' | 'documentDate'>): string => (type === 'PCN' ? undefined : h.claimPeriod) ?? h.documentDate.slice(0, 7);
+export const claimPeriodOf = (type: DocType, h: Pick<DocHeader, 'claimPeriod' | 'documentDate'>): string => (type === 'PCN' || type === 'EX' ? undefined : h.claimPeriod) ?? h.documentDate.slice(0, 7); // an EX is filed in the month it is recorded
 /** R1-I1 / ม.82/3: the period P is D .. V+6, V = the month of the vendor's tax invoice (else the document), D = the document month - never before D (a month already filed) [SP-R]. */
 export const claimWindowOk = (documentDate: string, vendorDocDate: string | undefined, period: string): boolean => {
   const v = (vendorDocDate || documentDate).slice(0, 7);
@@ -92,6 +108,7 @@ export function issueVendorStatus(st: MockState, companyId: string, type: DocTyp
  *  with the document, else the party master now), the category exists, the vendor invoice is not dated after the bill, the claim period is inside D .. V+6 (R1-I1; an expired window is not
  *  refused, the VAT is forfeited) - and a PCN has none (I2). Judged on the TAX CODE, not on the computed VAT, so a zero-priced line cannot slip through. */
 export function purchaseProblem(st: MockState, companyId: string, type: DocType, body: { header: DocHeader; lines: DocLine[] }): MockError | undefined {
+  if (type === 'EX') return expenseClaimProblem(body);
   if (!isVendorBill(type)) return undefined;
   const h = body.header;
   const vendor = st.parties.find((p) => p.id === h.partyId && p.companyId === companyId);
@@ -118,6 +135,26 @@ export function purchaseProblem(st: MockState, companyId: string, type: DocType,
   const period = claimPeriodOf(type, h);
   if (!claimWindowOk(h.documentDate, h.vendorDocDate, period)) {
     return new MockError(422, 'pb.claim_period_out_of_range', `งวดที่ขอคืนภาษีซื้อ “${period}” ต้องไม่ก่อนเดือนที่บันทึกเอกสาร (${h.documentDate.slice(0, 7)}) และไม่เกิน 6 เดือนนับจากเดือนของใบกำกับภาษีของผู้ขาย (ม.82/3)`);
+  }
+  return undefined;
+}
+
+/** The command-time rules of an expense claim's lines (first violation wins): a known category, and a vendor tax invoice that is whole (four details or none), has a valid TIN and is not dated after the claim.
+ *  A line WITHOUT an invoice is fine - its VAT is cost (InputVatUnclaimed), never input VAT. */
+function expenseClaimProblem(body: { header: DocHeader; lines: DocLine[] }): MockError | undefined {
+  for (const l of body.lines) {
+    if (l.expenseCategory && !EXPENSE_CATEGORIES.some((c) => c.code === l.expenseCategory)) {
+      return new MockError(422, 'ex.unknown_category', `รายการ “${l.description}” ใช้หมวดค่าใช้จ่าย “${l.expenseCategory}” ที่ไม่มีในระบบ`);
+    }
+    const v = l.vendorInvoice;
+    if (!v) continue;
+    const given = [v.vendorName, v.vendorTin, v.number, v.date].filter((x) => !!x?.trim()).length;
+    if (given === 0) continue;
+    if (given < 4) return new MockError(422, 'ex.invoice_incomplete', `รายการ “${l.description}”: ใบกำกับภาษีของผู้ขายต้องมีครบ 4 อย่าง (ชื่อผู้ขาย เลขผู้เสียภาษี เลขที่ใบกำกับ วันที่) หรือไม่ระบุเลย (ภาษีซื้อจะเป็นต้นทุน)`);
+    if (!isValidTin(v.vendorTin.trim())) return new MockError(422, 'ex.invoice_tin_invalid', `รายการ “${l.description}”: เลขประจำตัวผู้เสียภาษีของผู้ขายไม่ถูกต้อง (13 หลัก ตรวจสอบหลักสุดท้าย)`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v.date) || v.date > body.header.documentDate) {
+      return new MockError(422, 'ex.invoice_after_document', `รายการ “${l.description}”: วันที่ใบกำกับภาษีของผู้ขาย (${v.date}) ต้องไม่เกินวันที่ใบเบิก (${body.header.documentDate})`);
+    }
   }
   return undefined;
 }

@@ -24,7 +24,7 @@ export const endpoints = {
   getMe: () => api<Me>('GET', '/me'),
   setActiveCompany: (companyId: string) => api<Me>('POST', '/me/active-company', { companyId }),
   getHome: () => api<HomeInbox>('GET', '/home'),
-  searchParties: (p: { kind?: 'customer' | 'vendor'; q?: string; limit?: number } = {}) =>
+  searchParties: (p: { kind?: 'customer' | 'vendor' | 'employee'; q?: string; limit?: number } = {}) =>
     api<Page<PartySummary>>('GET', `/parties${qs(p)}`),
   searchItems: (p: { q?: string; limit?: number; usage?: 'sales' | 'purchase' } = {}) => api<Page<ItemSummary>>('GET', `/items${qs(p)}`),
   search: (q: string) => api<{ items: SearchHit[] }>('GET', `/search${qs({ q })}`),
@@ -38,6 +38,11 @@ export const endpoints = {
     api<Doc>('PUT', d(type, id), { ...body, version }),
   deleteDoc: (type: DocType, id: string, version: number) => api<void>('DELETE', `${d(type, id)}?version=${version}`),
   issueDoc: (type: DocType, id: string, version: number) => api<Doc>('POST', `${d(type, id)}/issue`, { version }),
+  /** §7.6 approval: submit (draft -> pending), approve (pending -> approved), approve-and-issue (both rights, one command), send back (reason required). */
+  submitDoc: (type: DocType, id: string, version: number) => api<Doc>('POST', `${d(type, id)}/submit`, { version }),
+  approveDoc: (type: DocType, id: string, version: number) => api<Doc>('POST', `${d(type, id)}/approve`, { version }),
+  approveAndIssueDoc: (type: DocType, id: string, version: number) => api<Doc>('POST', `${d(type, id)}/approve-and-issue`, { version }),
+  sendBackDoc: (type: DocType, id: string, version: number, reason: string) => api<Doc>('POST', `${d(type, id)}/send-back`, { version, reason }),
   cancelDoc: (type: DocType, id: string, version: number, reasonCode: string, reasonText: string) =>
     api<Doc>('POST', `${d(type, id)}/cancel`, { version, reasonCode, reasonText }),
   getCorrectionPlan: (type: DocType, id: string, proposed: DocInput) =>

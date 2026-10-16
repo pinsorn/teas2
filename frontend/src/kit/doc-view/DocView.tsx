@@ -27,6 +27,7 @@ import { AttachmentsPanel } from './AttachmentsPanel';
 import { ReprintDialog } from './ReprintDialog';
 import { ChainPanel } from './ChainPanel';
 import { ConvertDialog } from './ConvertDialog';
+import { DocLinesPreview } from './DocLinesPreview';
 import { CloseRemainderDialog } from '../dialogs/CloseRemainderDialog';
 import { MarkDialog } from './MarkDialog';
 import { MarksChips } from './MarksChips';
@@ -78,6 +79,7 @@ function DocViewInner({ descriptor: d, id }: DocViewProps) {
 function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissions: string[] }) {
   const t = useTranslations('docView');
   const tc = useTranslations('common');
+  const tst = useTranslations('status');
   const ts = useTranslations('state');
   const locale = useLocale();
   const router = useRouter();
@@ -144,9 +146,9 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
           {doc.header.inputVatForfeited ? <Badge variant="outline" data-testid="input-vat-forfeited">{t('header.inputVatForfeited')}</Badge> : null}
           {doc.header.complete === false ? <Badge variant="outline" data-testid="doc-incomplete">{t('header.incomplete')}</Badge> : null}
         </div>
-        <h1 className="text-h1 font-semibold tabular-nums" data-testid="doc-number">{doc.number ?? tc('draftNoNumber')}</h1>
+        <h1 className="text-h1 font-semibold tabular-nums" data-testid="doc-number">{doc.number ?? (doc.status === 'pending' || doc.status === 'approved' ? tst(doc.status) : tc('draftNoNumber'))}</h1>
         <dl className="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-x-6 gap-y-2 text-body">
-          <div><dt className="text-small text-muted-foreground">{t('header.party')}</dt><dd>{doc.party?.name ?? '-'}</dd></div>
+          <div><dt className="text-small text-muted-foreground">{t(d.partyKind === 'employee' ? 'header.employee' : 'header.party')}</dt><dd>{doc.party?.name ?? '-'}</dd></div>
           <div><dt className="text-small text-muted-foreground">{t('header.date')}</dt><dd className="tabular-nums">{formatDateBE(doc.header.documentDate)}</dd></div>
           <div><dt className="text-small text-muted-foreground">{t('header.total')}</dt><dd className="tabular-nums">{formatTHB(doc.totals.total)}</dd></div>
           {doc.header.vendorDocNumber ? <div><dt className="text-small text-muted-foreground">{t('header.vendorDoc')}</dt><dd className="tabular-nums">{doc.header.vendorDocNumber}</dd></div> : null}
@@ -159,7 +161,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
         <AgentBanner actor={doc.createdBy} status={doc.status} reportId={doc.agentReportId} />
       </header>
 
-      <ActionBar descriptor={d as ConvertibleDescriptor} doc={doc} permissions={permissions} vatRegistered={me!.vatRegistered} onCancel={() => { cancel.reset(); setCancelOpen(true); }} onConvert={() => setConvertOpen(true)}
+      <ActionBar descriptor={d as ConvertibleDescriptor} doc={doc} permissions={permissions} vatRegistered={me!.vatRegistered} companyId={me!.activeCompanyId} onCancel={() => { cancel.reset(); setCancelOpen(true); }} onConvert={() => setConvertOpen(true)}
         onReprint={() => setReprintOpen(true)} onMark={(m) => { mark.reset(); setMarkOpen(m); }} onCloseRemainder={() => { close.reset(); setCloseOpen(true); }}
         nothingRemaining={closeable && !!rem.data && rem.data.every((l) => l.remaining === '0')} />
       {doc.marks?.closed ? (
@@ -178,7 +180,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
         ) : <TabsTrigger key={k} value={k} className="h-8 flex-auto">{t(`tabs.${k}`)}</TabsTrigger>)}</TabsList>
         <TabsContent value="paper">
           <section role="region" aria-label={t('tabs.paper')} tabIndex={0} className="overflow-x-auto">
-            {PAPERS[doc.type] ? <PaperView type={doc.type} id={doc.id} /> : <PaperStub doc={doc} />}
+            {doc.status === 'pending' || doc.status === 'approved' ? <DocLinesPreview doc={doc} /> : PAPERS[doc.type] ? <PaperView type={doc.type} id={doc.id} /> : <PaperStub doc={doc} />}
           </section>
         </TabsContent>
         <TabsContent value="chain"><ChainPanel type={d.type} id={doc.id} /></TabsContent>

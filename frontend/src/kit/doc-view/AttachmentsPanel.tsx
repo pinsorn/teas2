@@ -45,11 +45,11 @@ export function AttachmentsPanel({ type, docId, ensureDocId, canEdit, issued }: 
   };
 
   const add = useMutation({
-    mutationFn: async (file: File) => {
+    mutationFn: async ({ file, as = category }: { file: File; as?: AttachmentCategory }) => {
       const target = docId ?? (await ensureDocId?.());
       if (!target) throw new Error('needDraft');
       const dataUrl = await readAsDataUrl(file).catch(() => { throw new Error('readFailed'); });
-      await endpoints.addAttachment(type, target, { category, name: file.name, mime: file.type, dataUrl });
+      await endpoints.addAttachment(type, target, { category: as, name: file.name, mime: file.type, dataUrl });
       return target;
     },
     onMutate: () => { setError(undefined); setNote(undefined); },
@@ -80,8 +80,16 @@ export function AttachmentsPanel({ type, docId, ensureDocId, canEdit, issued }: 
             <Label htmlFor={`${id}-file`}>{t('file')}</Label>
             <input ref={input} id={`${id}-file`} type="file" accept="application/pdf,image/png,image/jpeg,image/webp" disabled={add.isPending}
               className="text-body file:mr-2 file:rounded-md file:border file:border-input file:bg-card file:px-3 file:py-1"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) add.mutate(f); }} />
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) add.mutate({ file: f }); }} />
           </div>
+          {type === 'EX' ? ( // an expense claim is filed from a phone: the camera takes the receipt straight into the claim
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${id}-cam`}>{t('camera')}</Label>
+              <input id={`${id}-cam`} type="file" accept="image/*" capture="environment" disabled={add.isPending}
+                className="text-body file:mr-2 file:rounded-md file:border file:border-input file:bg-card file:px-3 file:py-1"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) add.mutate({ file: f, as: 'receipt' }); e.target.value = ''; }} />
+            </div>
+          ) : null}
           <p className="text-small text-muted-foreground">{t('limits')}</p>
         </div>
       ) : null}

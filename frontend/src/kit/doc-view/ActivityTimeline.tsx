@@ -10,7 +10,7 @@ import { ErrorState } from '../states/ErrorState';
 import { ForbiddenState } from '../states/ForbiddenState';
 import { LoadingState } from '../states/LoadingState';
 
-const KNOWN = ['create', 'issue', 'settle', 'cancel', 'revise', 'convert', 'accept', 'reject', 'deliver', 'send'];
+const KNOWN = ['create', 'issue', 'settle', 'cancel', 'revise', 'convert', 'accept', 'reject', 'deliver', 'send', 'submit', 'approve', 'send_back'];
 
 /** Newest first. An agent's action is marked and names its owner (SP0 agent-actor rule). */
 export function ActivityTimeline({ type, id }: { type: DocType; id: string }) {
