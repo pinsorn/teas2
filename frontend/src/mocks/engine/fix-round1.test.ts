@@ -3,7 +3,7 @@ import type { Allocation, DocHeader, DocLine } from '@/domain/types';
 import { USER as U } from '../fixtures/documents';
 import { fixtureIds } from '../fixtures/ids';
 import { buildSeedState, type MockState } from '../store';
-import { addAdjustment, cancel, compute, createDraft, issue, revise } from './commands';
+import { cancel, compute, createDraft, issue, revise } from './commands';
 import { correctionPlan, executePlan } from './corrections';
 import { checkInvariants, whtLineProblems } from './invariants';
 import { toSatang } from './money';
@@ -21,14 +21,14 @@ const rcOf = (st: MockState, allocations: Allocation[], header = hdr('pc-01'), k
 const otherTi = (st: MockState) => st.docs.find((d) => d.type === 'TI' && d.status === 'issued' && d.header.partyId !== 'pc-01' && d.outstanding === d.totals.total)!;
 
 describe('1: the cross-party exception is only for retargeted invoices of a correction-plan receipt', () => {
-  it('correcting the receipt itself to another party invoice is refused (settle.party_mismatch) and rolls back', () => {
+  it('correcting the receipt itself to another party invoice is refused (settle.party_mismatch) before a plan is shown and nothing changes', () => {
     const st = buildSeedState();
     const ids = fixtureIds(st);
     const rc = rcOf(st, [{ targetId: ids.rcTargetsA, targetType: 'TI', amount: '100.00' }]);
     const stored = st.docs.find((d) => d.id === rc.id)!;
     const o = otherTi(st);
-    const plan = correctionPlan(st, rc.id, { header: stored.header, lines: [], allocations: [{ targetId: o.id, targetType: 'TI', amount: '100.00' }] }, 'accountant');
-    expect(() => executePlan(st, plan.planId, plan.planHash, U, 'accountant')).toThrow(/settle.party_mismatch/);
+    // refused when the plan is asked for (S4 fix round 1, M4): a plan that cannot execute is never shown
+    expect(() => correctionPlan(st, rc.id, { header: stored.header, lines: [], allocations: [{ targetId: o.id, targetType: 'TI', amount: '100.00' }] }, 'accountant')).toThrow(/settle.party_mismatch/);
     expect(st.docs.find((d) => d.id === rc.id)!.status).toBe('issued');
   });
   it('a retargeted invoice of the corrected TI is still allowed to differ in party, and the other target is not exempted', () => {
@@ -79,7 +79,7 @@ describe('4: compute in revise mode gives back the document own links', () => {
   it('a receipt that fully paid a TI: compute with the document id is ready; without it the same allocation is over-allocated', () => {
     const st = buildSeedState();
     const a = st.docs.find((d) => d.id === fixtureIds(st).rcTargetsA)!;
-    const rc = rcOf(st, [{ targetId: a.id, targetType: 'TI', amount: a.outstanding! }]);
+    const rc = rcOf(st, [{ targetId: a.id, targetType: 'TI', amount: a.outstanding!, wht: '10.00' }]); // a certificate needs withheld tax (M3)
     expect(out(st, a.id)).toBe(0);
     const withCert = rc.allocations!.map((x) => ({ ...x, certNumber: 'ท.2569/0451' }));
     const body = { header: rc.header, lines: [], allocations: withCert };
@@ -94,9 +94,8 @@ describe('5: a debit note cancelled after payment leaves a negative outstanding 
     const st = buildSeedState();
     const a = st.docs.find((d) => d.id === fixtureIds(st).rcTargetsA)!;
     rcOf(st, [{ targetId: a.id, targetType: 'TI', amount: a.outstanding! }], hdr('pc-01'), 'p1');
-    const dn = createDraft(st, 'co-vat', 'DN', { header: hdr('pc-01'), lines: [ln({ taxCode: 'S7' })] }, U, 'dn');
-    const dnDone = issue(st, dn.id, dn.version, U);
-    addAdjustment(st, dnDone.id, a.id, dnDone.totals.total);
+    const dn = createDraft(st, 'co-vat', 'DN', { header: hdr('pc-01', { refDocId: a.id, reasonCode: 'PRICE_INCREASE' }), lines: [ln({ taxCode: 'S7' })] }, U, 'dn');
+    const dnDone = issue(st, dn.id, dn.version, U); // issue links the note to its invoice
     expect(out(st, a.id)).toBe(107000);
     rcOf(st, [{ targetId: a.id, targetType: 'TI', amount: '1070.00' }], hdr('pc-01'), 'p2');
     expect(out(st, a.id)).toBe(0);

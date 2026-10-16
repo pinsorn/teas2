@@ -2,7 +2,8 @@ import { HttpResponse, delay } from 'msw';
 import type { ApiProblem } from '@/domain/types';
 import { PERMISSIONS_BY_ROLE } from '../permissions';
 import { getSettings } from '../settings';
-import { loadState } from '../store';
+import { MockError } from '../engine/log';
+import { loadState, saveState } from '../store';
 
 export const problem = (status: number, code: string, title: string, extra: Partial<ApiProblem> = {}) =>
   HttpResponse.json({ type: 'about:blank', status, code, title, traceId: `mock-${code}`, ...extra } satisfies ApiProblem,
@@ -28,3 +29,8 @@ export async function screenGate(kind: 'list' | 'item' | 'me') {
 
 export const forbidden = (perm: string) =>
   problem(403, 'auth.forbidden', 'คุณไม่มีสิทธิ์ดูข้อมูลนี้', { detail: `ต้องมีสิทธิ์ ${perm}` });
+
+/** Persists a write. A browser that refuses it (quota) must not be told "done": the command fails with 507 and the previously stored state stays as it was. */
+export function persist(st: Parameters<typeof saveState>[0]): void {
+  if (!saveState(st)) throw new MockError(507, 'storage.full', 'พื้นที่เก็บข้อมูลตัวอย่างเต็ม — ลบไฟล์แนบหรือรีเซ็ตข้อมูลตัวอย่าง');
+}

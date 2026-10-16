@@ -214,7 +214,7 @@ describe('GET /docs/by-party/:partyId', () => {
     expect(r.status).toBe(200);
     const body = (await r.json()) as { items: { id: string; type: string; documentDate: string }[]; total: number };
     const st = loadState();
-    const mine = st.docs.filter((d) => d.header.partyId === 'pc-01' && ['TI', 'RC', 'QT', 'SO', 'DO', 'CN', 'DN', 'IV'].includes(d.type));
+    const mine = st.docs.filter((d) => d.header.partyId === 'pc-01' && ['TI', 'RC', 'QT', 'SO', 'DO', 'CN', 'DN', 'IV', 'BL'].includes(d.type));
     expect(body.total).toBe(mine.length);
     expect(body.items.length).toBeGreaterThan(2);
     expect(body.items.map((i) => i.documentDate)).toEqual([...body.items.map((i) => i.documentDate)].sort().reverse());

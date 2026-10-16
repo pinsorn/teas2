@@ -36,7 +36,7 @@ export function buildDocs(parties: SeedParty[], items: SeedItem[]) {
   const item = (id: string) => items.find((i) => i.id === id)!;
   const specs: Spec[] = [];
   const add = (s: Omit<Spec, 'order'>) => { const full = { ...s, order: specs.length }; specs.push(full); return full; };
-  const totalOf = (lines: DocLine[]) => toSatang(computeDoc(lines, false).totals.total);
+  const totalOf = (lines: DocLine[]) => toSatang(computeDoc(lines, false, true).totals.total); // the seed's own documents are the VAT company's
   const copyLines = (key: string, lines: DocLine[]) => lines.map((l, n) => ({ ...l, id: `${key}-l${n + 1}` }));
 
   const linesFor = (key: string, p: SeedParty, k: number): DocLine[] =>
@@ -136,8 +136,8 @@ export function buildDocs(parties: SeedParty[], items: SeedItem[]) {
     // a receipt settles through allocations, not lines (D-12): its total is the allocated amount, cash = total (no WHT withheld in the seed)
     const lines = s.type === 'RC' ? [] : s.lines;
     const totals = s.type === 'RC'
-      ? { ...computeDoc([], false).totals, total: fromSatang(s.paid!), wht: '0.00', cash: fromSatang(s.paid!), amountInWords: bahtText(fromSatang(s.paid!)) }
-      : computeDoc(lines, false).totals;
+      ? { ...computeDoc([], false, true).totals, total: fromSatang(s.paid!), wht: '0.00', cash: fromSatang(s.paid!), amountInWords: bahtText(fromSatang(s.paid!)) }
+      : computeDoc(lines, false, true).totals;
     const outstanding = s.type !== 'TI' ? undefined : s.status === 'settled' ? '0.00' : s.status === 'partly_settled' ? fromSatang(toSatang(totals.total) - s.paid!)
       : s.status === 'issued' ? totals.total : undefined;
     const issuedAt = s.status === 'draft' ? undefined : at(s.date, '10:00:00');
@@ -145,7 +145,11 @@ export function buildDocs(parties: SeedParty[], items: SeedItem[]) {
       companyId, id: s.key, type: s.type, number: number[s.key], status: s.status, correctionClass: CLASS[s.type],
       revision: s.revision ?? 0, version: 1,
       header: { partyId: s.party.id, documentDate: s.date, ...(s.term ? { dueDate: addDays(s.date, s.party.paymentTermDays) } : {}),
-        ...(s.notes ? { notes: s.notes } : {}), priceIncludesVat: false },
+        ...(s.notes ? { notes: s.notes } : {}), priceIncludesVat: false,
+        // a seeded credit note names the invoice it adjusts and why (S5)
+        ...(s.adjusts ? { refDocId: s.adjusts, reasonCode: 'DISCOUNT' } : {}),
+        // a receipt names the account it posts to (a reissue keeps it); the seed's receipts all went into the company's main account
+        ...(s.type === 'RC' ? { paymentMethod: 'transfer' as const, bankAccountId: 'ba-kbank' } : {}) },
       party: strip(s.party), lines, totals,
       ...(s.type === 'RC' ? { allocations: [{ targetId: s.settles!, targetType: 'TI' as const, targetNumber: number[s.settles!], amount: fromSatang(s.paid!) }] } : {}), ...(outstanding ? { outstanding } : {}), locks: s.locks ?? [], createdBy: s.by,
       ...(issuedAt ? { issuedAt } : {}),

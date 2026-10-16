@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { USER as U } from '../fixtures/documents';
 import { fixtureIds } from '../fixtures/ids';
 import { buildSeedState, type MockState } from '../store';
-import { addAdjustment, createDraft, issue } from './commands';
+import { createDraft, issue } from './commands';
 import { checkInvariants } from './invariants';
 
 const msgs = (st: MockState) => checkInvariants(st).join('\n');
@@ -121,9 +121,8 @@ describe('receipts and vouchers: allocations, WHT and the PV balance identity (F
     const pay = createDraft(b.st, 'co-vat', 'RC', { header: { partyId: ti.header.partyId, documentDate: '2026-10-14' }, lines: [], allocations: [{ targetId: ti.id, targetType: 'TI', amount: D(b.st, ti.id).outstanding! }] }, U, 'neg-rc');
     issue(b.st, pay.id, pay.version, U);
     expect(D(b.st, ti.id).outstanding).toBe('0.00');
-    const cn = createDraft(b.st, 'co-vat', 'CN', { header: { partyId: ti.header.partyId, documentDate: '2026-10-14' }, lines: [{ id: 'c', description: 'ลดหนี้', qty: '1', unit: 'งาน', unitPrice: '50.00', taxCode: 'S7' }] }, U, 'neg-cn');
-    const cnDone = issue(b.st, cn.id, cn.version, U);
-    addAdjustment(b.st, cnDone.id, ti.id, cnDone.totals.total);
+    const cn = createDraft(b.st, 'co-vat', 'CN', { header: { documentDate: '2026-10-14', refDocId: ti.id, reasonCode: 'PRICE_REDUCTION' }, lines: [{ id: 'c', description: 'ลดหนี้', qty: '1', unit: 'งาน', unitPrice: '50.00', taxCode: 'S7', sourceLineId: ti.lines[0].id }] }, U, 'neg-cn');
+    issue(b.st, cn.id, cn.version, U); // issue links the note to its invoice
     expect(D(b.st, ti.id).outstanding).toBe('-53.50');
     expect(msgs(b.st)).toBe('');
   });

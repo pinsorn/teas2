@@ -45,7 +45,7 @@ describe('mock store', () => {
     const old = { ...seed(), version: 5, items: [] as unknown[] };
     localStorage.setItem('teas2.mock.state.v5', JSON.stringify(old));
     const s = loadState();
-    expect(s.version).toBe(6);
+    expect(s.version).toBe(14);
     expect(s.items.some((i) => i.id === 'EXP-01')).toBe(true);
     expect(s.parties.some((p) => p.id === 'pv-12')).toBe(true);
   });
@@ -68,15 +68,15 @@ describe('mock store', () => {
     const kinds = (t: string) => s.docs.filter((d) => d.type === t);
     const tis = kinds('TI').filter((d) => !d.id.startsWith('spike-')); // rendering-spike TIs (ADR-0001) are extra issued docs
     const n = (st: string) => tis.filter((d) => d.status === st).length;
-    expect([n('draft'), n('settled'), n('partly_settled'), n('replaced')]).toEqual([6, 30, 6, 3]);
-    expect(n('issued')).toBe(12);
+    expect([n('draft'), n('settled'), n('partly_settled'), n('replaced')]).toEqual([6, 30, 8, 3]); // 6 partly paid in the history + ti-057 (rc-multi) and ti-037 (rc-nocert), S4
+    expect(n('issued')).toBe(10); // 12 before S4 settled ti-057 and ti-037 in part
     expect(tis.filter((d) => d.createdBy.kind === 'agent')).toHaveLength(2);
-    const rcTargets = s.links.filter((l) => l.kind === 'settles').map((l) => l.to).sort();
+    const rcTargets = s.links.filter((l) => l.kind === 'settles' && s.docs.find((d) => d.id === l.to)?.type === 'TI').map((l) => l.to).filter((id) => !id.startsWith('spike-')).sort(); // (S3's receipts settle IVs; rc-multi also pays spike-60, outside this count)
     expect(rcTargets).toEqual(tis.filter((d) => d.status === 'settled' || d.status === 'partly_settled').map((d) => d.id).sort());
     expect(s.links.filter((l) => l.kind === 'replaces')).toHaveLength(3);
-    expect(s.links.filter((l) => l.kind === 'adjusts')).toHaveLength(2);
-    expect(kinds('CN')).toHaveLength(2);
-    expect(s.links.filter((l) => l.kind === 'converted_from')).toHaveLength(12);
+    expect(s.links.filter((l) => l.kind === 'adjusts')).toHaveLength(5); // cn-1, cn-2 + S5's cn-ret, dn-1, cn-full
+    expect(kinds('CN')).toHaveLength(4);
+    expect(s.links.filter((l) => l.kind === 'converted_from')).toHaveLength(16);
     const delivered = new Set(s.links.filter((l) => l.kind === 'converted_from').map((l) => l.to));
     expect(kinds('SO').filter((d) => d.status === 'issued' && !delivered.has(d.id))).toHaveLength(2);
     const qt = kinds('QT').find((d) => d.revision === 1)!;
@@ -87,7 +87,8 @@ describe('mock store', () => {
       expect(d.number).toMatch(/^[A-Z]+-\d{6}-\d{4}$/);
       expect(s.revisions.some((r) => r.docId === d.id && r.revision === 0)).toBe(true);
     }
-    expect(new Set(s.docs.map((d) => d.number).filter(Boolean)).size).toBe(s.docs.filter((d) => d.number).length);
+    // numbering is per company (each has its own series)
+    expect(new Set(s.docs.filter((d) => d.number).map((d) => `${d.companyId}|${d.number}`)).size).toBe(s.docs.filter((d) => d.number).length);
   });
   it('every seeded doc has the SP0 §7.3 correction class', () => {
     const T = ['TI', 'RC', 'CN', 'DN', 'WT'], N = ['QT', 'SO', 'DO', 'BL', 'PO'];

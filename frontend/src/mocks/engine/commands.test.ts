@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { Allocation } from '@/domain/types';
 import { assertBalanced, type Actor, type DocLine, type MockStateLike } from './test-helpers';
 import { seed } from '../store';
 import { fixtureIds } from '../fixtures/ids';
@@ -199,26 +200,23 @@ describe('I4 settlement lock follows the active settles links', () => {
 
 describe('I5 only settlements make a document settled', () => {
   const mkCn = (ti: MockStateLike['docs'][number]) => {
-    const d = createDraft(st, vatCo, 'CN', { header: { partyId: ti.header.partyId, documentDate: '2026-10-14', priceIncludesVat: ti.header.priceIncludesVat }, lines: ti.lines }, me, `cn-${ti.id}`);
+    const d = createDraft(st, vatCo, 'CN', { header: { documentDate: '2026-10-14', refDocId: ti.id, reasonCode: 'RETURN' }, lines: ti.lines.map((l) => ({ ...l, sourceLineId: l.id })) }, me, `cn-${ti.id}`);
     return issue(st, d.id, d.version, me);
   };
-  it('an unpaid TI credited to 0 by a CN stays issued with outstanding 0.00', async () => {
-    const { addAdjustment } = await import('./commands');
+  it('an unpaid TI credited to 0 by a CN stays issued with outstanding 0.00', () => {
     const d = createDraft(st, vatCo, 'TI', { header: { partyId: vatCustomer, documentDate: '2026-10-14' }, lines: [line()] }, me, 'i5');
     const ti = issue(st, d.id, d.version, me);
-    const cn = mkCn(st.docs.find((x) => x.id === ti.id)!);
-    addAdjustment(st, cn.id, ti.id, cn.totals.total);
+    mkCn(st.docs.find((x) => x.id === ti.id)!); // issue links the note to its invoice
     const after = st.docs.find((x) => x.id === ti.id)!;
     expect([after.status, after.outstanding]).toEqual(['issued', '0.00']);
   });
   it('M3: a reissued receipt keeps its own settled amount on each of several invoices', async () => {
-    const { addSettlement, reissue } = await import('./commands');
+    const { reissue } = await import('./commands');
     const mk = (k: string) => { const d = createDraft(st, vatCo, 'TI', { header: { partyId: vatCustomer, documentDate: '2026-10-14' }, lines: [line()] }, me, k); return issue(st, d.id, d.version, me); };
     const a = mk('m3a'), b = mk('m3b');
-    const rcd = createDraft(st, vatCo, 'RC', { header: { partyId: vatCustomer, documentDate: '2026-10-14' }, lines: [line({ unitPrice: '1500.00', taxCode: 'EX' })] }, me, 'm3rc');
+    const allocations: Allocation[] = [{ targetId: a.id, targetType: 'TI', amount: '1000.00' }, { targetId: b.id, targetType: 'TI', amount: '500.00' }];
+    const rcd = createDraft(st, vatCo, 'RC', { header: { partyId: vatCustomer, documentDate: '2026-10-14' }, lines: [], allocations }, me, 'm3rc'); // a VAT company's receipt has no lines (S4)
     const rc = issue(st, rcd.id, rcd.version, me);
-    addSettlement(st, rc.id, a.id, '1000.00');
-    addSettlement(st, rc.id, b.id, '500.00');
     const nrc = reissue(st, rc.id, { header: rc.header, lines: rc.lines }, me, 'x');
     const amounts = st.links.filter((l) => l.from === nrc.id && l.kind === 'settles' && l.active).map((l) => l.amount).sort();
     expect(amounts).toEqual(['1000.00', '500.00']);

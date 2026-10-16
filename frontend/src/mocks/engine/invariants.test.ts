@@ -73,19 +73,35 @@ describe('ledger invariants over the whole seed (S7)', () => {
     jOf(c, r.id).preview.entries.pop();
     expect(msgs(c)).toMatch(/reversal/);
   });
-  it('report a late entry before the first open date and a plain reversal in a closed period (can fail)', () => {
-    const a = buildSeedState(); const d = issuedTi(a);
-    jOf(a, d.id).preview.entries.push({ ...structuredClone(jOf(a, d.id).preview.entries[0]), kind: 'correction', date: '2026-03-05', late: true });
-    expect(msgs(a)).toMatch(/closed period/);
-    const b = buildSeedState(); const d2 = issuedTi(b);
-    jOf(b, d2.id).preview.entries.push({ ...structuredClone(jOf(b, d2.id).preview.entries[0]), kind: 'reversal', date: '2026-03-05' });
-    expect(msgs(b)).toMatch(/closed period/);
+  // corrupted state per entry kind: dated in a closed period, posted after it closed (postedAt is the only evidence)
+  const AFTER = '2026-10-01T10:00:00+07:00';
+  for (const kind of ['reversal', 'correction'] as const) {
+    it(`report a ${kind} entry in a closed period posted after the close (can fail)`, () => {
+      const st = buildSeedState(); const d = issuedTi(st);
+      const base = structuredClone(jOf(st, d.id).preview.entries[0]);
+      jOf(st, d.id).preview.entries.push({ ...base, kind, date: '2026-03-05', postedAt: AFTER, ...(kind === 'correction' ? { late: true } : {}) });
+      expect(msgs(st)).toMatch(/closed period/);
+    });
+  }
+  it('report a late entry in a closed period posted after the close (can fail)', () => {
+    const st = buildSeedState(); const d = issuedTi(st);
+    jOf(st, d.id).preview.entries.push({ ...structuredClone(jOf(st, d.id).preview.entries[0]), kind: 'correction', date: '2026-03-05', late: true, postedAt: AFTER });
+    expect(msgs(st)).toMatch(/closed period/);
   });
-  it('report an original posted after its period closed (can fail)', () => {
+  it('report an original posted after its period closed, and an entry with no postedAt (can fail)', () => {
     const st = buildSeedState(); const d = st.docs.find((x) => x.type === 'TI' && x.status === 'issued' && x.header.documentDate < '2026-07-01')!;
     expect(msgs(st)).toBe('');
-    d.issuedAt = '2026-10-01T10:00:00+07:00';
+    const e = jOf(st, d.id).preview.entries[0];
+    const was = e.postedAt;
+    e.postedAt = AFTER;
     expect(msgs(st)).toMatch(/closed period/);
+    e.postedAt = was; delete e.postedAt;
+    expect(msgs(st)).toMatch(/closed period/);
+  });
+  it('a reversal dated in a closed month but posted before its close is clean (can fail)', () => {
+    const st = buildSeedState(); const d = issuedTi(st);
+    jOf(st, d.id).preview.entries.push({ ...structuredClone(jOf(st, d.id).preview.entries[0]), kind: 'reversal', date: '2026-03-05', postedAt: '2026-03-06T10:00:00+07:00' });
+    expect(msgs(st)).not.toMatch(/closed period/); // (the extra reversal drifts the GL, which is a different invariant)
   });
   it('report an issued ledger document of a type with no posting (no journal) (can fail)', () => {
     const st = buildSeedState(); const base = issuedTi(st);

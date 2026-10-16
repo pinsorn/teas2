@@ -126,9 +126,8 @@ describe('multi-target receipt (§5.11, §7.11)', () => {
     const stored = st.docs.find((d) => d.id === done.id)!;
     const snap = JSON.stringify(st.docs.map((d) => [d.id, d.status, d.outstanding]));
     const bigger = stored.allocations!.map((x) => (x.targetId === ids.rcTargetsA ? { ...x, amount: '99999999.00' } : x));
-    const plan = correctionPlan(st, done.id, { header: stored.header, lines: [], allocations: bigger }, 'accountant');
-    expect(plan.steps.map((s) => s.action)).toEqual(['cancel', 'reissue']);
-    expect(() => executePlan(st, plan.planId, plan.planHash, USER, 'accountant')).toThrow(/settle.over_allocation/);
+    // refused when the plan is asked for (S4 fix round 1, M4): a plan that cannot execute is never shown
+    expect(() => correctionPlan(st, done.id, { header: stored.header, lines: [], allocations: bigger }, 'accountant')).toThrow(/settle.over_allocation/);
     expect(JSON.stringify(st.docs.map((d) => [d.id, d.status, d.outstanding]))).toBe(snap);
   });
 });

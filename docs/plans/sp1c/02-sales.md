@@ -89,7 +89,7 @@ model has `vatLines`; non-VAT company: no VAT row, no "ใบกำกับภ�
 **Permissions:** operator + `doc.QT.issue`; accountant + `doc.QT.issue`, `doc.QT.cancel`, `doc.QT.correct`
 (read / create already exist).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `src/mocks/engine/marks.test.ts`
 ```ts
@@ -140,14 +140,14 @@ test('non-VAT QT prints without VAT', async ({ page }) => {
   await expect(page.getByText('ภาษีมูลค่าเพิ่ม')).toHaveCount(0);
 });
 ```
-- [ ] **Step 2: Run → FAIL** (`corepack pnpm test src/mocks/engine/marks.test.ts src/kit/doc-view src/kit/paper`; `corepack pnpm e2e e2e/sales-qt.spec.ts`).
-- [ ] **Step 3: Implement** as specified; `MarksChips` next to `StatusChip` in DocView header and the `marks` list
+- [x] **Step 2: Run → FAIL** (`corepack pnpm test src/mocks/engine/marks.test.ts src/kit/doc-view src/kit/paper`; `corepack pnpm e2e e2e/sales-qt.spec.ts`).
+- [x] **Step 3: Implement** as specified; `MarksChips` next to `StatusChip` in DocView header and the `marks` list
   column (`data-mark` attribute; chip tones reuse `--color-status-approved-*` for accepted / delivered / sent and
   `--color-status-overdue-*` for rejected; closed uses `cancelled` tones). ActionBar adds "ลูกค้าตอบรับ" /
   "ลูกค้าปฏิเสธ" for QT (`doc.QT.issue`), each behind a small dialog (reject: reason textarea required).
-- [ ] **Step 4: Run → PASS**; `checkInvariants` still `[]`.
-- [ ] **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(sales): quotations, conversion dialog, commercial paper and document marks`.
+- [x] **Step 4: Run → PASS**; `checkInvariants` still `[]`.
+- [x] **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(sales): quotations, conversion dialog, commercial paper and document marks`.
 
 ---
 
@@ -179,7 +179,7 @@ Non-VAT: `nso-1` converted from `nqt-2`, `ndo-1` from `nso-1` (delivered). Keys:
 
 **Permissions:** operator + `doc.SO.create/issue`, `doc.DO.create/issue`; accountant + SO/DO create/issue/cancel/correct.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 ```ts
 // commands / chain tests
 it('SO progress = Σ active DO qty / Σ SO qty; cancelling the DO returns the quantity (§7.11)', () => {});
@@ -201,8 +201,8 @@ test('SO partly delivered shows "ส่งแล้ว 10/30"; close remainder n
   await expect(page.locator('[data-mark="closed"]')).toBeVisible();
 });
 ```
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(sales): sales orders and delivery orders with progress and close-remainder`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(sales): sales orders and delivery orders with progress and close-remainder`.
 
 ---
 
@@ -241,7 +241,7 @@ grouping `iv-1` + `iv-2`? (different parties are refused — group only same par
 
 **Permissions:** `doc.IV.*` and `doc.BL.*` as the SP0 role intent (operator create / issue; accountant all).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 ```ts
 it('non-VAT company: an S7 line computes VAT 0.00 and the IV journal has no 2151 line (I1)', () => {});
 it('IV revise below the settled amount is refused with settle.below_settled; above it reverses and reposts (Dr = Cr)', () => {});
@@ -252,8 +252,8 @@ it('lists only same-party open TI / IV, shows the server total, never sums', asy
 ```
 `e2e/sales-iv-bl.spec.ts`: `screenContract` IV list `company: 'nonvat'` (VAT company → not-available, "บริษัทที่จดทะเบียน
 VAT ใช้ใบกำกับภาษีแทน"), IV view (`ivPartly`) with states incl. `locked`, BL list `company: 'both'`, BL view (`blVat`).
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(sales): non-VAT invoices and billing statements; company-aware VAT`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(sales): non-VAT invoices and billing statements; company-aware VAT`.
 
 ---
 
@@ -294,7 +294,7 @@ amount (multi-target vector from F5 repeated through the UI in e2e).
 
 **Permissions:** operator + RC create / issue (exists); accountant + cancel / correct (exist).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 ```ts
 it('RC paper lists each settled TI with its amount and WHT; totals come from the model', () => {});
 it('VAT-company RC with cash-bill lines is refused rc.lines_need_invoice', () => {});
@@ -325,9 +325,9 @@ test('non-VAT cash bill: line grid visible; VAT company: line grid absent', asyn
   await expect(page.getByRole('grid', { name: 'รายการ' })).toHaveCount(0);
 });
 ```
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS**; invariants `[]`.
-- [ ] **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(sales): receipts with multi-invoice settlement, customer WHT and cash bills`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS**; invariants `[]`.
+- [x] **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(sales): receipts with multi-invoice settlement, customer WHT and cash bills`.
 
 ---
 
@@ -375,7 +375,7 @@ zero unpaid TI stays `issued`, Ham ruling); CN journal = mirror of the sales pos
 **Permissions:** operator reads CN / DN only; accountant + `doc.CN.*`, `doc.DN.*` (create / issue exist; add read,
 cancel, correct).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 ```ts
 it('CN above the remaining creditable amount of a line → cn.exceeds_original naming the line', () => {});
 it('CN without refDocId → doc.incomplete; reason OTHER without text → doc.incomplete', () => {});
@@ -386,8 +386,8 @@ it('paper prints the reason text, never the code, and the ม.86/10 original / c
 `e2e/sales-cn-dn.spec.ts`: `screenContract` CN list / DN list `company: 'vat'` (non-VAT → not-available), CN view
 (`cnIssued`); flow "TI view → ออกใบลดหนี้ → lines prefilled from the TI → reduce qty of line 1 → reason RETURN → issue →
 TI outstanding drops by the CN total (read from the TI header before / after)".
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(sales): line-based credit and debit notes with reason codes`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(sales): line-based credit and debit notes with reason codes`.
 
 ---
 
@@ -424,20 +424,20 @@ export interface Attachment { id: string; docId: string; category: AttachmentCat
 - Agent: documents with `createdBy.kind === 'agent'` show `AgentBanner` ("ร่างโดย ผู้ช่วยบัญชี (AI) ของ สมศรี บัญชีดี" +
   "ดูรายงานการตรวจ" when `reportId`) on view and editor; DocList saved view `agent` (`?agent=1`, F3 param).
 
-- [ ] **Step 1: Write the failing tests** — `ReprintDialog` appears only from the second print; attachment > 1 MB
+- [x] **Step 1: Write the failing tests** — `ReprintDialog` appears only from the second print; attachment > 1 MB
   refused with the Thai message; default notes prefill only a blank create (not copy / convert); agent saved view
   filters server-side; banner absent on user documents.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(frontend): print tracking, attachments, default notes and agent drafts`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(frontend): print tracking, attachments, default notes and agent drafts`.
 
 ---
 
 ### Task GS: Ham gate — sales
 
-- [ ] Consolidated gate green; production build / staging; screen index lists every sales screen × states × roles ×
+- [x] Consolidated gate green; production build / staging; screen index lists every sales screen × states × roles ×
   both companies.
-- [ ] Send Ham: URLs; the QT accept / reject marks (D-05, D-06); ConvertDialog partial conversion; SO close-remainder;
+- [x] Send Ham: URLs; the QT accept / reject marks (D-05, D-06); ConvertDialog partial conversion; SO close-remainder;
   non-VAT IV + BL; RC multi-invoice with WHT and late certificate; CN / DN line-based with reason codes (`[SP-R]` list,
   R-08 still parked); print tracking; attachments (D-30 list — open item O-6); TI action count still ≤ 5.
-- [ ] AskUserQuestion "Sales approve?" — approve / approve with changes / rework. Record in `STATUS.md`; changes become
+- [x] AskUserQuestion "Sales approve?" — approve / approve with changes / rework. Record in `STATUS.md`; changes become
   appended tasks.

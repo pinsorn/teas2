@@ -35,8 +35,8 @@ Element.prototype.scrollIntoView ??= () => {};
 const client = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
 const ui = (id: string) => render(<QueryClientProvider client={client()}><DocView descriptor={taxInvoice} id={id} /></QueryClientProvider>);
 /** Types whose own task has not landed yet: register a stand-in so link/route resolution through the registry is still exercised. */
-const stub = (type: 'RC' | 'CN', basePath: string) => { DESCRIPTORS[type] = { ...taxInvoice, type, basePath } as never; };
-afterEach(() => { delete DESCRIPTORS.RC; delete DESCRIPTORS.CN; });
+const stub = (type: 'CN', basePath: string) => { DESCRIPTORS[type] = { ...taxInvoice, type, basePath } as never; };
+afterEach(() => { delete DESCRIPTORS.CN; });
 const find = (pred: (d: ReturnType<typeof loadState>['docs'][number]) => boolean) => loadState().docs.find(pred)!;
 
 describe('DocView', () => {
@@ -64,7 +64,7 @@ describe('DocView', () => {
     const issued = find((d) => d.type === taxInvoice.type && d.status === 'issued');
     ui(issued.id);
     expect(await screen.findByRole('status', { name: 'ล็อก' })).toHaveTextContent('ภ.พ.30');
-    expect(screen.getByText(/ออกใบลดหนี้/)).toBeVisible();
+    expect(screen.getByText(/ใบเพิ่มหนี้ในงวดถัดไป/)).toBeVisible();
   });
   it('shows the document number with the doc-number test id', async () => {
     const issued = find((d) => d.type === taxInvoice.type && d.status === 'issued' && !d.locks.length);
@@ -126,14 +126,14 @@ describe('DocView locks and actions (fix round 1)', () => {
     expect(await screen.findByRole('link', { name: 'แก้ไข' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'ยกเลิกเอกสาร' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'ยกเลิกเอกสาร' })).toHaveAccessibleDescription(/ภ\.พ\.30/);
-    await userEvent.click(screen.getByRole('button', { name: /ออกใบลดหนี้/ }));
+    await userEvent.click(screen.getByRole('button', { name: /ใบเพิ่มหนี้ในงวดถัดไป/ }));
     expect(vi.mocked(useRouter().push).mock.lastCall![0]).toBe(`/sales/tax-invoices/${issued.id}/edit`);
   });
   it('filing lock exit is enabled for an operator: proposing a correction needs create, the plan lists the rest', async () => {
     setSettings({ screenState: 'locked', role: 'operator' });
     const issued = find((d) => d.type === taxInvoice.type && d.status === 'issued');
     ui(issued.id);
-    const exit = await screen.findByRole('button', { name: /ออกใบลดหนี้/ });
+    const exit = await screen.findByRole('button', { name: /ใบเพิ่มหนี้ในงวดถัดไป/ });
     expect(exit).toBeEnabled();
     await userEvent.click(exit);
     expect(vi.mocked(useRouter().push).mock.lastCall![0]).toBe(`/sales/tax-invoices/${issued.id}/edit`);
@@ -209,7 +209,7 @@ describe('DocView cancel and tabs (fix round 1)', () => {
     spy.mockRestore();
   });
   it('ledger, activity and chain tabs render server data', async () => {
-    stub('RC', '/sales/receipts');
+    // RC is a real descriptor since S4 (basePath /sales/receipts)
     const ti = find((d) => d.type === taxInvoice.type && loadState().links.some((l) => l.kind === 'settles' && l.to === d.id && l.active));
     const rc = find((d) => d.id === loadState().links.find((l) => l.kind === 'settles' && l.to === ti.id && l.active)!.from);
     const line = loadState().journals.find((j) => j.docId === ti.id)!.preview.entries[0].lines.find((l) => l.debit !== '0.00')!;

@@ -34,7 +34,7 @@ export function SettlementPanel(props: SettlementPanelProps) {
 }
 
 /** Zero or negative outstanding cannot be settled; read from the server string, not computed. */
-const settleable = (outstanding: string) => !outstanding.startsWith('-') && !/^0+(\.0+)?$/.test(outstanding);
+export const settleable = (outstanding: string) => !outstanding.startsWith('-') && !/^0+(\.0+)?$/.test(outstanding);
 
 function SettlementPanelInner({ descriptor: d, partyId, value, onChange, allocation, readOnly }: SettlementPanelProps) {
   const t = useTranslations('docEditor.settlement');
@@ -56,8 +56,8 @@ function SettlementPanelInner({ descriptor: d, partyId, value, onChange, allocat
     </p>
   );
   const shell = (body: React.ReactNode) => (
-    <section aria-label={t('title')} className="grid gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
-      <h2 className="text-section font-semibold">{t('title')}</h2>
+    <section aria-label={t(withholds ? 'titleRC' : 'title')} className="grid gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
+      <h2 className="text-section font-semibold">{t(withholds ? 'titleRC' : 'title')}</h2>
       {body}
     </section>
   );
@@ -101,7 +101,7 @@ function SettlementPanelInner({ descriptor: d, partyId, value, onChange, allocat
             <tr>
               <th className="w-8" /><th className="px-2 py-1 text-left font-medium">{t('number')}</th><th className="px-2 py-1 text-left font-medium">{t('due')}</th>
               <th className="px-2 py-1 text-right font-medium">{t('total')}</th><th className="px-2 py-1 text-right font-medium">{t('outstanding')}</th>
-              <th className="px-2 py-1 text-right font-medium">{t('amount')}</th>{withholds && <th className="px-2 py-1 text-right font-medium">{t('wht')}</th>}
+              <th className="px-2 py-1 text-right font-medium">{t(withholds ? 'amountRC' : 'amount')}</th>{withholds && <th className="px-2 py-1 text-right font-medium">{t('wht')}</th>}
             </tr>
           </thead>
           <tbody>
@@ -122,7 +122,7 @@ function SettlementPanelInner({ descriptor: d, partyId, value, onChange, allocat
                   <td className="px-2 py-2 text-right tabular-nums">{r.total ? formatMoney(r.total) : ''}</td>
                   <td className="px-2 py-2 text-right tabular-nums">{r.outstanding ? formatMoney(r.outstanding) : ''}</td>
                   <td className="px-2 py-1 text-right">
-                    {a && <Input type="text" inputMode="decimal" autoComplete="off" className="text-right tabular-nums" aria-label={t('amountOf', { number: r.number })} value={a.amount}
+                    {a && <Input type="text" inputMode="decimal" autoComplete="off" className="text-right tabular-nums" aria-label={t(withholds ? 'amountOfRC' : 'amountOf', { number: r.number })} value={a.amount}
                       onChange={(e) => patch(r.id, { amount: cleanDecimal(e.target.value, 2) })}
                       onBlur={() => { if (moneyText(a.amount) !== a.amount) patch(r.id, { amount: moneyText(a.amount) }); }} onFocus={(e) => e.target.select()} />}
                   </td>
@@ -130,7 +130,7 @@ function SettlementPanelInner({ descriptor: d, partyId, value, onChange, allocat
                     <td className="px-2 py-1 text-right">
                       {a && (
                         <div className="grid gap-1">
-                          <Input type="text" inputMode="decimal" autoComplete="off" className="text-right tabular-nums" aria-label={t('whtOf', { number: r.number })} value={a.wht ?? ''}
+                          <Input type="text" inputMode="decimal" autoComplete="off" className="text-right tabular-nums" aria-label={t('whtOfRC', { number: r.number })} value={a.wht ?? ''}
                             onChange={(e) => patch(r.id, { wht: cleanDecimal(e.target.value, 2) || undefined })}
                             onBlur={() => { if (a.wht && moneyText(a.wht) !== a.wht) patch(r.id, { wht: moneyText(a.wht) }); }} onFocus={(e) => e.target.select()} />
                           {hint && hint.wht !== a.wht && (

@@ -128,57 +128,65 @@ describe('I1: a CN / DN carries one line per tax code and the plan shows exactly
     const id = issue(st, d.id, d.version, me).id;
     return st.docs.find((x) => x.id === id)!;
   };
-  const noteOf = (planned: ReturnType<typeof correctionPlan>, res: ReturnType<typeof executePlan>) => {
-    const doc = st.docs.find((d) => d.id === res.affected.find((a) => a.type === 'CN' || a.type === 'DN')!.docId)!;
-    expect(planned.steps[0].summary).toContain(` ${doc.totals.total} `); // the plan amount is the posted amount
-    const note = planned.steps[0].note!;
+  const noteOf = (planned: ReturnType<typeof correctionPlan>, res: ReturnType<typeof executePlan>, nth = 0) => {
+    const doc = st.docs.find((d) => d.id === res.affected.filter((a) => a.type === 'CN' || a.type === 'DN')[nth].docId)!;
+    expect(planned.steps[nth].summary).toContain(` ${doc.totals.total} `); // the plan amount is the posted amount
+    const note = planned.steps[nth].note!;
     expect(doc.type).toBe(note.type);
     expect(doc.lines).toEqual(note.lines);
     expect(doc.header.priceIncludesVat).toBe(note.priceIncludesVat);
     expect(doc.totals.total).toBe(note.total);
     for (const row of note.taxLines) {
-      const computed = calc({ header: doc.header, lines: doc.lines.filter((l) => l.taxCode === row.taxCode) });
+      const computed = calc({ header: doc.header, lines: doc.lines.filter((l) => l.taxCode === row.taxCode) }, true);
       expect(row).toEqual({ taxCode: row.taxCode, net: computed.totals.net, vat: computed.totals.vat, total: computed.totals.total });
     }
     return doc;
   };
 
   // Rule B: per tax code, note net/VAT = |proposed - original| of the engine's own per-line figures; total == |delta| always.
-  const delta = (before: DocLine[], after: DocLine[], exp: { type: 'CN' | 'DN'; net: string; vat: string; total: string }, outstanding: string) => {
+  // A change that goes both ways is two notes (R1): the CN (decreases) first, then the DN (increases); together they are exactly the change of the total, and no line is negative.
+  type Exp = { type: 'CN' | 'DN'; net: string; vat: string; total: string };
+  const deltaAll = (before: DocLine[], after: DocLine[], exps: Exp[], outstanding: string) => {
     const ti = mkTi(before);
     const plan = correctionPlan(st, ti.id, { header: ti.header, lines: after }, 'accountant');
-    expect(plan.steps.map((s) => s.action)).toEqual([exp.type === 'CN' ? 'issue_cn' : 'issue_dn']);
-    expect(toSatang(plan.steps[0].note!.total)).toBe(Math.abs(toSatang(calc({ header: ti.header, lines: after }).totals.total) - toSatang(ti.totals.total)));
-    const note = noteOf(plan, executePlan(st, plan.planId, plan.planHash, me));
-    expect(note.totals).toMatchObject({ net: exp.net, vat: exp.vat, total: exp.total });
+    expect(plan.steps.map((s) => s.action)).toEqual(exps.map((e) => (e.type === 'CN' ? 'issue_cn' : 'issue_dn')));
+    expect(plan.steps.reduce((a, s) => a + (s.note!.type === 'DN' ? 1 : -1) * toSatang(s.note!.total), 0)).toBe(toSatang(calc({ header: ti.header, lines: after }, true).totals.total) - toSatang(ti.totals.total));
+    const res = executePlan(st, plan.planId, plan.planHash, me);
+    const notes = exps.map((_, i) => noteOf(plan, res, i));
+    notes.forEach((nd, i) => { expect(nd.totals).toMatchObject({ net: exps[i].net, vat: exps[i].vat, total: exps[i].total }); expect(nd.lines.every((l) => toSatang(l.unitPrice) >= 0)).toBe(true); });
     expect(st.docs.find((d) => d.id === ti.id)!.outstanding).toBe(outstanding);
     assertBalanced(st);
-    return note;
+    return notes;
   };
+  const delta = (before: DocLine[], after: DocLine[], exp: Exp, outstanding: string) => deltaAll(before, after, [exp], outstanding)[0];
   it('S7 100.10 -> 100.60 (VAT 7.01 -> 7.04): DN net 0.50 VAT 0.03 total 0.53, outstanding 107.64', () => {
     delta([line('a', 'S7', '100.10')], [line('a', 'S7', '100.60')], { type: 'DN', net: '0.50', vat: '0.03', total: '0.53' }, '107.64');
   });
   it('S7 12.34 qty 1 -> 2: DN net 12.34 VAT 0.87 total 13.21 == delta, outstanding 26.41', () => {
     delta([line('a', 'S7', '12.34')], [{ ...line('a', 'S7', '12.34'), qty: '2' }], { type: 'DN', net: '12.34', vat: '0.87', total: '13.21' }, '26.41');
   });
-  it('4 x S7 0.08 -> S7 0.33: CN net -0.01 VAT 0.02 total 0.01 (net up, VAT down), outstanding 0.35', () => {
-    const cn = delta(['a', 'b', 'c', 'd'].map((id) => line(id, 'S7', '0.08')), [line('z', 'S7', '0.33')], { type: 'CN', net: '-0.01', vat: '0.02', total: '0.01' }, '0.35');
-    expect(cn.lines[0].vatOverride).toBe('0.02');
+  it('4 x S7 0.08 -> S7 0.33: the four removed lines are a CN (net 0.32 VAT 0.04), the added one a DN (net 0.33 VAT 0.02), outstanding 0.35', () => {
+    const [cn, dn] = deltaAll(['a', 'b', 'c', 'd'].map((id) => line(id, 'S7', '0.08')), [line('z', 'S7', '0.33')],
+      [{ type: 'CN', net: '0.32', vat: '0.04', total: '0.36' }, { type: 'DN', net: '0.33', vat: '0.02', total: '0.35' }], '0.35');
+    expect(cn.lines.map((l) => [l.sourceLineId, l.vatOverride])).toEqual([['a', '0.01'], ['b', '0.01'], ['c', '0.01'], ['d', '0.01']]); // the removed lines reference the invoice
+    expect(dn.lines.map((l) => [l.sourceLineId, l.vatOverride])).toEqual([[undefined, '0.02']]); // the added one is a line of its own
     const j = st.journals.find((x) => x.docId === cn.id)!.preview.entries[0].lines.map((l) => [l.accountCode, l.debit, l.credit]);
-    expect(j).toEqual(expect.arrayContaining([['4110', '0.00', '0.01'], ['2151', '0.02', '0.00'], ['1130', '0.00', '0.01']]));
-    expect(j).toHaveLength(3);
+    expect(j).toEqual(expect.arrayContaining([['4110', '0.32', '0.00'], ['2151', '0.04', '0.00'], ['1130', '0.00', '0.36']]));
+    const jd = st.journals.find((x) => x.docId === dn.id)!.preview.entries[0].lines.map((l) => [l.accountCode, l.debit, l.credit]); // the DN: Dr AR 0.35, Cr revenue 0.33, Cr output VAT 0.02
+    expect(jd).toEqual([['1130', '0.35', '0.00'], ['4100', '0.00', '0.33'], ['2151', '0.00', '0.02']]);
   });
-  it('2 x S7 0.07 -> S7 0.08: CN net 0.06 VAT -0.01 total 0.05, outstanding 0.09', () => {
-    delta([line('a', 'S7', '0.07'), line('b', 'S7', '0.07')], [line('z', 'S7', '0.08')], { type: 'CN', net: '0.06', vat: '-0.01', total: '0.05' }, '0.09');
+  it('2 x S7 0.07 -> S7 0.08: CN net 0.14 VAT 0.00, DN net 0.08 VAT 0.01, outstanding 0.09', () => {
+    deltaAll([line('a', 'S7', '0.07'), line('b', 'S7', '0.07')], [line('z', 'S7', '0.08')], [{ type: 'CN', net: '0.14', vat: '0.00', total: '0.14' }, { type: 'DN', net: '0.08', vat: '0.01', total: '0.09' }], '0.09');
   });
-  it('reverse: S7 0.08 -> 2 x S7 0.07 is a DN of net 0.06 VAT -0.01 total 0.05, outstanding 0.14', () => {
-    delta([line('z', 'S7', '0.08')], [line('a', 'S7', '0.07'), line('b', 'S7', '0.07')], { type: 'DN', net: '0.06', vat: '-0.01', total: '0.05' }, '0.14');
+  it('reverse: S7 0.08 -> 2 x S7 0.07 is a CN of 0.09 and a DN of net 0.14 VAT 0.00, outstanding 0.14', () => {
+    deltaAll([line('z', 'S7', '0.08')], [line('a', 'S7', '0.07'), line('b', 'S7', '0.07')], [{ type: 'CN', net: '0.08', vat: '0.01', total: '0.09' }, { type: 'DN', net: '0.14', vat: '0.00', total: '0.14' }], '0.14');
   });
-  it('mixed S7 / Z0 satang amounts: CN net 10.05 VAT -0.03 total 10.02 (157.66 -> 147.64)', () => {
-    delta([line('a', 'S7', '100.10'), line('b', 'Z0', '50.55')], [line('a', 'S7', '100.60'), line('b', 'Z0', '40.00')], { type: 'CN', net: '10.05', vat: '-0.03', total: '10.02' }, '147.64');
+  it('mixed S7 / Z0 satang amounts (157.66 -> 147.64): CN of the Z0 line 10.55, DN of the S7 line net 0.50 VAT 0.03', () => {
+    deltaAll([line('a', 'S7', '100.10'), line('b', 'Z0', '50.55')], [line('a', 'S7', '100.60'), line('b', 'Z0', '40.00')],
+      [{ type: 'CN', net: '10.55', vat: '0.00', total: '10.55' }, { type: 'DN', net: '0.50', vat: '0.03', total: '0.53' }], '147.64');
   });
-  it('S7 -> Z0 code shift with satang: CN net 0 VAT 7.01 total 7.01', () => {
-    delta([line('a', 'S7', '100.10')], [line('a', 'Z0', '100.10')], { type: 'CN', net: '0.00', vat: '7.01', total: '7.01' }, '100.10');
+  it('S7 -> Z0 code shift with satang: the old side is a CN (100.10 + VAT 7.01), the new side a DN (100.10)', () => {
+    deltaAll([line('a', 'S7', '100.10')], [line('a', 'Z0', '100.10')], [{ type: 'CN', net: '100.10', vat: '7.01', total: '107.11' }, { type: 'DN', net: '100.10', vat: '0.00', total: '100.10' }], '100.10');
   });
   it('a tampered stored vatOverride is refused as plan_stale before writing', () => {
     const ti = mkTi([line('a', 'S7', '100.10')]);
@@ -198,7 +206,7 @@ describe('I1: a CN / DN carries one line per tax code and the plan shows exactly
     const { stripOverrides } = await import('../handlers/docs-write');
     for (const bad of [{ header: {} }, { header: {}, lines: [null] }, { header: {}, lines: 'x' }]) {
       expect(() => stripOverrides(bad as never)).not.toThrow();
-      expect(() => calc(bad as never)).toThrow(expect.objectContaining({ status: 422 }));
+      expect(() => calc(bad as never, true)).toThrow(expect.objectContaining({ status: 422 }));
     }
   });
   it('a body arriving over HTTP cannot carry a vatOverride (stripped at the boundary)', async () => {
@@ -264,22 +272,25 @@ describe('I1: a CN / DN carries one line per tax code and the plan shows exactly
     expect(cn.totals.net).toBe('0.05');
     assertBalanced(st);
   });
-  it('mixed S7 / Z0 change: plan amount == posted CN amount, ledger balanced, TI outstanding follows', () => {
+  it('mixed S7 / Z0 change: Z0 200 -> 100 is a CN of 100.00, the added S7 50.00 a DN of 53.50; ledger balanced, TI outstanding follows', () => {
     const ti = mkTi([line('a', 'Z0', '200.00')]);
     const proposed = { header: ti.header, lines: [line('a', 'Z0', '100.00'), line('b', 'S7', '50.00')] };
     const plan = correctionPlan(st, ti.id, proposed, 'accountant');
-    expect(plan.steps.map((s) => s.action)).toEqual(['issue_cn']);
-    const cn = noteOf(plan, executePlan(st, plan.planId, plan.planHash, me));
-    expect(cn.lines.map((l) => [l.taxCode, l.unitPrice]).sort()).toEqual([['S7', '-50.00'], ['Z0', '100.00']]);
-    expect(cn.totals.total).toBe('46.50');
+    expect(plan.steps.map((s) => s.action)).toEqual(['issue_cn', 'issue_dn']);
+    const res = executePlan(st, plan.planId, plan.planHash, me);
+    const cn = noteOf(plan, res, 0), dn = noteOf(plan, res, 1);
+    expect(cn.lines.map((l) => [l.taxCode, l.unitPrice])).toEqual([['Z0', '100.00']]);
+    expect(dn.lines.map((l) => [l.taxCode, l.unitPrice])).toEqual([['S7', '50.00']]);
+    expect([cn.totals.total, dn.totals.total]).toEqual(['100.00', '53.50']);
     expect(st.docs.find((d) => d.id === ti.id)!.outstanding).toBe('153.50');
     assertBalanced(st);
   });
-  it('net-neutral shift S7 -> Z0 (total changes by the VAT): a credit note that executes', () => {
+  it('net-neutral shift S7 -> Z0 (total changes by the VAT): a CN of the old side and a DN of the new side, both execute', () => {
     const ti = mkTi([line('a', 'S7', '100.00')]);
     const plan = correctionPlan(st, ti.id, { header: ti.header, lines: [line('a', 'Z0', '100.00')] }, 'accountant');
-    expect(plan.steps.map((s) => s.action)).toEqual(['issue_cn']);
-    const cn = noteOf(plan, executePlan(st, plan.planId, plan.planHash, me));
+    expect(plan.steps.map((s) => s.action)).toEqual(['issue_cn', 'issue_dn']);
+    const res = executePlan(st, plan.planId, plan.planHash, me);
+    const cn = noteOf(plan, res, 0);
     expect(cn.totals.vat).toBe('7.00');
     assertBalanced(st);
   });
@@ -315,4 +326,9 @@ describe('I1: ledger never posts a negative amount', () => {
     expect(entry.lines.every((x) => !x.debit.startsWith('-') && !x.credit.startsWith('-'))).toBe(true);
     assertBalanced(st);
   });
+});
+
+describe('SP2 vectors (ledger 184), kept visible', () => {
+  it.todo('SP2 vector: settlement lock vs CN — a CN on a paid TI may not take outstanding below −(…) [ledger 184]');
+  it.todo('SP2 vector: second correction must account for existing CN/DN [ledger 184]');
 });

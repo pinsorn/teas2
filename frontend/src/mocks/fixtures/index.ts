@@ -7,12 +7,13 @@ import { bankAccounts } from './bank-accounts';
 import { chartOfAccounts } from './coa';
 import { buildDocs } from './documents';
 import type { SeedSpec } from './seed-runner';
+import { SALES_SPECS } from './specs/sales';
 import { nonVatItems, vatItems } from './items';
 import { whtTypesFor } from './wht-types';
 import { nonVatParties, vatParties } from './parties';
 
 /** Documents later groups seed THROUGH the engine (`fixtures/specs/<group>.ts`, appended here in group order). */
-export const SEED_SPECS: SeedSpec[] = [];
+export const SEED_SPECS: SeedSpec[] = [...SALES_SPECS];
 
 /** Months 2025-01 .. 2026-12; everything up to 2026-06 is closed (D-10), closed at the 10th of the following month. */
 const periodsFor = (companyId: string): Period[] => Array.from({ length: 24 }, (_, i) => {
@@ -32,10 +33,10 @@ export function buildSeed(role: Role): MockState {
   const items = [...vatItems(), ...nonVatItems()];
   const { docs, links, activity, revisions, series } = buildDocs(parties, items);
   return {
-    version: 6,
+    version: 14,
     companies,
     memberships: companies.map((c) => ({ userId: 'u-1', companyId: c.id, companyName: c.legalNameTh, role: c.vatRegistered ? role : 'operator' })),
-    parties, items, docs, links, activity, revisions, journals: [], audit: [], series,
+    parties, items, docs, links, activity, revisions, journals: [], audit: [], series, attachments: [], prints: [],
     accounts: companies.flatMap((c) => chartOfAccounts().map((a) => ({ ...a, companyId: c.id }))),
     bankAccounts: bankAccounts(), whtTypes: companies.flatMap((c) => whtTypesFor(c.id)),
     postingRules: companies.flatMap((c) => postingRulesFor(c.id, Object.fromEntries(bankAccounts().filter((b) => b.companyId === c.id).map((b) => [b.id, b.accountCode])))),

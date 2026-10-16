@@ -1,12 +1,37 @@
 {
   "app": { "name": "TEAS 2" },
   "docView": {
-    "tabs": { "paper": "Paper", "chain": "Related documents", "ledger": "Ledger effect", "activity": "Activity", "revisions": "Revision history" },
-    "header": { "party": "Counterparty", "date": "Document date", "total": "Total", "outstanding": "Outstanding", "revised": "Revised {n} times" },
+    "tabs": { "paper": "Paper", "chain": "Related documents", "ledger": "Ledger effect", "activity": "Activity", "revisions": "Revision history", "attachments": "Attachments" },
+    "header": { "party": "Counterparty", "date": "Document date", "total": "Total", "outstanding": "Outstanding", "revised": "Revised {n} times", "progress": "Progress" },
     "lock": { "label": "Locked", "exits": "Ways forward" },
+    "marks": { "accepted": "Customer accepted", "rejected": "Customer rejected", "delivered": "Delivered", "sent": "Sent to vendor", "closed": "Closed", "rejectedWhy": "Reason: {reason}" },
+    "closedAlert": "The remainder of this document is closed, so nothing more can be converted; revise the document to reopen it",
+    "closeRemainder": { "title": "Close remainder", "body": "Close the remainder of {doc}: what is not yet converted will not be converted any more (a revision reopens it). Totals do not change.", "reason": "Reason", "back": "Back", "confirm": "Confirm close remainder" },
+    "rejectedQt": "This quotation was rejected; revise it into a new version or copy it as a new quotation",
+    "mark": {
+      "acceptedTitle": "Customer accepted {doc}", "acceptedBody": "Records that the customer accepted this quotation. Totals do not change and no revision is made.",
+      "rejectedTitle": "Customer rejected {doc}", "rejectedBody": "Records that the customer rejected this quotation. It cannot be converted until it is revised or copied as a new one.",
+      "deliveredTitle": "Delivered {doc}", "deliveredBody": "Records that the goods on this order were delivered. A status only: no other document is issued and totals do not change.",
+      "reason": "Why the customer rejected it", "confirm": "Save", "back": "Back"
+    },
+    "convertDialog": {
+      "title": "Convert {doc}", "body": "Pick the target document and the quantity of each line. Enter 0 to leave a line out.", "target": "Target document",
+      "colItem": "Item", "colUnit": "Unit", "colOrdered": "Total", "colConverted": "Converted", "colRemaining": "Remaining", "colQty": "Quantity to convert",
+      "qty": "Quantity to convert, line {n}", "create": "Create {target}", "creating": "Creating…", "close": "Close",
+      "noTarget": "No target document is available to this company and permitted to you", "badQty": "Invalid quantity: enter a number from 0 up (0 = leave this line out)", "loadFailed": "Could not load the remaining quantities",
+      "groupBody": "The whole document is added to a new billing statement (draft). Nothing is posted; choose more documents of this customer in the editor."
+    },
     "actions": {
       "label": "Actions", "issueDraft": "Save and issue…", "edit": "Edit", "print": "Print", "copy": "Copy as new",
-      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}"
+      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "receive": "Receive payment", "whyInclusiveNote": "This invoice is priced VAT-inclusive, so a credit / debit note cannot be issued directly. Use Edit (a correction plan) instead.", "issueCn": "Issue credit note", "issueDn": "Issue debit note", "markDelivered": "Delivered", "markSent": "Sent to vendor", "whyNothingRemaining": "Every line is already converted in full; there is nothing to close", "whyClosed": "The remainder is closed, so it cannot be converted; revise the document to reopen it"
+    },
+    "print": { "reprintTitle": "Reprint {doc}", "reprintBody": "A reprint is printed as a 'COPY'. The original has already been printed.", "reprintConfirm": "Print a copy", "back": "Back", "logFailed": "The print could not be logged, so nothing was printed. Try again." },
+    "agent": { "draftBy": "Drafted by {name} for {owner}", "draftByNoOwner": "Drafted by {name}", "createdBy": "Created by {name} for {owner}", "createdByNoOwner": "Created by {name}", "report": "View the check report" },
+    "attachments": {
+      "title": "Attachments", "category": "File type", "add": "Add file", "file": "Choose a file", "limits": "PDF, PNG, JPEG or WebP, up to 1 MB per file", "empty": "No attachments yet",
+      "remove": "Remove", "removeNamed": "Remove {name}", "removeTitle": "Remove attachment", "removeBody": "Remove {name} from an issued document. The removal is recorded in the history and the audit log.", "removeConfirm": "Remove file", "back": "Back",
+      "needDraft": "Fill in the document first, then attach files (the draft is saved automatically)", "readFailed": "The file could not be read", "loadFailed": "The attachments could not be loaded", "by": "by {name}",
+      "kb": "{size} KB", "categories": { "customer_po": "Customer purchase order", "purchase_order": "Purchase order (PO)", "delivery": "Proof of delivery", "vendor_tax_invoice": "Vendor tax invoice", "receipt": "Receipt", "transfer_slip": "Transfer slip", "contract": "Contract", "photo": "Photo", "wht_certificate": "Withholding tax certificate", "government": "Government document", "other": "Other" }
     },
     "paper": { "notPrintable": "No paper form is available for this document type", "notIssued": "This document has not been issued, so it cannot be printed as a tax invoice. Issue it first.", "stub": "The document paper preview appears here", "snapshot": "Revision {n}" },
     "chain": {
@@ -27,14 +52,14 @@
     },
     "activity": {
       "empty": "No activity yet",
-      "action": { "create": "Created draft", "issue": "Issued", "settle": "Payment received", "cancel": "Cancelled", "revise": "Revised" }
+      "action": { "create": "Created draft", "issue": "Issued", "settle": "Payment received", "cancel": "Cancelled", "revise": "Revised", "convert": "Converted", "accept": "Customer accepted", "reject": "Customer rejected", "deliver": "Delivered", "close": "Remainder closed", "send": "Sent to vendor" }
     },
     "revisions": {
       "empty": "No history yet", "first": "First issued version", "n": "Revision {n}", "view": "View this version", "hide": "Hide this version",
       "noChange": "No data changes", "blank": "(empty)", "reason": "Reason: {reason}",
       "lineN": "Line {n}", "lineField": "{line} · {field}",
       "fields": {
-        "header": { "notes": "Notes", "reference": "Reference", "dueDate": "Due date", "documentDate": "Document date", "partyId": "Counterparty", "dimensions": "Dimensions", "priceIncludesVat": "Prices include VAT" },
+        "header": { "notes": "Notes", "reference": "Reference", "dueDate": "Due date", "documentDate": "Document date", "partyId": "Counterparty", "refDocId": "Tax invoice adjusted", "reasonCode": "Reason", "reasonText": "Reason details", "dimensions": "Dimensions", "priceIncludesVat": "Prices include VAT" },
         "line": { "description": "Description", "itemId": "Item", "qty": "Quantity", "unit": "Unit", "unitPrice": "Unit price", "discountPct": "Discount (%)", "taxCode": "Tax code", "dimensions": "Dimensions", "sourceLineId": "Source line", "vatOverride": "VAT" }
       }
     },
@@ -115,7 +140,7 @@
     "clearSelection": "Clear selection",
     "needsPermission": "Requires permission {permission}",
     "bulkFailed": "The action failed. Try again",
-    "agentChip": "AI agent",
+    "agentChip": "Created by AI",
     "rangeInvalid": "The start date must not be after the end date",
     "overdueDays": "{days} days overdue"
   },
@@ -275,6 +300,55 @@
       "tiLong": "Tax invoice: 60 lines",
       "print": "Print tax invoice",
       "printLong": "Print tax invoice: 60 lines",
+      "qtList": "Quotations: list",
+      "qtNew": "Quotation: new",
+      "qtDraft": "Quotation: draft",
+      "qtEdit": "Quotation: edit draft",
+      "qtIssued": "Quotation: accepted by the customer, not converted",
+      "qtRejected": "Quotation: rejected by the customer",
+      "qtCancelled": "Quotation: cancelled",
+      "qtRevised": "Quotation: revised once",
+      "qtPrint": "Print quotation",
+      "soList": "Sales orders: list",
+      "soNew": "Sales order: new",
+      "soPartlyDelivered": "Sales order: partly delivered (delivered 10/30)",
+      "soClosed": "Sales order: remainder closed",
+      "soPrint": "Print sales order",
+      "doList": "Delivery orders: list",
+      "doDelivered": "Delivery order: delivered",
+      "doPrint": "Print delivery order",
+      "nsoIssued": "Sales order (non-VAT)",
+      "ndoDelivered": "Delivery order: delivered (non-VAT)",
+      "ivList": "Invoices: list (non-VAT)",
+      "ivNew": "Invoice: new (non-VAT)",
+      "ivDraft": "Invoice: draft (non-VAT)",
+      "ivEdit": "Invoice: edit draft (non-VAT)",
+      "ivIssued": "Invoice: issued, unpaid (non-VAT)",
+      "ivPartly": "Invoice: partly received (non-VAT)",
+      "ivSettled": "Invoice: settled (non-VAT)",
+      "ivPrint": "Print invoice (non-VAT, no tax rows)",
+      "blList": "Billing statements: list",
+      "blNew": "Billing statement: new",
+      "blVat": "Billing statement: two tax invoices",
+      "blNonVat": "Billing statement: two invoices (non-VAT)",
+      "blPrint": "Print billing statement",
+      "rcList": "Receipts: list",
+      "rcNew": "Receipts: new",
+      "rcMulti": "Receipt for two tax invoices with withholding tax and certificate number",
+      "rcNoCert": "Receipt with withholding tax and no certificate number yet",
+      "rcDeposit": "Receipt: advance payment, nothing allocated",
+      "nrcCashBill": "Receipt: cash bill (non-VAT)",
+      "rcPrint": "Print receipt",
+      "nrcPrint": "Print receipt: cash bill (non-VAT)",
+      "cnList": "Credit notes: list",
+      "cnNew": "Credit note: pick the tax invoice to credit",
+      "cnIssued": "Credit note: goods returned, 2 lines, references a tax invoice",
+      "cnPrint": "Print credit note (Sec. 86/10)",
+      "dnList": "Debit notes: list",
+      "dnIssued": "Debit note: price increase, references a tax invoice",
+      "dnPrint": "Print debit note (Sec. 86/10)",
+      "tiCreditedToZero": "Tax invoice: credited in full, outstanding 0.00, still issued",
+      "nqtPrint": "Print quotation (non-VAT, no tax rows)",
       "trialBalance": "Trial balance",
       "customers": "Customers list",
       "customerView": "Customer detail",
@@ -382,7 +456,15 @@
     "noTaxId": "No tax ID",
     "documentDate": "Document date",
     "dueDate": "Due date",
+    "dueDateByType": { "QT": "Valid until", "SO": "Delivery due" },
     "reference": "Reference",
+    "refDoc": "Tax invoice adjusted",
+    "refDocNone": "No tax invoice chosen yet",
+    "reason": "Reason",
+    "reasonPick": "Choose a reason",
+    "reasonText": "Describe the reason",
+    "reasons": { "RETURN": "Goods returned / defective", "PRICE_REDUCTION": "Price reduction", "DISCOUNT": "Discount granted afterwards", "SERVICE_SHORT": "Service not fully delivered", "OTHER": "Other (specify)", "PRICE_INCREASE": "Price increase", "QTY_EXCESS": "Quantity over-delivered" },
+    "adjust": { "title": "Choose the tax invoice to {kind}", "hint": "A credit or debit note must reference an issued tax invoice; its lines come from that invoice", "empty": "No issued tax invoice yet", "loadFailed": "Could not load the tax invoices", "pick": "Choose {number}", "kindCn": "credit", "kindDn": "debit", "partyFixed": "Customer of the tax invoice adjusted" },
     "notes": "Notes",
     "lines": {
       "title": "Lines",
@@ -429,6 +511,17 @@
       "form": "Form",
       "forms": { "PND2": "PND.2", "PND3": "PND.3", "PND53": "PND.53", "PND54": "PND.54" }
     },
+    "group": {
+      "title": "Documents billed",
+      "pickParty": "Pick the customer to see the documents that can be billed",
+      "empty": "No outstanding documents to bill",
+      "number": "Number",
+      "due": "Due",
+      "docTotal": "Document total",
+      "outstanding": "Outstanding (billed)",
+      "pick": "Select {number}",
+      "total": "Billing statement total"
+    },
     "settlement": {
       "title": "Documents settled",
       "pickParty": "Pick the party to see their open items",
@@ -448,7 +541,18 @@
       "suggest": "Use the suggested {wht}",
       "allocated": "Allocated",
       "unallocated": "Unallocated",
-      "forbidden": "Viewing open items needs permission"
+      "forbidden": "Viewing open items needs permission",
+      "titleRC": "Documents being paid",
+      "amountRC": "Received now",
+      "amountOfRC": "Amount received on {number}",
+      "whtOfRC": "Tax withheld by the customer on {number}",
+      "deposit": "Advance received (the part not allocated to any document)",
+      "depositHint": "The customer paid in advance or overpaid: keep it as a customer deposit",
+      "prefillSkipped": "Skipped: nothing left to receive",
+      "skipSettled": "{number}: already paid in full",
+      "skipCancelled": "{number}: cancelled or replaced",
+      "skipMissing": "{number}: document not found",
+      "prefillFailed": "Could not load the document to receive payment for"
     },
     "missing": {
       "title": "What is still missing",
@@ -505,8 +609,15 @@
     }
   },
   "docTypes": {
+    "QT": {"title": "Quotation", "issue": "Save and issue quotation", "create": "Create quotation", "empty": "No quotations yet"},
+    "SO": {"title": "Sales order", "issue": "Save and issue sales order", "create": "Create sales order", "empty": "No sales orders yet"},
+    "DO": {"title": "Delivery order", "issue": "Save and issue delivery order", "create": "Create delivery order", "empty": "No delivery orders yet"},
+    "BL": {"title": "Billing statement", "issue": "Save and issue billing statement", "create": "Create billing statement", "empty": "No billing statements yet"},
+    "IV": {"title": "Invoice", "issue": "Save and issue invoice", "create": "Create invoice", "empty": "No invoices yet"},
     "TI": {"title": "Tax invoice", "issue": "Save and issue tax invoice", "create": "Create tax invoice", "empty": "No tax invoices yet"},
     "RC": {"title": "Receipt", "issue": "Save and issue receipt", "create": "Create receipt", "empty": "No receipts yet"},
+    "CN": {"title": "Credit note", "issue": "Save and issue credit note", "create": "Create credit note", "empty": "No credit notes yet"},
+    "DN": {"title": "Debit note", "issue": "Save and issue debit note", "create": "Create debit note", "empty": "No debit notes yet"},
     "PV": {"title": "Payment voucher", "issue": "Save and issue payment voucher", "create": "Create payment voucher", "empty": "No payment vouchers yet"}
   },
   "reports": {

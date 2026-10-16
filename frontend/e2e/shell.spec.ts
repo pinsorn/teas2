@@ -51,11 +51,11 @@ test('Ctrl+K opens the command menu', async ({ page }) => {
 
 test('command menu goes to a page on Enter', async ({ page }) => {
   await page.keyboard.press('Control+k');
-  await page.getByRole('combobox').fill('ใบเสนอราคา');
-  await expect(page.getByRole('option', { name: 'ใบเสนอราคา' })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('combobox').fill('งบการเงิน'); // a page with no "create" action of its own (a built document type also lists "สร้าง…")
+  await expect(page.getByRole('option', { name: 'งบการเงิน' })).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('Enter');
-  await expect(page).toHaveURL(/\/sales\/quotations$/);
-  await expect(page).toHaveTitle('ใบเสนอราคา · TEAS 2');
+  await expect(page).toHaveURL(/\/reports\/financial-statements$/);
+  await expect(page).toHaveTitle('งบการเงิน · TEAS 2');
 });
 
 test('home has no serious accessibility violations', async ({ page }) => {

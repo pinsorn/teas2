@@ -22,6 +22,39 @@ Entry format — terse, greppable by symptom:
 
 <!-- entries below — newest on top -->
 
+## Unit: `DocEditor.settle.test.tsx` "a deposit alone completes a VAT-company receipt" fails at 5180 ms in the FULL `vitest run` only
+- **Root cause:** NOT vitest's 5 s default (the `it` has an explicit 15 s timeout). The failure is `expect(element).toHaveTextContent()` from an inner `waitFor({ timeout: 4000 })` (the server total, or "ครบแล้ว") expiring while 79 test files run in parallel; alone the test takes ~1.2 s. A second cause showed under load once the timeouts were raised: the test moved focus to the deposit field while the customer pick (`{Enter}` on the combobox) was still pending, and a blur drops a pending Enter, so "เลือกลูกค้า" stayed missing. Pre-existing: it reproduces on the S4 base commit b514b87.
+- **Fix:** done in S5 fix round 1 - the two inner `waitFor` timeouts are 12 s, the `it` timeout 30 s, and the test waits for the customer field to show the picked name before it continues. If another async test flakes only in the full run, look for a short inner `waitFor` timeout first. Never weaken the assertions.
+- **Seen:** 2026-10-16, SP1c S5
+
+## A credit / debit note without `refDocId` + a reason is `doc.incomplete`; a CN line without `sourceLineId` is `cn.line_not_referenced`
+- **Symptom:** an older test (or a script) that creates a CN / DN with only a party and lines fails at `issue`, or its `addAdjustment(...)` import is gone.
+- **Root cause:** S5 made the engine own the note's reference, customer, VAT and link: `issue` writes the one `adjusts` link itself (there is no `addAdjustment` any more).
+- **Fix:** header `{ documentDate, refDocId: <TI id>, reasonCode: 'RETURN' | ... }`, each CN line `sourceLineId: <TI line id>`; drop the manual link call. A seeded fixture note goes through `SALES_SPECS` (runSeed), never straight into `st.docs`.
+- **Seen:** 2026-10-16, SP1c S5
+
+## e2e: after confirming a correction plan the page sometimes showed the ORIGINAL (replaced) document - FIXED in S6
+- **Root cause:** `useCorrectionFlow.confirm` did `await invalidateQueries` then `router.push(new doc)`; the edit page's effect `router.replace(view(old doc))` (the old document stops being editable) raced with that push, and either could win.
+- **Fix:** `useCorrectionFlow(d, doc, onLanding)` calls `onLanding` right after the plan ran, BEFORE the caches refresh; `DocEditPage` sets a ref there and its redirect effect skips while it is set, so the flow's push (the new document, or the CN / DN for a note-only plan; an in-place revise lands on the same document) is the only navigation. `sales-rc` and `ti-loop` e2e now assert the landing URL. Any new screen that hosts the flow must pass the same hook.
+- **Seen:** 2026-10-15, SP1c S4; fixed 2026-10-16, S6
+
+## `revise()` silently moved a receipt to the company default bank when the proposal left the bank field out
+- **Symptom:** a notes-only API edit of a receipt posted to a non-default bank was planned as `revise`, then `executePlan` failed `doc.revise_not_allowed` (or, before S6, needlessly became cancel + reissue).
+- **Root cause:** `stored()` -> `payDefaults()` fills `bankAccountId` with the company default when absent, so the in-place edit looked like a move to another bank. The plan compared the raw proposal, execute compared the defaulted one.
+- **Fix:** an absent `bankAccountId` means "unchanged" in BOTH places (`isFiscalChange` and the start of `revise`). Test vector: move a receipt to a bank that is not the default first (a default-bank receipt cannot show it).
+- **Seen:** 2026-10-16, SP1c S6
+
+## e2e: "ยังขาดอะไร" still says เลือกลูกค้า / a panel has 0 checkboxes after `fill()` + `Enter` on the customer combobox
+- **Root cause:** the party search is asynchronous; `Enter` pressed before the option list renders picks nothing (flaked `sales-iv-bl` once, bit two S4 tests).
+- **Fix:** `await page.getByRole('option').first().waitFor()` between `fill()` and `Enter`.
+- **Seen:** 2026-10-15, SP1c S4
+
+## Fixture predicates (rcTargetsA / rcTargetsB) stop resolving after a seeded receipt touches them
+- **Symptom:** `fixture ids unresolved: rcTargetsA, rcTargetsB` (every e2e and screens test fails).
+- **Root cause:** the predicates pick pc-01's untouched invoices (no active link); a seed spec that settles or groups them removes them from the pool.
+- **Fix:** seed receipts settle the OTHER open invoices (rc-multi pays ti-057 / spike-60, which a billing statement already groups), leaving spike-1 / spike-25 untouched.
+- **Seen:** 2026-10-15, SP1c S4
+
 ## Playwright axe "color-contrast" fails ~50% of runs right after a dialog opens
 - **Symptom:** `axeClean(page)` right after opening a Radix dialog / alertdialog reports a serious `color-contrast` on text inside it; re-running passes (`ti-loop` "non-fiscal edit" flaked 2/4 on the pre-fix baseline).
 - **Root cause:** axe reads the colours mid fade-in animation (partial opacity blends).
@@ -62,3 +95,8 @@ Entry format — terse, greppable by symptom:
 - **Symptom:** `corepack pnpm build && corepack pnpm start -p 3100` serves pages, but every screen shows the load error; the network tab shows `GET /bff/v1/me` → 404 from Next.
 - **Root cause:** `NEXT_PUBLIC_API_MOCKING` is inlined at BUILD time; the worktree has no `.env` (only `.env.example`), so the build ships without the MSW worker. A stale `next start` can also keep holding the port after its shell is stopped (EADDRINUSE on restart).
 - **Fix:** build and start with `NEXT_PUBLIC_API_MOCKING=enabled` in the environment (or copy `.env.example` to `.env.local`); free the port by PID first. The preview works on `http://localhost:3100` only — MSW service workers need a secure context, so a LAN IP over http stays broken.
+
+## An e2e locator passes locally and hits "strict mode violation" on CI (2 elements)
+- **Symptom:** `getByRole('heading', { level: 1 })` / `getByText('ส่งมอบแล้ว')` resolve to 2 elements on GitHub CI only; green locally.
+- **Root cause:** a race, not an environment difference. Locally the second element (the paper's lazily fetched seller `h1`; the activity-tab entry) had not rendered yet when the assertion ran, so the locator matched one element and passed vacuously. Slower CI runners render both first. The paper seller name was also a real a11y defect (an extra `h1` per sheet).
+- **Fix:** the paper seller name is an `h2`; scope text locators to their region (`getByRole('tabpanel', { name })`). Never `.first()`.

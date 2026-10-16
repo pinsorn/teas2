@@ -1,14 +1,16 @@
 import { DOC_TYPES, isTypeAvailable } from '@/domain/doc-types';
 import { HttpResponse, http } from 'msw';
-import type { Actor, DocType, Qty } from '@/domain/types';
+import type { Actor, AttachmentCategory, DocType, MarkKey, Qty } from '@/domain/types';
+import { addAttachment, discardAttachment, listAttachments, markPrinted, removeAttachment } from '../engine/attachments';
 import { PAPER_BUILDERS } from '../engine/paper';
 import { buildChain } from '../engine/chain';
 import { type Body, unavailableTh, cancel, compute, convert, createDraft, deleteDraft, issue, publicDoc, updateDraft } from '../engine/commands';
 import { buildPlan, correctionPlan, executePlan, planStale } from '../engine/corrections';
 import { MockError } from '../engine/log';
+import { closeRemainder, remainingOf, setMark } from '../engine/marks';
 import { CLASS } from '../fixtures/documents';
 import { saveState } from '../store';
-import { ctx, forbidden, problem, screenGate } from './common';
+import { ctx, forbidden, persist, problem, screenGate } from './common';
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
 
@@ -54,7 +56,7 @@ const versionOf = (req: Request, body?: { version?: number }) => {
   if (!Number.isFinite(v)) throw new MockError(422, 'doc.version_required', 'ต้องระบุเวอร์ชันของเอกสาร');
   return v;
 };
-const done = (c: Ctx) => saveState(c.st);
+const done = (c: Ctx) => persist(c.st);
 
 const P = (perm: string) => (t: DocType) => `doc.${t}.${perm}`;
 
@@ -145,6 +147,27 @@ export const docsWriteHandlers = [
     return HttpResponse.json(doc, { status: 201 });
   })),
 
+  http.post('*/bff/v1/docs/:type/:id/marks', ({ request, params }) => guarded(String(params.type), P('issue'), async (c, t) => {
+    own(c, t, params.id);
+    const body = (await request.json()) as { mark: MarkKey; version?: number; reason?: string };
+    const doc = setMark(c.st, String(params.id), body.mark, versionOf(request, body), ACTOR, body.reason);
+    done(c);
+    return HttpResponse.json(doc);
+  })),
+
+  http.post('*/bff/v1/docs/:type/:id/close-remainder', ({ request, params }) => guarded(String(params.type), P('issue'), async (c, t) => {
+    own(c, t, params.id);
+    const body = (await request.json()) as { version?: number; reason?: string };
+    const doc = closeRemainder(c.st, String(params.id), versionOf(request, body), body.reason ?? '', ACTOR);
+    done(c);
+    return HttpResponse.json(doc);
+  })),
+
+  http.get('*/bff/v1/docs/:type/:id/remaining', ({ params }) => guarded(String(params.type), P('read'), (c, t) => {
+    own(c, t, params.id);
+    return HttpResponse.json(remainingOf(c.st, String(params.id)));
+  })),
+
   http.get('*/bff/v1/docs/:type/:id/chain', ({ params }) => guarded(String(params.type), P('read'), (c, t) => {
     own(c, t, params.id);
     return HttpResponse.json(buildChain(c.st, String(params.id)));
@@ -161,6 +184,34 @@ export const docsWriteHandlers = [
     if (!c.perms.includes('ledger.read')) return forbidden('ledger.read'); // D-09: the document's read is checked first, then the ledger's
     own(c, t, params.id);
     return HttpResponse.json(c.st.journals.find((j) => j.docId === params.id)?.preview ?? { entries: [] });
+  })),
+  http.get('*/bff/v1/docs/:type/:id/attachments', ({ params }) => guarded(String(params.type), P('read'), (c, t) => {
+    own(c, t, params.id);
+    return HttpResponse.json(listAttachments(c.st, String(params.id)));
+  })),
+  http.post('*/bff/v1/docs/:type/:id/attachments', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
+    const d = own(c, t, params.id);
+    const a = addAttachment(c.st, d, (await request.json()) as { category: AttachmentCategory; name: string; mime: string; dataUrl: string }, ACTOR);
+    if (!saveState(c.st)) { // the bytes went in but the record of them did not: undo, never claim a file the next read would not find
+      discardAttachment(c.st, a.id);
+      return problem(507, 'attachment.storage_full', 'พื้นที่เก็บไฟล์ตัวอย่างเต็ม — ลบไฟล์แนบเก่าหรือรีเซ็ตข้อมูลตัวอย่าง');
+    }
+    return HttpResponse.json(a, { status: 201 });
+  })),
+  http.delete('*/bff/v1/docs/:type/:id/attachments/:attId', ({ params }) => guarded(String(params.type), P('create'), (c, t) => {
+    const d = own(c, t, params.id);
+    removeAttachment(c.st, d, String(params.attId), ACTOR);
+    done(c);
+    return new HttpResponse(null, { status: 204 });
+  })),
+  // the print action was used (the paper page's print button): what it counts as is the server's decision
+  http.post('*/bff/v1/docs/:type/:id/printed', ({ request, params }) => guarded(String(params.type), P('read'), async (c0, t) => {
+    own(c0, t, params.id);
+    const body = (await request.json().catch(() => ({}))) as { copy?: boolean };
+    const c = ctx(); // the body was awaited: read the state again so two quick prints (two tabs) see each other and only one is the original
+    const r = markPrinted(c.st, own(c, t, params.id), body.copy === true, ACTOR);
+    done(c);
+    return HttpResponse.json(r);
   })),
   http.get('*/bff/v1/docs/:type/:id/paper', ({ request, params }) => guarded(String(params.type), P('read'), (c, t) => {
     const d = own(c, t, params.id);

@@ -3,8 +3,7 @@ import type { RecordRow } from '@/domain/records';
 import type { Actor, Page } from '@/domain/types';
 import { MockError, logAudit } from '../engine/log';
 import { RECORD_IMPLS, type RecordKindImpl } from '../records/registry';
-import { saveState } from '../store';
-import { ctx, forbidden, problem, screenGate } from './common';
+import { ctx, forbidden, persist, problem, screenGate } from './common';
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
 type Ctx = ReturnType<typeof ctx>;
@@ -70,7 +69,7 @@ export const recordsHandlers = [
     const row = impl.create(c.st, c.company.id, values);
     if (slot) (c.st.idempotency ??= {})[slot] = row.id;
     logAudit(c.st, ACTOR, c.company.id, `record.${kind}.create`, row.id, undefined, row);
-    saveState(c.st);
+    persist(c.st);
     return HttpResponse.json(row, { status: 201 });
   })),
 
@@ -82,7 +81,7 @@ export const recordsHandlers = [
     if (Object.keys(errors).length) return invalid(errors);
     const after = impl.update(c.st, c.company.id, before.id, values);
     logAudit(c.st, ACTOR, c.company.id, `record.${kind}.update`, before.id, before, after);
-    saveState(c.st);
+    persist(c.st);
     return HttpResponse.json(after);
   })),
 
@@ -96,7 +95,7 @@ export const recordsHandlers = [
     if (why) return problem(409, 'record.in_use', 'ปิดใช้งานไม่ได้', { detail: why });
     const after = impl.setActive(c.st, c.company.id, before.id, active);
     logAudit(c.st, ACTOR, c.company.id, `record.${kind}.${active ? 'activate' : 'deactivate'}`, before.id, before, after);
-    saveState(c.st);
+    persist(c.st);
     return HttpResponse.json(after);
   })),
 ];

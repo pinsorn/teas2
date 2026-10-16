@@ -1,3 +1,5 @@
+import { LIVE } from '@/domain/doc-types';
+import type { DocType } from '@/domain/types';
 import type { ChainEdge, ChainGraph, ChainNode, Doc, DocLine, Qty } from '@/domain/types';
 import type { MockState } from '../store';
 import { fromSatang, toSatang } from './money';
@@ -12,26 +14,33 @@ export const q4 = (q: Qty): number => {
 export const fmtQ = (n: number): Qty => `${Math.trunc(n / 10000)}.${String(n % 10000).padStart(4, '0')}`.replace(/\.?0+$/, '');
 
 /** Quantity of `line` (of `src`) already taken by active conversions (drafts included: they reserve quantity). */
-export function consumed(st: MockState, src: Doc, line: DocLine): number {
+export function consumed(st: MockState, src: Doc, line: DocLine, only?: (target: Doc) => boolean): number {
   const idx = src.lines.findIndex((l) => l.id === line.id);
   let sum = 0;
   for (const e of st.links) {
     if (e.kind !== 'converted_from' || e.to !== src.id || !e.active) continue;
     const t = st.docs.find((d) => d.id === e.from);
-    if (!t) continue;
+    if (!t || (only && !only(t))) continue;
     const byRef = t.lines.some((l) => l.sourceLineId); // seeded chains carry no per-line reference: match by position
     t.lines.forEach((tl, i) => { if (byRef ? tl.sourceLineId === line.id : i === idx) sum += q4(tl.qty); });
   }
   return sum;
 }
 
-function progressOf(st: MockState, d: Doc): string | undefined {
-  if (d.type === 'SO' || d.type === 'DO') {
+/** Derived at read time from the active links, never stored (§7.11). SO: what issued DOs delivered; DO: what TI / IV took; QT / PO: converted. */
+export function progressOf(st: MockState, d: Doc): string | undefined {
+  if (d.type === 'QT' || d.type === 'SO' || d.type === 'DO' || d.type === 'PO') {
     const ordered = d.lines.reduce((a, l) => a + q4(l.qty), 0);
-    const delivered = d.lines.reduce((a, l) => a + consumed(st, d, l), 0);
-    return `${fmtQ(delivered)}/${fmtQ(ordered)}`;
+    // only issued targets count: a draft DO has delivered nothing, a draft TI / IV has billed nothing (they only reserve the quantity)
+    const kinds: DocType[] | undefined = d.type === 'SO' ? ['DO'] : d.type === 'DO' ? ['TI', 'IV'] : undefined;
+    const only = kinds ? (t: Doc) => kinds.includes(t.type) && LIVE.includes(t.status) : undefined;
+    const done = d.lines.reduce((a, l) => a + consumed(st, d, l, only), 0);
+    const x = `${fmtQ(done)}/${fmtQ(ordered)}`;
+    if (d.type === 'QT') return x;
+    if (d.type === 'SO' && done >= ordered) return 'ส่งครบ';
+    return `${{ SO: 'ส่งแล้ว', DO: 'วางบิลแล้ว', PO: 'รับแล้ว' }[d.type]} ${x}${d.marks?.closed ? ' (ปิดยอดคงเหลือ)' : ''}`;
   }
-  if (d.type === 'TI' && d.outstanding !== undefined) {
+  if ((d.type === 'TI' || d.type === 'IV') && d.outstanding !== undefined) {
     const paid = st.links.filter((l) => l.kind === 'settles' && l.to === d.id && l.active).reduce((a, l) => a + toSatang(l.amount ?? '0.00'), 0);
     return `ชำระแล้ว ${fromSatang(paid)} / ${d.totals.total}`;
   }

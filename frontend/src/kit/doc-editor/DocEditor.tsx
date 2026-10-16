@@ -7,6 +7,8 @@ import { useCompanyEpoch } from '@/app-shell/useCompanyEpoch';
 import { useMe } from '@/app-shell/useMe';
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { routesOf, type DocDescriptor } from '@/domain/descriptors';
 import type { Allocation, Doc, DocHeader, DocLine, ItemSummary, Me, PartySummary } from '@/domain/types';
 import { ApiError } from '@/lib/api/client';
@@ -14,7 +16,10 @@ import { endpoints, type DocInput } from '@/lib/api/endpoints';
 import { qk } from '@/lib/query/keys';
 import { cn } from '@/lib/utils';
 import { ConfirmIssueDialog } from '../dialogs/ConfirmIssueDialog';
+import { AgentBanner } from '../doc-view/AgentBanner';
+import { AttachmentsPanel } from '../doc-view/AttachmentsPanel';
 import { StatusChip } from '../doc-list/StatusChip';
+import { GroupPanel } from './GroupPanel';
 import { HeaderFields } from './HeaderFields';
 import { JournalDrawer } from './JournalDrawer';
 import { isBlankLine, LineGrid, newLine } from './LineGrid';
@@ -25,7 +30,7 @@ import { SettlementPanel } from './SettlementPanel';
 import { TotalsPanel } from './TotalsPanel';
 import { useAutosave } from './useAutosave';
 import { useCompute } from './useCompute';
-import { isComposing, moneyText, qtyText } from './useLineGridKeys';
+import { cleanDecimal, isComposing, moneyText, qtyText } from './useLineGridKeys';
 
 export interface DocEditorProps {
   descriptor: DocDescriptor;
@@ -76,6 +81,7 @@ export function DocEditor(props: DocEditorProps) {
 
 function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequested }: DocEditorProps) {
   const t = useTranslations('docEditor');
+  const ts = useTranslations('docEditor.settlement');
   const td = useTranslations(`docTypes.${d.type}`);
   const locale = useLocale();
   const qc = useQueryClient();
@@ -88,6 +94,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   const issuing = useRef(false);
   const pickGen = useRef(0); // newest party selection wins: older usual-item lookups are dropped
   const [stale, setStale] = useState(false);
+  const [draftId, setDraftId] = useState<string | undefined>(initial?.id || undefined); // attachments belong to the saved draft: known from the start when editing, after the first save when creating
   const [partyBusy, setPartyBusy] = useState(false); // a party lookup / pick (with its usual-item prefill) is still landing
   const [picking, setPicking] = useState(false);
 
@@ -109,12 +116,12 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   const wide = useWide();
   const previewOpen = previewChoice ?? wide;
 
-  // Blank rows are never sent; money/quantity text is normalised to the wire format.
+  // Blank rows are never sent (nor, on a debit note opened from an invoice, a line left at quantity 0 - the prefill starts them there); money/quantity text is normalised to the wire format.
   const payload = useMemo<DocInput>(() => ({
     header,
-    lines: lines.filter((l) => !isBlankLine(l)).map((l) => ({ ...l, qty: qtyText(l.qty), unitPrice: moneyText(l.unitPrice) })),
-    ...(d.settles ? { allocations } : {}),
-  }), [header, lines, allocations, d.settles]);
+    lines: lines.filter((l) => !isBlankLine(l) && !(d.type === 'DN' && d.adjusts && Number(qtyText(l.qty)) === 0)).map((l) => ({ ...l, qty: qtyText(l.qty), unitPrice: moneyText(l.unitPrice) })),
+    ...(d.settles || d.groups ? { allocations } : {}),
+  }), [header, lines, allocations, d.settles, d.groups, d.type, d.adjusts]);
   const payloadJson = JSON.stringify(payload);
 
   const invalidate = () => {
@@ -129,8 +136,25 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
     startUnsaved: mode === 'create' && !!initial,
     flushOnLeave: () => qc.getQueryData<Me>(qk.me())?.activeCompanyId === owner.current,
     // the address bar follows the draft, but the editor stays mounted (a router navigation would remount it and lose focus / input)
-    onCreated: (id) => { if (root.current) window.history.replaceState(window.history.state, '', routesOf(d).edit(id)); invalidate(); },
+    onCreated: (id) => { setDraftId(id); if (root.current) window.history.replaceState(window.history.state, '', routesOf(d).edit(id)); invalidate(); },
   });
+
+  // A blank new document starts with its type's default note; a copy / conversion / prefilled screen (`initial`) keeps its source's. The note is the system's, not the user's:
+  // when the editor is still untouched it becomes the autosave baseline, so merely opening the screen never saves a draft.
+  const blank = mode === 'create' && !initial;
+  const defaults = useQuery({ queryKey: qk.defaultNotes(me?.activeCompanyId ?? ''), queryFn: endpoints.getDefaultNotes, enabled: blank && !!me });
+  const [notesAdopted, setNotesAdopted] = useState(false);
+  const [baselineNotes, setBaselineNotes] = useState<string>(); // the default note that was adopted into a still-untouched editor
+  const blankJson = JSON.stringify({ header: { documentDate: me?.businessDate ?? '' }, lines: [], ...(d.settles || d.groups ? { allocations: [] } : {}) });
+  const defaultText = defaults.data?.[d.type];
+  if (blank && !notesAdopted && defaults.data) { // ONCE, like the date: a note the user typed first (or later cleared) is theirs
+    setNotesAdopted(true);
+    if (defaultText && !header.notes) {
+      if (payloadJson === blankJson) setBaselineNotes(defaultText);
+      setHeader((h) => (h.notes ? h : { ...h, notes: defaultText }));
+    }
+  }
+  useEffect(() => { if (baselineNotes) autosave.rebase(); }, [baselineNotes]); // eslint-disable-line react-hooks/exhaustive-deps -- once, after the render that holds the note
 
   const title = locale === 'en' ? d.titleEn : d.titleTh;
   const partyKind = d.partyKind;
@@ -221,6 +245,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
         <StatusChip status={initial?.status ?? 'draft'} />
       </div>
 
+      {initial?.createdBy.kind === 'agent' && initial.id ? <AgentBanner actor={initial.createdBy} status={initial.status} reportId={initial.agentReportId} /> : null}
       {conflict && <ProblemBanner error={autosave.status === 'conflict' ? autosave.problem : issueError} hint={t('conflictHint')} action={reload} />}
       {autosave.status === 'error' && <ProblemBanner error={autosave.problem} hint={t('saveFailedHint')}
         action={<Button size="sm" variant="outline" onClick={() => void autosave.flush()}>{t('save')}</Button>} />}
@@ -230,18 +255,38 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
       <fieldset disabled={issuingNow} className={cn('m-0 grid min-w-0 gap-6 border-0 p-0', wide && previewOpen && 'grid-cols-[minmax(0,1fr)_minmax(0,28rem)]')}>
         <div className="grid min-w-0 gap-6">
           <section className="grid gap-4 rounded-xl bg-card p-4 ring-1 ring-foreground/10 md:grid-cols-2">
-            {partyKind && (
+            {d.adjusts ? ( // a note's customer is its invoice's: the server fills it, the editor only shows it
+              <div className="grid gap-1 md:col-span-2">
+                <p className="text-small text-muted-foreground">{t('adjust.partyFixed')}</p>
+                <p className="text-body font-medium" data-field="party-fixed">{party?.name ?? '-'}</p>
+              </div>
+            ) : partyKind && (
               <div className="md:col-span-2">
                 <PartyField kind={partyKind} value={party} onPick={(p) => void onPickParty(p)} canCreate={me ? me.permissions.includes('party.manage') : undefined}
                   onPending={setPartyBusy} onClear={() => { pickGen.current++; setPicking(false); setParty(undefined); setAllocations([]); setHeader((h) => ({ ...h, partyId: undefined })); }}
                   search={(q) => endpoints.searchParties({ kind: partyKind === 'employee' ? undefined : partyKind, q, limit: 8 }).then((p) => p.items)} />
               </div>
             )}
-            <HeaderFields keys={d.headerFields} ids={ids} header={header} setHeader={setHeader} />
+            <HeaderFields type={d.type} keys={d.headerFields} ids={ids} header={header} setHeader={setHeader} />
           </section>
 
           {d.settles && (
             <SettlementPanel descriptor={d} partyId={header.partyId} value={allocations} onChange={setAllocations} allocation={compute.last?.allocation} />
+          )}
+
+          {d.type === 'RC' && ( // the part of the money no document takes: the server keeps it as a customer deposit
+            <section className="grid gap-1.5 rounded-xl bg-card p-4 ring-1 ring-foreground/10 md:max-w-md">
+              <Label htmlFor={`${ids}-deposit`}>{ts('deposit')}</Label>
+              <Input id={`${ids}-deposit`} type="text" inputMode="decimal" autoComplete="off" className="text-right tabular-nums" value={header.depositAmount ?? ''}
+                onChange={(e) => setHeader((h) => ({ ...h, depositAmount: cleanDecimal(e.target.value, 2) || undefined }))}
+                onBlur={() => setHeader((h) => (h.depositAmount && moneyText(h.depositAmount) !== h.depositAmount ? { ...h, depositAmount: moneyText(h.depositAmount) } : h))}
+                onFocus={(e) => e.target.select()} />
+              <p className="text-small text-muted-foreground">{ts('depositHint')}</p>
+            </section>
+          )}
+
+          {d.groups && (
+            <GroupPanel descriptor={d} partyId={header.partyId} value={allocations} onChange={setAllocations} total={compute.last?.totals.total} />
           )}
 
           {showLines && (
@@ -258,6 +303,8 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
               partyLabel={partyKind ? t(`party.${partyKind}`) : undefined} onJump={jump} />
             <TotalsPanel totals={compute.data?.totals} whtLines={compute.data?.whtLines} pending={compute.pending} error={compute.error} onRetry={compute.retry} />
           </div>
+          {me ? <AttachmentsPanel type={d.type} docId={draftId} ensureDocId={async () => draftId ?? (await autosave.flush())?.id}
+            canEdit={me.permissions.includes(d.permissions.create)} issued={!!initial && initial.status !== 'draft'} /> : null}
         </div>
         <PreviewDrawer open={previewOpen} onOpenChange={setPreviewChoice} docked={wide} party={party} lines={lines} compute={compute.data} />
       </fieldset>

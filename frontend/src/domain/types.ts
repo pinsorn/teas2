@@ -43,17 +43,34 @@ export interface DocHeader { partyId?: string; documentDate: IsoDate; dueDate?: 
   notes?: string; dimensions?: Record<string, string>; priceIncludesVat?: boolean;
   whtMode?: WhtMode; bankAccountId?: string; paymentMethod?: 'transfer' | 'cash' | 'cheque';
   cheque?: { number: string; date: IsoDate; bank: string };
-  /** RC: the unallocated remainder kept as a customer deposit (Cr CustomerDeposit); S4 owns the editor field. */ depositAmount?: Money }
+  /** RC: the unallocated remainder kept as a customer deposit (Cr CustomerDeposit); S4 owns the editor field. */ depositAmount?: Money;
+  /** CN / DN: the tax invoice this note adjusts. Server-owned: the note's customer and reference follow it. */ refDocId?: string;
+  /** CN / DN: a code from REASON_CODES (reference data [SP-R]); OTHER needs reasonText. The paper prints the Thai wording, never the code. */ reasonCode?: string; reasonText?: string }
 /** `cash` = money that moves: received (RC) / paid (PV). `wht` = withholding tax of the document. */
 export interface DocTotals { gross: Money; discount: Money; net: Money; vat: Money; total: Money; wht?: Money; cash?: Money;
   amountInWords: string }
 export interface Lock { kind: 'period' | 'filing' | 'settlement' | 'reconciliation'; reason: string; exits: string[] }
+/** Document marks: facts about the document that are not status (customer accepted / rejected a QT, DO delivered, PO sent, SO closed). Never a revision. */
+export type MarkKey = 'accepted' | 'rejected' | 'delivered' | 'sent';
+export interface DocMarks { accepted?: { at: string; by: string }; rejected?: { at: string; by: string; reason: string };
+  delivered?: { at: string; by: string }; sent?: { at: string; by: string }; closed?: { at: string; by: string; reason: string } }
+/** One source line of a convertible document: what was ordered, taken by active conversions (drafts included) and left. */
+export interface RemainingLine { lineId: string; description: string; unit: string; ordered: Qty; converted: Qty; remaining: Qty; closed: boolean }
 export interface Doc { id: string; type: DocType; number?: string; status: DocStatus; correctionClass: CorrectionClass;
   revision: number; version: number; header: DocHeader; party?: PartySummary; lines: DocLine[]; totals: DocTotals;
   outstanding?: Money; locks: Lock[]; createdBy: Actor; issuedAt?: string; allocations?: Allocation[];
-  cancel?: { reasonCode: string; reasonText: string; at: string }; replacedById?: string; replacesId?: string }
+  /** CN / DN (ม.86/10): the invoice's net, the correct value after this note, the difference and its VAT, taken when the note is issued; the paper prints these. Server-written. */
+  adjustSnapshot?: { originalNet: Money; correctNet: Money; diffNet: Money; vat: Money };
+  cancel?: { reasonCode: string; reasonText: string; at: string }; replacedById?: string; replacesId?: string; marks?: DocMarks;
+  /** SO / DO / PO / QT: conversion progress text, derived on every read from the active links (never stored). */ progress?: string;
+  /** How many times the print action was used on this issued document (derived from the print log on every read, never stored); 0 / absent = not printed yet, so the next print is the ต้นฉบับ. */ printCount?: number;
+  /** An agent-created document: the id of the agent's check report ("ดูรายงานการตรวจ"). */ agentReportId?: string }
+/** D-30: what an attached file is evidence of. Labels live in messages (`attachments.category.*`). */
+export type AttachmentCategory = 'customer_po' | 'purchase_order' | 'delivery' | 'vendor_tax_invoice' | 'receipt' | 'transfer_slip'
+  | 'contract' | 'photo' | 'wht_certificate' | 'government' | 'other';
+export interface Attachment { id: string; docId: string; category: AttachmentCategory; name: string; size: number; mime: string; dataUrl: string; at: string; by: string }
 export interface DocSummary { id: string; type: DocType; number?: string; status: DocStatus; documentDate: IsoDate;
-  partyName: string; total: Money; outstanding?: Money; dueDate?: IsoDate; reference?: string; createdByAgent: boolean }
+  partyName: string; total: Money; outstanding?: Money; dueDate?: IsoDate; reference?: string; createdByAgent: boolean; marks?: DocMarks; progress?: string }
 export interface Page<T> { items: T[]; nextCursor?: string; total?: number }
 
 export type LinkKind = 'converted_from' | 'settles' | 'adjusts' | 'groups' | 'replaces' | 'issues';
@@ -72,6 +89,7 @@ export interface AuditEntry { id: string; at: string; actor: Actor; companyId: s
 export interface JournalLinePreview { accountCode: string; accountName: string; debit: Money; credit: Money;
   partyName?: string; dimensions?: Record<string, string>; rule: string }
 export interface JournalEntryPreview { number?: string; date: IsoDate; kind: 'original' | 'reversal' | 'correction';
+  /** When the entry was written (mock clock); set once, never changed - a reversal has its own. Closed-period invariant 7 judges with it. */ postedAt?: string;
   /** Posted into the first open period because the original sits in a closed one ("แก้ไขย้อนหลัง"). */ late?: boolean;
   lines: JournalLinePreview[] }
 export interface JournalPreview { entries: JournalEntryPreview[] }
@@ -107,11 +125,17 @@ export interface PaperModel {
   titleTh: string; titleEn: string;            // 'ใบกำกับภาษี' / 'TAX INVOICE'
   copyLabel: 'ต้นฉบับ' | 'สำเนา';
   number: string; documentDate: IsoDate; dueDate?: IsoDate; reference?: string;
+  /** Label of the due date on this paper (QT: 'ยืนราคาถึง'); default 'ครบกำหนดชำระ'. */ dueLabel?: string;
+  /** N-class revision of a quotation / order: 'ฉบับแก้ไขครั้งที่ n', printed on every page. */ revisionLabel?: string;
   seller: PaperParty; buyer: PaperParty;
-  lines: { no: number; description: string; qty: Qty; unit: string; unitPrice: Money; amount: Money; taxCode: TaxCode; discountPct?: string }[];
+  lines: { no: number; description: string; qty: Qty; unit: string; unitPrice: Money; amount: Money; taxCode: TaxCode; discountPct?: string;
+    /** Receipt only: the tax the customer withheld on this settled document. */ wht?: Money }[];
   totals: DocTotals; notes?: string;
   /** VAT presentation supplied by the server, printed in order after the net row: zero-rated / exempt sales bases, then the VAT line. */
-  vatLines: { label: string; amount: Money }[];
+  vatLines?: { label: string; amount: Money }[]; // omitted for a non-VAT company: no VAT row, no net-before-tax row
+  /** Receipt only: how the money came in (method, bank account or cheque), one line printed by the server. */ payment?: string;
+  /** CN / DN (ม.86/10): the tax invoice adjusted, its value, the correct value and the difference (this note's net; its VAT is totals.vat), all server-computed. */
+  adjusts?: { number: string; date: IsoDate; originalNet: Money; correctNet: Money; diffNet: Money; reason: string };
   replacementNote?: string;                    // 'ยกเลิกและออกแทนฉบับเดิม เลขที่ … ลงวันที่ …' (on the NEW document)
   voidMark?: { label: string; note?: string }; // cancelled / replaced originals: diagonal stamp on every page
   signatures: string[];                        // ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม']

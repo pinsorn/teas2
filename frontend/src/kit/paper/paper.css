@@ -24,7 +24,7 @@
   print-color-adjust: exact;
 }
 .paper-root *, .paper-root *::before, .paper-root *::after { box-sizing: border-box; }
-.paper-root p, .paper-root h1, .paper-root h2, .paper-root h3, .paper-root h4, .paper-root dl, .paper-root dd { margin: 0; }
+.paper-root p, .paper-root h2, .paper-root h3, .paper-root h4, .paper-root dl, .paper-root dd { margin: 0; }
 
 /* ---------- A4 sheets ---------- */
 .paper-stack { display: grid; justify-content: center; gap: 24px; padding: 24px 0; background: var(--color-bg); }
@@ -48,7 +48,7 @@
 .paper-hd { display: grid; grid-template-columns: 1fr auto; gap: 5mm; align-items: start; padding-bottom: 4mm; border-bottom: 2pt solid var(--paper-accent); }
 .paper-seller { display: flex; gap: 4mm; }
 .paper-logo { flex: none; width: 17mm; height: 17mm; border-radius: 50%; border: 1.6pt solid var(--paper-accent); display: grid; place-items: center; font-weight: 700; font-size: 22pt; color: var(--paper-accent-text); line-height: 1; }
-.paper-seller h1 { font-size: 12.5pt; font-weight: 700; line-height: 1.25; }
+.paper-seller h2 { font-size: 12.5pt; font-weight: 700; line-height: 1.25; }
 .paper-seller .paper-name-en { font-size: 8.5pt; color: var(--paper-muted); margin-bottom: 1.2mm; }
 .paper-seller p { font-size: 8.5pt; line-height: 1.45; text-wrap: pretty; }
 .paper-seller .paper-tin { margin-top: 1mm; }
@@ -56,6 +56,8 @@
 .paper-title h2 { font-size: 18.5pt; font-weight: 700; color: var(--paper-accent); line-height: 1.15; }
 .paper-title .paper-en { display: block; font-size: 9pt; margin-top: 0.5mm; letter-spacing: 0.02em; }
 .paper-pill { display: inline-block; margin-top: 2.5mm; padding: 0.6mm 3.5mm; border: 1pt solid var(--paper-ink); border-radius: 99px; font-size: 8.5pt; font-weight: 600; }
+
+.paper-rev { display: block; margin-top: 1.5mm; font-size: 8.5pt; font-weight: 600; }
 
 .paper-parties { display: grid; grid-template-columns: 1fr 66mm; gap: 5mm; padding-top: 4.5mm; }
 .paper-box { border: 0.75pt solid var(--paper-rule); border-radius: 2mm; padding: 3mm 3.5mm; }
@@ -67,6 +69,7 @@
 .paper-docbox dt { color: var(--paper-muted); }
 .paper-docbox dd { text-align: right; font-weight: 600; }
 .paper-docbox dd.paper-docno { font-size: 11pt; font-weight: 700; color: var(--paper-accent-text); }
+.paper-adjust { margin-top: 3mm; }
 .paper-root .paper-replace { margin-top: 3mm; font-size: 8.8pt; font-weight: 600; border: 0.75pt solid var(--paper-ink); border-radius: 2mm; padding: 1.6mm 3.5mm; }
 
 /* ---------- 2. ITEMS ---------- */

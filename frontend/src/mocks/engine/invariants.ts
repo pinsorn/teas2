@@ -1,12 +1,12 @@
-import { DOC_TYPES, LIVE, SETTLES } from '@/domain/doc-types';
+import { DOC_TYPES, GROUPS, LIVE, SETTLES } from '@/domain/doc-types';
 import type { WhtLine, WhtMode } from '@/domain/types';
 import type { Doc } from '@/domain/types';
 import type { MockState } from '../store';
 import { consumed, q4 } from './chain';
 import { divRoundHalfAway, fromSatang, toSatang } from './money';
-import { firstOpenDate, isClosed } from './periods';
+import { resolveRole } from './posting';
 import { whtOf } from './settlement';
-import { computeDoc } from './vat';
+import { computeDoc, vatOf } from './vat';
 
 type Stored = MockState['docs'][number];
 
@@ -45,7 +45,7 @@ export function whtLineProblems(l: WhtLine, base: number, bp: bigint, mode: WhtM
 
 /** WHT of a PV recomputed from its lines and the fixture rate table with its own bigint formulas (not `computeWht`), and the engine's lines checked against it. */
 function expectedWht(st: MockState, d: Stored): { tax: number; expense: number; cashDelta: number; bad?: string } {
-  const nets = computeDoc(d.lines, !!d.header.priceIncludesVat).lines;
+  const nets = computeDoc(d.lines, !!d.header.priceIncludesVat, vatOf(st, d.companyId)).lines;
   const base = new Map<string, bigint>();
   d.lines.forEach((l, i) => { if (l.whtTypeCode) base.set(l.whtTypeCode, (base.get(l.whtTypeCode) ?? 0n) + BigInt(toSatang(nets[i].net))); });
   const mode = d.header.whtMode ?? 'deduct';
@@ -162,21 +162,17 @@ export function checkInvariants(st: MockState): string[] {
     if ((d.status === 'cancelled' || d.status === 'replaced') && entries[entries.length - 1].kind !== 'reversal') out.push(`${d.id}: ${d.status} but its journal ends without a reversal`);
   }
 
-  // 7. an entry dated in a closed period was posted before the close (issuedAt / cancel / revision <= closedAt), or is late and in the first open period
+  // 7. an entry dated in a closed period was posted (postedAt, set once when written) before that period closed
   for (const j of st.journals) {
     const d = doc(j.docId);
     if (!d) continue;
     for (const e of j.preview.entries) {
+      if (!e.postedAt) out.push(`${d.id} ${e.kind} entry ${e.date}: no postedAt (every written entry carries when it was posted)`);
       const p = st.periods.find((x) => x.companyId === d.companyId && x.month === e.date.slice(0, 7));
       if (p?.status !== 'closed') continue;
-      let ok: boolean;
-      if (e.kind === 'original' && !e.late) ok = !!d.issuedAt && !!p.closedAt && Date.parse(d.issuedAt) <= Date.parse(p.closedAt); // an original in a closed month was issued before the close
-      else if (e.late) ok = e.date >= firstOpenDate(st, d.companyId) && !isClosed(st, d.companyId, e.date);
-      else {
-        const at = e.kind === 'reversal' ? d.cancel?.at : st.revisions.filter((r) => r.docId === d.id).map((r) => r.at).sort().pop();
-        ok = !!at && !!p.closedAt && Date.parse(at) <= Date.parse(p.closedAt);
+      if (!e.postedAt || !p.closedAt || !(Date.parse(e.postedAt) <= Date.parse(p.closedAt))) {
+        out.push(`${d.id} ${e.kind} entry ${e.date}: dated in closed period ${p.month} but was posted after it closed (or has no posted-at)`);
       }
-      if (!ok) out.push(`${d.id} ${e.kind} entry ${e.date}: dated in closed period ${p.month} but was posted after it closed and is not a late entry in the first open period`);
     }
   }
 
@@ -226,6 +222,65 @@ export function checkInvariants(st: MockState): string[] {
     }
   }
   // (No "settled <= total" check: a credit note or a cancelled debit note after payment legitimately leaves a negative outstanding = customer credit, Ham ruling; over-allocation is refused at issue.)
+
+  // 8b. the customer-withheld tax: GL(the WhtReceivable account of the posting profile, 1180 in the fixtures) of a company = the WHT of its live receipts (a posting to 1180 from anywhere else, or a reversal left behind, shows here)
+  for (const c of st.companies) {
+    let acct = '';
+    try { acct = resolveRole(st, 'WhtReceivable', { companyId: c.id, docType: 'RC' }).code; } catch (e) { out.push(`${c.id}: WhtReceivable does not resolve (${(e as Error).message})`); continue; }
+    const want = st.docs.filter((d) => d.companyId === c.id && d.type === 'RC' && LIVE.includes(d.status)).reduce((n, d) => n + sat(d.totals.wht ?? '0.00', d.id), 0);
+    if ((gl.get(`${c.id}|${acct}`) ?? 0) !== want) out.push(`${c.id}: GL ${acct} ${fromSatang(gl.get(`${c.id}|${acct}`) ?? 0)} but the live receipts withheld ${fromSatang(want)}`);
+  }
+
+  // 9. a billing statement (BL): total = the sum of its amounts, its active groups links are its list, every target is a groupable document of the same company and customer, and it posts nothing
+  for (const d of st.docs) {
+    if (!GROUPS[d.type] || !LIVE.includes(d.status)) continue;
+    const allocs = d.allocations ?? [];
+    const total = allocs.reduce((n, a) => n + sat(a.amount, d.id), 0);
+    if (sat(d.totals.total, d.id) !== total) out.push(`${d.id}: BL total ${d.totals.total} is not Σ allocation amounts ${fromSatang(total)}`);
+    const want = allocs.map((a) => `${a.targetId}|${sat(a.amount, d.id)}`).sort().join(',');
+    const have = st.links.filter((l) => l.active && l.kind === 'groups' && l.from === d.id).map((l) => `${l.to}|${sat(l.amount ?? '0.00', d.id)}`).sort().join(',');
+    if (want !== have) out.push(`${d.id}: allocations [${want}] but the active groups links are [${have}]`);
+    for (const a of allocs) {
+      const t = doc(a.targetId);
+      if (!t) continue; // a link to a missing document is reported by check 6
+      if (t.companyId !== d.companyId || t.header.partyId !== d.header.partyId) out.push(`${d.id}: BL groups ${a.targetId} of another party or company`);
+      if (!GROUPS[d.type]!.includes(t.type)) out.push(`${d.id}: BL groups ${a.targetId}, a ${t.type}, which cannot be grouped`);
+    }
+    if (st.journals.some((j) => j.docId === d.id)) out.push(`${d.id}: BL has a journal (a billing statement posts nothing)`);
+  }
+
+  // 10. credit / debit notes: each live note adjusts one live TI of its company and customer through exactly one active link of its own total; its total is its lines' net + VAT;
+  //     per invoice line the live credits never exceed the line's net (G3) and a fully credited line gives back exactly its VAT (rule B), to the satang
+  const credited = new Map<string, { net: number; vat: number; debit: boolean }>(); // `${ti}|${line}`
+  for (const d of st.docs) {
+    if ((d.type !== 'CN' && d.type !== 'DN') || !LIVE.includes(d.status)) continue;
+    const ti = d.header.refDocId ? doc(d.header.refDocId) : undefined;
+    if (!ti || ti.type !== 'TI' || ti.companyId !== d.companyId || !LIVE.includes(ti.status)) { out.push(`${d.id}: ${d.type} has no live tax invoice of its company to adjust (refDocId ${d.header.refDocId ?? 'missing'})`); continue; }
+    if (d.header.partyId !== ti.header.partyId) out.push(`${d.id}: ${d.type} party ${d.header.partyId} is not the customer of ${ti.id}`);
+    const links = st.links.filter((l) => l.active && l.kind === 'adjusts' && l.from === d.id);
+    if (links.length !== 1 || links[0].to !== ti.id || sat(links[0].amount ?? '0.00', d.id) !== sat(d.totals.total, d.id)) {
+      out.push(`${d.id}: ${d.type} needs exactly one active adjusts link to ${ti.id} of its total ${d.totals.total} (has [${links.map((l) => `${l.to} ${l.amount}`).join(', ')}])`);
+    }
+    const rows = computeDoc(d.lines, !!d.header.priceIncludesVat, true);
+    if (sat(rows.totals.total, d.id) !== sat(d.totals.total, d.id) || sat(d.totals.net, d.id) + sat(d.totals.vat, d.id) !== sat(d.totals.total, d.id)) {
+      out.push(`${d.id}: ${d.type} total ${d.totals.total} is not its lines' net + VAT (${rows.totals.total})`);
+    }
+    d.lines.forEach((l, i) => {
+      if (!l.sourceLineId) return;
+      const k = `${ti.id}|${l.sourceLineId}`, c = credited.get(k) ?? { net: 0, vat: 0, debit: false };
+      const net = sat(rows.lines[i].net, d.id), vat = sat(rows.lines[i].vat, d.id);
+      if (d.type === 'CN') credited.set(k, { ...c, net: c.net + net, vat: c.vat + vat });
+      else if (net < 0) credited.set(k, { ...c, net: c.net - net, vat: c.vat - vat }); // a negative referenced debit line is a credit as well
+      else credited.set(k, { ...c, debit: true });
+    });
+  }
+  for (const [k, c] of credited) {
+    const [tiId, lineId] = k.split('|'), ti = doc(tiId)!, line = ti.lines.find((l) => l.id === lineId);
+    if (!line) { out.push(`${tiId}: a note references line ${lineId}, which the invoice does not have`); continue; }
+    const own = computeDoc([line], !!ti.header.priceIncludesVat, true).lines[0];
+    if (c.net > sat(own.net, tiId)) out.push(`${tiId} line ${lineId}: credit notes take net ${fromSatang(c.net)}, which exceeds the line's net ${own.net} (cap)`);
+    else if (c.net === sat(own.net, tiId) && !c.debit && c.vat !== sat(own.vat, tiId)) out.push(`${tiId} line ${lineId}: fully credited but the credit notes' VAT is ${fromSatang(c.vat)} and the line's VAT is ${own.vat} (rule B)`);
+  }
 
   // numbering: gap-free per company x type x month, and the series counter agrees
   const groups = new Map<string, number[]>();

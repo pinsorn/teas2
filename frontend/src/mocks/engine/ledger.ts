@@ -4,7 +4,7 @@ import { fromSatang, toSatang } from './money';
 import { MockError } from './log';
 import { type AccountingRole, type PostingContext, resolveRole } from './posting';
 import { cashBankId, whtOf } from './settlement';
-import { computeDoc } from './vat';
+import { computeDoc, vatOf } from './vat';
 
 export interface Totals { net: number; vat: number; total: number; wht: number; cash: number }
 /** [role, debit, credit, context additions] in satang; the account behind each role comes from the posting profile (SP0 §5.5). */
@@ -12,14 +12,14 @@ export type RolePosting = [AccountingRole, number, number, (Partial<PostingConte
 type Rows = (t: Totals, d: Doc, st: MockState, companyId: string) => RolePosting;
 
 /** One row per document line for the net side so an item / category rule can pick that line's account (rows with the same account merge again). */
-const netRows = (d: Doc, role: AccountingRole, side: 'Dr' | 'Cr'): RolePosting =>
-  computeDoc(d.lines, !!d.header.priceIncludesVat).lines.map((r, i): RolePosting[number] => {
+const netRows = (d: Doc, role: AccountingRole, side: 'Dr' | 'Cr', vatRegistered: boolean): RolePosting =>
+  computeDoc(d.lines, !!d.header.priceIncludesVat, vatRegistered).lines.map((r, i): RolePosting[number] => {
     const n = toSatang(r.net);
     return [role, side === 'Dr' ? n : 0, side === 'Cr' ? n : 0, { itemId: d.lines[i].itemId, expenseCategory: d.lines[i].expenseCategory, dimensions: d.lines[i].dimensions }];
   });
 
-const sales = (role: AccountingRole): Rows => (t, d) => [['AR', t.total, 0], ...netRows(d, role, 'Cr'), ['OutputVat', 0, t.vat]];
-const purchase: Rows = (t, d) => [...netRows(d, 'Expense', 'Dr'), ['InputVat', t.vat, 0], ['AP', 0, t.total]];
+const sales = (role: AccountingRole): Rows => (t, d, st, co) => [['AR', t.total, 0], ...netRows(d, role, 'Cr', vatOf(st, co)), ['OutputVat', 0, t.vat]];
+const purchase: Rows = (t, d, st, co) => [...netRows(d, 'Expense', 'Dr', vatOf(st, co)), ['InputVat', t.vat, 0], ['AP', 0, t.total]];
 /** Σ allocation amounts whose target is one of `types` (satang). */
 const allocTo = (d: Doc, types: DocType[]) => (d.allocations ?? []).filter((a) => types.includes(a.targetType)).reduce((n, a) => n + toSatang(a.amount), 0);
 /** One row per allocation, under the TARGET's party: the AR / AP subledger of each customer / vendor stays right when one document settles several parties. */
@@ -35,19 +35,19 @@ export const POST: Partial<Record<DocType, Rows>> = {
   PB: purchase, PDN: purchase, PCN: mirror(purchase),
   // RC: cash received + WHT withheld by the customer = what it clears from AR + the deposit remainder + a non-VAT cash bill (net + output VAT)
   RC: (t, d, st, co) => [['Cash', t.cash, 0, { bankAccountId: cashBankId(st, co, d.header) }], ['WhtReceivable', t.wht, 0], ...perTarget(d, st, 'AR', ['TI', 'IV'], 'Cr'),
-    ['CustomerDeposit', 0, toSatang(d.header.depositAmount ?? '0.00')], ...netRows(d, 'Revenue', 'Cr'), ['OutputVat', 0, t.vat]],
+    ['CustomerDeposit', 0, toSatang(d.header.depositAmount ?? '0.00')], ...netRows(d, 'Revenue', 'Cr', vatOf(st, co)), ['OutputVat', 0, t.vat]],
   // PV: payables cleared + expense lines (+ their input VAT) + the WHT we bear (gross-up) = cash paid + WHT payable per return
   PV: (t, d, st, companyId) => {
     const w = whtOf(st, companyId, d.header, d.lines); // expense = the part of the tax / gross-up we bear
-    return [...perTarget(d, st, 'AP', ['PB'], 'Dr'), ['EmployeePayable', allocTo(d, ['EX']), 0], ...netRows(d, 'Expense', 'Dr'), ['InputVat', t.vat, 0],
+    return [...perTarget(d, st, 'AP', ['PB'], 'Dr'), ['EmployeePayable', allocTo(d, ['EX']), 0], ...netRows(d, 'Expense', 'Dr', vatOf(st, companyId)), ['InputVat', t.vat, 0],
       ['WhtExpense', w.expense, 0], ...w.lines.map((l): RolePosting[number] => ['WhtPayable', 0, toSatang(l.tax), { whtForm: l.form }]),
       ['Cash', 0, t.cash, { bankAccountId: cashBankId(st, companyId, d.header) }]];
   },
 };
 
 /** Exact mirror of an entry: debit and credit swapped on every line. */
-export const reversalOf = (e: JournalEntryPreview, date: string): JournalEntryPreview => ({
-  date, kind: 'reversal',
+export const reversalOf = (e: JournalEntryPreview, date: string, postedAt?: string): JournalEntryPreview => ({
+  date, kind: 'reversal', ...(postedAt ? { postedAt } : {}),
   lines: e.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit, rule: `${l.rule} (กลับรายการ)` })),
 });
 
@@ -76,8 +76,8 @@ export function ledgerFor(st: MockState, doc: Doc & { companyId?: string }): Jou
     ...(x.party ? { partyName: x.party } : {}), ...(x.dims ? { dimensions: x.dims } : {}),
   }));
   if (!lines.length) return { entries: [] };
-  const original: JournalEntryPreview = { date: doc.header.documentDate, kind: 'original', lines };
+  const original: JournalEntryPreview = { date: doc.header.documentDate, kind: 'original', lines, ...(doc.issuedAt ? { postedAt: doc.issuedAt } : {}) };
   const entries = [original];
-  if (doc.status === 'cancelled' || doc.status === 'replaced') entries.push(reversalOf(original, doc.cancel?.at.slice(0, 10) ?? doc.header.documentDate));
+  if (doc.status === 'cancelled' || doc.status === 'replaced') entries.push(reversalOf(original, doc.cancel?.at.slice(0, 10) ?? doc.header.documentDate, doc.cancel?.at));
   return { entries };
 }
