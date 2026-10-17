@@ -1,7 +1,7 @@
 import type {
   ActivityEntry, Allocation, Attachment, AttachmentCategory, BankImport, BankLine, ChainGraph, ComputeResult, CorrectionPlan, CorrectionResult, Doc, DocHeader, DocLine, DocSummary,
   DocType, HomeInbox, MarkKey, Money, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, RemainingLine, Revision, SearchHit,
-  DepositRow, DocOpening, SettlementDifferenceRole, SettlementKind, SettlementRecord, DpRow, FaSource, IsoDate,
+  DepositRow, DocOpening, SettlementDifferenceRole, SettlementKind, SettlementRecord, DpRow, FaSource, IsoDate, ChecklistItem, PeriodsView,
 } from '@/domain/types';
 import type { RecordKind, RecordRow } from '@/domain/records';
 import type { ReportKind, ReportModel } from '@/domain/reports';
@@ -129,6 +129,13 @@ export const endpoints = {
   previewDepreciation: (month?: string) => api<DpPreview>('GET', `/depreciation/preview${qs({ month })}`),
   runDepreciation: (month: string) => api<Doc>('POST', '/depreciation/runs', { month }),
   recomputeDepreciation: (id: string, version: number) => api<Doc>('POST', `/docs/DP/${id}/recompute`, { version }),
+  /** AC6 period close: the year's months, a month's checklist (ledger.read), close (ledger.period.close; `acknowledge` accepts the warnings) and reopen (ledger.period.reopen, with a reason) of a month and of a year. */
+  getPeriods: (year?: number) => api<PeriodsView>('GET', `/periods${qs({ year })}`),
+  getChecklist: (month: string) => api<{ items: ChecklistItem[] }>('GET', `/periods/checklist${qs({ month })}`),
+  closePeriod: (month: string, acknowledge: boolean) => api<PeriodsView>('POST', `/periods/${encodeURIComponent(month)}/close`, { acknowledge }),
+  reopenPeriod: (month: string, reason: string) => api<PeriodsView>('POST', `/periods/${encodeURIComponent(month)}/reopen`, { reason }),
+  closeYear: (year: number) => api<PeriodsView>('POST', `/periods/year/${year}/close`, {}),
+  reopenYear: (year: number, reason: string) => api<PeriodsView>('POST', `/periods/year/${year}/reopen`, { reason }),
   getReport: (kind: ReportKind, params: Record<string, string>) => api<ReportModel>('GET', `/reports/${kind}${qs(params)}`),
   /** The CSV the server builds for the same parameters (text/csv, BOM, CRLF). */
   exportReport: async (kind: ReportKind, params: Record<string, string>): Promise<Blob> => {

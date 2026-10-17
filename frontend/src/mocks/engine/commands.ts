@@ -17,7 +17,7 @@ import { refuseObLocked, refuseReconciled, refuseSettled } from './locks';
 import { refuseScheduleNote, refuseScheduleSource } from './schedules';
 import { afterAssetCancel, beforeAssetCancel, beforeDisposalTiCancel, onDisposalTiCancelled, refuseAssetNote, refuseAssetSource, refuseDisposalCorrection, refuseDisposalNote } from './assets';
 import { buildOb, cancelObItems, EMPTY_OPENING, freezeOpening, obCalc, obMissing, obProblem, obTotals, plainOpening, syncObItems } from './opening';
-import { firstOpenDate, isClosed, monthLabelTh } from './periods';
+import { firstOpenDate, isClosed, monthLabelTh, refuseClosedYearEntry, refuseYearClosed } from './periods';
 import { balanceOf, certError, cleanAllocations, fiscalAllocations, freezeWht, groupTotals, payDefaults, payLines, payoutOf, resolvedBankId, settleExtras, settleProblem, settleTotals, withBankSnapshot } from './settlement';
 import { syncWts } from './wht-certificates';
 import { cleanInvoices, isVendorBill, issueVendorStatus, purchaseProblem, snapshotCategories, snapshotWhtTypes, withClaimPeriod, withForfeit, withVendorStatus } from './purchase-vat';
@@ -369,6 +369,7 @@ function settleTargets(st: MockState, d: Stored, allocations: Allocation[] | und
 /** D-10: a document is dated today or earlier, in an open month (seed history, on the pinned clock, only skips the closed-period refusal). Issue, and revise when the date moves. */
 export function dateGuards(st: MockState, companyId: string, date: IsoDate): void {
   if (date > today()) throw new MockError(422, 'doc.future_date', `วันที่เอกสารอยู่ในอนาคต (วันนี้ ${today()}) ออกเอกสารไม่ได้ ให้แก้วันที่เป็นวันนี้หรือก่อนหน้า`);
+  if (!isPinned()) refuseYearClosed(st, companyId, date); // AC6: a closed year is final, said before the month's own refusal
   if (!isPinned() && isClosed(st, companyId, date)) {
     throw new MockError(422, 'period.closed', `งวดบัญชี ${monthLabelTh(date.slice(0, 7))} ปิดแล้ว ออกเอกสารลงวันที่ในงวดนี้ไม่ได้ ให้เปลี่ยนวันที่เป็น ${firstOpenDate(st, companyId)} เป็นต้นไป หรือขอเปิดงวดอีกครั้ง`);
   }
@@ -481,6 +482,7 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
   checkVersion(d, version);
   // SP0 §7.5: a period lock does not block cancel (blockingLocks leaves it out); the other locks do.
   if (blockingLocks(d).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ยกเลิกไม่ได้');
+  refuseClosedYearEntry(st, d); // AC6: an entry of a closed year is final (exit: reopen the year)
   refuseReconciled(st, d); // FN2: matched to a bank line - the exit is to unmatch it first
   refuseSettled(st, d); // FN3: a leg of a posted settlement - the exit is to reverse the settlement
   refuseScheduleSource(st, d); // AC4: a schedule that is not stopped holds the line (exit: stop it); after the stop the runs stay
@@ -604,6 +606,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_revisable', 'แก้ไขได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   checkVersion(d, version);
   refuseDisposalCorrection(d); // AC5 backstop: header.disposal is server-owned and never survives a revise
+  refuseClosedYearEntry(st, d); // AC6: an entry of a closed year is final (exit: reopen the year)
   if (d.correctionClass === 'T' && isFiscalChange(d, body)) {
     throw new MockError(422, 'doc.revise_not_allowed', 'การแก้ไขนี้กระทบภาษี ต้องทำผ่านแผนการแก้ไข (ยกเลิก/ออกใหม่/ใบลดหนี้)');
   }

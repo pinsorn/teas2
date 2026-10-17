@@ -11,7 +11,7 @@ import { ledgerFor } from './ledger';
 import { MockError, isPinned, logActivity, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
 import { nextDay } from './opening';
-import { isClosed, monthLabelTh } from './periods';
+import { isClosed, monthLabelTh, yearClosed } from './periods';
 import { resolveRole } from './posting';
 import { categoryOf, isRecoverable } from './purchase-vat';
 import { addMonths, lastDayOf, validDate } from './schedules';
@@ -190,6 +190,7 @@ export function planDepreciation(st: MockState, companyId: string, month: string
     else if (latest && month !== addMonths(latest.dp!.month, 1)) problem = fail(422, 'dp.out_of_order', `ต้องคิดค่าเสื่อมราคาตามลำดับต่อเนื่อง งวดถัดไปคือ ${monthLabelTh(addMonths(latest.dp!.month, 1))}`);
   }
   if (!problem && date > today()) problem = fail(422, 'dp.not_due', `งวด ${monthLabelTh(month)} ยังไม่สิ้นสุด (คิดค่าเสื่อมราคาได้เมื่อพ้นสิ้นเดือน ระบบไม่ลงรายการล่วงหน้า)`);
+  if (!isPinned() && yearClosed(st, companyId, date)) problem = fail(422, 'period.year_closed', `ปีบัญชี ${Number(month.slice(0, 4)) + 543} ปิดแล้ว คิดค่าเสื่อมราคางวด ${monthLabelTh(month)} ไม่ได้ ทางออก: เปิดปีบัญชีอีกครั้ง (หน้าปิดงวดบัญชี)`);
   if (!problem && !isPinned() && isClosed(st, companyId, date)) problem = fail(422, 'period.closed', `งวดบัญชี ${monthLabelTh(month)} ปิดแล้ว ทางออก: เปิดงวดบัญชีอีกครั้ง (หน้าปิดงวด) แล้วคิดค่าเสื่อมราคา`);
   for (const fa of liveFas(st, companyId).sort((a, b) => (a.number ?? '').localeCompare(b.number ?? ''))) {
     const a = fa.asset!;

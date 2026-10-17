@@ -174,5 +174,6 @@ export const SCREENS: Screen[] = [
   { name: 'dpList', route: DP_BASE, company: 'both', states: true },
   { name: 'dpNew', route: `${DP_BASE}/new`, company: 'both', states: true },
   { name: 'dpRun', route: { fixture: 'dpRun', base: DP_BASE }, company: 'vat', states: true },
+  { name: 'periodClose', route: '/accounting/period-close', company: 'both', states: true },
   { name: 'styleGuide', route: '/style-guide', company: 'both', states: false },
 ];

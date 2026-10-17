@@ -9,7 +9,7 @@ const APPROVAL = ['QT', 'SO', 'DO', 'BL', 'IV', 'TI', 'RC', 'CN', 'DN', 'PO', 'P
 const VERBS = ['read', 'create', 'issue', 'cancel', 'correct'];
 const expectedDocCodes = Object.keys(DOC_TYPES).flatMap((t) =>
   (t === 'WT' ? ['read'] : VERBS).map((v) => `doc.${t}.${v}`).concat(APPROVAL.includes(t) ? [`doc.${t}.approve`] : []));
-const NON_DOC = ['audit.read', 'bank.manage', 'bank.read', 'bank.reconcile', 'item.manage', 'item.read', 'ledger.coa.manage', 'ledger.read', 'ledger.schedule.manage', 'party.manage', 'party.read', 'payroll.read', 'report.read', 'settings.manage', 'users.manage'];
+const NON_DOC = ['audit.read', 'bank.manage', 'bank.read', 'bank.reconcile', 'item.manage', 'item.read', 'ledger.coa.manage', 'ledger.read', 'ledger.period.close', 'ledger.period.reopen', 'ledger.schedule.manage', 'party.manage', 'party.read', 'payroll.read', 'report.read', 'settings.manage', 'users.manage'];
 
 describe('permission catalogue', () => {
   it('is exactly the master catalog for what exists today (WT read-only, approve on 16 types)', () => {

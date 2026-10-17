@@ -9,7 +9,7 @@ import { allocate, cancel, correctionReversal, dateGuards, getDoc, newId, placed
 import { ledgerFor } from './ledger';
 import { MockError, isPinned, logActivity, logAudit, stamp } from './log';
 import { fromSatang, toSatang } from './money';
-import { firstOpenDate, isClosed, monthLabelTh } from './periods';
+import { firstOpenDate, isClosed, monthLabelTh, refuseClosedYearEntry } from './periods';
 import { controlExit } from './reconcile';
 import { beforeRunReversed, onRunReversed, refuseRunFinal, refuseScheduleSource, runLockOf } from './schedules';
 
@@ -134,6 +134,7 @@ export function reverseJv(st: MockState, id: string, actor: Actor, opts?: { date
   if (have) throw fail(409, 'ledger.already_reversed', `ใบสำคัญนี้กลับรายการแล้วโดย ${have.number} กลับรายการซ้ำไม่ได้`);
   refuseScheduleSource(st, d); // AC4: a live amortisation run on one of its lines - undoing the debit under the schedule is as final as cancelling it (the exit: stop / reverse the schedule)
   if (st.docs.find((x) => x.id === d.header.reversalOf)?.header.scheduleId) throw fail(409, 'schedule.run_reversal_final', `ใบกลับรายการ ${d.number} เป็นของงวดที่ตัดจ่ายตามตาราง กลับรายการซ้ำไม่ได้ ทางออก: รันงวดนั้นใหม่จากหน้าตารางตัดจ่าย`);
+  refuseClosedYearEntry(st, d); // AC6: a JV of a closed year is final
   const open = firstOpenDate(st, d.companyId), floor = d.header.documentDate > open ? d.header.documentDate : open, date = opts?.date ?? floor;
   if (date < floor) throw fail(422, 'ledger.reverse_date', `วันที่กลับรายการต้องไม่ก่อน ${floor} (วันที่ของใบสำคัญเดิม หรือวันแรกของงวดที่เปิดอยู่)`);
   const run = !!d.header.scheduleId; // AC4: a run is the system's; only the latest live run is reversed, and its reversal follows the plain date rules (no run is ever future-dated)
@@ -257,6 +258,7 @@ function sources(st: MockState, companyId: string): Source[] {
     if (d) out.push({ type: d.type, label: `${d.number ?? d.id} · ${DESCRIPTORS[d.type]?.titleTh ?? d.type}`, href: docViewHref(d.type, d.id), entries: j.preview.entries });
   }
   for (const j of st.bankJournals) if (j.companyId === companyId) out.push({ type: 'BANK', label: `${j.id} · ${j.label}`, href: `/finance/bank-accounts/${j.accountId}${j.lineId ? `?line=${j.lineId}` : ''}`, entries: j.entries });
+  for (const y of st.yearCloses) if (y.companyId === companyId) out.push({ type: 'YC', label: `ปิดบัญชีสิ้นปี ${y.year + 543}`, href: '/accounting/period-close', entries: y.journal }); // AC6
   for (const s of st.settlements) if (s.companyId === companyId) out.push({ type: 'STL', label: `${s.id.toUpperCase()} · หักกลบ/ปรับปรุงการชำระ`, href: `/finance/settlements/${s.id}`, entries: s.journal });
   return out;
 }

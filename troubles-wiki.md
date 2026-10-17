@@ -166,3 +166,8 @@ Entry format — terse, greppable by symptom:
 - **Symptom:** a record `validate()` that checks a date string by round-tripping through `Date` answers 500 / an unhandled MSW exception for `2026-13-01` instead of a field error.
 - **Root cause:** an out-of-range month gives an Invalid Date, and `toISOString()` throws on it; the round-trip trick only catches days that roll over (`02-30`).
 - **Fix:** guard with `!Number.isNaN(Date.parse(...))` first (`validDate` in `engine/schedules.ts`).
+
+## A new permission code fails `permissions.test.ts` ("every code a mock role holds ... is in the catalogue") (AC6)
+- **Symptom:** after giving a role `ledger.period.close` in `mocks/permissions.ts`, the catalogue test fails with `PERMISSIONS[code]` undefined.
+- **Root cause:** the catalogue (`domain/permissions.ts`) is built from the `permissions` section of `messages/{th,en}.json` (key `ledger_period_close` = code with `.` -> `_`), and the "is exactly the master catalog" test lists every non-document code in `NON_DOC`.
+- **Fix:** add the key to both message files and the code to `NON_DOC` in `domain/permissions.test.ts` (3 files besides the role list).

@@ -116,9 +116,10 @@ export function ledgerFor(st: MockState, doc: Doc & { companyId?: string }): Jou
 }
 
 /** Every journal entry of a company: its documents', the ones the reconciliation wrote itself (fee / inline / opening) and its settlement records'. The one reader for reports. */
-export function* companyEntries(st: MockState, companyId: string): Generator<JournalEntryPreview> {
+export function* companyEntries(st: MockState, companyId: string, closing = true): Generator<JournalEntryPreview> {
   const mine = new Set(st.docs.filter((d) => d.companyId === companyId).map((d) => d.id));
   for (const j of st.journals) if (mine.has(j.docId)) yield* j.preview.entries;
   for (const j of st.bankJournals) if (j.companyId === companyId) yield* j.entries;
   for (const s of st.settlements) if (s.companyId === companyId) yield* s.journal; // FN3: deposits / prepayments applied, netting, write-offs
+  if (closing) for (const y of st.yearCloses) if (y.companyId === companyId) yield* y.journal; // AC6: the year-end closing entries (and their reversals); `closing` false = everything they close
 }

@@ -6,6 +6,7 @@ import { approvalRequired } from './approval';
 import { jvInvariants } from './journal';
 import { assetInvariants } from './assets';
 import { scheduleInvariants } from './schedules';
+import { closeInvariants } from './close';
 import { obInvariants } from './opening';
 import { appliedOf, docCash, toleranceOf } from './locks';
 import { payoutOf, resolvedBankId } from './settlement';
@@ -107,6 +108,7 @@ export function checkInvariants(st: MockState): string[] {
     jsrc.push({ id: d.id, companyId: d.companyId, d, entries: j.preview.entries });
   }
   for (const j of st.bankJournals) jsrc.push({ id: `bank journal ${j.id}`, companyId: j.companyId, entries: j.entries });
+  for (const y of st.yearCloses) jsrc.push({ id: `year close ${y.id}`, companyId: y.companyId, entries: y.journal }); // AC6: the closing entries balance and post to postable accounts like any other
   for (const s of st.settlements) jsrc.push({ id: `settlement ${s.id}`, companyId: s.companyId, entries: s.journal }); // FN3: a settlement's own journal feeds every GL map below like a document's
   for (const { id, companyId, d, entries } of jsrc) {
     for (const e of entries) {
@@ -588,6 +590,7 @@ export function checkInvariants(st: MockState): string[] {
 
   out.push(...obInvariants(st)); // 16. opening balances (AC3): the journal is what its steps say, the ties hold, the frozen items are the steps' items, go-live follows the batch
   out.push(...assetInvariants(st)); // 18. fixed assets and depreciation runs (AC5): accumulated = opening + live run rows, GL per class, each run journal is its rows, a disposal entry removes exactly the frozen cost and accumulated
+  out.push(...closeInvariants(st)); // 19. year-end closing entries (AC6): per-account sweep, 3300 nets to nothing, 3200 = net profit, every revenue / expense account 0 after
   out.push(...scheduleInvariants(st)); // 17. schedules (AC4): plan = total, each run JV = its plan row, the prepaid account moved by the live runs
   out.push(...jvInvariants(st)); // 15. journal vouchers (AC1): no controlled account, the journal is the lines, reversals mirror, accruals net to zero
 

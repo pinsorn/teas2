@@ -6,7 +6,7 @@ import { isUsed, jvAccountProblem, jvMissing, jvTotals, userReversalOf } from '.
 import { ledgerFor } from './ledger';
 import { MockError, logActivity, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
-import { isClosed, monthLabelTh } from './periods';
+import { isClosed, monthLabelTh, refuseYearClosed } from './periods';
 import { resolveRole } from './posting';
 import { categoryOf } from './purchase-vat';
 import { controlExit } from './reconcile';
@@ -242,6 +242,7 @@ export function runSchedule(st: MockState, companyId: string, id: string, actor:
   if (opts?.month && opts.month !== row.month) throw fail(422, 'schedule.out_of_order', `ต้องตัดจ่ายตามลำดับ งวดถัดไปคือ ${monthLabelTh(row.month)}`);
   const date = lastDayOf(row.month);
   if (date > today()) throw fail(422, 'schedule.not_due', `งวด ${monthLabelTh(row.month)} ยังไม่ถึงกำหนด (ตัดจ่ายได้เมื่อสิ้นเดือนนั้นแล้ว ระบบไม่ลงรายการล่วงหน้า)`);
+  refuseYearClosed(st, companyId, date); // AC6
   if (isClosed(st, companyId, date)) throw fail(422, 'period.closed', `งวดบัญชี ${monthLabelTh(row.month)} ปิดแล้ว ตัดจ่ายงวดนี้ไม่ได้ ทางออก: เปิดงวดบัญชีอีกครั้ง (หน้าปิดงวด) แล้วรันใหม่ งวดนี้จะแสดงเป็นรายการที่ยังไม่ได้ตัด`);
   const lines = runLines(s, row);
   const bad = jvAccountProblem(st, companyId, lines);
@@ -272,6 +273,7 @@ function postRun(st: MockState, s: ScheduleRecord, row: SchedulePlanRow, date: I
 
 function runRecurring(st: MockState, s: ScheduleRecord, actor: Actor): ScheduleRecord {
   if (s.endAfter && s.runs.length >= s.endAfter) throw fail(409, 'schedule.done', `ตาราง "${s.name}" รันครบ ${s.endAfter} ครั้งแล้ว`);
+  refuseYearClosed(st, s.companyId, s.nextRun); // AC6
   if (isClosed(st, s.companyId, s.nextRun)) throw fail(422, 'period.closed', `งวดบัญชี ${monthLabelTh(s.nextRun.slice(0, 7))} ปิดแล้ว สร้างฉบับร่างลงวันที่ ${s.nextRun} ไม่ได้ ทางออก: เปิดงวดบัญชีอีกครั้ง หรือแก้วันที่รันครั้งถัดไปของรายการซ้ำนี้`);
   const t = s.template!;
   checkTemplate(st, s.companyId, t, s.name, true);

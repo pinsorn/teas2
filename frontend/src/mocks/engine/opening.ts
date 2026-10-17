@@ -4,7 +4,7 @@ import type { MockState } from '../store';
 import { goLiveOf } from './commands';
 import { MockError } from './log';
 import { fromSatang, toSatang } from './money';
-import { firstOpenDate } from './periods';
+import { firstOpenDate, refuseYearClosed } from './periods';
 import { lastDayOf } from './schedules';
 
 /** The first day of the earliest month of the company's period calendar that is not closed (periods before it are closed): the books of an open month already hold documents, so an opening cannot be dated inside or after it. No calendar = the first open month from today. */
@@ -150,6 +150,7 @@ export function obMissing(st: MockState, companyId: string, body: Part): Missing
 export function obProblem(st: MockState, companyId: string, body: Part, selfId?: string): MockError | undefined {
   const date = body.header.documentDate, op = body.opening ?? EMPTY_OPENING;
   if (!date) return undefined;
+  refuseYearClosed(st, companyId, date); // AC6: the D-10 exemption of an opening balance ends at a closed year
   const firstOpen = firstOpenMonthStart(st, companyId), limit = prevDay(firstOpen);
   if (date > limit) return fail(422, 'ob.cutoff', `วันตัดยอดต้องไม่เกิน ${limit} (วันก่อนเริ่มงวดบัญชีแรกที่ยังเปิดอยู่ ${firstOpen} งวดที่เปิดแล้วมีเอกสารอยู่)`);
   if (op.assets.length && date !== lastDayOf(date.slice(0, 7))) return fail(422, 'ob.asset_cutoff', `วันตัดยอดที่มีสินทรัพย์ต้องเป็นวันสิ้นเดือน (${lastDayOf(date.slice(0, 7))}) เพราะค่าเสื่อมราคาเริ่มคิดจากเดือนถัดไป ทางออก: ใช้วันสิ้นเดือน`);

@@ -6,6 +6,7 @@ import { recomputeSettlement } from './engine/commands';
 import { ledgerFor } from './engine/ledger';
 import { withBankSnapshot } from './engine/settlement';
 import { adjustSnapshot, hasSnapshot } from './engine/notes';
+import type { YearClose } from './engine/close';
 import type { Period } from './engine/periods';
 import type { PostingRule } from './engine/posting';
 import type { BankAccount } from './fixtures/bank-accounts';
@@ -21,7 +22,7 @@ import { getSettings } from './settings';
 import { seedBankStatements } from './fixtures/statements';
 
 export interface MockState {
-  version: 34;
+  version: 35;
   companies: Company[];
   memberships: (Membership & { userId: string })[];
   /** `active` (default true) and `version` (default 1) are the master record's; documents keep their own party snapshot. */
@@ -46,6 +47,8 @@ export interface MockState {
   settlements: SettlementRecord[];
   /** AC4: recurring templates and prepaid / deferred amortisation schedules (frozen at creation; a run posts a system JV or makes a draft). */
   schedules: ScheduleRecord[];
+  /** AC6: the year-end closing entries (one live per company-year; a reopen keeps the record and reverses its entry). Each carries its own journal and its frozen lines. */
+  yearCloses: YearClose[];
   /** FN3: per company, the largest difference a settlement may absorb: satang rounding, and a small write-off (also the bank fee) [SP-R]. */
   settlementTolerance: { companyId: string; rounding: Money; smallWriteOff: Money }[];
   /** [SP-R] mock WHT types per company (fixtures/wht-types.ts). */
@@ -92,7 +95,7 @@ export const seed = (): MockState => buildSeedState(getSettings().role);
 export function loadState(): MockState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 34) return s; }
+    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 35) return s; }
   } catch { /* fall through to a fresh seed */ }
   return seed();
 }

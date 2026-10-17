@@ -245,3 +245,11 @@ export interface PaperModel {
   voidMark?: { label: string; note?: string }; // cancelled / replaced originals: diagonal stamp on every page
   signatures: string[];                        // ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม']
 }
+
+/** AC6 period close. A checklist item as the server states it (read-only); `note` marks a check that waits for a later group (filings: TX1). */
+export interface ChecklistItem { code: 'drafts_in_month' | 'unreconciled_bank_lines' | 'depreciation_not_run' | 'schedules_not_run' | 'filings_not_finalized' | 'ob_difference_open'; severity: 'blocking' | 'warning'; count: number; labelTh: string; href: string; note?: string }
+export interface PeriodMonth { month: string; status: 'open' | 'closed'; closedAt?: string; closedBy?: string; acknowledged: ChecklistItem[]; reopened: { at: string; reason: string; by: string }[]; /** the month belongs to a closed fiscal year */ inClosedYear: boolean }
+export interface YearCloseView { id: string; year: number; date: IsoDate; closedAt: string; closedBy: string; net: Money; lines: JournalLinePreview[] }
+export interface PeriodsView { year: number; years: number[]; months: PeriodMonth[]; yearClose?: YearCloseView; yearReopened: { at: string; reason: string; by: string }[];
+  /** what the person may do next: the next month to close, the one that may reopen (the latest closed, not in a closed year), whether the year may close / reopen */
+  next: { close?: string; reopen?: string; closeYear: boolean; reopenYear: boolean } }

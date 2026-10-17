@@ -32,6 +32,7 @@ export function rolesOf(st: MockState, companyId: string, code: string): Account
 export function controlExit(st: MockState, companyId: string, code: string, scope: 'inline' | 'jv' = 'inline'): string | undefined {
   const a = st.accounts.find((x) => x.companyId === companyId && x.code === code);
   const roles = rolesOf(st, companyId, code), has = (...r: AccountingRole[]) => roles.some((x) => r.includes(x)), sub = a?.subClass ?? '', jv = scope === 'jv';
+  if (sub === 'current-year') return 'บัญชีกำไร(ขาดทุน)ปีปัจจุบัน (3300) ระบบลงจากการปิดบัญชีสิ้นปีเท่านั้น (หน้าปิดงวดบัญชี) ปิดบัญชีสิ้นปีเมื่อปิดครบ 12 งวด'; // AC6
   if (jv ? has('OpeningBalanceEquity') || sub === 'opening' : a?.class === 'equity' || has('RetainedEarnings', 'OpeningBalanceEquity')) return jv ? 'บัญชียอดยกมา ปรับที่หน้ายอดยกมา (opening balances) ไม่ใช่ใบสำคัญทั่วไป' : 'บัญชีส่วนของเจ้าของ ปรับด้วยสมุดรายวันทั่วไป (JV) ไม่ใช่รายการเดินบัญชี';
   if (has('Cash') || sub === 'cash' || sub === 'bank') return 'บัญชีเงินสด/ธนาคาร ใช้ปุ่ม "โอนระหว่างบัญชี" ที่รายการเดินบัญชี';
   if (has('AR', 'CustomerDeposit') || sub === 'receivable') return 'บัญชีลูกหนี้/เงินรับล่วงหน้า ใช้ใบเสร็จรับเงิน (RC)';
