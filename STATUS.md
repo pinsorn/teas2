@@ -3,8 +3,9 @@
 **Goal:** TEAS 1 feature parity, rebuilt with accounting flexibility, better UX and a systematic, gated delivery
 (`docs/specs/SP0-charter.md` §1). Run every session from `Y:\ClaudePlayground\TEAS2` (TEAS-Project is read-only reference).
 
-## Now — 2026-10-17 13:00
-- **SP1c groups 00–04** merged (PR #7–#11).
+## Now — 2026-10-17 21:40
+- **SP1c group 06 Tax** (branch `feat/sp1c-06-tax`, worktree `Y:\ClaudePlayground\T2-sp1ab`): TX1 ภ.พ.30 kit + registers + filing lock, TX2a ภ.ง.ด. / ภ.พ.36 engine, TX2b WHT hub + receivable + missing 50 ทวิ, TX2c ภ.พ.30 netting + pay a filed return from a bank line, TX3a CIT (ภ.ง.ด.50 / 51), TX3b tax summary + VAT threshold watch + form catalogue. All reviewed to APPROVE. Gate at 615bcb2: 2015 unit (3 load flakes pass alone), 796 e2e (`--workers=1`), build green. Waiting on Ham's "Tax approve?" with the `[SP-R]` list (`docs/plans/progress/PROGRESS-2026-10-17-sp1c-06.md`).
+- **SP1c groups 00–05** merged (PR #7–#12).
 - **SP1c group 05 Accounting approved by Ham 2026-10-17** (branch `feat/sp1c-05-accounting`, worktree `Y:\ClaudePlayground\T2-sp1ab`): AC1 journal vouchers / reverse / accruals, AC2 chart of accounts, AC3 opening balances wizard, AC4 recurring templates + amortisation schedules, AC5 fixed assets / depreciation runs / disposal by TI, AC6 period close + year-end closing entry, and Ham's pre-merge follow-ups AC7a (late registration catch-up, asset-register report, fa-car), AC7b (template editor), AC7c (real DBD แบบ 2 / P&L format 2.7 and ภ.ง.ด.50 ปี 2568 lines). Every money task Opus-reviewed to APPROVE. Gate at a6b5f95: 1719 unit, 691 e2e (`--workers=1`), build green.
 - Ham rulings 2026-10-17: late asset registration = catch-up in the next run; DBD P&L format 2.7; ภ.ง.ด.50 mapped per `docs/research/tax/dbd-fs-lines-and-pnd50.md` (add-backs computed in group 06).
 - **SP-R** (worktree `Y:\ClaudePlayground\T2-spr`, branch `docs/sp-r`): B1–B4 done; decision list `docs/research/tax/DECISIONS.md` (56 points) with Ham.
