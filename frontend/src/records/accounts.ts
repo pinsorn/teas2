@@ -21,10 +21,37 @@ export const SUB_CLASS_GROUP: Record<string, AccountGroup | 'any'> = {
   sales: 'revenue', 'contra-sales': 'revenue', 'other-income': 'revenue',
   expense: 'expense', 'payroll-expense': 'expense',
 };
-/** [SP-R] placeholder statutory lines: the DBD financial-statement format and the ภ.ง.ด.50 schedule boxes, as data (labels are messages `records.options.dbdLine.*` / `pnd50Box.*`). */
-export const DBD_LINES = ['bs-cash', 'bs-receivables', 'bs-prepaid', 'bs-tax-asset', 'bs-other-current', 'bs-ppe', 'bs-accum-dep', 'bs-payables', 'bs-accrued', 'bs-tax-payable',
-  'bs-deposits-received', 'bs-payroll-payable', 'bs-capital', 'bs-retained', 'pl-revenue', 'pl-other-income', 'pl-cost', 'pl-selling-admin', 'pl-other-expense', 'pl-finance-cost', 'pl-income-tax'] as const;
-export const PND50_BOXES = ['p50-revenue', 'p50-other-income', 'p50-cost', 'p50-expense', 'p50-nondeductible'] as const;
+/**
+ * Statutory lines as data (labels are messages `records.options.dbdLine.*` / `pnd50Box.*`). Source: docs/research/tax/dbd-fs-lines-and-pnd50.md (Ham's rulings 2026-10-17).
+ * DBD: the balance-sheet lines of แบบ 2 (ประกาศกรมพัฒนาธุรกิจการค้า เรื่อง รายการย่อที่ต้องมีในงบการเงิน พ.ศ. 2566) in print order, then the profit-and-loss lines of format 2.7
+ * (by function, multi-step) in PRINT order (not number order: 1, 3, 2, 4...). Labels carry the official number and Thai wording; 5.1.1 registered capital is a disclosure, not a balance, so it is no line.
+ * ภ.ง.ด.50 (ปี 2568): the closed form: รายการที่ 2.1, the sub-lines of 3-7 the note lists (3.1/3.8 and 4.1/4.5/4.7/4.16 are inventory balances, listed but never seeded), 8.1; labels carry the e-filing field in [..].
+ * The English labels are plain translations, UNOFFICIAL (the DBD publishes none); keys are stable kebab-case from the meaning, never the number.
+ */
+export const DBD_LINES = [
+  'bs-cash-and-equivalents', 'bs-short-term-investments', 'bs-trade-and-other-current-receivables', 'bs-contract-assets-current', 'bs-short-term-loans-given',
+  'bs-inventories', 'bs-current-tax-asset', 'bs-biological-assets-current', 'bs-other-current-assets', 'bs-held-for-sale-current', 'bs-pledged-deposits', 'bs-investment-subsidiaries',
+  'bs-investment-joint-ventures', 'bs-investment-associates', 'bs-other-long-term-investments', 'bs-trade-and-other-noncurrent-receivables', 'bs-long-term-loans-given',
+  'bs-contract-assets-noncurrent', 'bs-investment-property', 'bs-ppe', 'bs-goodwill', 'bs-intangible-assets', 'bs-biological-assets-noncurrent', 'bs-deferred-tax-asset',
+  'bs-other-noncurrent-assets', 'bs-held-for-sale-noncurrent', 'bs-overdrafts-and-bank-loans-short', 'bs-trade-and-other-current-payables', 'bs-billings-in-excess-current',
+  'bs-long-term-debt-current-portion', 'bs-finance-lease-current-portion', 'bs-short-term-loans-received', 'bs-income-tax-payable', 'bs-employee-benefit-provision-current',
+  'bs-other-short-term-provisions', 'bs-other-current-liabilities', 'bs-long-term-borrowings', 'bs-finance-lease-liabilities', 'bs-trade-and-other-noncurrent-payables',
+  'bs-billings-in-excess-noncurrent', 'bs-deferred-tax-liability', 'bs-employee-benefit-provision-noncurrent', 'bs-other-long-term-provisions', 'bs-other-noncurrent-liabilities',
+  'bs-paid-up-capital', 'bs-share-premium', 'bs-other-capital-surplus', 'bs-legal-reserve', 'bs-other-appropriated', 'bs-unappropriated', 'bs-other-equity-interest',
+  'bs-other-equity-components', 'bs-non-controlling-interests',
+  'pl-revenue-from-sales-or-services', 'pl-cost-of-sales-or-services', 'pl-other-income', 'pl-selling-expenses', 'pl-administrative-expenses', 'pl-other-expenses',
+  'pl-equity-method-share', 'pl-finance-costs', 'pl-income-tax',
+] as const;
+export const PND50_BOXES = [
+  'p50-revenue-direct', 'p50-cogs-opening-inventory', 'p50-cogs-purchases', 'p50-cogs-goodwill-rights', 'p50-cogs-purchase-expenses', 'p50-cogs-closing-inventory',
+  'p50-prod-opening-materials', 'p50-prod-materials-purchases', 'p50-prod-materials-purchase-expenses', 'p50-prod-closing-materials', 'p50-prod-opening-wip',
+  'p50-prod-wages', 'p50-prod-goodwill-rights', 'p50-prod-fuel-energy', 'p50-prod-packaging', 'p50-prod-depreciation', 'p50-prod-other', 'p50-prod-closing-wip',
+  'p50-other-income-disposal-gain', 'p50-other-income-fx-gain', 'p50-other-income-interest', 'p50-other-income-dividend', 'p50-other-income-tax-refund', 'p50-other-income-misc',
+  'p50-other-expense-disposal-loss', 'p50-other-expense-fx-loss', 'p50-other-expense-finance-cost', 'p50-other-expense-misc', 'p50-sga-employee', 'p50-sga-director-pay',
+  'p50-sga-utilities', 'p50-sga-travel', 'p50-sga-freight', 'p50-sga-rent', 'p50-sga-repairs', 'p50-sga-entertainment', 'p50-sga-commission-advertising', 'p50-sga-specific-business-tax',
+  'p50-sga-other-taxes', 'p50-sga-finance-cost', 'p50-sga-bookkeeping', 'p50-sga-audit', 'p50-sga-political-donation', 'p50-sga-charity', 'p50-sga-education-sport',
+  'p50-sga-advisory-fees', 'p50-sga-other-fees', 'p50-sga-bad-debt', 'p50-sga-depreciation', 'p50-sga-other', 'p50-sga-double-deduction', 'p50-income-tax',
+] as const;
 
 /** AC2 chart of accounts (SP0 §5.4): a tree (`TreeRecordList`), edited in a dialog. Frozen once used (`readOnlyAfterUse` = the account has a journal line); `parent` is a header account of the same group (a used account may only move under a header of its present parent's class). Dimension rules are shown, edited in ST2. */
 export const account: RecordDescriptor = {

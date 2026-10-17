@@ -1,6 +1,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { RecordRow } from '@/domain/records';
 import type { DocLine } from '@/domain/types';
+import { DBD_LINES, GROUP_OF, PND50_BOXES } from '@/records/accounts';
+import { chartOfAccounts } from '../fixtures/coa';
 import { checkInvariants } from '../engine/invariants';
 import { jvAccountProblem } from '../engine/journal';
 import { post } from '../engine/reconcile';
@@ -42,6 +44,19 @@ describe('chart of accounts record (AC2)', () => {
     expect(items.find((x) => x.code === '1100')).toMatchObject({ postable: false, inUse: false });
     expect(items.find((x) => x.code === '1171')!.inUse).toBe(false); // (1150 is in use since AC4: the insurance bill pb-ins lands on it)
     expect(items.every((x) => typeof x.dbdLine === 'string' || !x.postable || x.class === 'equity' || x.class === 'current-asset')).toBe(true);
+  });
+
+  it('seeds only real statutory lines: every dbdLine / pnd50Box is in the lists; postable balance-sheet accounts have a DBD line, P&L accounts both', () => {
+    const dbd = new Set<string>(DBD_LINES), p50 = new Set<string>(PND50_BOXES);
+    expect(dbd.size).toBe(DBD_LINES.length); expect(p50.size).toBe(PND50_BOXES.length);
+    for (const a of chartOfAccounts()) {
+      if (a.dbdLine) expect(dbd.has(a.dbdLine), a.code).toBe(true);
+      if (a.pnd50Box) expect(p50.has(a.pnd50Box), a.code).toBe(true);
+      const pl = GROUP_OF[a.class] === 'revenue' || GROUP_OF[a.class] === 'expense';
+      if (a.postable) { expect(a.dbdLine, a.code).toBeTruthy(); expect(!!a.pnd50Box, a.code).toBe(pl); } else expect(a.dbdLine ?? a.pnd50Box).toBeUndefined();
+    }
+    const by = (c: string) => chartOfAccounts().find((a) => a.code === c)!;
+    expect(by('1211').dbdLine).toBe('bs-ppe'); expect(by('1180').dbdLine).toBe('bs-current-tax-asset'); expect(by('5300')).toMatchObject({ dbdLine: 'pl-administrative-expenses', pnd50Box: 'p50-sga-depreciation' });
   });
 
   it('creates 5190 under 5000: audited, listed, and the ledger invariants still hold', async () => {
@@ -117,9 +132,9 @@ describe('chart of accounts record (AC2)', () => {
         expect(r.json.title).toContain('มีรายการบัญชีแล้ว');
       }
       expect((await get('1130')).code).toBe('1130');
-      const ok = await put('1130', { nameTh: 'ลูกหนี้การค้า (ในประเทศ)', nameEn: 'Trade receivables', dbdLine: 'bs-other-current' });
+      const ok = await put('1130', { nameTh: 'ลูกหนี้การค้า (ในประเทศ)', nameEn: 'Trade receivables', dbdLine: 'bs-other-current-assets' });
       expect(ok.status).toBe(200);
-      expect(ok.json).toMatchObject({ name: 'ลูกหนี้การค้า (ในประเทศ)', nameEn: 'Trade receivables', dbdLine: 'bs-other-current', version: 2 });
+      expect(ok.json).toMatchObject({ name: 'ลูกหนี้การค้า (ในประเทศ)', nameEn: 'Trade receivables', dbdLine: 'bs-other-current-assets', version: 2 });
     });
 
     it('a used account may only move under a header of its present parent class', async () => {

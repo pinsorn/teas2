@@ -21,18 +21,35 @@ const CLASS_OF = (code: string, subClass: string, parent?: string): AccountClass
     default: return code === '5100' ? 'cost-of-sales' : ['5170', '5180', '5210', '5220', '5500'].includes(code) ? 'other-expense' : 'selling-admin-expense';
   }
 };
-/** [SP-R] placeholder statutory mapping, by sub-class (balance sheet) and class (profit and loss). */
+/**
+ * Statutory mapping of the seeded chart (docs/research/tax/dbd-fs-lines-and-pnd50.md; the lines are in records/accounts.ts). Balance sheet: by sub-class, with per-code overrides.
+ * Folds are the note's own, flagged UNVERIFIED there: prepayments -> 1.3 (ลูกหนี้หมุนเวียนอื่น), accruals / payroll payables -> 3.2, taxes payable and customer advances -> 3.10,
+ * undue / claimable input VAT -> 1.9, the opening-balance equity account -> 5.3, retained / current-year -> 5.4.2. Accumulated depreciation maps to 2.10, which is shown net.
+ */
 const DBD: Record<string, string> = {
-  cash: 'bs-cash', bank: 'bs-cash', receivable: 'bs-receivables', prepayment: 'bs-prepaid', 'tax-asset': 'bs-tax-asset', 'current-asset': 'bs-other-current', 'fixed-asset': 'bs-ppe', 'accumulated-depreciation': 'bs-accum-dep',
-  payable: 'bs-payables', accrual: 'bs-accrued', 'tax-liability': 'bs-tax-payable', deposit: 'bs-deposits-received', 'payroll-liability': 'bs-payroll-payable', 'current-liability': 'bs-payables',
-  capital: 'bs-capital', retained: 'bs-retained', 'current-year': 'bs-retained', opening: 'bs-capital',
+  cash: 'bs-cash-and-equivalents', bank: 'bs-cash-and-equivalents', receivable: 'bs-trade-and-other-current-receivables', prepayment: 'bs-trade-and-other-current-receivables',
+  'tax-asset': 'bs-other-current-assets', 'current-asset': 'bs-other-current-assets', 'fixed-asset': 'bs-ppe', 'accumulated-depreciation': 'bs-ppe',
+  payable: 'bs-trade-and-other-current-payables', accrual: 'bs-trade-and-other-current-payables', 'payroll-liability': 'bs-trade-and-other-current-payables',
+  'tax-liability': 'bs-other-current-liabilities', deposit: 'bs-other-current-liabilities', 'current-liability': 'bs-other-current-liabilities',
+  capital: 'bs-paid-up-capital', retained: 'bs-unappropriated', 'current-year': 'bs-unappropriated', opening: 'bs-other-capital-surplus',
 };
-const PL: Partial<Record<AccountClass, [string, string]>> = {
-  'sales-revenue': ['pl-revenue', 'p50-revenue'], 'other-income': ['pl-other-income', 'p50-other-income'], 'cost-of-sales': ['pl-cost', 'p50-cost'],
-  'selling-admin-expense': ['pl-selling-admin', 'p50-expense'], 'other-expense': ['pl-other-expense', 'p50-expense'], 'finance-cost': ['pl-finance-cost', 'p50-expense'], 'income-tax': ['pl-income-tax', 'p50-nondeductible'],
+const DBD_BY_CODE: Record<string, string> = { '1180': 'bs-current-tax-asset' }; // withholding tax credits offset corporate income tax (1.7)
+/**
+ * Profit and loss by code: [DBD format 2.7 line, ภ.ง.ด.50 line]. Finance cost: the seed has no interest account (5200 is bank fees); a finance-cost account is business-related,
+ * so it takes ภ.ง.ด.50 7.12, not 6.3. Cost of sales 5100 is a periodic-layout stand-in (3.2 purchases, note C5). Salaries and fees are not split selling vs administrative: administrative, except advertising and freight (selling).
+ */
+const PL_BY_CODE: Record<string, [string, string]> = {
+  '4100': ['pl-revenue-from-sales-or-services', 'p50-revenue-direct'], '4110': ['pl-revenue-from-sales-or-services', 'p50-revenue-direct'], '4120': ['pl-revenue-from-sales-or-services', 'p50-revenue-direct'],
+  '4200': ['pl-other-income', 'p50-other-income-misc'], '4210': ['pl-other-income', 'p50-other-income-disposal-gain'],
+  '5100': ['pl-cost-of-sales-or-services', 'p50-cogs-purchases'],
+  '5110': ['pl-administrative-expenses', 'p50-sga-rent'], '5120': ['pl-administrative-expenses', 'p50-sga-advisory-fees'], '5130': ['pl-selling-expenses', 'p50-sga-commission-advertising'],
+  '5140': ['pl-selling-expenses', 'p50-sga-freight'], '5150': ['pl-administrative-expenses', 'p50-sga-entertainment'], '5160': ['pl-administrative-expenses', 'p50-sga-other'],
+  '5170': ['pl-other-expenses', 'p50-sga-other-taxes'], '5180': ['pl-other-expenses', 'p50-sga-other-taxes'], '5200': ['pl-administrative-expenses', 'p50-sga-other-fees'],
+  '5210': ['pl-other-expenses', 'p50-other-expense-misc'], '5220': ['pl-other-expenses', 'p50-sga-bad-debt'], '5300': ['pl-administrative-expenses', 'p50-sga-depreciation'],
+  '5400': ['pl-administrative-expenses', 'p50-sga-employee'], '5410': ['pl-administrative-expenses', 'p50-sga-employee'], '5500': ['pl-other-expenses', 'p50-other-expense-disposal-loss'],
 };
-const statutory = (cls: AccountClass, subClass: string): Pick<Account, 'dbdLine' | 'pnd50Box'> => {
-  const pl = PL[cls], dbd = pl?.[0] ?? DBD[subClass];
+const statutory = (code: string, subClass: string): Pick<Account, 'dbdLine' | 'pnd50Box'> => {
+  const pl = PL_BY_CODE[code], dbd = pl?.[0] ?? DBD_BY_CODE[code] ?? DBD[subClass];
   return { ...(dbd ? { dbdLine: dbd } : {}), ...(pl ? { pnd50Box: pl[1] } : {}) };
 };
 
@@ -73,6 +90,6 @@ export const chartOfAccounts = (): Account[] => [
   ...HEADERS.map(([code, nameTh, subClass, parent]): Account => ({ code, nameTh, class: CLASS_OF(code, subClass, parent), subClass, ...(parent ? { parent } : {}), postable: false })),
   ...POSTABLE.map(([code, nameTh, subClass, parent, controlRole]): Account => ({
     code, nameTh, class: CLASS_OF(code, subClass, parent), subClass, ...(parent ? { parent } : {}), postable: true, ...(controlRole ? { controlRole } : {}),
-    ...statutory(CLASS_OF(code, subClass, parent), subClass),
+    ...statutory(code, subClass),
   })),
 ];
