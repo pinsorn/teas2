@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { RecordRow } from '@/domain/records';
-import type { Doc, DocLine, PayItems, PayrollTotals, PayslipLine } from '@/domain/types';
+import type { Doc, DocLine, Page, PayItems, PayrollTotals, PayslipLine } from '@/domain/types';
 import { endpoints } from '@/lib/api/endpoints';
 import { formatMoney } from '@/lib/format';
 import { cleanDecimal, isComposing, moneyText } from './useLineGridKeys';
@@ -35,10 +35,17 @@ export function defaultPayrollLines(employees: RecordRow[], date: string): DocLi
   return employees.filter((r) => r.active !== false && String(r.startDate ?? '') <= last && (!r.endDate || String(r.endDate) >= first))
     .sort((a, b) => String(a.code).localeCompare(String(b.code), 'en', { numeric: true })).map((r) => newPayrollLine(String(r.id), String(r.salary ?? '')));
 }
+/** Every page of the company's employees (PY1a m5: a new run starts with ALL of them, not the first 100). */
+export async function listAllEmployees(status: 'true' | 'all'): Promise<Page<RecordRow>> {
+  const items: RecordRow[] = [];
+  let cursor: string | undefined;
+  do { const r = await endpoints.listRecords('employee', { active: status, limit: 100, cursor }); items.push(...r.items); cursor = r.nextCursor; } while (cursor);
+  return { items, total: items.length };
+}
 /** The active employees of the company (the picker, and the default rows of a new run). */
 export function useEmployees(enabled: boolean, status: 'true' | 'all' = 'true') {
   const { me } = useMe();
-  return useQuery({ queryKey: [me?.activeCompanyId ?? '', 'records', 'employee', 'picker', status], enabled: enabled && !!me, queryFn: () => endpoints.listRecords('employee', { active: status, limit: 100 }) });
+  return useQuery({ queryKey: [me?.activeCompanyId ?? '', 'records', 'employee', 'picker', status], enabled: enabled && !!me, queryFn: () => listAllEmployees(status) });
 }
 
 export interface PayrollGridProps {

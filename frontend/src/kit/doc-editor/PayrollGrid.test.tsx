@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
+import { http, HttpResponse } from 'msw';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { payrollRun } from '@/descriptors/payroll-run';
 import type { RecordRow } from '@/domain/records';
@@ -11,7 +12,7 @@ import { setSettings } from '@/mocks/settings';
 import { loadState, resetState } from '@/mocks/store';
 import { testServer } from '@/mocks/test-server';
 import { DocEditor } from './DocEditor';
-import { defaultPayrollLines, newPayrollLine, PayrollGrid, payrollLinePayload } from './PayrollGrid';
+import { defaultPayrollLines, listAllEmployees, newPayrollLine, PayrollGrid, payrollLinePayload } from './PayrollGrid';
 
 vi.mock('next/navigation', () => import('@/test/next-navigation'));
 beforeAll(() => testServer.listen({ onUnhandledFrame: 'error' }));
@@ -104,6 +105,20 @@ describe('PayrollGrid: rows and keyboard', () => {
     expect(ids('2026-08-31')).toEqual(['emp-01', 'emp-02', 'emp-03', 'emp-05']);
     expect(defaultPayrollLines(rows.map((r) => (r.id === 'emp-02' ? { ...r, active: false } : r)), '2026-10-14').map((l) => l.employeeId)).not.toContain('emp-02'); // deactivated
     expect(defaultPayrollLines(rows, '2026-10-14')[0].pay?.salary).toBe('120000.00'); // the master's salary is the starting point
+  });
+});
+
+describe('the employees a new run starts with (PY1a m5)', () => {
+  it('asks for every page: the second request carries the first page\'s cursor, and the rows of both pages come back', async () => {
+    const seen: (string | null)[] = [];
+    testServer.use(http.get('*/bff/v1/records/employee', ({ request }) => {
+      const cursor = new URL(request.url).searchParams.get('cursor');
+      seen.push(cursor);
+      return HttpResponse.json(cursor ? { items: [{ id: 'e-3', version: 1 }], total: 3 } : { items: [{ id: 'e-1', version: 1 }, { id: 'e-2', version: 1 }], total: 3, nextCursor: 'p2' });
+    }));
+    const all = await listAllEmployees('true');
+    expect(seen).toEqual([null, 'p2']);
+    expect(all.items.map((r) => r.id)).toEqual(['e-1', 'e-2', 'e-3']);
   });
 });
 

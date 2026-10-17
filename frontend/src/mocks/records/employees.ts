@@ -11,8 +11,8 @@ const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim
 const isDate = (s: string | undefined) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
 const isMoney = (v: unknown) => typeof v === 'string' && /^\d+(\.\d{1,2})?$/.test(v.trim());
 const mine = (st: MockState, companyId: string) => st.parties.filter((p) => p.companyId === companyId && p.kind === 'employee');
-/** An employee on any payroll run - any slip a run took, and any row of a draft - or on any other document (an expense claim): their history needs them. Deactivate instead of deleting. */
-const used = (st: MockState, p: Party) => st.docs.some((d) => d.companyId === p.companyId && (d.header.partyId === p.id || (d.type === 'PR' && (d.lines.some((l) => l.employeeId === p.id) || !!d.payroll?.slips.some((s) => s.employeeId === p.id)))));
+/** An employee on any payroll run - any slip a run took, and any row of a draft - or an opening balance's payroll year to date - or on any other document (an expense claim): their history needs them. Deactivate instead of deleting. */
+const used = (st: MockState, p: Party) => st.docs.some((d) => d.companyId === p.companyId && (d.header.partyId === p.id || (d.type === 'PR' && (d.lines.some((l) => l.employeeId === p.id) || !!d.payroll?.slips.some((s) => s.employeeId === p.id))) || (d.type === 'OB' && !!d.opening?.payrollYtd.some((y) => y.employeeId === p.id)))); // PY1a m6: an opening balance's payroll year to date names them too
 const nameOf = (v: Record<string, unknown>) => `${str(v.titleName) ?? ''}${str(v.firstName)} ${str(v.lastName)}`.trim();
 
 function toRow(st: MockState, p: Party): RecordRow {

@@ -63,7 +63,7 @@ export function PayrollGrid(p: { lines: DocLine[]; onChange: (l: DocLine[]) => v
 `emp-05` ลาออก 20 ก.ย. 2569); non-VAT 3. Runs: VAT `pr-2026-08`, `pr-2026-09` issued + paid, `pr-2026-10` draft;
 `pr-bonus-09` second September run (bonus). Non-VAT `npr-2026-09` issued. Keys `prDraft`, `prIssued`, `prPaid`, `empJoiner`.
 
-**Permissions:** accountant `employee.read`, `employee.manage`, `doc.PR.*`, `doc.PR.approve`, `payroll.read`; operator /
+**Permissions:** accountant `employee.read`, `employee.manage`, `doc.PR.*`, `payroll.read` (no `doc.PR.approve`: PR is not in the master approval catalogue of 16 types — PY1 review 2026-10-18); operator /
 admin none (admin `employee.read` only).
 
 - [ ] **Step 1: Failing tests** — `payroll.test.ts`: SSO vectors — salary 1,000.00 → base clamped to 1,650 → 82.50;

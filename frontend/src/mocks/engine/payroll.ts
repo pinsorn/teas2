@@ -1,6 +1,6 @@
 import { docViewHref } from '@/descriptors';
 import { LIVE } from '@/domain/doc-types';
-import type { DocLine, DocTotals, EmployeeSnapshot, IsoDate, Lock, MissingItem, Money, PartySummary, PayItems, PayrollData, PayrollSlip, PayrollTables, PayrollTotals, PayslipLine } from '@/domain/types';
+import type { DocLine, DocOpening, DocTotals, EmployeeSnapshot, IsoDate, Lock, MissingItem, Money, PartySummary, PayItems, PayrollData, PayrollSlip, PayrollTables, PayrollTotals, PayslipLine } from '@/domain/types';
 import type { MockState } from '../store';
 import { PAYROLL_TABLES } from '../fixtures/payroll-tables';
 import { bahtText } from './bahtText';
@@ -82,7 +82,7 @@ export function computeSlip(i: SlipInput): PayrollSlip {
   const gross = paid + pos(it.overtime) + pos(it.allowance) + pos(it.bonus) + pos(it.otherIncome);
   const sso = e.ssoRegistered ? Math.min(satOf(ssoOf(t, fromSatang(paid))), Math.max(0, ssoMonthlyCap(t) - satOf(i.monthSso))) : 0;
   const withRun = projectedTax(i, gross, sso);
-  // A SECOND run in a month (a bonus, a correction) is taxed incrementally: PIT = tax(projection with this run) - tax(projection without it). The regular method divides the year's remaining tax by the
+  // A SECOND run in a month (a bonus, a correction) is taxed incrementally (m2: which run is "first" is decided by issue order, not by what it pays; later months true it up): PIT = tax(projection with this run) - tax(projection without it). The regular method divides the year's remaining tax by the
   // months left, which would spread a one-off payment over months that are already (or will be) withheld on their own; the incremental method puts exactly the extra tax on the extra payment, with no division.
   const pit = Math.max(0, i.sameMonthPrior ? withRun - projectedTax(i, 0, 0) : rhd(big(withRun - satOf(i.prior.pit)), big(monthsLeft(e, i.month) + 1)));
   const ded = pos(it.otherDeduction);
@@ -153,18 +153,21 @@ function chainFor(st: MockState, companyId: string, employeeId: string, self: { 
 }
 
 type PrBody = { header: { documentDate: IsoDate }; lines: DocLine[] };
-/** The slips of a run as the books give them now. A slip of an ISSUED run whose row (employee, pay items) and pay date are unchanged is kept exactly as frozen (ruling 1: a later master or table edit never changes an issued slip);
- *  every other row is computed from the master and the tables as they are now. */
+/** The slips of a run as the books give them now. Ruling 1 (PY1a): a later master or table edit never changes an issued slip, including through a revise. An employee who already has a slip on the run keeps their
+ *  STORED employee snapshot and STORED tables: with the same pay items and the same chain (year to date, SSO of the month, earlier run of the month) the slip is kept verbatim, else it is recomputed from the stored
+ *  snapshot with the new items / chain. Only an employee ADDED to the run takes the live master and the live tables. The exit for a master-data mistake on an issued run: cancel and re-issue (takes the live master),
+ *  or adjust in the next run. [SP-R] m4: the work period is the pay-date month; Ham decides at GPY. */
 export function buildRun(st: MockState, companyId: string, body: PrBody, selfId?: string): PayrollSlip[] {
   const self = selfId ? st.docs.find((d) => d.id === selfId && d.companyId === companyId) : undefined;
-  const date = body.header.documentDate, month = date.slice(0, 7), kept = self && self.payroll && self.header.documentDate === date ? self.payroll.slips : [];
+  const date = body.header.documentDate, month = date.slice(0, 7), kept = self?.payroll?.slips ?? [];
   const seen = new Set<string>(), out: PayrollSlip[] = [];
   for (const l of body.lines) {
     const p = employeeOf(st, companyId, l.employeeId);
     if (!p || seen.has(p.id)) continue;
     seen.add(p.id);
-    const items = normItems(l.pay), old = kept.find((s) => s.employeeId === p.id && JSON.stringify(s.items) === JSON.stringify(items));
-    out.push(old ?? computeSlip({ employeeId: p.id, employee: snapshotOf(p), tables: structuredClone(PAYROLL_TABLES), items, month, ...chainFor(st, companyId, p.id, { date, number: self?.number, id: self?.id }) }));
+    const items = normItems(l.pay), old = kept.find((s) => s.employeeId === p.id), chain = chainFor(st, companyId, p.id, { date, number: self?.number, id: self?.id });
+    if (old && old.month === month && JSON.stringify([old.items, old.prior, old.monthSso, old.sameMonthPrior]) === JSON.stringify([items, chain.prior, chain.monthSso, chain.sameMonthPrior])) out.push(old);
+    else out.push(computeSlip({ employeeId: p.id, employee: old ? old.employee : snapshotOf(p), tables: old ? old.tables : structuredClone(PAYROLL_TABLES), items, month, ...chain }));
   }
   return out;
 }
@@ -221,23 +224,39 @@ export function payrollLock(st: MockState, ref: { id?: string; type?: string }):
 /** Everything that refuses a run before anything is written (issue, revise, compute): a later run in the books, and an other deduction larger than what is left of the pay (never a negative net). */
 export function payrollProblem(st: MockState, companyId: string, type: string, body: PrBody, selfId?: string): MockError | undefined {
   if (type !== 'PR') return undefined;
-  const self = selfId ? st.docs.find((d) => d.id === selfId) : undefined, slips = buildRun(st, companyId, body, selfId);
+  const self = selfId ? st.docs.find((d) => d.id === selfId) : undefined;
+  if (self?.payroll && self.header.documentDate.slice(0, 7) !== body.header.documentDate.slice(0, 7)) return fail(422, 'payroll.month_fixed', 'เดือนของวันที่จ่ายของรอบที่ออกแล้วเปลี่ยนไม่ได้ (เดือนนี้คือเดือนที่ยื่นภาษีและประกันสังคม) เลื่อนวันที่ภายในเดือนเดิมได้ ทางออก: ยกเลิกรอบนี้แล้วออกรอบใหม่');
+  const slips = buildRun(st, companyId, body, selfId);
   const later = laterRuns(st, companyId, { id: selfId, date: body.header.documentDate, number: self?.number }, slips.map((s) => s.employeeId));
   if (later.length) return fail(409, 'payroll.later_run', laterTitle(later));
   for (const s of slips) {
     const room = satOf(s.gross) - satOf(s.pit) - satOf(s.sso);
+    if (room < 0 && satOf(s.otherDeduction) === 0) return fail(422, 'payroll.pay_below_deductions', `${s.name}: เงินได้ของเดือนนี้ (${s.gross}) น้อยกว่าประกันสังคม (${s.sso}) จ่ายไม่ได้ (เงินเดือนตามสัดส่วนวันทำงานต่ำกว่าฐานขั้นต่ำของประกันสังคม) ทางออก: ตรวจวันเริ่มงาน / ลาออก หรือเงินเดือน หรือเพิ่มรายได้ของเดือนนี้`);
     if (satOf(s.otherDeduction) > room) return fail(422, 'payroll.deduction_exceeds', `รายการหักอื่นของ ${s.name} (${s.otherDeduction}) มากกว่าเงินที่เหลือหลังหักภาษีและประกันสังคม (${fromSatang(Math.max(0, room))}) ลดรายการหักอื่นลง`);
+  }
+  return undefined;
+}
+
+/** Ruling 2 (PY1a): an opening balance's payroll year to date is the start of the chain of every slip of its year. Issuing one (prev = none), revising its payroll year to date or its year, or cancelling it (next = none) is refused while a
+ *  live run of that year has a slip for an employee in the old or the new list. Exit: cancel those runs first, latest first. A revise that leaves the year to date identical is untouched. */
+export function obPayrollProblem(st: MockState, companyId: string, prev: Stored | undefined, next: { header: { documentDate: IsoDate }; opening?: DocOpening } | undefined): MockError | undefined {
+  const side = (x?: { header: { documentDate: IsoDate }; opening?: DocOpening }) => ({ year: x?.header.documentDate.slice(0, 4) ?? '', rows: [...(x?.opening?.payrollYtd ?? [])].sort((a, b) => a.employeeId.localeCompare(b.employeeId)) });
+  const a = side(prev), b = side(next);
+  if (prev && next && a.year === b.year && JSON.stringify(a.rows) === JSON.stringify(b.rows)) return undefined;
+  for (const x of [a, b]) {
+    const ids = x.rows.map((r) => r.employeeId), runs = ids.length ? liveRuns(st, companyId).filter((d) => d.header.documentDate.slice(0, 4) === x.year && d.payroll!.slips.some((s) => ids.includes(s.employeeId))) : [];
+    if (runs.length) return fail(409, 'payroll.ob_in_use', `ยอดยกมานี้มียอดเงินเดือนสะสมของพนักงานที่มีรอบเงินเดือนของปี ${x.year} อยู่ (${runs.map((d) => d.number).join(', ')}) ยอดสะสมของใบจ่ายเงินเดือนเหล่านั้นต่อเนื่องจากยอดนี้ จึงออกยอดยกมานี้ แก้ยอดสะสม หรือยกเลิกยอดยกมาไม่ได้ ทางออก: ยกเลิกรอบเงินเดือนเหล่านั้นก่อน (จากรอบล่าสุดย้อนขึ้นไป)`);
   }
   return undefined;
 }
 
 // ---------------------------------------------------------------- posting
 
-/** The run's journal, exactly the frozen slips: salary and the employer's SSO as expense; PIT, SSO (both sides) and the net pay as payables; other deductions under the employee's name on the employee payable (2180). */
+/** The run's journal, exactly the frozen slips: salary and the employer's SSO as expense; PIT, SSO (both sides) and the net pay as payables; the other deductions (money withheld for someone else: กยศ., a court order, a fund, a loan repayment) on 2190, with no party: they are NOT owed to the employee. A PV / JV clears 2190 later [SP-R]. */
 export const payrollRows = (d: { payroll?: PayrollData }): RolePosting => {
-  const slips = d.payroll?.slips ?? [], sum = (k: 'gross' | 'pit' | 'sso' | 'ssoEmployer' | 'net') => slips.reduce((n, s) => n + satOf(s[k]), 0);
+  const slips = d.payroll?.slips ?? [], sum = (k: 'gross' | 'pit' | 'sso' | 'ssoEmployer' | 'net' | 'otherDeduction') => slips.reduce((n, s) => n + satOf(s[k]), 0);
   return [['SalaryExpense', sum('gross'), 0], ['SsoExpense', sum('ssoEmployer'), 0], ['PitPayable', 0, sum('pit')], ['SsoPayable', 0, sum('sso') + sum('ssoEmployer')], ['SalaryPayable', 0, sum('net')],
-    ...slips.filter((s) => satOf(s.otherDeduction) > 0).map((s): RolePosting[number] => ['EmployeePayable', 0, satOf(s.otherDeduction), { partyName: s.name }])];
+    ['PayrollDeductionPayable', 0, sum('otherDeduction')]];
 };
 
 // ---------------------------------------------------------------- invariants
@@ -252,8 +271,8 @@ export function payrollInvariants(st: MockState): string[] {
     if (JSON.stringify([...rows].sort()) !== JSON.stringify(slips.map((s) => s.employeeId).sort())) out.push(`${d.id}: the slips are for ${slips.map((s) => s.employeeId).join(', ')} but the rows are ${rows.join(', ')}`);
     for (const s of slips) {
       const w = `${d.id} slip ${s.employeeId}`, back = computeSlip(inputOf(s));
-      for (const k of ['gross', 'pit', 'sso', 'ssoEmployer', 'otherDeduction', 'net', 'ytdIncome', 'ytdPit', 'ytdSso', 'salaryPaid'] as const) if (back[k] !== s[k]) out.push(`${w}: ${k} ${s[k]} but its stored inputs give ${back[k]}`);
-      if (back.proratedDays !== s.proratedDays) out.push(`${w}: proration ${s.proratedDays ?? 'none'} but its stored inputs give ${back.proratedDays ?? 'none'}`);
+      // The WHOLE slip, key by key (PY1a ruling 3). Accepted residual: a field no figure depends on (employee.nationalId, tables.version) cannot be caught by a recompute; PY3 anchors them to the 50 ทวิ / ภ.ง.ด.1 snapshot.
+      for (const k of new Set([...Object.keys(s), ...Object.keys(back)]) as Set<keyof PayrollSlip>) if (JSON.stringify(back[k]) !== JSON.stringify(s[k])) out.push(`${w}: ${k} ${JSON.stringify(s[k]) ?? 'none'} but its stored inputs give ${JSON.stringify(back[k]) ?? 'none'}`);
       if (satOf(s.net) !== satOf(s.gross) - satOf(s.pit) - satOf(s.sso) - satOf(s.otherDeduction)) out.push(`${w}: net ${s.net} is not gross ${s.gross} - PIT ${s.pit} - SSO ${s.sso} - other deduction ${s.otherDeduction}`);
       if (satOf(s.net) < 0) out.push(`${w}: negative net ${s.net}`);
       const chain = chainFor(st, d.companyId, s.employeeId, { id: d.id, date: d.header.documentDate, number: d.number });
@@ -263,7 +282,7 @@ export function payrollInvariants(st: MockState): string[] {
     const e = st.journals.find((j) => j.docId === d.id)?.preview.entries.filter((x) => x.kind !== 'reversal').pop();
     const role = (r: string, side: 'debit' | 'credit') => (e?.lines ?? []).filter((l) => new RegExp(`: ${r} → `).test(l.rule)).reduce((n, l) => n + satOf(l[side]), 0);
     const want: [string, 'debit' | 'credit', number][] = [['SalaryExpense', 'debit', satOf(tot.gross)], ['SsoExpense', 'debit', satOf(tot.ssoEmployer)], ['PitPayable', 'credit', satOf(tot.pit)],
-      ['SsoPayable', 'credit', satOf(tot.sso) + satOf(tot.ssoEmployer)], ['SalaryPayable', 'credit', satOf(tot.net)], ['EmployeePayable', 'credit', slips.reduce((n, s) => n + satOf(s.otherDeduction), 0)]];
+      ['SsoPayable', 'credit', satOf(tot.sso) + satOf(tot.ssoEmployer)], ['SalaryPayable', 'credit', satOf(tot.net)], ['PayrollDeductionPayable', 'credit', slips.reduce((n, s) => n + satOf(s.otherDeduction), 0)]];
     if (!e) out.push(`${d.id}: no payroll journal entry`);
     else for (const [r, side, n] of want) if (role(r, side) !== n) out.push(`${d.id}: journal ${r} ${side} ${fromSatang(role(r, side))} but its slips say ${fromSatang(n)}`);
   }

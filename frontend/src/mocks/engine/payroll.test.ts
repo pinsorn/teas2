@@ -171,7 +171,7 @@ describe('the seeded payroll (D-23): five runs through the engine', () => {
 });
 
 describe('posting (ruling 6)', () => {
-  it('the September journal is the slips: expense, payables, other deduction under the employee name; Dr = Cr; dated the pay date', () => {
+  it('the September journal is the slips: expense, payables, other deduction on 2190 with no party; Dr = Cr; dated the pay date', () => {
     const d = doc('pr-2026-09'), [e] = ents('pr-2026-09'), s = d.payroll!.slips;
     const sum = (k: 'gross' | 'pit' | 'sso' | 'ssoEmployer' | 'net') => s.reduce((a, x) => a + sat(x[k]), 0);
     expect(e.date).toBe('2026-09-30');
@@ -180,10 +180,11 @@ describe('posting (ruling 6)', () => {
     expect(role(e, 'PitPayable', 'credit')).toBe(sum('pit'));
     expect(role(e, 'SsoPayable', 'credit')).toBe(sum('sso') + sum('ssoEmployer'));
     expect(role(e, 'SalaryPayable', 'credit')).toBe(sum('net'));
-    const ded = e.lines.find((l) => l.accountCode === '2180')!;
-    expect(ded).toMatchObject({ credit: '500.00', partyName: 'มาลี ใจงาม' });
+    const ded = e.lines.find((l) => l.accountCode === '2190')!;
+    expect(ded).toMatchObject({ credit: '500.00' });
+    expect(ded.partyName).toBeUndefined();
     expect(e.lines.reduce((a, l) => a + sat(l.debit), 0)).toBe(e.lines.reduce((a, l) => a + sat(l.credit), 0));
-    expect(e.lines.map((l) => l.accountCode).sort()).toEqual(['2153', '2160', '2170', '2180', '5400', '5410']);
+    expect(e.lines.map((l) => l.accountCode).sort()).toEqual(['2153', '2160', '2170', '2190', '5400', '5410']);
   });
 
   it('the document total is the net pay (what 2170 carries); the run lists in the company\'s own books only', () => {
@@ -270,7 +271,7 @@ describe('frozen at issue (ruling 1)', () => {
     expect(r.revision).toBe(1);
     expect(JSON.stringify(slip('pr-bonus-09', 'emp-01'))).toBe(kept); // unchanged row: the frozen slip
     expect(slip('pr-bonus-09', 'emp-02')).toMatchObject({ gross: '12000.00' });
-    expect(slip('pr-bonus-09', 'emp-02').employee.salary).toBe('31000.00'); // the changed row is frozen again from the master as it is now
+    expect(slip('pr-bonus-09', 'emp-02').employee.salary).toBe('30000.00'); // PY1a ruling 1: the changed row is recomputed from its STORED snapshot, not the master as it is now (the master edit to 31,000 is not picked up)
     expect(doc('pr-bonus-09').totals.total).toBe(((sat(slip('pr-bonus-09', 'emp-01').net) + sat(slip('pr-bonus-09', 'emp-02').net)) / 100).toFixed(2));
     const kinds = ents('pr-bonus-09').map((e) => e.kind);
     expect(kinds).toEqual(['original', 'reversal', 'correction']);
@@ -376,9 +377,9 @@ describe('what the books would catch (single-fault tampers)', () => {
     }
   });
 
-  it('employee payable 2180 ties to the expense claims PLUS the other deductions: drop the deduction line and the books disagree', () => {
-    const out = tamper((s) => { const e = s.journals.find((j) => j.docId === 'pr-2026-09')!.preview.entries[0]; e.lines = e.lines.filter((l) => l.accountCode !== '2180'); e.lines.find((l) => l.accountCode === '2170')!.credit = (sat(e.lines.find((l) => l.accountCode === '2170')!.credit) / 100 + 500).toFixed(2); });
-    expect(out.join('\n')).toContain('2180');
+  it('the other deductions are on 2190: drop the deduction line and the journal no longer matches the slips', () => {
+    const out = tamper((s) => { const e = s.journals.find((j) => j.docId === 'pr-2026-09')!.preview.entries[0]; e.lines = e.lines.filter((l) => l.accountCode !== '2190'); e.lines.find((l) => l.accountCode === '2170')!.credit = (sat(e.lines.find((l) => l.accountCode === '2170')!.credit) / 100 + 500).toFixed(2); });
+    expect(out.join('\n')).toContain('journal PayrollDeductionPayable');
   });
 });
 
@@ -435,5 +436,162 @@ describe('permissions and the wire (ruling 9)', () => {
     expect(made.status).toBe(201);
     const row = await json(made);
     expect((await call('DELETE', `/records/employee/${row.id}`)).status).toBe(204);
+  });
+});
+
+// ================================================================ PY1a: the Opus review fixes (rulings 1-7)
+
+describe('PY1a ruling 1: a revise never re-derives an issued slip from the live master', () => {
+  it('B1 repro: only the pay date moves (30 -> 29 Sep) after the employee was edited: SSO and PIT of every slip are unchanged', () => {
+    const np = doc('npr-2026-09'), before = JSON.stringify(np.payroll!.slips);
+    const e = st.parties.find((p) => p.id === 'nemp-01')!;
+    e.payroll!.children = 3; e.payroll!.ssoRegistered = !e.payroll!.ssoRegistered;
+    revise(st, np.id, { header: { ...np.header, documentDate: '2026-09-29' }, lines: np.lines }, np.version, 'แก้วันที่จ่าย', ME);
+    expect(doc('npr-2026-09').header.documentDate).toBe('2026-09-29');
+    expect(JSON.stringify(doc('npr-2026-09').payroll!.slips)).toBe(before);
+    expect(slip('npr-2026-09', 'nemp-01')).toMatchObject({ sso: '750.00' });
+    expect(checkInvariants(st)).toEqual([]);
+  });
+
+  it('a changed row is recomputed from its STORED employee and tables, not the master (the stored slip\'s salary stays)', () => {
+    st.parties.find((p) => p.id === 'emp-02')!.payroll!.salary = '31000.00';
+    const was = PAYROLL_TABLES.personal;
+    try {
+      PAYROLL_TABLES.personal = '0.00';
+      const b = doc('pr-bonus-09'), old = slip('pr-bonus-09', 'emp-02');
+      const lines = b.lines.map((l) => (l.employeeId === 'emp-02' ? { ...l, pay: { ...l.pay!, bonus: '12000.00' } } : l));
+      revise(st, b.id, { header: b.header, lines }, b.version, 'แก้โบนัส', ME);
+      const now = slip('pr-bonus-09', 'emp-02');
+      expect(now).toMatchObject({ gross: '12000.00' });
+      expect(now.employee).toEqual(old.employee);
+      expect(now.tables).toEqual(old.tables);
+      expect(now.employee.salary).toBe('30000.00');
+    } finally { PAYROLL_TABLES.personal = was; }
+    expect(checkInvariants(st)).toEqual([]);
+  });
+
+  it('an employee ADDED by the revise takes the live master', () => {
+    st.parties.find((p) => p.id === 'emp-03')!.payroll!.salary = '23000.00';
+    const b = doc('pr-bonus-09');
+    revise(st, b.id, { header: b.header, lines: [...b.lines, row('emp-03', { salary: '0.00', bonus: '500.00' })] }, b.version, 'เพิ่มคน', ME);
+    expect(slip('pr-bonus-09', 'emp-03').employee.salary).toBe('23000.00');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+
+  it('the pay-date MONTH of an issued run cannot change (422 payroll.month_fixed, exit: cancel and re-issue); a date inside the month can', () => {
+    const b = doc('pr-bonus-09');
+    const e = err(() => revise(st, b.id, { header: { ...b.header, documentDate: '2026-10-01' }, lines: b.lines }, b.version, 'x', ME));
+    expect(e).toMatchObject({ status: 422, code: 'payroll.month_fixed' });
+    expect(e.title).toContain('ยกเลิกรอบนี้แล้วออกรอบใหม่');
+    expect(doc('pr-bonus-09').header.documentDate).toBe('2026-09-30');
+  });
+});
+
+describe('PY1a ruling 2: an opening balance a payroll run builds on', () => {
+  const NONVAT = () => setSettings({ companyKey: 'nonvat', role: 'accountant', screenState: 'normal' });
+  const call = (method: string, p: string, body?: unknown) => fetch(`http://localhost/bff/v1${p}`, { method, body: body ? JSON.stringify(body) : undefined, headers: { 'content-type': 'application/json' } });
+  /** nob-1 made an opening balance of 2026 (the mid-year switch), and a run for nemp-01 issued on top of its payroll year to date. */
+  const setup = () => {
+    cancel(st, 'npr-2026-09', doc('npr-2026-09').version, 'OTHER', 'ทดสอบ', ME);
+    doc('nob-1').header.documentDate = '2026-06-30';
+    const d = draft([row('nemp-01')], '2026-10-10', 'co-nonvat');
+    const r = issue(st, d.id, d.version, ME);
+    expect(r.payroll!.slips[0].prior.income).toBe('180000.00');
+    return doc('nob-1');
+  };
+  const withYtd = (ob: ReturnType<typeof doc>, ytd: { employeeId: string; income: string; pit: string; sso: string }[]) => ({ header: ob.header, lines: ob.lines, opening: { ...ob.opening!, payrollYtd: ytd } });
+
+  it('B2 repro: revising the payroll year to date is refused (409 payroll.ob_in_use) and nothing is written', () => {
+    const ob = setup(), ytd = JSON.stringify(ob.opening!.payrollYtd);
+    const e = err(() => revise(st, ob.id, withYtd(ob, [{ employeeId: 'nemp-01', income: '1.00', pit: '0.00', sso: '0.00' }]), ob.version, 'x', ME));
+    expect(e).toMatchObject({ status: 409, code: 'payroll.ob_in_use' });
+    expect(e.title).toContain('ยกเลิกรอบเงินเดือนเหล่านั้นก่อน');
+    expect(JSON.stringify(doc('nob-1').opening!.payrollYtd)).toBe(ytd);
+  });
+
+  it('the NEW list counts too: adding an employee who has a slip on a run of the year is refused', () => {
+    const ob = setup();
+    ob.opening!.payrollYtd = [{ employeeId: 'nemp-02', income: '150000.00', pit: '1200.00', sso: '9000.00' }]; // synthetic: the old list names nobody the run pays
+    const e = err(() => revise(st, ob.id, withYtd(ob, [...ob.opening!.payrollYtd, { employeeId: 'nemp-01', income: '1.00', pit: '0.00', sso: '0.00' }]), ob.version, 'x', ME));
+    expect(e.code).toBe('payroll.ob_in_use');
+  });
+
+  it('cancelling it is refused the same way; revising it with the payroll year to date left identical stays allowed', () => {
+    const ob = setup();
+    expect(err(() => cancel(st, ob.id, ob.version, 'OTHER', 'x', ME)).code).toBe('payroll.ob_in_use');
+    expect(revise(st, ob.id, { header: { ...ob.header, notes: 'แก้หมายเหตุ' }, lines: ob.lines, opening: ob.opening }, ob.version, 'หมายเหตุ', ME).revision).toBe(1);
+  });
+
+  it('it is refused before a correction plan is shown', async () => {
+    const ob = setup();
+    NONVAT();
+    const r = await call('POST', `/docs/OB/${ob.id}/correction-plan`, withYtd(ob, [{ employeeId: 'nemp-01', income: '1.00', pit: '0.00', sso: '0.00' }]));
+    expect(r.status).toBe(409);
+    expect((await r.json()).code).toBe('payroll.ob_in_use');
+  });
+
+  it('issuing an opening balance with a payroll year to date for a year that already has runs is refused; another year is fine', () => {
+    const L1 = (id: string): DocLine => ({ id, description: 'x', qty: '1', unit: '', unitPrice: '0.00', taxCode: 'EX', accountCode: '1150', debit: '200.00', credit: '0.00' });
+    const mk = (date: string) => createDraft(st, 'co-vat', 'OB', { header: { documentDate: date }, lines: [L1(`ol-${++n}`)], opening: { openItems: [], assets: [], payrollYtd: [{ employeeId: 'emp-01', income: '1000.00', pit: '0.00', sso: '0.00' }], bank: [] } }, ME, `ob${++n}`);
+    const bad = mk('2026-06-30');
+    expect(err(() => issue(st, bad.id, bad.version, ME)).code).toBe('payroll.ob_in_use');
+    expect(doc(bad.id).status).toBe('draft');
+    const ok = mk('2025-12-31');
+    expect(issue(st, ok.id, ok.version, ME).status).toBe('issued');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+});
+
+describe('PY1a ruling 3: the recompute invariant compares the whole slip', () => {
+  it('a tampered name, daysInMonth or month is caught; a figure-free input (nationalId) is the accepted residual', () => {
+    for (const [what, fn] of [
+      ['name', (s: MockState) => { stored(s, 'pr-2026-09').payroll!.slips[0].name = 'X'; }],
+      ['daysInMonth', (s: MockState) => { stored(s, 'pr-2026-09').payroll!.slips[0].daysInMonth = 31; }],
+      ['month', (s: MockState) => { stored(s, 'pr-2026-09').payroll!.slips[0].month = '2026-10'; }],
+    ] as [string, (s: MockState) => void][]) expect(tamper(fn).length, what).toBeGreaterThan(0);
+    expect(tamper((s) => { stored(s, 'pr-2026-09').payroll!.slips[0].employee.nationalId = '0000000000000'; })).toEqual([]);
+  });
+});
+
+describe('PY1a ruling 4: an other deduction is money owed to someone else (2190), never to the employee (2180)', () => {
+  it('the September journal credits 2190 with the run\'s deductions, no party, and nothing on 2180', () => {
+    const [e] = ents('pr-2026-09');
+    expect(e.lines.some((l) => l.accountCode === '2180')).toBe(false);
+    const ded = e.lines.find((l) => l.accountCode === '2190')!;
+    expect(ded).toMatchObject({ credit: '500.00', debit: '0.00' });
+    expect(ded.partyName).toBeUndefined();
+    expect(e.lines.filter((l) => l.accountCode === '2190')).toHaveLength(1);
+    expect(st.accounts.find((a) => a.companyId === 'co-vat' && a.code === '2190')).toMatchObject({ nameTh: 'เงินหักจากพนักงานรอนำส่ง', subClass: 'payroll-liability', parent: '2100' });
+    expect(st.accounts.find((a) => a.companyId === 'co-nonvat' && a.code === '2190')).toBeDefined();
+  });
+  it('the 2180 tie no longer carries the deductions: a deduction line moved back to 2180 under the name is caught', () => {
+    const out = tamper((s) => { const l = s.journals.find((j) => j.docId === 'pr-2026-09')!.preview.entries[0].lines.find((x) => x.accountCode === '2190')!; l.accountCode = '2180'; l.partyName = 'มาลี ใจงาม'; });
+    expect(out.join('\n')).toContain('2180');
+  });
+});
+
+describe('PY1a ruling 5: pay below the SSO', () => {
+  it('a prorated wage under the SSO floor is refused naming the employee and the SSO, not the other deduction', () => {
+    const e = employeeImpl.create(st, 'co-vat', { code: 'E88', firstName: 'จิ๋ว', lastName: 'ค่าแรงน้อย', nationalId: '1100700009903', startDate: '2026-10-31', salary: '1000.00', maritalStatus: 'single', children: 0, ssoRegistered: true });
+    const d = draft([row(String(e.id), { salary: '1000.00' })]);
+    const c = compute(st, 'co-vat', 'PR', { header: d.header, lines: d.lines });
+    expect(c.missing.find((m) => m.code === 'payroll.pay_below_deductions')?.message).toContain('82.50');
+    const x = err(() => issue(st, d.id, d.version, ME));
+    expect(x).toMatchObject({ status: 422, code: 'payroll.pay_below_deductions' });
+    expect(x.title).toContain('จิ๋ว ค่าแรงน้อย');
+    expect(x.title).toContain('82.50');
+    expect(x.title).not.toContain('รายการหักอื่น');
+  });
+});
+
+describe('PY1a ruling 7: an employee on an opening balance\'s payroll year to date is in use', () => {
+  it('delete is refused (employee.in_use) while the opening balance names them; the exit says deactivate', () => {
+    const e = employeeImpl.create(st, 'co-nonvat', { code: 'N88', firstName: 'ยกมา', lastName: 'เท่านั้น', nationalId: '1100700009903', startDate: '2025-01-01', salary: '10000.00', maritalStatus: 'single', children: 0 });
+    employeeImpl.remove!(st, 'co-nonvat', String(e.id)); // not named anywhere: deletable
+    const f = employeeImpl.create(st, 'co-nonvat', { code: 'N89', firstName: 'ยกมา', lastName: 'เท่านั้น', nationalId: '1100700009903', startDate: '2025-01-01', salary: '10000.00', maritalStatus: 'single', children: 0 });
+    doc('nob-1').opening!.payrollYtd.push({ employeeId: String(f.id), income: '1.00', pit: '0.00', sso: '0.00' });
+    const x = err(() => employeeImpl.remove!(st, 'co-nonvat', String(f.id)));
+    expect(x).toMatchObject({ status: 409, code: 'employee.in_use' });
+    expect(x.title).toContain('ปิดใช้งาน');
   });
 });

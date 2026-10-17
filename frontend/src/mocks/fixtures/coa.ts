@@ -75,6 +75,7 @@ const POSTABLE: Row[] = [
   ['2151', 'ภาษีขาย', 'tax-liability', '2100', 'OutputVat'], ['2152', 'ภาษีมูลค่าเพิ่มค้างจ่าย ภ.พ.36', 'tax-liability', '2100'],
   ['2153', 'ภาษีเงินได้พนักงานค้างจ่าย', 'tax-liability', '2100'], ['2154', 'ภาษีมูลค่าเพิ่มค้างจ่าย ภ.พ.30', 'tax-liability', '2100', 'VatPayable'], ['2160', 'เงินประกันสังคมค้างจ่าย', 'payroll-liability', '2100'], // TX2c [SP-R] name / code of 2154 and 1172
   ['2170', 'เงินเดือนค้างจ่าย', 'payroll-liability', '2100'], ['2180', 'เจ้าหนี้พนักงาน', 'payable', '2100', 'EmployeePayable'],
+  ['2190', 'เงินหักจากพนักงานรอนำส่ง', 'payroll-liability', '2100'], // PY1a [SP-R] name / code: other deductions of a payroll run (กยศ., a court order, a fund, a loan repayment) held for a third party; no party, cleared by a PV / JV
   ['3100', 'ทุนจดทะเบียน', 'capital', '3000'], ['3200', 'กำไรสะสม', 'retained', '3000'], ['3300', 'กำไร(ขาดทุน)ปีปัจจุบัน', 'current-year', '3000'],
   ['3900', 'ส่วนเกินทุนยอดยกมา', 'opening', '3000'],
   ['4100', 'รายได้จากการขายและบริการ', 'sales', '4000'], ['4110', 'รับคืนสินค้า/ลดหนี้', 'contra-sales', '4000', 'SalesReturn'],

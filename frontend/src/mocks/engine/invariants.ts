@@ -152,11 +152,8 @@ export function checkInvariants(st: MockState): string[] {
     sub.set(sk, (sub.get(sk) ?? 0) + sat(d.outstanding ?? '0.00', d.id));
   }
 
-  // PY1: what a payroll run withheld from an employee as an other deduction is kept on 2180 under their name, with the expense claims they are owed
-  const prDeductions = st.docs.flatMap((d) => (d.type === 'PR' && LIVE.includes(d.status) && d.payroll ? d.payroll.slips.map((s) => ({ co: d.companyId, name: s.name, n: sat(s.otherDeduction, d.id) })) : []));
-  for (const x of prDeductions) sub.set(`${x.co}|PR`, (sub.get(`${x.co}|PR`) ?? 0) + x.n);
   // 4. subledger = GL, per company
-  const SUBLEDGERS: [string, number, string[]][] = [['1130', 1, ['TI', 'IV', 'OB:AR']], ['2110', -1, ['PB', 'OB:AP']], ['2180', -1, ['EX', 'OB:EMP', 'PR']]];
+  const SUBLEDGERS: [string, number, string[]][] = [['1130', 1, ['TI', 'IV', 'OB:AR']], ['2110', -1, ['PB', 'OB:AP']], ['2180', -1, ['EX', 'OB:EMP']]];
   for (const c of st.companies) {
     for (const [code, sign, types] of SUBLEDGERS) {
       const glBal = sign * (gl.get(`${c.id}|${code}`) ?? 0);
@@ -200,7 +197,6 @@ export function checkInvariants(st: MockState): string[] {
     const k = `${d.companyId}|${d.party?.name ?? ''}`;
     empSub.set(k, (empSub.get(k) ?? 0) + sat(d.outstanding ?? '0.00', d.id));
   }
-  for (const x of prDeductions) empSub.set(`${x.co}|${x.name}`, (empSub.get(`${x.co}|${x.name}`) ?? 0) + x.n);
   for (const k of new Set([...empByParty.keys(), ...empSub.keys()])) {
     if ((empByParty.get(k) ?? 0) !== (empSub.get(k) ?? 0)) {
       const [company, name] = k.split('|');
