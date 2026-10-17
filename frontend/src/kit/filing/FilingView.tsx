@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { useCompanyEpoch } from '@/app-shell/useCompanyEpoch';
 import { isForbidden, useMe } from '@/app-shell/useMe';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -27,6 +28,7 @@ import { TieOutBanner } from '../report/TieOutBanner';
 import { FilingAttachment, FilingBoxes } from './FilingBoxes';
 import { FilingHistory } from './FilingHistory';
 import { FinalizeDialog } from './FinalizeDialog';
+import { TaxPaymentDialog } from './TaxPaymentDialog';
 
 /** A filing for one period (`?period=`, default = the month after the last one finalized): boxes (each linking to its register), tie-outs, blockers, finalize (ConfirmIssue anatomy), the RD Prep text and the history. A finalized period is read-only
  *  and shows the snapshot. Requires tax.read to view, tax.filing.preview to compute, tax.filing.finalize to finalize. Remounts on a company switch. */
@@ -55,6 +57,13 @@ function Inner({ form }: { form: FilingForm; periodKind: 'month' | 'year' }) {
     mutationFn: (ack: boolean) => endpoints.finalizeFiling(form, period, q.data!.version, ack),
     onSuccess: async () => { setConfirming(false); await qc.invalidateQueries({ queryKey: [companyId, 'filings'] }); await qc.invalidateQueries({ queryKey: [companyId, 'doc'] }); },
   });
+  const [paying, setPaying] = useState(false);
+  const [undoing, setUndoing] = useState(false);
+  const [reason, setReason] = useState('');
+  const undo = useMutation({
+    mutationFn: (journalId: string) => endpoints.reverseTaxPayment(journalId, reason.trim()),
+    onSuccess: async () => { setUndoing(false); setReason(''); await qc.invalidateQueries({ queryKey: [companyId] }); },
+  });
   const pick = (value: string) => { const u = new URLSearchParams(search.toString()); if (value) u.set('period', value); else u.delete('period'); router.replace(`${pathname}?${u}`); };
 
   if (meFailed && !me) return <ErrorState error={meError} onRetry={() => void refetchMe()} />;
@@ -66,6 +75,7 @@ function Inner({ form }: { form: FilingForm; periodKind: 'month' | 'year' }) {
 
   const m = q.data, filed = m.status === 'finalized', first = m.blockers[0];
   const canFinalize = me.permissions.includes('tax.filing.finalize');
+  const canPay = me.permissions.includes('bank.reconcile');
   const exportTxt = async () => {
     try {
       const url = URL.createObjectURL(new Blob([await endpoints.exportFiling(form, period, 'rdprep-txt')], { type: 'text/plain;charset=utf-8' }));
@@ -92,6 +102,30 @@ function Inner({ form }: { form: FilingForm; periodKind: 'month' | 'year' }) {
           <AlertTitle>{t('filed.title')}</AlertTitle>
           <AlertDescription>{t(form === 'PP30' ? 'filed.body' : 'filed.bodyOther', { by: m.finalizedBy ?? '', at: formatDateBE((m.finalizedAt ?? '').slice(0, 10)) })}</AlertDescription>
         </Alert>
+      ) : null}
+      {filed && m.payment ? (
+        <section aria-label={t('payment.title')} className="grid gap-2 rounded-lg border bg-card p-4 print:hidden" data-testid="tax-payment">
+          <h3 className="font-semibold">{t('payment.title')}</h3>
+          {m.payment.status === 'nothing_due' ? <p className="text-muted-foreground">{t('payment.nothingDue')}</p> : null}
+          {m.payment.status === 'unpaid' ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="tabular-nums">{t('payment.due', { amount: formatMoney(m.payment.due) })}</p>
+              {canPay ? <Button onClick={() => setPaying(true)}>{t('payment.pay')}</Button> : <span className="text-small text-muted-foreground">{t('payment.needPermission')}</span>}
+            </div>
+          ) : null}
+          {m.payment.status === 'paid' ? (
+            <>
+              <Alert role="status">
+                <AlertTitle>{t('payment.paid', { date: formatDateBE(m.payment.paidOn ?? '') })}</AlertTitle>
+                {m.payment.extras ? <AlertDescription>{t('payment.extras', { amount: formatMoney(m.payment.extras) })}</AlertDescription> : null}
+              </Alert>
+              <div className="flex flex-wrap items-center gap-3">
+                {m.payment.accountId && m.payment.lineId ? <Link href={`/finance/bank-accounts/${m.payment.accountId}?line=${m.payment.lineId}`} className="text-primary underline underline-offset-2">{t('payment.openLine')}</Link> : null}
+                {canPay ? <Button variant="outline" onClick={() => { undo.reset(); setReason(''); setUndoing(true); }}>{t('payment.reverse')}</Button> : null}
+              </div>
+            </>
+          ) : null}
+        </section>
       ) : null}
       <TieOutBanner tieOuts={m.tieOuts} />
       {m.boxes.length === 0 ? <EmptyState title={t('empty.title')} body={t('empty.body')} /> : <FilingBoxes boxes={m.boxes} period={period} />}
@@ -126,6 +160,26 @@ function Inner({ form }: { form: FilingForm; periodKind: 'month' | 'year' }) {
         <Button variant="outline" onClick={() => window.print()}><PrinterIcon aria-hidden />{t('export.print')}</Button>
       </div>
       <FinalizeDialog open={confirming} form={form} month={monthBE(period)} boxes={m.boxes} pending={finalize.isPending} error={finalize.error} onConfirm={(ack) => finalize.mutate(ack)} onCancel={() => setConfirming(false)} />
+      {paying ? <TaxPaymentDialog form={form} period={period} onClose={() => setPaying(false)} /> : null}
+      {undoing && m.payment?.journalId ? (
+        <AlertDialog open onOpenChange={(o) => { if (!o) setUndoing(false); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('payment.reverse')}</AlertDialogTitle>
+              <AlertDialogDescription>{t('payment.reverseDesc')}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="grid gap-1.5">
+              <Label htmlFor="payment-reason">{t('payment.reason')} <span aria-hidden>*</span></Label>
+              <Input id="payment-reason" value={reason} onChange={(e) => setReason(e.target.value)} />
+            </div>
+            {undo.error ? <p role="alert" className="text-destructive">{undo.error instanceof ApiError ? undo.error.problem.title : t('payment.failed')}</p> : null}
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('payment.back')}</AlertDialogCancel>
+              <AlertDialogAction disabled={!reason.trim() || undo.isPending} onClick={(e) => { e.preventDefault(); undo.mutate(m.payment!.journalId!); }}>{undo.isPending ? t('payment.working') : t('payment.reverse')}</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      ) : null}
       <FilingHistory items={hist.data.items} />
     </div>
   );

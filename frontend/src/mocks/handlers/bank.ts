@@ -3,7 +3,7 @@ import type { Actor, BankLine, Page } from '@/domain/types';
 import { discardAttachment } from '../engine/attachments';
 import { importStatement, type StatementInput } from '../engine/bank-import';
 import { MockError } from '../engine/log';
-import { type MatchRequest, type PostRequest, controlExit, ignore, linesOf, lockTo, match, post, publicLine, reverseTransfer, suggest, transfer, unignore, unmatch } from '../engine/reconcile';
+import { type MatchRequest, type PayTaxRequest, type PostRequest, controlExit, ignore, linesOf, lockTo, match, payTax, post, publicLine, reverseTaxPayment, reverseTransfer, suggest, transfer, unignore, unmatch } from '../engine/reconcile';
 import { bankGlAccounts, glClaim } from '../records/bank-accounts';
 import { ctx, forbidden, persist, problem, screenGate } from './common';
 
@@ -85,9 +85,17 @@ export const bankHandlers = [
   })),
   http.post('*/bff/v1/finance/bank-journals/:id/reverse', ({ request, params }) => guarded('item', RECONCILE, async (c) => {
     const body = ((await request.json().catch(() => undefined)) ?? {}) as { reason?: string };
-    const j = reverseTransfer(c.st, c.company.id, String(params.id), ACTOR, body.reason);
+    const isTax = c.st.bankJournals.some((x) => x.id === params.id && x.companyId === c.company.id && x.kind === 'tax'); // TX2c: the same endpoint undoes a tax payment
+    const j = (isTax ? reverseTaxPayment : reverseTransfer)(c.st, c.company.id, String(params.id), ACTOR, body.reason);
     persist(c.st);
     return HttpResponse.json({ id: j.id, reversed: true });
+  })),
+  // TX2c: pay a finalized return from this statement line (Dr the return's payable / Cr the bank)
+  http.post('*/bff/v1/finance/bank-lines/:id/pay-tax', ({ request, params }) => guarded('item', RECONCILE, async (c) => {
+    const body = ((await request.json().catch(() => undefined)) ?? {}) as unknown as PayTaxRequest;
+    const line = payTax(c.st, c.company.id, String(params.id), body, ACTOR);
+    persist(c.st);
+    return HttpResponse.json(line);
   })),
   http.get('*/bff/v1/finance/bank-lines/:id/candidates', ({ request, params }) => guarded('list', RECONCILE, (c) =>
     HttpResponse.json({ items: suggest(c.st, c.company.id, String(params.id), new URL(request.url).searchParams.get('q') ?? undefined) }))),

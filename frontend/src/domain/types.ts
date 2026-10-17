@@ -1,3 +1,4 @@
+import type { FilingForm } from './filings';
 export type Money = string;   // decimal string, 2 dp: "64200.00"
 export type Qty = string;     // decimal string, up to 4 dp
 export type IsoDate = string; // "2026-10-14"
@@ -135,9 +136,11 @@ export interface BankLine { id: string; accountId: string; importId: string; dat
   status: 'unmatched' | 'matched' | 'ignored' | 'posted'; matchedDocIds?: string[]; matches?: BankMatch[]; diff?: { role: 'BankFee' | 'RoundingDifference'; amount: Money; journalId: string };
   journalId?: string; locked?: boolean; note?: string;
   /** Unmatched, but a transfer journal it made is still in force (the exit: transfer again to the same account, or reverse it). */ transferPending?: string;
-  /** Matched to a transfer journal between two own accounts (instead of documents): `side` is this line's own side of it. */ transfer?: { journalId: string; side: 'out' | 'in' } }
+  /** Matched to a transfer journal between two own accounts (instead of documents): `side` is this line's own side of it. */ transfer?: { journalId: string; side: 'out' | 'in' };
+  /** TX2c: posted by a tax payment (derived at read) */ taxPayment?: { form: FilingForm; period: string; journalId: string; href: string } }
 /** A journal the reconciliation wrote (no document behind it): the fee / rounding difference of a match, an inline journal of a statement line, or the seeded opening balance. A reversal is appended, an entry is never edited. */
-export interface BankJournal { id: string; companyId: string; accountId: string; lineId?: string; kind: 'fee' | 'inline' | 'opening' | 'transfer'; label: string; entries: JournalEntryPreview[];
+export interface BankJournal { id: string; companyId: string; accountId: string; lineId?: string; kind: 'fee' | 'inline' | 'opening' | 'transfer' | 'tax'; label: string; entries: JournalEntryPreview[];
+  /** TX2c: a tax payment - the finalized return it pays and the tax it paid, frozen at payment */ filing?: { form: FilingForm; period: string; amount: Money };
   /** A transfer: the account on the other side (the journal is Dr receiving / Cr paying, `accountId` is the one whose line made it). */ otherAccountId?: string; /** every statement line ever matched to a transfer (for the history of a reversal) */ lineIds?: string[] }
 export interface BankImport { id: string; accountId: string; fileName: string; format: 'kbiz-csv' | 'kplus-pdf'; from: IsoDate; to: IsoDate;
   opening: Money; closing: Money; lines: number; at: string; warnings: string[] }

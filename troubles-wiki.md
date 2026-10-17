@@ -171,3 +171,13 @@ Entry format — terse, greppable by symptom:
 - **Symptom:** after giving a role `ledger.period.close` in `mocks/permissions.ts`, the catalogue test fails with `PERMISSIONS[code]` undefined.
 - **Root cause:** the catalogue (`domain/permissions.ts`) is built from the `permissions` section of `messages/{th,en}.json` (key `ledger_period_close` = code with `.` -> `_`), and the "is exactly the master catalog" test lists every non-document code in `NON_DOC`.
 - **Fix:** add the key to both message files and the code to `NON_DOC` in `domain/permissions.test.ts` (3 files besides the role list).
+
+## `seed()` dies with `ledger.account_invalid: 2160` right after adding an account to `fixtures/coa.ts` (TX2c)
+- **Symptom:** every seeded test fails with `seed spec nob-1: ledger.account_invalid: บัญชี 2160 ... ไม่มีในผังบัญชี` after adding a chart row.
+- **Root cause:** `POSTABLE` packs several rows per source line; a trailing `// comment` placed after a new row swallowed the rest of that line (`2160` and the others on it), so those accounts silently vanished from the chart.
+- **Fix:** put the comment on its own line (or after the last row of the line); check the chart row count / `seed()` right after editing the array.
+
+## A test that issues a PV dated before the bank's go-live fails with `bank.before_go_live` (TX2c)
+- **Symptom:** a unit test issuing a PV in 2026-08 (to build a ภ.พ.36 month) throws `bank.before_go_live` (ba-kbank starts reconciling 2026-09-01).
+- **Root cause:** a PV resolves to the default bank account, whose go-live date refuses earlier document dates.
+- **Fix:** give the PV `header.bankAccountId: 'ba-cash'` (the cash box has no go-live).

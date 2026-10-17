@@ -64,6 +64,8 @@ test('2026-10 lists its blockers; the ภ.ง.ด.54 has no RD Prep file; the �
 
 test('finalize a ภ.ง.ด.53 draft, then its voucher carries the filing lock with the "new voucher next month" exit', async ({ page }) => {
   await dropFiling(page, 'PND53', '2026-09');
+  await page.goto('/purchases/payment-vouchers/pv-sep-53');
+  await expect(page.locator('[data-screen-state="locked"]')).toHaveCount(0); // F4: with its filing gone the voucher is NOT locked (the lock is derived, never stamped)
   await page.goto('/tax/wht?tab=pnd53&period=2026-09');
   await expect(page.getByTestId('filed-banner')).toHaveCount(0);
   await page.getByRole('button', { name: /ยืนยันยื่นแบบ/ }).click();

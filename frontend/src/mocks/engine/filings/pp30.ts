@@ -6,9 +6,10 @@ import { docEditHref, docViewHref } from '@/descriptors';
 import { formatDateBE } from '@/lib/format';
 import { isValidTin } from '@/domain/tin';
 import type { MockState } from '../../store';
-import { MockError, today } from '../log';
+import { MockError, stamp, today } from '../log';
 import { fromSatang, toSatang } from '../money';
 import { monthLabelTh } from '../periods';
+import { type AccountingRole, resolveRole } from '../posting';
 import { claimPeriodOf, exForfeited, isRecoverable } from '../purchase-vat';
 import { computeDoc, vatOf } from '../vat';
 import { pp36Rows } from './pp36';
@@ -108,6 +109,25 @@ export function pp30Boxes(docs: Pp30Doc[], carryIn: number, pp36: number, period
 }
 export const boxOf = (boxes: FilingBox[], code: string): number => sat(boxes.find((b) => b.code === code)?.amount);
 
+/** TX2c D1: the closing of a finalized month's VAT, posted on the finalize day: output VAT (box 5) and input VAT (box 7, the ภ.พ.36 part included: it sits in 1170 since its payment month) leave their accounts; the carry brought in (box 10) is used;
+ *  the net goes to VAT payable, or (an excess) to VAT carried forward. Read from the STORED boxes 5, 7, 10 only. Signed: a negative amount posts on the other side. */
+export const pp30Net = (boxes: FilingBox[]): number => boxOf(boxes, '5') - boxOf(boxes, '7') - boxOf(boxes, '10');
+/** Balance proof: Σ signed debits = b5 - b7 - b10 - n = 0 by the definition of n. Two lines on VatCarryForward (box 10 used, box 9 carried) are intended: never net them. */
+export function pp30Netting(st: MockState, companyId: string, period: string, boxes: FilingBox[], date: IsoDate): JournalEntryPreview[] {
+  const n = pp30Net(boxes);
+  const legs: [AccountingRole, string, number][] = [ // [role, box label, signed DEBIT]
+    ['OutputVat', '5', boxOf(boxes, '5')],
+    ['InputVat', '7', -boxOf(boxes, '7')],
+    ['VatCarryForward', '10', -boxOf(boxes, '10')],
+    n >= 0 ? ['VatPayable', '8', -n] : ['VatCarryForward', '9', -n],
+  ];
+  const lines = legs.filter(([, , v]) => v !== 0).map(([role, box, v]) => {
+    const r = resolveRole(st, role, { companyId, docType: 'JV' });
+    return { accountCode: r.code, accountName: r.name, debit: fromSatang(Math.max(v, 0)), credit: fromSatang(Math.max(-v, 0)), rule: `ภ.พ.30 เดือน ${monthLabelTh(period)} ช่อง ${box}: ${r.rule}` };
+  });
+  return lines.length ? [{ date, kind: 'original', postedAt: stamp(), lines }] : [];
+}
+
 // ---------------------------------------------------------------- the ledger side of the tie-outs
 
 /** The movement of GL `account` attributed to `period`: an entry of a TI / CN / DN counts in the month of its DOCUMENT (a cancel's reversal posted later nets out in the month it belongs to), a vendor document in its CLAIM period,
@@ -122,7 +142,7 @@ export function glMovement(st: MockState, companyId: string, account: '2151' | '
     if (!d || d.companyId !== companyId || d.type === 'OB') continue;
     for (const e of j.preview.entries) if ((kinds.includes(d.type) ? (account === '2151' ? d.header.documentDate.slice(0, 7) : claimPeriodOf(d.type, d.header)) : e.date.slice(0, 7)) === period) total += net(e.lines);
   }
-  for (const e of [...st.bankJournals.filter((b) => b.companyId === companyId).flatMap((b) => b.entries), ...st.settlements.filter((s) => s.companyId === companyId).flatMap((s) => s.journal), ...st.filings.filter((f) => f.companyId === companyId).flatMap((f) => f.journal ?? [])]) if (e.date.startsWith(period)) total += net(e.lines);
+  for (const e of [...st.bankJournals.filter((b) => b.companyId === companyId).flatMap((b) => b.entries), ...st.settlements.filter((s) => s.companyId === companyId).flatMap((s) => s.journal), ...st.filings.filter((f) => f.companyId === companyId && f.form !== 'PP30').flatMap((f) => f.journal ?? [])]) if (e.date.startsWith(period)) total += net(e.lines);
   return sign * total;
 }
 

@@ -7,6 +7,7 @@ import { finalizeFiling } from '../filings';
 import { pp36Model } from '../filings/pp36';
 import { checkInvariants } from '../invariants';
 import { generalJournal } from '../journal';
+import { withFixedClock } from '../log';
 import { buildReport } from './index';
 
 // TX2b: the WHT receivable (RC allocations that withheld tax, aged, tied to GL 1180), the missing-50-tawi chase list, and the general journal carrying the ภ.พ.36 entry.
@@ -37,11 +38,14 @@ describe('wht-receivable', () => {
     expect(detail(recv('2026-12-31')).map((r) => [r.cells.d0, r.cells.d31, r.cells.d61, r.cells.d90])).toEqual([['', '', '30.00', ''], ['', '', '300.00', '']]); // 80 and 79 days
     expect(detail(recv('2027-02-28')).map((r) => r.cells.d90)).toEqual(['30.00', '300.00']);
   });
-  it('a cancelled receipt leaves the list and the tie-out still holds', () => {
-    cancel(st, 'rc-nocert', rc('rc-nocert').version, 'OTHER', 'x', me);
-    const m = recv();
-    expect(detail(m)).toHaveLength(1);
-    expect(m.tieOuts![0]).toMatchObject({ left: '30.00', right: '30.00', diff: '0.00' });
+  it('F1: a cancelled receipt counts by its journal entries: listed (and tied) before the reversal date, gone from it on', () => {
+    withFixedClock('2026-10-20T10:00:00+07:00', () => cancel(st, 'rc-nocert', rc('rc-nocert').version, 'OTHER', 'x', me)); // pinned: the reversal is dated 2026-10-20 whatever the wall clock says
+    const before = recv('2026-10-19'), on = recv('2026-10-20');
+    expect(detail(before)).toHaveLength(2);
+    expect(before.tieOuts![0]).toMatchObject({ left: '330.00', right: '330.00', diff: '0.00' });
+    expect(detail(on)).toHaveLength(1);
+    expect(on.tieOuts![0]).toMatchObject({ left: '30.00', right: '30.00', diff: '0.00' });
+    expect(recv('2027-01-31').tieOuts![0]).toMatchObject({ left: '30.00', right: '30.00', diff: '0.00' });
   });
 });
 

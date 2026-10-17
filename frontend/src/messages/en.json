@@ -1063,7 +1063,7 @@
     "gj": {
       "title": "General journal", "entry": "Entry / account", "date": "Date", "rule": "Description", "balanced": "Total debit {left} baht against total credit {right} baht",
       "from": "From", "to": "To", "accountFilter": "Account (code)", "source": "Source",
-      "sources": { "JV": "Journal voucher", "OB": "Opening balances", "TI": "Tax invoice", "IV": "Invoice", "RC": "Receipt", "CN": "Credit note", "DN": "Debit note", "PB": "Purchase bill", "PCN": "Vendor credit note", "PDN": "Vendor debit note", "PV": "Payment voucher", "EX": "Expense claim", "STL": "Netting and settlements", "BANK": "Bank reconciliation" }
+      "sources": { "JV": "Journal voucher", "OB": "Opening balances", "TI": "Tax invoice", "IV": "Invoice", "RC": "Receipt", "CN": "Credit note", "DN": "Debit note", "PB": "Purchase bill", "PCN": "Vendor credit note", "PDN": "Vendor debit note", "PV": "Payment voucher", "EX": "Expense claim", "STL": "Netting and settlements", "BANK": "Bank reconciliation", "PP30": "VAT return (PP30) closing", "PP36": "PP36 reverse-charge VAT" }
     },
     "assetRegister": {"tieCost":"Register cost plus lines not yet registered {left} baht against the ledger asset accounts {right} baht","title":"Fixed asset register","number":"Number","name":"Item","start":"In service","cost":"Cost","accumulated":"Accumulated","nbv":"Net book value","status":"Status","tie":"Register accumulated depreciation {left} baht against the ledger {right} baht"},
     "whtRec": { "title": "Tax withheld by customers", "receipt": "Receipt", "date": "Date", "customer": "Customer", "cert": "Certificate number", "wht": "Tax withheld", "d0": "0-30 days", "d31": "31-60 days", "d61": "61-90 days", "d90": "Over 90 days", "tie": "Tax withheld {left} baht against ledger 1180 {right} baht" },
@@ -1145,7 +1145,8 @@
       "disabledBy": "Cannot confirm: {why}", "needPermission": "You need the right to finalize tax filings" },
     "attachment": { "title": "Attachment" },
     "export": { "txt": "File for RD Prep (.txt)", "print": "Print the form", "failed": "Could not create the file. Try again." },
-    "history": { "title": "Filed returns", "empty": "Nothing has been confirmed in the system yet", "period": "Tax month", "at": "Confirmed on", "by": "By", "net": "Net tax", "payable": "payable", "overpaid": "overpaid" },
+    "history": { "title": "Filed returns", "empty": "Nothing has been confirmed in the system yet", "period": "Tax month", "at": "Confirmed on", "by": "By", "net": "Net tax", "payable": "payable", "overpaid": "overpaid", "payment": "Payment", "paidOn": "Paid {date}", "unpaid": "Not paid" },
+    "payment": { "title": "Paying the Revenue Department", "nothingDue": "No tax to pay", "due": "Tax to pay {amount} baht", "pay": "Pay tax", "needPermission": "Paying tax needs the bank reconciliation permission", "paid": "Paid on {date}", "extras": "Including other items (fees, surcharge) {amount} baht", "openLine": "Open the statement line", "reverse": "Cancel the payment", "reverseDesc": "Reverses the payment journal and puts the statement line back to unmatched.", "reason": "Reason", "back": "Back", "confirm": "Confirm", "working": "Saving…", "pickLine": "Pick the statement line that paid this tax", "exact": "Same amount as the tax", "noLines": "No outgoing statement line can pay this tax", "importFirst": "Import the bank statement first", "extraTitle": "Other items in the same amount (optional)", "extraHint": "A bank fee, or the surcharge / penalty on the Revenue Department receipt, booked as expense to the account you pick.", "extraAccount": "Account", "extraAmount": "Amount (baht)", "extraNone": "None", "submit": "Pay tax", "failed": "Could not pay the tax. Try again." },
     "tie": { "pndGl": "Tax withheld (all payees) {left} baht against the withholding tax payable account of this form {right} baht", "pp36Gl": "VAT to remit {left} baht against ledger 2152 VAT payable {right} baht", "reconciling": "Including the reconciling item", "outputGl": "Output VAT (box 5) {left} baht against ledger 2151 {right} baht", "inputGl": "Input VAT (box 7) {left} baht against ledger 1170 {right} baht",
       "outputRegister": "Output VAT (box 5) {left} baht against the output register total {right} baht", "inputRegister": "Input VAT (box 7) {left} baht against the input register total {right} baht" },
     "reg": { "date": "Date", "number": "Number", "party": "Buyer / seller", "tin": "Tax ID", "branch": "Branch", "description": "Description",
@@ -1284,7 +1285,7 @@
     "tabs": { "label": "Account views", "lines": "Statement lines", "reconcile": "Reconcile" },
     "reconcile": {
       "actions": "Actions", "locked": "Locked", "onlyLine": "Showing the one selected line", "showAll": "Show all",
-      "find": "Find a match", "ignore": "Skip", "unmatch": "Cancel match", "unignore": "Stop skipping", "postedFinal": "Posted and final (reverse the journal to undo)",
+      "find": "Find a match", "ignore": "Skip", "unmatch": "Cancel match", "unignore": "Stop skipping", "taxPaid": "Tax paid: {form} {month}", "postedFinal": "Posted and final (reverse the journal to undo)",
       "unmatchTitle": "Cancel the match", "unignoreTitle": "Stop skipping this line", "reason": "Reason", "reasonOptional": "You may give a reason (optional)",
       "lockedReason": "This line is inside the locked reconciliation period, so a reason is required. It is recorded on the line and on the documents.",
       "cancel": "Cancel", "failed": "The action failed",

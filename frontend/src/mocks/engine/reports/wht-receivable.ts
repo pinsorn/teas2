@@ -8,9 +8,11 @@ import { monthLabelTh } from '../periods';
 import { resolveRole } from '../posting';
 
 export interface WhtAlloc { rcId: string; number: string; date: string; customer: string; target: string; cert: string; wht: number }
-/** Every allocation of a live receipt that withheld tax, oldest first (the customer is the party of the receipt; the target is the invoice the tax was withheld from). */
+/** Every allocation of a live receipt that withheld tax, oldest first (the customer is the party of the receipt; the target is the invoice the tax was withheld from).
+ *  With `asOf` it follows the ledger's ENTRY DATES like the GL side: a receipt counts from its document date, and a cancelled / replaced one until the date of its reversal entry. */
 export function whtAllocations(st: MockState, companyId: string, asOf?: string): WhtAlloc[] {
-  return st.docs.filter((d) => d.companyId === companyId && d.type === 'RC' && LIVE.includes(d.status) && (!asOf || d.header.documentDate <= asOf))
+  const reversedBy = (d: MockState['docs'][number]) => d.cancel?.at.slice(0, 10) ?? d.header.documentDate;
+  return st.docs.filter((d) => d.companyId === companyId && d.type === 'RC' && (!asOf || d.header.documentDate <= asOf) && (LIVE.includes(d.status) || (!!asOf && (d.status === 'cancelled' || d.status === 'replaced') && reversedBy(d) > asOf)))
     .flatMap((d) => (d.allocations ?? []).filter((a) => toSatang(a.wht ?? '0.00') > 0).map((a) => ({
       rcId: d.id, number: d.number ?? d.id, date: d.header.documentDate, customer: d.party?.name ?? '', target: a.targetNumber ?? a.targetId, cert: (a.certNumber ?? '').trim(), wht: toSatang(a.wht!),
     })))

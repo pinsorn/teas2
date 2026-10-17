@@ -4,7 +4,7 @@ import type { ReportParamSpec } from '@/domain/reports';
 import { ReportView } from '@/kit/report/ReportView';
 
 // every journal entry of the company, whatever wrote it (a document, a journal voucher, a settlement, the bank reconciliation); the server lays it out (ledger.read)
-const SOURCES = ['JV', 'OB', 'TI', 'IV', 'RC', 'CN', 'DN', 'PB', 'PCN', 'PDN', 'PV', 'EX', 'STL', 'BANK'];
+const SOURCES = ['JV', 'OB', 'TI', 'IV', 'RC', 'CN', 'DN', 'PB', 'PCN', 'PDN', 'PV', 'EX', 'STL', 'BANK', 'PP30', 'PP36'];
 const PARAMS: ReportParamSpec[] = [
   { key: 'from', kind: 'date', labelKey: 'reports.gj.from' },
   { key: 'to', kind: 'date', labelKey: 'reports.gj.to' },

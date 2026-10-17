@@ -4,12 +4,13 @@ import type { Actor, JournalEntryPreview, Lock } from '@/domain/types';
 import { USER } from '../../fixtures/documents';
 import type { MockState } from '../../store';
 import { companyEntries } from '../ledger';
-import { MockError, logAudit, stamp, withFixedClock } from '../log';
+import { MockError, isPinned, logAudit, stamp, today, withFixedClock } from '../log';
 import { fromSatang, toSatang } from '../money';
-import { monthLabelTh } from '../periods';
+import { isClosed, monthLabelTh, refuseYearClosed } from '../periods';
 import { resolveRole } from '../posting';
 import { isFiledPeriod, openClaimMonth } from '../purchase-vat';
-import { type DocLike, type Filing, type Pp30Doc, PERIOD, boxOf, chainStart, getPp30, pp30Boxes, pp30Docs, pp30Model, pp30RowOf, pp36VatOf, prevMonth, requireVat, tie } from './pp30';
+import { type DocLike, type Filing, type Pp30Doc, PERIOD, boxOf, chainStart, getPp30, pp30Boxes, pp30Docs, pp30Model, pp30Netting, pp30RowOf, pp36VatOf, prevMonth, requireVat, tie } from './pp30';
+import { paymentInvariants, paymentStateOf } from './payment';
 import { PND_FORMS, type PndForm, formName, isPnd, pndAttachment, pndModel, pndRows, pndSnapshot, wantedWhtRows, whtKey, whtRowOfWt } from './pnd-wht';
 import { lastDayOf, pp36Attachment, pp36Key, pp36Model, pp36RowOf, pp36Rows, pp36Snapshot, pp36Vat } from './pp36';
 
@@ -34,11 +35,11 @@ const snapshotModel = (f: Filing): FilingModel => ({ form: f.form, period: f.per
 
 /** A form's filing for a period: the frozen snapshot once finalized (ruling 1: never recomputed), else the draft computed from the documents. */
 export function getFiling(st: MockState, companyId: string, form: FilingForm, period: string): FilingModel {
-  if (form === 'PP30') { requireVat(st, companyId); return getPp30(st, companyId, period); }
+  if (form === 'PP30') { requireVat(st, companyId); const m = getPp30(st, companyId, period), f = filingOf(st, companyId, period); return f ? { ...m, payment: paymentStateOf(st, f) } : m; }
   if (!isAnnex(form)) throw NOT_BUILT();
   if (!PERIOD.test(period)) throw fail(422, 'filing.bad_period', 'งวดต้องอยู่ในรูปแบบ ปปปป-ดด');
   const f = filingOf(st, companyId, period, form);
-  if (f) return snapshotModel(f);
+  if (f) return { ...snapshotModel(f), payment: paymentStateOf(st, f) };
   return form === 'PP36' ? pp36Model(st, companyId, period) : pndModel(st, companyId, form as PndForm, period);
 }
 
@@ -55,8 +56,17 @@ export function finalizeFiling(st: MockState, companyId: string, form: FilingFor
   if (form === 'PP36' && !ack) throw fail(422, 'filing.ack_required', 'ต้องติ๊กรับทราบก่อนยืนยันยื่นแบบ ภ.พ.36'); // parity: the acknowledgement is mandatory
   const co = st.companies.find((c) => c.id === companyId)!;
   const prev = filingOf(st, companyId, prevMonth(period));
+  let netting: JournalEntryPreview[] = [];
+  if (form === 'PP30') { // TX2c D1: the month's VAT is closed into VAT payable / carried forward on the finalize day (today's date; the pinned seed day under withFixedClock)
+    const date = isPinned() ? stamp().slice(0, 10) : today();
+    netting = pp30Netting(st, companyId, period, m.boxes, date);
+    if (netting.length && !isPinned()) {
+      refuseYearClosed(st, companyId, date);
+      if (isClosed(st, companyId, date)) throw fail(422, 'period.closed', `งวดบัญชี ${monthLabelTh(date.slice(0, 7))} ปิดแล้ว ยืนยันแบบ ภ.พ.30 ไม่ได้ (ระบบปิดภาษีขาย-ภาษีซื้อเข้าบัญชีภาษีค้างจ่ายวันที่ยืนยัน) ทางออก: เปิดงวดบัญชีอีกครั้ง`);
+    }
+  }
   const snap = form === 'PP30'
-    ? { docs: pp30Docs(st, companyId, period), carryIn: prev ? prev.boxes.find((b) => b.code === '9')!.amount : '0.00', pp36: fromSatang(pp36VatOf(st, companyId, period)) }
+    ? { docs: pp30Docs(st, companyId, period), carryIn: prev ? prev.boxes.find((b) => b.code === '9')!.amount : '0.00', pp36: fromSatang(pp36VatOf(st, companyId, period)), journal: netting }
     : form === 'PP36' ? pp36Snapshot(st, companyId, period) : pndSnapshot(st, companyId, form as PndForm, period);
   const tieOuts = form === 'PP36' ? [tie('filing.tie.pp36Gl', boxOf(m.boxes, 'vat'), pp36Gl(st, companyId, period, (snap as ReturnType<typeof pp36Snapshot>).journal ?? []))] : m.tieOuts;
   st.filings.push({ companyId, form, period, status: 'finalized', company: { taxId: co.taxId, branchCode: co.branchCode, legalNameTh: co.legalNameTh }, boxes: m.boxes, tieOuts, ...snap,
@@ -69,15 +79,18 @@ export function finalizeFiling(st: MockState, companyId: string, form: FilingFor
 function pp36Gl(st: MockState, companyId: string, period: string, entry: JournalEntryPreview[]): number {
   const code = resolveRole(st, 'Pnd36VatPayable', { companyId, docType: 'PV' }).code;
   let n = 0;
-  for (const e of [...companyEntries(st, companyId, false), ...entry]) if (e.date.startsWith(period)) for (const l of e.lines) if (l.accountCode === code) n += sat(l.credit) - sat(l.debit);
+  const paid = new Set(st.bankJournals.filter((j) => j.kind === 'tax').flatMap((j) => j.entries)); // TX2c: paying a ภ.พ.36 (Dr the payable, dated the month after) is not the month's VAT
+  for (const e of [...companyEntries(st, companyId, false), ...entry]) if (e.date.startsWith(period) && !paid.has(e)) for (const l of e.lines) if (l.accountCode === code) n += sat(l.credit) - sat(l.debit);
   return n;
 }
 
 /** The company's finalized filings of a form, newest first. */
 export function filingHistory(st: MockState, companyId: string, form: FilingForm): FilingHistoryItem[] {
   return st.filings.filter((f) => f.companyId === companyId && f.form === form).sort((a, b) => b.period.localeCompare(a.period))
-    .map((f) => ({ form: f.form, period: f.period, finalizedAt: f.finalizedAt, finalizedBy: f.finalizedBy, net: f.boxes.find((b) => b.code === NET_BOX[f.form])!.amount, overpaid: f.form === 'PP30' && boxOf(f.boxes, '9') > 0 }));
+    .map((f) => ({ form: f.form, period: f.period, finalizedAt: f.finalizedAt, finalizedBy: f.finalizedBy, net: f.boxes.find((b) => b.code === NET_BOX[f.form])!.amount, overpaid: f.form === 'PP30' && boxOf(f.boxes, '9') > 0, ...paymentItem(st, f) }));
 }
+
+const paymentItem = (st: MockState, f: Filing) => { const p = paymentStateOf(st, f); return { payment: p.status, ...(p.paidOn ? { paidOn: p.paidOn } : {}) }; };
 
 /** The file for RD Prep. [SP-R] "Format กลาง": the mock emits a pipe-delimited sample (H header, D rows, T totals), CRLF line ends; the golden strings are SP-R / SP2. A draft has no file: the file is what you file.
  *  ภ.ง.ด.54 and ภ.พ.36 are PDF only (parity A). */
@@ -189,6 +202,7 @@ export function filingInvariants(st: MockState): string[] {
     else if (f.wht) pndInvariants(st, f, w, out);
     else pp36Invariants(st, f, w, out);
   }
+  out.push(...paymentInvariants(st));
   return out;
 }
 
@@ -240,6 +254,12 @@ function ppInvariants(st: MockState, f: Filing, w: string, out: string[]): void 
     const t = f.tieOuts.find((x) => x.labelKey === k);
     if (!t) out.push(`${w}: tie-out ${k} is missing`);
     else if (sat(t.left) !== (k.includes('output') ? boxOf(f.boxes, '5') : boxOf(f.boxes, '7') - sat(f.pp36))) out.push(`${w}: tie-out ${k} left ${t.left} is not the stored box`);
+  }
+  { // TX2c 2.4: its netting entry is exactly the one its stored boxes give, posted after the month ended
+    const j = f.journal ?? [], want = pp30Netting(st, f.companyId, f.period, f.boxes, j[0]?.date ?? '');
+    const proj = (e: JournalEntryPreview) => JSON.stringify(e.lines.map((l) => [l.accountCode, l.debit, l.credit]));
+    const ok = want.length === 0 ? j.length === 0 : j.length === 1 && j[0].kind === 'original' && j[0].date.slice(0, 7) > f.period && proj(j[0]) === proj(want[0]);
+    if (!ok) out.push(`${w}: its netting entry is not the one its boxes give`);
   }
   const listed = new Set(f.docs.map((r) => r.id));
   for (const r of pp30Docs(st, f.companyId, f.period)) if (r.state === 'live' && !listed.has(r.id)) out.push(`${w}: ${r.id} is missing from the snapshot`); // B1

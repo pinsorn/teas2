@@ -19,6 +19,8 @@ export function FinalizeDialog({ open, form, month, boxes, pending, error, onCon
   const tp = useTranslations('problem');
   const tf = useTranslations('filing.forms');
   const [ack, setAck] = useState(false);
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) { setWasOpen(open); if (!open) setAck(false); } // F2: the tick never survives a finalize (the parent closes the dialog) or a close
   const vat = form === 'PP30', needAck = form === 'PP36';
   const confirmRef = useRef<HTMLButtonElement>(null);
   const box = (code: string) => boxes.find((b) => b.code === code);

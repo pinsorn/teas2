@@ -3,7 +3,7 @@ import type {
   DocType, HomeInbox, MarkKey, Money, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, RemainingLine, Revision, SearchHit,
   DepositRow, DocOpening, SettlementDifferenceRole, SettlementKind, SettlementRecord, DpRow, FaSource, IsoDate, ChecklistItem, PeriodsView,
 } from '@/domain/types';
-import type { FilingForm, FilingHistoryItem, FilingModel } from '@/domain/filings';
+import type { FilingForm, FilingHistoryItem, FilingModel, TaxPaymentLines } from '@/domain/filings';
 import type { RecordKind, RecordRow } from '@/domain/records';
 import type { ReportKind, ReportModel } from '@/domain/reports';
 import { api, ApiError, normalizeProblem } from './client';
@@ -143,6 +143,10 @@ export const endpoints = {
   listFilings: (form: FilingForm) => api<{ items: FilingHistoryItem[]; next: string }>('GET', `/filings/${form}`),
   getFiling: (form: FilingForm, period: string) => api<FilingModel>('GET', `/filings/${form}/${encodeURIComponent(period)}`),
   finalizeFiling: (form: FilingForm, period: string, version: number, ack?: boolean) => api<FilingModel>('POST', `/filings/${form}/${encodeURIComponent(period)}/finalize`, { version, ...(ack ? { ack } : {}) }),
+  /** TX2c: the statement lines a finalized return can be paid from (bank.reconcile), pay it from one, and undo a payment (same URL as reverseBankTransfer). */
+  taxPaymentLines: (form: FilingForm, period: string) => api<TaxPaymentLines>('GET', `/filings/${form}/${encodeURIComponent(period)}/payment-lines`),
+  payTax: (lineId: string, req: { form: FilingForm; period: string; extras?: { accountCode: string; amount: string; description?: string }[] }) => api<BankLine>('POST', `/finance/bank-lines/${encodeURIComponent(lineId)}/pay-tax`, req),
+  reverseTaxPayment: (journalId: string, reason: string) => api<{ id: string; reversed: boolean }>('POST', `/finance/bank-journals/${encodeURIComponent(journalId)}/reverse`, { reason }),
   exportFiling: async (form: FilingForm, period: string, kind: 'rdprep-txt'): Promise<string> => {
     const res = await fetch(new URL(`/bff/v1/filings/${form}/${encodeURIComponent(period)}/export${qs({ kind })}`, window.location.origin));
     if (!res.ok) throw new ApiError(normalizeProblem(res.status, await res.json().catch(() => undefined)));

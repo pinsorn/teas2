@@ -3,12 +3,13 @@ import type { FilingForm } from '@/domain/filings';
 import type { Actor } from '@/domain/types';
 import { exportFilingText, filingHistory, finalizeFiling, getFiling } from '../engine/filings';
 import { nextMonth, prevMonth } from '../engine/filings/pp30';
+import { taxPaymentLines } from '../engine/reconcile';
 import { openClaimMonth } from '../engine/purchase-vat';
 import { MockError, today } from '../engine/log';
 import { ctx, forbidden, persist, problem, screenGate } from './common';
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
-const READ = 'tax.read', PREVIEW = 'tax.filing.preview', FINALIZE = 'tax.filing.finalize';
+const READ = 'tax.read', PREVIEW = 'tax.filing.preview', FINALIZE = 'tax.filing.finalize', RECONCILE = 'bank.reconcile';
 
 /** TX1 tax filings: the finalized filings of a form with the month to look at next (`tax.read`), one period (`tax.read`; a draft also needs `tax.filing.preview`), finalize (`tax.filing.finalize`), and the RD Prep text of a finalized one. MockError becomes problem+json. */
 async function act(perm: string, run: (c: ReturnType<typeof ctx>) => unknown, write = false): Promise<Response> {
@@ -34,6 +35,8 @@ export const filingHandlers = [
     return { claimPeriod: openClaimMonth(c.st, c.company.id, dd, q.get('vendorDocDate') || undefined) ?? dd.slice(0, 7) };
   })),
   http.get('*/bff/v1/filings/:form/:period/export', ({ params }) => act(READ, (c) => new HttpResponse(exportFilingText(c.st, c.company.id, form(params.form), String(params.period)), { headers: { 'content-type': 'text/plain; charset=utf-8', 'content-disposition': `attachment; filename="${params.form}-${params.period}.txt"` } }))),
+  // TX2c: the statement lines a finalized return can be paid from (bank.reconcile: choosing one posts a bank line)
+  http.get('*/bff/v1/filings/:form/:period/payment-lines', ({ params }) => act(RECONCILE, (c) => taxPaymentLines(c.st, c.company.id, form(params.form), String(params.period)))),
   http.get('*/bff/v1/filings/:form/:period', ({ params }) => act(READ, (c) => {
     const m = getFiling(c.st, c.company.id, form(params.form), String(params.period));
     if (m.status === 'draft' && !c.perms.includes(PREVIEW)) throw new MockError(403, 'auth.forbidden', 'คุณไม่มีสิทธิ์ดูข้อมูลนี้');

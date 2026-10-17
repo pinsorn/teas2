@@ -8,7 +8,7 @@ const DEFAULTS: [AccountingRoleKey, string][] = [
   ['CustomerDeposit', '2140'], ['VendorPrepayment', '1140'], ['Expense', '5100'], ['BankFee', '5200'], ['RoundingDifference', '5210'],
   ['SmallWriteOff', '5220'], ['DepreciationExpense', '5300'], ['SalaryExpense', '5400'], ['SsoExpense', '5410'], ['PitPayable', '2153'],
   ['SsoPayable', '2160'], ['SalaryPayable', '2170'], ['EmployeePayable', '2180'], ['RetainedEarnings', '3200'], ['OpeningBalanceEquity', '3900'],
-  ['DisposalGainLoss', '4210'],
+  ['DisposalGainLoss', '4210'], ['VatPayable', '2154'], ['VatCarryForward', '1172'],
 ];
 type AccountingRoleKey = PostingRule['role'];
 

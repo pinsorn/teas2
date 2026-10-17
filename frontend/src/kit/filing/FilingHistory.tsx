@@ -13,7 +13,7 @@ export function FilingHistory({ items }: { items: FilingHistoryItem[] }) {
       <h2 className="text-section font-semibold">{t('title')}</h2>
       {items.length === 0 ? <p className="text-muted-foreground">{t('empty')}</p> : (
         <Table aria-label={t('title')}>
-          <TableHeader><TableRow><TableHead>{t('period')}</TableHead><TableHead>{t('at')}</TableHead><TableHead>{t('by')}</TableHead><TableHead className="text-end">{t('net')}</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>{t('period')}</TableHead><TableHead>{t('at')}</TableHead><TableHead>{t('by')}</TableHead><TableHead className="text-end">{t('net')}</TableHead><TableHead>{t('payment')}</TableHead></TableRow></TableHeader>
           <TableBody>
             {items.map((h) => (
               <TableRow key={`${h.form}-${h.period}`} className="h-(--row-h)">
@@ -21,6 +21,7 @@ export function FilingHistory({ items }: { items: FilingHistoryItem[] }) {
                 <TableCell>{formatDateBE(h.finalizedAt.slice(0, 10))}</TableCell>
                 <TableCell>{h.finalizedBy}</TableCell>
                 <TableCell className="text-end tabular-nums">{formatMoney(h.net)} <span className="text-small text-muted-foreground">{h.overpaid ? t('overpaid') : t('payable')}</span></TableCell>
+                <TableCell data-testid={`history-payment-${h.period}`}>{h.payment === 'paid' ? t('paidOn', { date: formatDateBE(h.paidOn ?? '') }) : h.payment === 'unpaid' ? t('unpaid') : h.payment === 'nothing_due' ? '—' : ''}</TableCell>
               </TableRow>
             ))}
           </TableBody>
