@@ -4,7 +4,7 @@ import type { IsoDate, Money } from './types';
 export type ReportKind = 'trial-balance' | 'profit-loss' | 'balance-sheet' | 'general-ledger' | 'ar-aging' | 'ap-aging'
   | 'customer-statement' | 'vendor-ledger' | 'sales-summary' | 'purchase-summary' | 'outstanding-po' | 'vat-output-register'
   | 'vat-input-register' | 'wht-receivable' | 'missing-wht-cert' | 'number-gaps' | 'audit-log' | 'asset-register'
-  | 'bank-reconciliation' | 'tax-summary';
+  | 'bank-reconciliation' | 'tax-summary' | 'general-journal';
 export interface ReportParamSpec { key: string; kind: 'date' | 'month' | 'year' | 'range' | 'party' | 'account' | 'dimension' | 'select' | 'bool';
   labelKey: string; options?: { value: string; labelKey: string }[]; required?: boolean; /** Carried in the query but not shown (the report is scoped by the page that hosts it). */ hidden?: boolean }
 export interface ReportColumn { key: string; labelKey: string; align?: 'start' | 'end'; kind?: 'money' | 'date' | 'text' | 'qty' }

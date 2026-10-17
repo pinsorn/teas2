@@ -1,4 +1,4 @@
-import type { Actor, Allocation, DocHeader, DocLine, DocType, IsoDate, Qty } from '@/domain/types';
+import type { Actor, Allocation, DocHeader, DocLine, DocOpening, DocType, IsoDate, Qty } from '@/domain/types';
 import { approve, approvalRequired, submit } from '../engine/approval';
 import { payoutOf } from '../engine/settlement';
 import { approveAndIssue, cancel, convert, createDraft, issue, updateDraft } from '../engine/commands';
@@ -9,6 +9,7 @@ import { USER } from './documents';
 export interface SeedSpec {
   id: string; type: DocType; companyId: string; date: IsoDate; partyId?: string; lines: DocLine[];
   header?: Partial<DocHeader>; allocations?: Allocation[]; status: 'draft' | 'pending' | 'approved' | 'issued' | 'cancelled';
+  /** OB (AC3): the steps behind the trial balance */ opening?: DocOpening;
   convertFrom?: { id: string; lines: { sourceLineId: string; qty: Qty }[] }; by?: Actor; after?: (st: MockState) => void;
 }
 
@@ -35,7 +36,7 @@ function runOne(st: MockState, s: SeedSpec): void {
   const header: DocHeader = { partyId: s.partyId, documentDate: s.date, ...(s.convertFrom ? {} : { priceIncludesVat: false }), ...s.header };
   let d = s.convertFrom
     ? convert(st, s.convertFrom.id, s.type, s.convertFrom.lines, actor, { id: s.id })
-    : createDraft(st, s.companyId, s.type, { header, lines: s.lines, ...(s.allocations ? { allocations: s.allocations } : {}) }, actor, `seed-${s.id}`, { id: s.id });
+    : createDraft(st, s.companyId, s.type, { header, lines: s.lines, ...(s.allocations ? { allocations: s.allocations } : {}), ...(s.opening ? { opening: s.opening } : {}) }, actor, `seed-${s.id}`, { id: s.id });
   if (s.convertFrom) d = updateDraft(st, d.id, { header: { ...d.header, ...header, partyId: header.partyId ?? d.header.partyId }, lines: d.lines }, d.version, actor);
   if (s.status === 'pending' || s.status === 'approved') { // waiting for (or past) approval: sent through the real commands, never written as a status
     d = submit(st, d.id, d.version, actor);

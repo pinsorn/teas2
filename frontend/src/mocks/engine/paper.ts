@@ -4,6 +4,7 @@ import type { ctx } from '../handlers/common';
 import { reasonTh } from '../fixtures/reason-codes';
 import { bahtText } from './bahtText';
 import { compute } from './commands';
+import { jvBalance, jvEntryLines, nextMonthStart } from './journal';
 import { fromSatang, toSatang } from './money';
 import { notesUpTo } from './notes';
 import { cashBankId, freezeWht } from './settlement';
@@ -25,6 +26,7 @@ const LOOK: Partial<Record<DocType, Look>> = {
   PV: { titleTh: 'ใบสำคัญจ่าย', titleEn: 'PAYMENT VOUCHER', signatures: ['ผู้จัดทำ', 'ผู้ตรวจ', 'ผู้อนุมัติ', 'ผู้รับเงิน'] },
   EX: { titleTh: 'ใบเบิกค่าใช้จ่าย', titleEn: 'EXPENSE CLAIM', signatures: ['ผู้เบิก', 'ผู้ตรวจ', 'ผู้อนุมัติ'] },
   WT: { titleTh: 'หนังสือรับรองการหักภาษี ณ ที่จ่าย', titleEn: 'WITHHOLDING TAX CERTIFICATE', signatures: ['ผู้จ่ายเงิน', 'ผู้มีอำนาจลงนาม'] },
+  JV: { titleTh: 'ใบสำคัญทั่วไป', titleEn: 'JOURNAL VOUCHER', signatures: ['ผู้จัดทำ', 'ผู้ตรวจ', 'ผู้อนุมัติ'] },
   QT: { titleTh: 'ใบเสนอราคา', titleEn: 'QUOTATION', signatures: ['ผู้เสนอราคา', 'ผู้อนุมัติ', 'ลูกค้ายืนยันสั่งซื้อ'], dueLabel: 'ยืนราคาถึง' },
 };
 
@@ -117,6 +119,15 @@ function claimPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
   return { ...m, partyLabel: 'ผู้เบิก', lines, ...(trail || m.notes ? { notes: [m.notes, trail].filter(Boolean).join('\n') } : {}) };
 }
 
+/** JV (AC1): the account lines as posted (account, note, debit, credit) and the server's two totals; no party, no tax. An accrual says when it reverses itself. */
+function journalPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
+  const { vatLines, ...m } = paperOf(c, d, copy); void vatLines;
+  const posted = jvEntryLines(c.st, c.company.id, d.lines), used = d.lines.filter((l) => l.accountCode);
+  const b = jvBalance(d.lines), auto = d.header.autoReverse ? `กลับรายการอัตโนมัติ วันที่ ${formatDateBE(nextMonthStart(d.header.documentDate))}` : undefined;
+  return { ...m, journal: { lines: posted.map((l, i) => ({ no: i + 1, accountCode: l.accountCode, accountName: l.accountName, description: used[i]?.description ?? '', debit: l.debit, credit: l.credit })), debit: b.debit, credit: b.credit },
+    ...(auto || m.notes ? { notes: [m.notes, auto].filter(Boolean).join('\n') } : {}) };
+}
+
 /** WT (50 ทวิ, D-21): payer = our company, payee = the voucher's payee, one income type and its tax. Built from the stored certificate and the voucher that issued it; after the first print the
  *  paper IS the stored snapshot (I7) - only the copy label and the void stamp follow the document as it is now. */
 function certificatePaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
@@ -153,4 +164,4 @@ function adjustmentPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
   return { ...m, adjusts: { number: ti.number ?? '-', date: ti.header.documentDate, originalNet: ti.totals.net, correctNet: fromSatang(correct), diffNet: d.totals.net, reason: reasonTh(d.header) } };
 }
 
-export const PAPER_BUILDERS: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf, QT: paperOf, SO: paperOf, DO: paperOf, IV: paperOf, BL: billingPaper, RC: receiptPaper, CN: adjustmentPaper, DN: adjustmentPaper, PO: paperOf, PV: voucherPaper, EX: claimPaper, WT: certificatePaper };
+export const PAPER_BUILDERS: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf, QT: paperOf, SO: paperOf, DO: paperOf, IV: paperOf, BL: billingPaper, RC: receiptPaper, CN: adjustmentPaper, DN: adjustmentPaper, PO: paperOf, PV: voucherPaper, EX: claimPaper, JV: journalPaper, WT: certificatePaper };

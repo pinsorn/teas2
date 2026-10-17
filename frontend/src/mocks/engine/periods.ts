@@ -1,8 +1,9 @@
-import type { IsoDate, Lock } from '@/domain/types';
+import type { Actor, ChecklistItem, IsoDate, Lock } from '@/domain/types';
 import type { MockState } from '../store';
-import { today } from './log';
+import { MockError, today } from './log';
 
-export interface Period { companyId: string; month: string; status: 'open' | 'closed'; closedAt?: string; reopened?: { at: string; reason: string }[] }
+/** `closedBy`, `acknowledged` (the warnings the closer accepted, frozen) and every `reopened` row are AC6's. */
+export interface Period { companyId: string; month: string; status: 'open' | 'closed'; closedAt?: string; closedBy?: Actor; acknowledged?: ChecklistItem[]; reopened?: { at: string; reason: string; by: Actor }[] }
 
 const MONTHS_TH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 /** "2026-03" -> "มี.ค. 2569" */
@@ -11,6 +12,17 @@ export const monthLabelTh = (month: string) => `${MONTHS_TH[Number(month.slice(5
 const find = (st: MockState, companyId: string, month: string) => st.periods.find((p) => p.companyId === companyId && p.month === month);
 /** A month with no period row is open. */
 export const isClosed = (st: MockState, companyId: string, date: IsoDate): boolean => find(st, companyId, date.slice(0, 7))?.status === 'closed';
+
+/** AC6: a fiscal year with a live closing entry is final - nothing is posted, corrected or reversed into it (the exit is to reopen the year). */
+export const yearClosed = (st: MockState, companyId: string, date: IsoDate): boolean => st.yearCloses.some((y) => y.companyId === companyId && !y.reopened && y.year === Number(date.slice(0, 4)));
+export function refuseYearClosed(st: MockState, companyId: string, date: IsoDate): void {
+  if (yearClosed(st, companyId, date)) throw new MockError(422, 'period.year_closed', `ปีบัญชี ${Number(date.slice(0, 4)) + 543} ปิดแล้ว ลงรายการ แก้ไข หรือกลับรายการที่ลงวันที่ ${date} ไม่ได้ ทางออก: เปิดปีบัญชีอีกครั้ง (หน้าปิดงวดบัญชี)`);
+}
+
+/** AC6: a document in a closed year (its date, or any entry it posted that is not a reversal) is not cancelled, revised, reversed or reissued: the F4 late correction ("แก้ไขย้อนหลัง") stays for closed MONTHS of an open year only. */
+export function refuseClosedYearEntry(st: MockState, d: { id: string; companyId: string; header: { documentDate: IsoDate } }): void {
+  for (const date of [d.header.documentDate, ...(st.journals.find((j) => j.docId === d.id)?.preview.entries.filter((e) => e.kind !== 'reversal').map((e) => e.date) ?? [])]) refuseYearClosed(st, d.companyId, date);
+}
 
 /** First day of the earliest open month >= today's month (where a late reversal / correction posts), or today. */
 export const firstOpenDate = (st: MockState, companyId: string): IsoDate => {

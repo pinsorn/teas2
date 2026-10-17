@@ -78,7 +78,7 @@ function RecordListInner({ descriptor: d }: { descriptor: RecordDescriptor }) {
   const hasFilters = !!params.q || params.active !== 'true';
   const clearFilters = () => { clearTimeout(debounce.current); pushed.current = ''; setText(''); patch({ q: '', active: 'true' }); };
   const createLabel = tr('create', { title });
-  const createButton: ReactNode = (
+  const createButton: ReactNode = d.noCreate ? null : (
     <span className="inline-flex flex-col items-start gap-1">
       <Button disabled={!canManage} aria-describedby={canManage ? undefined : hintId} onClick={() => setForm({})}><PlusIcon aria-hidden />{createLabel}</Button>
       {canManage ? null : <span id={hintId} className="text-small text-muted-foreground">{tr('needManage', { permission: d.permissions.manage })}</span>}
@@ -112,7 +112,7 @@ function RecordListInner({ descriptor: d }: { descriptor: RecordDescriptor }) {
           <option value="all">{tr('activeAll')}</option>
         </select>
         {hasFilters ? <Button variant="ghost" onClick={clearFilters}>{tr('clearFilters')}</Button> : null}
-        {rows.length > 0 ? <div className="ml-auto">{createButton}</div> : null}
+        {rows.length > 0 && createButton ? <div className="ml-auto">{createButton}</div> : null}
       </div>
 
       {rows.length === 0 && !q.hasNextPage ? (

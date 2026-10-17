@@ -7,12 +7,12 @@ export type FieldKind = 'text' | 'textarea' | 'tin' | 'branch' | 'select' | 'mon
 export interface FieldCondition { key: string; equals: string | boolean }
 export interface FieldSpec { key: string; kind: FieldKind; labelKey: string; required?: boolean;
   options?: { value: string; labelKey: string }[];
-  /** Options the server owns: the form loads them from that endpoint. */ optionsFrom?: 'wht-types';
+  /** Options the server owns: the form loads them from that endpoint. */ optionsFrom?: 'wht-types' | 'account-headers';
   showWhen?: FieldCondition; readOnlyAfterUse?: boolean; vat?: VatScope;
   /** Required when ANY of these holds. The server decides; the form only mirrors the shape. */ requiredWhen?: FieldCondition[];
   /** kind 'item': pick several. */ multiple?: boolean; /** kind 'item': only the items usable on this side are offered (all when absent). */ itemUsage?: 'sales' | 'purchase'; defaultValue?: string | boolean }
 export interface RecordColumn { key: string; labelKey: string; align?: 'start' | 'end'; kind?: 'text' | 'money' | 'bool' | 'date';
   /** The value is a code: show the label `records.options.<optionKey>.<value>`. */ optionKey?: string }
 export interface RecordDescriptor { kind: RecordKind; basePath: string; titleKey: string; permissions: { read: string; manage: string };
-  columns: RecordColumn[]; fields: FieldSpec[]; detail: boolean; vat?: VatScope; searchPlaceholderKey: string }
+  columns: RecordColumn[]; fields: FieldSpec[]; detail: boolean; /** No "create" button on the list: records are made from elsewhere (a document's action). */ noCreate?: boolean; /** Rendered as an indented tree by `TreeRecordList` (rows carry `parent`). */ tree?: boolean; vat?: VatScope; searchPlaceholderKey: string }
 export interface RecordRow { id: string; version: number; active: boolean; inUse?: boolean; [field: string]: unknown }

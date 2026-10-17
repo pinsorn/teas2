@@ -23,6 +23,14 @@ function DocCrumb({ d, id }: { d: DocDescriptor; id: string }) {
   return <>{q.data ? (q.data.number ?? t('draft')) : d.type}</>;
 }
 
+/** A schedule's name (same query as its page), never its id. */
+function ScheduleCrumb({ id }: { id: string }) {
+  const { me, error: meError } = useMe();
+  const q = useQuery({ queryKey: qk.record(me?.activeCompanyId ?? '', 'schedule', id), queryFn: () => endpoints.getRecord('schedule', id), enabled: !!me });
+  if (q.isPending && !meError) return <Skeleton className="inline-block h-4 w-24 align-middle" />;
+  return <>{q.data ? String((q.data as { name?: string }).name ?? id) : id}</>;
+}
+
 /** Group > list page (link) > document (current) [> edit]. */
 export function Breadcrumbs() {
   const t = useTranslations();
@@ -35,7 +43,8 @@ export function Breadcrumbs() {
   if (hit) crumbs.push({ label: t(hit.item.labelKey), href: rest.length ? hit.item.href : undefined });
   rest.forEach((s, i) => crumbs.push({
     label: i === 0 && d && s !== 'new' ? <DocCrumb d={d} id={safeDecode(s)} />
-      : s === 'edit' || s === 'new' ? t(`shell.crumb.${s}`) : safeDecode(s),
+      : i === 0 && hit?.item.href === '/accounting/schedules' ? <ScheduleCrumb id={safeDecode(s)} />
+      : s === 'edit' || s === 'new' || s === 'template' ? t(`shell.crumb.${s}`) : safeDecode(s),
     href: i < rest.length - 1 ? `${hit?.item.href}/${rest.slice(0, i + 1).join('/')}` : undefined,
   }));
 

@@ -16,6 +16,8 @@ type Stored = MockState['docs'][number];
 type StoredLine = MockState['bankLines'][number];
 const fail = (status: number, code: string, title: string) => new MockError(status, code, title);
 const abs = (n: number) => Math.abs(n);
+/** Which way a document's cash moves on a bank line: a receipt is money in, a voucher money out; AC3: a deposit in transit of an opening balance is money in, an outstanding payment money out. */
+export const cashSide = (d: { type: string; header: { obKind?: 'DIT' | 'OP' } }): 'RC' | 'PV' | undefined => (d.type === 'OB' ? (d.header.obKind === 'DIT' ? 'RC' : d.header.obKind === 'OP' ? 'PV' : undefined) : d.type === 'RC' || d.type === 'PV' ? d.type : undefined);
 
 /** SP0 G4 + I1: an inline journal posts only to accounts no subledger or document owns. The roles a document writes (tax, receivable / payable, deposits, prepayments, payroll payables, cash / bank, equity) are refused. */
 const TAX_ROLES: AccountingRole[] = ['OutputVat', 'InputVat', 'InputVatUnclaimed', 'Pnd36VatPayable', 'WhtReceivable', 'WhtPayable', 'WhtExpense'];
@@ -25,18 +27,20 @@ export function rolesOf(st: MockState, companyId: string, code: string): Account
   const a = st.accounts.find((x) => x.companyId === companyId && x.code === code);
   return [...new Set([...(a?.controlRole ? [a.controlRole] : []), ...st.postingRules.filter((r) => r.companyId === companyId && r.accountCode === code).map((r) => r.role)])];
 }
-/** Why an account is not for an inline journal and what to use instead; undefined = free to post. */
-export function controlExit(st: MockState, companyId: string, code: string): string | undefined {
+/** Why an account is not for an inline journal and what to use instead; undefined = free to post. `scope` 'jv' (AC1): the same list for the journal voucher, where the equity accounts and sales revenue
+ *  are the accountant's to post and only 3900 (opening balances) stays with its own screen; every account an invariant ties to documents is refused in both. */
+export function controlExit(st: MockState, companyId: string, code: string, scope: 'inline' | 'jv' = 'inline'): string | undefined {
   const a = st.accounts.find((x) => x.companyId === companyId && x.code === code);
-  const roles = rolesOf(st, companyId, code), has = (...r: AccountingRole[]) => roles.some((x) => r.includes(x)), sub = a?.subClass ?? '';
-  if (a?.class === 'equity' || has('RetainedEarnings', 'OpeningBalanceEquity')) return 'บัญชีส่วนของเจ้าของ ปรับด้วยสมุดรายวันทั่วไป (JV) ไม่ใช่รายการเดินบัญชี';
+  const roles = rolesOf(st, companyId, code), has = (...r: AccountingRole[]) => roles.some((x) => r.includes(x)), sub = a?.subClass ?? '', jv = scope === 'jv';
+  if (sub === 'current-year') return 'บัญชีกำไร(ขาดทุน)ปีปัจจุบัน (3300) ระบบลงจากการปิดบัญชีสิ้นปีเท่านั้น (หน้าปิดงวดบัญชี) ปิดบัญชีสิ้นปีเมื่อปิดครบ 12 งวด'; // AC6
+  if (jv ? has('OpeningBalanceEquity') || sub === 'opening' : a?.class === 'equity' || has('RetainedEarnings', 'OpeningBalanceEquity')) return jv ? 'บัญชียอดยกมา ปรับที่หน้ายอดยกมา (opening balances) ไม่ใช่ใบสำคัญทั่วไป' : 'บัญชีส่วนของเจ้าของ ปรับด้วยสมุดรายวันทั่วไป (JV) ไม่ใช่รายการเดินบัญชี';
   if (has('Cash') || sub === 'cash' || sub === 'bank') return 'บัญชีเงินสด/ธนาคาร ใช้ปุ่ม "โอนระหว่างบัญชี" ที่รายการเดินบัญชี';
   if (has('AR', 'CustomerDeposit') || sub === 'receivable') return 'บัญชีลูกหนี้/เงินรับล่วงหน้า ใช้ใบเสร็จรับเงิน (RC)';
   if (has('AP', 'EmployeePayable', 'VendorPrepayment') || sub === 'payable') return 'บัญชีเจ้าหนี้/เงินจ่ายล่วงหน้า ใช้ใบสำคัญจ่าย (PV)';
-  if (has('Revenue', 'SalesReturn', 'SalesDiscount') || sub === 'sales' || sub === 'contra-sales') return 'บัญชีรายได้จากการขาย ลงจากใบกำกับภาษี/ใบลดหนี้เท่านั้น (ต้องมีภาษีขาย)';
-  if (has('FixedAsset', 'AccumulatedDepreciation') || sub === 'fixed-asset' || sub === 'accumulated-depreciation') return 'บัญชีสินทรัพย์ถาวร/ค่าเสื่อมราคาสะสม ลงจากทะเบียนสินทรัพย์และใบสำคัญจ่ายเท่านั้น';
-  if (has(...TAX_ROLES) || sub === 'tax-asset' || sub === 'tax-liability') return 'บัญชีควบคุมภาษี ภาษีลงจากเอกสารเท่านั้น';
-  if (has('SalaryPayable', 'PitPayable', 'SsoPayable') || sub === 'payroll-liability') return 'บัญชีเจ้าหนี้เงินเดือน ลงจากเอกสารเงินเดือนเท่านั้น';
+  if (!jv && (has('Revenue', 'SalesReturn', 'SalesDiscount') || sub === 'sales' || sub === 'contra-sales')) return 'บัญชีรายได้จากการขาย ลงจากใบกำกับภาษี/ใบลดหนี้เท่านั้น (ต้องมีภาษีขาย)';
+  if (has('FixedAsset', 'AccumulatedDepreciation') || sub === 'fixed-asset' || sub === 'accumulated-depreciation') return 'บัญชีสินทรัพย์ถาวร/ค่าเสื่อมราคาสะสม ลงจากทะเบียนสินทรัพย์ (/accounting/fixed-assets) และรายการค่าเสื่อมราคา (/accounting/depreciation-runs) เท่านั้น';
+  if ((jv ? has('OutputVat', 'InputVat', 'Pnd36VatPayable', 'WhtReceivable', 'WhtPayable') : has(...TAX_ROLES)) || sub === 'tax-asset' || sub === 'tax-liability') return 'บัญชีควบคุมภาษี ภาษีลงจากเอกสารเท่านั้น';
+  if ((has('SalaryPayable', 'PitPayable', 'SsoPayable') || sub === 'payroll-liability')) return jv ? 'บัญชีเจ้าหนี้เงินเดือน/ภาษี-ประกันสังคมหัก ณ ที่จ่าย ลงจากรอบเงินเดือนเท่านั้น (ตั้งค้างจ่ายเงินเดือนที่ 2120 ไปก่อน)' : 'บัญชีเจ้าหนี้เงินเดือน ลงจากเอกสารเงินเดือนเท่านั้น';
   return undefined;
 }
 
@@ -64,6 +68,7 @@ export const matchedPortion = (st: MockState, docId: string): number =>
   st.bankLines.reduce((n, l) => n + (l.matches ?? []).filter((m) => m.docId === docId).reduce((x, m) => x + toSatang(m.amount), 0), 0);
 /** R2-m1: what of a document's cash a bank line may match. After the account's go-live that is the NET bank effect of its entries on or after it (a document older than the go-live has none, unless a correction changed its amount); earlier entries are inside the opening balance. */
 const matchableCash = (st: MockState, d: Stored): number => {
+  if (d.type === 'OB') return docCash(d); // AC3: an in-transit item of the opening balance: all of it (no journal behind it; the batch's bank line already carries it)
   const acct = st.bankAccounts.find((b) => b.id === resolvedBankId(st, d.companyId, d.type, d.header) && b.companyId === d.companyId), live = goLiveOf(st, d.companyId, acct?.id);
   if (!acct || !live) return docCash(d);
   const net = (st.journals.find((j) => j.docId === d.id)?.preview.entries ?? []).filter((e) => e.date >= live)
@@ -102,10 +107,10 @@ export function suggest(st: MockState, companyId: string, lineId: string, q?: st
   const l = lineOf(st, companyId, lineId);
   const want = toSatang(l.amount) > 0 ? 'RC' : 'PV', needle = (q ?? '').trim().toLowerCase();
   const docs = st.docs
-    .filter((d) => d.companyId === companyId && d.type === want && LIVE.includes(d.status) && resolvedBankId(st, companyId, d.type, d.header) === l.accountId && remainingOf(st, d) > 0)
+    .filter((d) => d.companyId === companyId && cashSide(d) === want && LIVE.includes(d.status) && resolvedBankId(st, companyId, d.type, d.header) === l.accountId && remainingOf(st, d) > 0)
     .map((d) => ({ d, exact: matchedPortion(st, d.id) === 0 && matchableCash(st, d) === abs(toSatang(l.amount)) && docCash(d) === abs(toSatang(l.amount)), days: daysBetween(d.header.documentDate, l.date) }))
     .filter((x) => (needle ? `${x.d.number ?? ''} ${x.d.party?.name ?? ''}`.toLowerCase().includes(needle) : x.exact && x.days <= DAYS))
-    .map(({ d, exact, days }) => ({ days, exact, n: d.number ?? '', c: { docId: d.id, type: want, number: d.number ?? d.id, documentDate: d.header.documentDate, partyName: d.party?.name ?? '', cash: fromSatang(docCash(d)), remaining: fromSatang(remainingOf(st, d)), exact } as BankCandidate }));
+    .map(({ d, exact, days }) => ({ days, exact, n: d.number ?? '', c: { docId: d.id, type: want, number: d.number ?? d.id, documentDate: d.header.documentDate, partyName: d.party?.name ?? d.header.reference ?? '', cash: fromSatang(docCash(d)), remaining: fromSatang(remainingOf(st, d)), exact } as BankCandidate }));
   const trs = transferCandidates(st, companyId, l, needle).map((c) => ({ days: daysBetween(c.documentDate, l.date), exact: c.exact, n: c.docId, c }));
   return [...docs, ...trs].sort((a, b) => Number(b.exact) - Number(a.exact) || a.days - b.days || a.n.localeCompare(b.n)).map((x) => x.c);
 }
@@ -172,7 +177,7 @@ export function match(st: MockState, companyId: string, lineId: string, req: Mat
     const d = st.docs.find((x) => x.id === id && x.companyId === companyId);
     if (!d) throw fail(422, 'bank.match_doc_not_found', 'ไม่พบเอกสารที่เลือก');
     const no = d.number ?? d.id;
-    if (d.type !== want) throw fail(422, 'bank.match_direction', `${no} เป็น${d.type === 'RC' ? 'ใบเสร็จรับเงิน (เงินเข้า)' : 'ใบสำคัญจ่าย (เงินออก)'} จับคู่กับรายการ${s > 0 ? 'เงินเข้า' : 'เงินออก'}ไม่ได้`);
+    if (cashSide(d) !== want) throw fail(422, 'bank.match_direction', `${no} เป็น${cashSide(d) === 'RC' ? 'ใบเสร็จรับเงิน (เงินเข้า)' : 'ใบสำคัญจ่าย (เงินออก)'} จับคู่กับรายการ${s > 0 ? 'เงินเข้า' : 'เงินออก'}ไม่ได้`);
     if (!LIVE.includes(d.status)) throw fail(422, 'bank.match_doc_status', `${no} ไม่อยู่ในสถานะที่จับคู่ได้`);
     const live = goLiveOf(st, companyId, l.accountId);
     if (live && matchableCash(st, d) === 0) throw fail(422, 'bank.match_history', `${no} ลงวันที่ ${formatDateBE(d.header.documentDate)} ก่อนวันเริ่มใช้ระบบกับ statement (${formatDateBE(live!)}) อยู่ในยอดยกมาแล้ว จับคู่ไม่ได้`);
@@ -195,7 +200,7 @@ export function match(st: MockState, companyId: string, lineId: string, req: Mat
   if (diff) dateGuards(st, companyId, l.date); // the fee journal is dated at the line: a closed month refuses
 
   // all judged - write
-  const matches: BankMatch[] = docs.map((d, i) => ({ docId: d.id, type: d.type as 'RC' | 'PV', number: d.number ?? d.id, amount: fromSatang(portions[i]), docCash: fromSatang(docCash(d)), accountId: l.accountId, docDate: d.header.documentDate }));
+  const matches: BankMatch[] = docs.map((d, i) => ({ docId: d.id, type: cashSide(d)!, number: d.number ?? d.id, amount: fromSatang(portions[i]), docCash: fromSatang(docCash(d)), accountId: l.accountId, docDate: d.header.documentDate }));
   let stored: StoredLine['diff'];
   if (diff) {
     const counter = resolveRole(st, diff.role, { companyId, docType: 'JV' }).code, tag = diff.role === 'BankFee' ? 'ค่าธรรมเนียมจากการกระทบยอด' : 'ผลต่างจากการปัดเศษจากการกระทบยอด';
@@ -332,7 +337,7 @@ export function post(st: MockState, companyId: string, lineId: string, req: Post
   refuseIfTransferPending(st, companyId, l);
   const bank = bankOf(st, companyId, l.accountId);
   const acc = st.accounts.find((a) => a.companyId === companyId && a.code === req.accountCode);
-  if (!acc || !acc.postable) throw fail(422, 'ledger.account_invalid', 'เลือกบัญชีที่ลงรายการได้');
+  if (!acc || !acc.postable || acc.active === false) throw fail(422, 'ledger.account_invalid', acc?.active === false ? `บัญชี ${acc.code} ${acc.nameTh} ปิดใช้งานแล้ว เลือกใช้กับรายการใหม่ไม่ได้` : 'เลือกบัญชีที่ลงรายการได้');
   if (acc.code === bank.accountCode) throw fail(422, 'bank.post_same_account', 'บัญชีที่เลือกต้องไม่ใช่บัญชีธนาคารของรายการนี้');
   const exit = controlExit(st, companyId, acc.code);
   if (exit) throw fail(422, 'ledger.control_account', `${acc.code} ${acc.nameTh} ลงรายการเองไม่ได้: ${exit}`);

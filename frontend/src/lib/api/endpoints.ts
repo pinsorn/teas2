@@ -1,17 +1,21 @@
 import type {
   ActivityEntry, Allocation, Attachment, AttachmentCategory, BankImport, BankLine, ChainGraph, ComputeResult, CorrectionPlan, CorrectionResult, Doc, DocHeader, DocLine, DocSummary,
   DocType, HomeInbox, MarkKey, Money, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, RemainingLine, Revision, SearchHit,
-  DepositRow, SettlementDifferenceRole, SettlementKind, SettlementRecord,
+  DepositRow, DocOpening, SettlementDifferenceRole, SettlementKind, SettlementRecord, DpRow, FaSource, IsoDate, ChecklistItem, PeriodsView,
 } from '@/domain/types';
 import type { RecordKind, RecordRow } from '@/domain/records';
 import type { ReportKind, ReportModel } from '@/domain/reports';
 import { api, ApiError, normalizeProblem } from './client';
 
-export type DocInput = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] };
+export type DocInput = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[]; /** OB (AC3): the steps behind the trial balance */ opening?: DocOpening };
 /** A postable current-asset account a bank / cash account can be bound to; `taken` = another bank account of the company already owns it. */
 export interface BankGlAccount { code: string; nameTh: string; subClass: 'cash' | 'bank'; taken: boolean }
 /** FN2: a receipt / voucher the line could match (`exact` = the suggestion: same cash, within 7 days). */
 export interface BankCandidate { docId: string; type: 'RC' | 'PV' | 'TR'; number: string; documentDate: string; partyName: string; cash: Money; remaining: Money; exact: boolean }
+/** AC5: a capex line (or opening-balance asset row) no live asset has been registered from; `accumulated` / `lifeMonths` only for an opening row. */
+export interface UnregisteredAsset { source: FaSource; docNumber: string; docType: 'PB' | 'PV' | 'OB'; description: string; assetClass: string; cost: Money; date: IsoDate; partyName?: string; accumulated?: Money; lifeMonths?: number }
+/** AC5: a depreciation run as it would be written now; `problem` = the first reason it would be refused. */
+export interface DpPreview { month: string; date: IsoDate; rows: DpRow[]; total: Money; suggested: string; problem?: { status: number; code: string; title: string } }
 export interface PostableAccount { code: string; nameTh: string; class: string }
 export interface Reconciliation { reconciledTo: string | null; counts: Record<BankLine['status'], number> }
 /** FN3: what `/finance/deposits` returns: the unapplied customer deposits / vendor prepayments, the company's tolerance for a difference and the customer / vendor pairs that can be netted. */
@@ -87,6 +91,12 @@ export const endpoints = {
   postBankLine: (lineId: string, body: { accountCode: string; description?: string }) =>
     api<BankLine>('POST', `/finance/bank-lines/${encodeURIComponent(lineId)}/post`, body),
   postableAccounts: () => api<PostableAccount[]>('GET', '/finance/postable-accounts'),
+  /** JV: the accounts a journal voucher may post to. */
+  journalAccounts: () => api<PostableAccount[]>('GET', '/accounting/journal-accounts'),
+  /** AC3: the accounts an opening balance may post to (controlled ones included; the 3900 plug is the system's). */
+  openingAccounts: () => api<PostableAccount[]>('GET', '/accounting/journal-accounts?for=OB'),
+  /** JV "กลับรายการ": a reversing JV of this one (dated the first open date or later, never in the future); any other document type is refused. */
+  reverseDoc: (type: DocType, id: string, body: { date?: string; reason?: string } = {}) => api<Doc>('POST', `${d(type, id)}/reverse`, body),
   getReconciliation: (accountId: string) => api<Reconciliation>('GET', `/finance/bank-accounts/${encodeURIComponent(accountId)}/reconciliation`),
   lockReconciliation: (accountId: string, date: string) => api<{ reconciledTo: string }>('POST', `/finance/bank-accounts/${encodeURIComponent(accountId)}/reconciled-to`, { date }),
   /** FN3 settlements (D-13): read with bank.read, post / reverse with bank.manage. */
@@ -107,6 +117,25 @@ export const endpoints = {
     api<RecordRow>('PUT', `/records/${kind}/${encodeURIComponent(id)}`, { ...values, version }),
   setRecordActive: (kind: RecordKind, id: string, active: boolean, version: number) =>
     api<RecordRow>('POST', `/records/${kind}/${encodeURIComponent(id)}/active`, { active, version }),
+  /** AC4 schedules: "รันตอนนี้" (a plan month for an amortisation, a draft for a recurring one) and "หยุด"; both need ledger.schedule.manage, `version` is the record kit's concurrency check. */
+  runSchedule: (id: string, version: number, month?: string) => api<RecordRow>('POST', `/schedules/${encodeURIComponent(id)}/run`, { version, ...(month ? { month } : {}) }),
+  stopSchedule: (id: string, version: number, reason?: string) => api<RecordRow>('POST', `/schedules/${encodeURIComponent(id)}/stop`, { version, ...(reason ? { reason } : {}) }),
+  /** AC5 fixed assets and depreciation runs (their own commands; the generic document routes refuse FA / DP). */
+  unregisteredAssets: () => api<{ items: UnregisteredAsset[] }>('GET', '/assets/unregistered'),
+  registerAsset: (body: { source: FaSource; name?: string; salvage?: Money; lifeMonths?: number; startDate?: IsoDate }) => api<Doc>('POST', '/assets', body),
+  disposeAsset: (id: string, body: { version: number; date: IsoDate; kind: 'sale' | 'write_off'; proceeds?: Money; buyerId?: string }) => api<Doc>('POST', `/docs/FA/${id}/dispose`, body),
+  undisposeAsset: (id: string, version: number) => api<Doc>('POST', `/docs/FA/${id}/undispose`, { version }),
+  reviseAssetTerms: (id: string, body: { version: number; name?: string; salvage?: Money; lifeMonths?: number; startDate?: IsoDate }) => api<Doc>('POST', `/docs/FA/${id}/terms`, body),
+  previewDepreciation: (month?: string) => api<DpPreview>('GET', `/depreciation/preview${qs({ month })}`),
+  runDepreciation: (month: string) => api<Doc>('POST', '/depreciation/runs', { month }),
+  recomputeDepreciation: (id: string, version: number) => api<Doc>('POST', `/docs/DP/${id}/recompute`, { version }),
+  /** AC6 period close: the year's months, a month's checklist (ledger.read), close (ledger.period.close; `acknowledge` accepts the warnings) and reopen (ledger.period.reopen, with a reason) of a month and of a year. */
+  getPeriods: (year?: number) => api<PeriodsView>('GET', `/periods${qs({ year })}`),
+  getChecklist: (month: string) => api<{ items: ChecklistItem[] }>('GET', `/periods/checklist${qs({ month })}`),
+  closePeriod: (month: string, acknowledge: { code: string; count: number }[]) => api<PeriodsView>('POST', `/periods/${encodeURIComponent(month)}/close`, { acknowledge }),
+  reopenPeriod: (month: string, reason: string) => api<PeriodsView>('POST', `/periods/${encodeURIComponent(month)}/reopen`, { reason }),
+  closeYear: (year: number) => api<PeriodsView>('POST', `/periods/year/${year}/close`, {}),
+  reopenYear: (year: number, reason: string) => api<PeriodsView>('POST', `/periods/year/${year}/reopen`, { reason }),
   getReport: (kind: ReportKind, params: Record<string, string>) => api<ReportModel>('GET', `/reports/${kind}${qs(params)}`),
   /** The CSV the server builds for the same parameters (text/csv, BOM, CRLF). */
   exportReport: async (kind: ReportKind, params: Record<string, string>): Promise<Blob> => {

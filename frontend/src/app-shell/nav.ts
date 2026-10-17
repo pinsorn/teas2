@@ -36,10 +36,12 @@ export const NAV: NavGroup[] = [
   group('finance', [item('bankAccounts', '/finance/bank-accounts', BANK), item('deposits', '/finance/deposits', BANK), item('settlements', '/finance/settlements', BANK)]),
   group('accounting', [
     item('journals', '/accounting/journals', LEDGER),
+    doc('journalVouchers', '/accounting/journal-vouchers', 'JV'),
     item('chartOfAccounts', '/accounting/chart-of-accounts', LEDGER),
-    item('openingBalances', '/accounting/opening-balances', LEDGER),
+    doc('openingBalances', '/accounting/opening-balances', 'OB'),
     item('schedules', '/accounting/schedules', LEDGER),
-    item('fixedAssets', '/accounting/fixed-assets', LEDGER),
+    doc('fixedAssets', '/accounting/fixed-assets', 'FA'),
+    doc('depreciation', '/accounting/depreciation-runs', 'DP'),
     item('periodClose', '/accounting/period-close', LEDGER),
   ]),
   group('tax', [
@@ -56,6 +58,7 @@ export const NAV: NavGroup[] = [
   ]),
   group('reports', [
     item('financialStatements', '/reports/financial-statements', 'report.read'),
+    item('assetRegister', '/reports/asset-register', 'report.read'),
     item('receivablesPayables', '/reports/receivables-payables', LEDGER),
     item('salesPurchases', '/reports/sales-purchases', LEDGER),
     item('auditReport', '/reports/audit', 'audit.read'),

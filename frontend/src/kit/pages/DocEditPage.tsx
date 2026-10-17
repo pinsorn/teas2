@@ -10,6 +10,7 @@ import { routesOf } from '@/domain/descriptors';
 import { LIVE } from '@/domain/doc-types';
 import type { Doc } from '@/domain/types';
 import { DocEditor } from '@/kit/doc-editor/DocEditor';
+import { ObWizard } from '@/kit/opening/ObWizard';
 import { useCorrectionFlow } from '@/kit/doc-view/useCorrectionFlow';
 import { ErrorState } from '@/kit/states/ErrorState';
 import { ForbiddenState } from '@/kit/states/ForbiddenState';
@@ -26,7 +27,8 @@ function Revise({ doc, d, onLanding }: { doc: Doc; d: DocDescriptor; onLanding: 
   const flow = useCorrectionFlow(d, doc, onLanding);
   return (
     <>
-      <DocEditor descriptor={d} mode="revise" initial={doc} onIssued={() => undefined} onRevisionRequested={(p) => void flow.request(p)} />
+      {d.type === 'OB' ? <ObWizard mode="revise" initial={doc} onRevisionRequested={(p) => void flow.request(p)} />
+        : <DocEditor descriptor={d} mode="revise" initial={doc} onIssued={() => undefined} onRevisionRequested={(p) => void flow.request(p)} />}
       {flow.ui}
     </>
   );
@@ -43,7 +45,7 @@ function Edit({ id, d }: { id: string; d: DocDescriptor }) {
   });
   const doc = q.data;
   const landing = useRef(false); // a correction plan just ran: its flow navigates to the result, this page must not also redirect to the (now replaced) document
-  const editable = !!doc && (DRAFTABLE.includes(doc.status) || LIVE.includes(doc.status));
+  const editable = !!doc && (DRAFTABLE.includes(doc.status) || LIVE.includes(doc.status)) && d.type !== 'FA' && d.type !== 'DP'; // AC5: an asset / a depreciation run has no editor - the view says how to change it
   // Cancelled / replaced / pending documents cannot be edited: send the reader to the view, which says why.
   useEffect(() => { if (doc && !editable && !landing.current) router.replace(routesOf(d).view(id)); }, [doc, editable, id, router, d]);
 
@@ -52,7 +54,8 @@ function Edit({ id, d }: { id: string; d: DocDescriptor }) {
   if (q.isError) return isForbidden(q.error) ? <ForbiddenState permission={d.permissions.read} /> : <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
   if (!doc || !editable) return <LoadingState />;
   if (DRAFTABLE.includes(doc.status)) {
-    return <DocEditor key={doc.id} descriptor={d} mode="edit-draft" initial={doc} onIssued={(d) => router.replace(routes.view(d.id))} />;
+    return d.type === 'OB' ? <ObWizard key={doc.id} mode="edit-draft" initial={doc} onIssued={(x) => router.replace(routes.view(x.id))} /> // AC3: opening balances are a wizard, not the document editor
+      : <DocEditor key={doc.id} descriptor={d} mode="edit-draft" initial={doc} onIssued={(x) => router.replace(routes.view(x.id))} />;
   }
   return <Revise key={doc.id} doc={doc} d={d} onLanding={() => { landing.current = true; }} />;
 }

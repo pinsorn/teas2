@@ -15,11 +15,14 @@ type DocFixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssuedUnpa
   | 'pbDraft' | 'pbIssuedUnpaid' | 'pb1Settled' | 'pbMixedVat' | 'pbFromPo' | 'pbCapex' | 'pbClaimLate' | 'pbIncomplete' | 'pcnIssued' | 'pdnIssued' | 'npbVatToCost'
   | 'pvMultiWt' | 'pvGrossUp' | 'pvForeign' | 'pvCancelled' | 'wtIssued' | 'wtCancelled'
   | 'exDraft' | 'exPending' | 'exApproved' | 'exUnpaid' | 'exPaid' | 'exForfeit' | 'nexIssued'
-  | 'tiDeposit' | 'rcDepositApplied' | 'pvPrepayment'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
+  | 'tiDeposit' | 'rcDepositApplied' | 'pvPrepayment'
+  | 'jvDraftUnbalanced' | 'jvAccrual' | 'jvIssued' | 'jvReversal' | 'njvIssued' | 'obIssued' | 'obDraft' | 'faActive' | 'faDisposed' | 'dpRun' | 'nfaActive' | 'faCar'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
 
 /** FN1 bank accounts: not documents, so no predicate - a fixed record id that must exist in the seed. `bankEmpty` is the VAT company's account with no imports. */
 export const BANK_FIXTURES = { bankKbank: 'ba-kbank', bankEmpty: 'ba-scb', nbankKbank: 'nba-kbank' } as const;
-export type FixtureKey = DocFixtureKey | keyof typeof BANK_FIXTURES;
+/** AC4 schedules: not documents either, a fixed record id that must exist in the seed. */
+export const SCHEDULE_FIXTURES = { schedRecurringTi: 'sch-rec-ti', schedAmortisation: 'sch-amort', nschedRecurring: 'nsch-rec-iv' } as const;
+export type FixtureKey = DocFixtureKey | keyof typeof BANK_FIXTURES | keyof typeof SCHEDULE_FIXTURES;
 
 /** An issued, untouched TI of pc-01 (the multi-target receipt vector settles two of them). */
 const rcTarget = (d: D, st: MockState) => isTi(d) && d.status === 'issued' && d.party?.id === 'pc-01' && d.outstanding === d.totals.total
@@ -113,6 +116,21 @@ export const FIXTURE_PREDICATES: Record<DocFixtureKey, (d: D, st: MockState) => 
   tiDeposit: byId('ti-dep', (d) => d.status === 'issued' && d.outstanding === d.totals.total),
   rcDepositApplied: byId('rc-dep2', (d) => d.status === 'issued'),
   pvPrepayment: byId('pv-prep', (d) => d.status === 'issued' && d.header.depositAmount === '3000.00'),
+  // AC1 journal vouchers: jv-d1 does not balance (1,000.00 / 900.00); jv-1 is an accrual whose auto-reversal jv-1-auto is dated 1 Oct; jv-2 was reversed once by jv-rev (final)
+  jvDraftUnbalanced: byId('jv-d1', (d) => d.status === 'draft'),
+  jvAccrual: byId('jv-1', (d) => d.status === 'issued' && d.header.autoReverse === true),
+  jvIssued: byId('jv-2', (d) => d.status === 'issued'),
+  jvReversal: byId('jv-rev', (d) => d.status === 'issued' && d.header.reversalOf === 'jv-2'),
+  njvIssued: byId('njv-1', (d) => d.status === 'issued' && d.companyId === 'co-nonvat'),
+  // AC3 opening balances: the non-VAT company "started" in 2026 (issued at 2025-12-31); the VAT company has a draft for the wizard demo (a bank step, a plug)
+  obIssued: byId('nob-1', (d) => d.status === 'issued' && d.companyId === 'co-nonvat'),
+  obDraft: byId('ob-d1', (d) => d.status === 'draft' && d.companyId === 'co-vat'),
+  // AC5 fixed assets: fa-scan (a scanner of pb-printer, in service 1 Jul) is live, has run twice and is the asset September depreciates (fa-nb, the notebook of pb-capex, is in service from 9 Oct: nothing is due yet); nfa-1 is the non-VAT company's asset (an opening-balance row); fa-sold (the printer) was sold on 20 Sep by tax invoice; dp-2026-08 is the August run (September is due, October has not ended)
+  faActive: byId('fa-scan', (d) => d.status === 'issued' && !d.asset?.disposed),
+  nfaActive: byId('nfa-1', (d) => d.status === 'issued' && !d.asset?.disposed && d.companyId === 'co-nonvat'),
+  faCar: byId('nfa-car', (d) => d.status === 'issued' && d.companyId === 'co-nonvat'),
+  faDisposed: byId('fa-sold', (d) => d.status === 'issued' && d.asset?.disposed?.kind === 'sale'),
+  dpRun: byId('dp-2026-08', (d) => d.status === 'issued'),
 };
 
 /** Lowest id (string order) matching each predicate in the active seed; throws listing every unresolved key. */
@@ -125,6 +143,9 @@ export function fixtureIds(st: MockState): Record<FixtureKey, string> {
   }
   for (const [k, id] of Object.entries(BANK_FIXTURES) as [keyof typeof BANK_FIXTURES, string][]) {
     if (st.bankAccounts.some((b) => b.id === id)) out[k] = id; else missing.push(k);
+  }
+  for (const [k, id] of Object.entries(SCHEDULE_FIXTURES) as [keyof typeof SCHEDULE_FIXTURES, string][]) {
+    if (st.schedules.some((s) => s.id === id)) out[k] = id; else missing.push(k);
   }
   if (missing.length) throw new Error(`fixture ids unresolved: ${missing.join(', ')}`);
   return out as Record<FixtureKey, string>;

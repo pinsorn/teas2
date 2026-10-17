@@ -10,6 +10,7 @@ import { ADJUSTS, CLOSEABLE, convertTargets, DOC_TYPES, LIVE, MARKS, SETTLES } f
 import type { Doc, DocType, MarkKey } from '@/domain/types';
 import { settleable } from '../doc-editor/SettlementPanel';
 import { ApprovalActions } from './ApprovalActions';
+import { ScheduleActions } from './ScheduleActions';
 
 /** A descriptor may list the conversions it allows; the "convert to…" button (and its dialog) exists only for those. */
 export type ConvertibleDescriptor = DocDescriptor & { convertsTo?: DocType[] };
@@ -36,6 +37,7 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, comp
   const locked = blocker ? t(blocker.kind === 'reconciliation' ? 'lockedReconciliation' : 'locked', { reason: blocker.reason }) : undefined;
   const live = LIVE.includes(doc.status);
   const system = d.type === 'WT'; // a withholding certificate is written by its voucher: the only thing a person does with it is print it
+  const engineMade = system || d.type === 'FA' || d.type === 'DP'; // AC5: an asset / a depreciation run is made and changed by its own commands (the asset panel, the run page), never edited or copied as a document
   const targets = convertTargets(d.convertsTo, vatRegistered, permissions);
   // A receipt is made from open items, never by conversion: a TI / IV with something owed opens it on ?settle=, a billing statement on ?fromBl= (the editor reads the server's outstanding)
   const receiveHref = d.groups && live ? `/sales/receipts/new?fromBl=${doc.id}`
@@ -45,7 +47,7 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, comp
   return (
     <TooltipProvider>
       <div role="group" aria-label={t('label')} className="flex flex-wrap items-center gap-2">
-        {system ? null : doc.status === 'draft' ? (
+        {engineMade ? null : doc.status === 'draft' ? (
           <Guarded why={missing(d.permissions.issue)}>
             {(p) => <Button {...p} variant={doc.approvalRequired ? 'outline' : 'default'} asChild={!p.disabled}>{p.disabled ? <span>{t(doc.approvalRequired ? 'edit' : 'issueDraft')}</span> : <Link href={routes.edit(doc.id)}>{t(doc.approvalRequired ? 'edit' : 'issueDraft')}</Link>}</Button>}
           </Guarded>
@@ -56,7 +58,7 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, comp
             {(p) => <Button {...p} asChild={!p.disabled}>{p.disabled ? <span>{t('issueDraft')}</span> : <Link href={routes.edit(doc.id)}>{t('issueDraft')}</Link>}</Button>}
           </Guarded>
         ) : (
-          <Guarded why={live ? missing(d.permissions.create) : doc.status === 'replaced' ? t('whyReplaced') : t('whyCancelled')}>
+          <Guarded why={live ? (doc.locks.some((l) => l.kind === 'reversal') ? t('whyFinal') : doc.header.disposal ? t('whyDisposalInvoice') : missing(d.permissions.create)) : doc.status === 'replaced' ? t('whyReplaced') : t('whyCancelled')}>
             {(p) => <Button {...p} asChild={!p.disabled}>{p.disabled ? <span>{t('edit')}</span> : <Link href={routes.edit(doc.id)}>{t('edit')}</Link>}</Button>}
           </Guarded>
         )}
@@ -68,7 +70,7 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, comp
               : <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t('print')}</span> : <Link href={routes.print(doc.id)}>{t('print')}</Link>}</Button>}
           </Guarded>
         ) : null}
-        {system ? null : <Guarded why={missing(d.permissions.create)}>
+        {engineMade ? null : <Guarded why={missing(d.permissions.create)}>
           {(p) => <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t('copy')}</span> : <Link href={`${routes.create}?copyFrom=${doc.id}`}>{t('copy')}</Link>}</Button>}
         </Guarded>}
         {d.convertsTo?.length && live ? (
@@ -82,7 +84,7 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, comp
           </Guarded>
         ) : null}
         {live ? (['CN', 'DN', 'PCN', 'PDN'] as const).filter((n) => ADJUSTS[n] === d.type && docListHref(n, vatRegistered)).map((n) => ( // a note is made from the document it adjusts (the lines come from the server on ?adjust=)
-          <Guarded key={n} why={missing(`doc.${n}.create`) ?? (d.type === 'TI' && doc.header.priceIncludesVat ? t('whyInclusiveNote') : undefined)}>
+          <Guarded key={n} why={missing(`doc.${n}.create`) ?? (doc.header.disposal ? t('whyDisposalInvoice') : d.type === 'TI' && doc.header.priceIncludesVat ? t('whyInclusiveNote') : undefined)}>
             {(p) => <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t(NOTE_LABEL[n])}</span> : <Link href={`${docListHref(n, vatRegistered)}/new?adjust=${doc.id}`}>{t(NOTE_LABEL[n])}</Link>}</Button>}
           </Guarded>
         )) : null}
@@ -96,6 +98,7 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, comp
             {(p) => <Button {...p} variant="outline" onClick={() => onMark?.(m)}>{t(MARK_LABEL[m])}</Button>}
           </Guarded>
         )) : null}
+        {live && !engineMade ? <ScheduleActions doc={doc} permissions={permissions} /> : null}
         {live && !system ? (
           <Guarded why={missing(d.permissions.cancel) ?? locked}>
             {(p) => <Button {...p} variant="outline" onClick={onCancel}>{t('cancel')}</Button>}

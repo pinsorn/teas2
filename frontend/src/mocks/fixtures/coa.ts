@@ -1,15 +1,57 @@
+import type { AccountClass } from '@/records/accounts';
 import type { AccountingRole } from '../engine/posting';
 
 /** Thai SME chart of accounts (D-26): keeps every code the SP1ab ledger used (1120, 1130, 1170, 1180, 2110, 2151, 4100, 5100). */
 export interface Account {
-  code: string; nameTh: string; class: 'asset' | 'liability' | 'equity' | 'revenue' | 'expense'; subClass: string;
+  code: string; nameTh: string; class: AccountClass; subClass: string;
   parent?: string; postable: boolean; controlRole?: AccountingRole;
+  /** AC2 (all optional: absent = active, version 1, no mapping). `dimensionRules` is edited in ST2. */
+  nameEn?: string; active?: boolean; version?: number; dbdLine?: string; pnd50Box?: string; dimensionRules?: Record<string, 'required' | 'optional' | 'forbidden'>;
 }
 export type CompanyAccount = Account & { companyId: string };
 
 type Row = [code: string, nameTh: string, subClass: string, parent?: string, controlRole?: AccountingRole];
-const CLASS_OF = (code: string): Account['class'] =>
-  ({ '1': 'asset', '2': 'liability', '3': 'equity', '4': 'revenue', '5': 'expense' } as const)[code[0] as '1'];
+/** The §5.4 class of a seeded account: by code range and sub-class. A top header takes the main class of its group; its children may be any class of the group. */
+const CLASS_OF = (code: string, subClass: string, parent?: string): AccountClass => {
+  switch (code[0]) {
+    case '1': return parent === '1200' || code === '1200' ? 'non-current-asset' : 'current-asset';
+    case '2': return 'current-liability';
+    case '3': return 'equity';
+    case '4': return subClass === 'other-income' ? 'other-income' : 'sales-revenue';
+    default: return code === '5100' ? 'cost-of-sales' : ['5170', '5180', '5210', '5220', '5500'].includes(code) ? 'other-expense' : 'selling-admin-expense';
+  }
+};
+/**
+ * Statutory mapping of the seeded chart (docs/research/tax/dbd-fs-lines-and-pnd50.md; the lines are in records/accounts.ts). Balance sheet: by sub-class, with per-code overrides.
+ * Folds are the note's own, flagged UNVERIFIED there: prepayments -> 1.3 (ลูกหนี้หมุนเวียนอื่น), accruals / payroll payables -> 3.2, taxes payable and customer advances -> 3.10,
+ * undue / claimable input VAT -> 1.9, the opening-balance equity account -> 5.3, retained / current-year -> 5.4.2. Accumulated depreciation maps to 2.10, which is shown net.
+ */
+const DBD: Record<string, string> = {
+  cash: 'bs-cash-and-equivalents', bank: 'bs-cash-and-equivalents', receivable: 'bs-trade-and-other-current-receivables', prepayment: 'bs-trade-and-other-current-receivables',
+  'tax-asset': 'bs-other-current-assets', 'current-asset': 'bs-other-current-assets', 'fixed-asset': 'bs-ppe', 'accumulated-depreciation': 'bs-ppe',
+  payable: 'bs-trade-and-other-current-payables', accrual: 'bs-trade-and-other-current-payables', 'payroll-liability': 'bs-trade-and-other-current-payables',
+  'tax-liability': 'bs-other-current-liabilities', deposit: 'bs-other-current-liabilities', 'current-liability': 'bs-other-current-liabilities',
+  capital: 'bs-paid-up-capital', retained: 'bs-unappropriated', 'current-year': 'bs-unappropriated', opening: 'bs-other-capital-surplus',
+};
+const DBD_BY_CODE: Record<string, string> = { '1180': 'bs-current-tax-asset' }; // withholding tax credits offset corporate income tax (1.7)
+/**
+ * Profit and loss by code: [DBD format 2.7 line, ภ.ง.ด.50 line]. Finance cost: the seed has no interest account (5200 is bank fees); a finance-cost account is business-related,
+ * so it takes ภ.ง.ด.50 7.12, not 6.3. Cost of sales 5100 is a periodic-layout stand-in (3.2 purchases, note C5). Salaries and fees are not split selling vs administrative: administrative, except advertising and freight (selling).
+ */
+const PL_BY_CODE: Record<string, [string, string]> = {
+  '4100': ['pl-revenue-from-sales-or-services', 'p50-revenue-direct'], '4110': ['pl-revenue-from-sales-or-services', 'p50-revenue-direct'], '4120': ['pl-revenue-from-sales-or-services', 'p50-revenue-direct'],
+  '4200': ['pl-other-income', 'p50-other-income-misc'], '4210': ['pl-other-income', 'p50-other-income-disposal-gain'],
+  '5100': ['pl-cost-of-sales-or-services', 'p50-cogs-purchases'],
+  '5110': ['pl-administrative-expenses', 'p50-sga-rent'], '5120': ['pl-administrative-expenses', 'p50-sga-advisory-fees'], '5130': ['pl-selling-expenses', 'p50-sga-commission-advertising'],
+  '5140': ['pl-selling-expenses', 'p50-sga-freight'], '5150': ['pl-administrative-expenses', 'p50-sga-entertainment'], '5160': ['pl-administrative-expenses', 'p50-sga-other'],
+  '5170': ['pl-other-expenses', 'p50-sga-other-taxes'], '5180': ['pl-other-expenses', 'p50-sga-other-taxes'], '5200': ['pl-administrative-expenses', 'p50-sga-other-fees'],
+  '5210': ['pl-other-expenses', 'p50-other-expense-misc'], '5220': ['pl-other-expenses', 'p50-sga-bad-debt'], '5300': ['pl-administrative-expenses', 'p50-sga-depreciation'],
+  '5400': ['pl-administrative-expenses', 'p50-sga-employee'], '5410': ['pl-administrative-expenses', 'p50-sga-employee'], '5500': ['pl-other-expenses', 'p50-other-expense-disposal-loss'],
+};
+const statutory = (code: string, subClass: string): Pick<Account, 'dbdLine' | 'pnd50Box'> => {
+  const pl = PL_BY_CODE[code], dbd = pl?.[0] ?? DBD_BY_CODE[code] ?? DBD[subClass];
+  return { ...(dbd ? { dbdLine: dbd } : {}), ...(pl ? { pnd50Box: pl[1] } : {}) };
+};
 
 const HEADERS: [string, string, string, string?][] = [
   ['1000', 'สินทรัพย์', 'header'], ['1100', 'สินทรัพย์หมุนเวียน', 'current-asset', '1000'], ['1200', 'สินทรัพย์ไม่หมุนเวียน', 'fixed-asset', '1000'],
@@ -45,8 +87,9 @@ const POSTABLE: Row[] = [
 ];
 
 export const chartOfAccounts = (): Account[] => [
-  ...HEADERS.map(([code, nameTh, subClass, parent]) => ({ code, nameTh, class: CLASS_OF(code), subClass, ...(parent ? { parent } : {}), postable: false })),
-  ...POSTABLE.map(([code, nameTh, subClass, parent, controlRole]) => ({
-    code, nameTh, class: CLASS_OF(code), subClass, ...(parent ? { parent } : {}), postable: true, ...(controlRole ? { controlRole } : {}),
+  ...HEADERS.map(([code, nameTh, subClass, parent]): Account => ({ code, nameTh, class: CLASS_OF(code, subClass, parent), subClass, ...(parent ? { parent } : {}), postable: false })),
+  ...POSTABLE.map(([code, nameTh, subClass, parent, controlRole]): Account => ({
+    code, nameTh, class: CLASS_OF(code, subClass, parent), subClass, ...(parent ? { parent } : {}), postable: true, ...(controlRole ? { controlRole } : {}),
+    ...statutory(code, subClass),
   })),
 ];

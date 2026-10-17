@@ -22,6 +22,27 @@ Entry format — terse, greppable by symptom:
 
 <!-- entries below — newest on top -->
 
+## An invariant "GL(account X) = Σ of the documents" goes red after an opening balance (GL 1180 ... but the live receipts withheld; WHT payable credit movement ...)
+- **Root cause:** an issued OB posts plain trial-balance lines (VAT / WHT balances 1170, 2151, 2131-2135, 1180 have no sub-ledger yet [SP-R]) that no document owns, so the document-vs-GL ties see them as a difference.
+- **Fix:** `checkInvariants` keeps `obGl` / `obCredit` (what OB batches posted) and subtracts them in 8b (1180) and 11 (WHT payable credit movement). A NEW document-vs-GL tie must do the same. Sub-ledger accounts (1130 / 2110 / 2180 / 2140 / 1140) need no exemption: the OB open items are sub-ledger rows (type OB with `header.obSide`, `carriesBalance`).
+- **Seen:** 2026-10-17, SP1c AC3
+
+## A seeded OB (or any seed doc with a frozen item) breaks a seed-wide test: "number matches `NUMBER-YYYYMM-NNNN` format", "every non-draft document passes missingOf", or GL(1130) = Σ outstanding(TI ∪ IV)
+- **Root cause:** an OB batch creates item documents (type OB, `header.obBatchId`) numbered `<old number> (ยกมา)`, with no journal of their own; AR items are sub-ledger rows of 1130.
+- **Fix:** skip `header.obBatchId` docs in tests that walk every document (numbering, journal presence, `missingOf`) and count `type === 'OB' && header.obSide === 'AR'` in the AR identity.
+- **Seen:** 2026-10-17, SP1c AC3
+
+## Component test: MISSING_MESSAGE for a key you just added to th.json (the key IS in the file)
+- **Root cause:** the same key already exists LATER in the same JSON object (e.g. docEditor.account as a string); JSON allows duplicate keys and the last one wins, so your object is silently replaced.
+- **Fix:** use a unique key (docEditor.accountGrid); detect with json.load(..., object_pairs_hook=) printing repeated keys per object.
+- **Seen:** 2026-10-16, SP1c AC1
+
+## e2e runs against a stale build: a leftover `next start -p 3100` answers (reuseExistingServer)
+- **Root cause:** playwright.config reuses whatever listens on 3100; an earlier worker's server serves the OLD .next build.
+- **Fix:** stop it, `NEXT_PUBLIC_API_MOCKING=enabled corepack pnpm build`, start `pnpm start -p 3100` yourself, run playwright, stop it after.
+- **Seen:** 2026-10-16, SP1c AC1
+
+
 ## TypeError "Cannot read properties of undefined (reading 'type')" in a seed-wide test, or a GL figure that is short by a settlement's amount (FN3)
 - **Root cause:** a `settles` link's `from` can be a SETTLEMENT RECORD id (`st.settlements`), not a document: `st.docs.find((d) => d.id === l.from)!.type` crashes, and a GL helper that sums only `st.journals` (+ `bankJournals`) misses the settlement journals.
 - **Fix:** resolve `from` with `?.` (a settlement is not a document; invariant 6 resolves it through `st.settlements`), and sum GL through `companyEntries(st, companyId)` (documents + bank journals + settlements) or add `st.settlements[].journal` by hand as the trial-balance test does.
@@ -135,3 +156,18 @@ Entry format — terse, greppable by symptom:
 - **Symptom:** an edit form whose `<select>` options load asynchronously (GL account picker) opens on the placeholder instead of the stored value.
 - **Root cause:** react-hook-form sets the select's value at mount; a fallback `<option value={current}>` that is later replaced by the real option (different element) drops the selection.
 - **Fix:** render ONE keyed list that always contains the current value (real option when known, bare code otherwise), so the DOM option is never swapped out (`kit/record-form/fields.tsx`, kind `account`).
+
+## A new seed document breaks older hand-checked tests: account 1150 "unused", AP total (AC4)
+- **Symptom:** after seeding the insurance bill `pb-ins`, `accounts.test.ts` ("1150 is not in use", "code 1150 -> 1140 is taken") and `purchase-vat.test.ts` (GL 2110 = -64,484.00) fail; the item form test lists one category fewer than `EXPENSE_CATEGORIES`.
+- **Root cause:** `pb-ins` (12,000.00 on the new `prepaid` expense category -> 1150, AP 12,000.00) is the first seed line on 1150 for the VAT company, and `records/items.ts` keeps its own copy of the category codes (`EXPENSE_CATEGORY_CODES`) next to `fixtures/expense-categories.ts`.
+- **Fix:** hand-checked totals carry the new bill (76,484.00); tests that need an UNUSED account use 1171; a new expense category is added in BOTH lists (and `th/en.json` `records.options.expenseCategory`). The category is the one balance-sheet category: `items.test.ts` exempts it from the "expense group" check.
+
+## `new Date("2026-13-01T00:00:00Z").toISOString()` throws RangeError, it does not return a different date (AC4)
+- **Symptom:** a record `validate()` that checks a date string by round-tripping through `Date` answers 500 / an unhandled MSW exception for `2026-13-01` instead of a field error.
+- **Root cause:** an out-of-range month gives an Invalid Date, and `toISOString()` throws on it; the round-trip trick only catches days that roll over (`02-30`).
+- **Fix:** guard with `!Number.isNaN(Date.parse(...))` first (`validDate` in `engine/schedules.ts`).
+
+## A new permission code fails `permissions.test.ts` ("every code a mock role holds ... is in the catalogue") (AC6)
+- **Symptom:** after giving a role `ledger.period.close` in `mocks/permissions.ts`, the catalogue test fails with `PERMISSIONS[code]` undefined.
+- **Root cause:** the catalogue (`domain/permissions.ts`) is built from the `permissions` section of `messages/{th,en}.json` (key `ledger_period_close` = code with `.` -> `_`), and the "is exactly the master catalog" test lists every non-document code in `NON_DOC`.
+- **Fix:** add the key to both message files and the code to `NON_DOC` in `domain/permissions.test.ts` (3 files besides the role list).

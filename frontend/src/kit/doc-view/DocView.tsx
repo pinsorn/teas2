@@ -34,6 +34,8 @@ import { MarksChips } from './MarksChips';
 import { docEditHref, docViewHref } from '@/descriptors';
 import { CLOSEABLE, LIVE } from '@/domain/doc-types';
 import { LedgerTab } from './LedgerTab';
+import { AssetSummary, DpSummary } from '../assets/AssetPanels';
+import { ObSummary } from '../opening/ObSummary';
 import { LockBanner, type ExitAction } from './LockBanner';
 import { PAPERS } from '../paper/registry';
 import { PaperView } from '../paper/PaperView';
@@ -93,7 +95,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
   const [notice, setNotice] = useState<string>();
   // A dead document opens on its chain: the pointer to the replacement is what the reader needs first.
   // A type with no paper (a vendor's document is recorded, not printed) opens on its chain as well.
-  const [tab, setTab] = useState(doc.status === 'replaced' || doc.status === 'cancelled' || !PAPERS[doc.type] ? 'chain' : 'paper');
+  const [tab, setTab] = useState(doc.status === 'replaced' || doc.status === 'cancelled' || (!PAPERS[doc.type] && doc.type !== 'OB' && doc.type !== 'FA' && doc.type !== 'DP') ? 'chain' : 'paper');
   const refresh = () => qc.invalidateQueries({ queryKey: [me!.activeCompanyId] });
 
   const cancel = useMutation({
@@ -127,7 +129,10 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
       return { onClick: () => router.push(routesOf(d).edit(doc.id)), why: permissions.includes(d.permissions.create) ? undefined : ts('needPermission', { permission: d.permissions.create }) };
     }
     if (lock.kind === 'settlement') return lock.href ? { onClick: () => router.push(lock.href!) } : { onClick: () => setTab('chain') }; // FN3: a lock from a settlement record leads to it (reverse it there); a receipt's goes to the chain
+    if (lock.kind === 'reversal' && lock.exits.length) return { onClick: () => setTab('ledger') }; // a reversal JV: the กลับรายการ action is on its ledger tab
     if (lock.kind === 'reconciliation' && lock.href) return { onClick: () => router.push(lock.href!) }; // the bank line, where the match is cancelled
+    if (lock.kind === 'asset' && lock.href) return { onClick: () => router.push(lock.href!) }; // AC5: the fixed asset made from this bill / voucher / opening row, where it is cancelled
+    if (lock.kind === 'schedule' && lock.href) return { onClick: () => router.push(lock.href!) }; // AC4: the amortisation schedule, where it is stopped / its runs reversed
     return undefined;
   };
 
@@ -149,7 +154,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
         </div>
         <h1 className="text-h1 font-semibold tabular-nums" data-testid="doc-number">{doc.number ?? (doc.status === 'pending' || doc.status === 'approved' ? tst(doc.status) : tc('draftNoNumber'))}</h1>
         <dl className="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-x-6 gap-y-2 text-body">
-          <div><dt className="text-small text-muted-foreground">{t(d.partyKind === 'employee' ? 'header.employee' : 'header.party')}</dt><dd>{doc.party?.name ?? '-'}</dd></div>
+          {d.type === 'JV' && !doc.lines.some((l) => l.partyId) ? null : <div><dt className="text-small text-muted-foreground">{t(d.partyKind === 'employee' ? 'header.employee' : 'header.party')}</dt><dd>{doc.party?.name ?? '-'}</dd></div>}
           <div><dt className="text-small text-muted-foreground">{t('header.date')}</dt><dd className="tabular-nums">{formatDateBE(doc.header.documentDate)}</dd></div>
           <div><dt className="text-small text-muted-foreground">{t('header.total')}</dt><dd className="tabular-nums">{formatTHB(doc.totals.total)}</dd></div>
           {doc.header.vendorDocNumber ? <div><dt className="text-small text-muted-foreground">{t('header.vendorDoc')}</dt><dd className="tabular-nums">{doc.header.vendorDocNumber}</dd></div> : null}
@@ -181,7 +186,7 @@ function Loaded({ d, doc, permissions }: { d: DocDescriptor; doc: Doc; permissio
         ) : <TabsTrigger key={k} value={k} className="h-8 flex-auto">{t(`tabs.${k}`)}</TabsTrigger>)}</TabsList>
         <TabsContent value="paper">
           <section role="region" aria-label={t('tabs.paper')} tabIndex={0} className="overflow-x-auto">
-            {doc.status === 'pending' || doc.status === 'approved' ? <DocLinesPreview doc={doc} /> : PAPERS[doc.type] ? <PaperView type={doc.type} id={doc.id} /> : <PaperStub doc={doc} />}
+            {doc.type === 'OB' ? <ObSummary doc={doc} /> : doc.type === 'FA' ? <AssetSummary doc={doc} permissions={permissions} /> : doc.type === 'DP' ? <DpSummary doc={doc} permissions={permissions} /> : doc.status === 'pending' || doc.status === 'approved' ? <DocLinesPreview doc={doc} /> : PAPERS[doc.type] ? <PaperView type={doc.type} id={doc.id} /> : <PaperStub doc={doc} />}
           </section>
         </TabsContent>
         <TabsContent value="chain"><ChainPanel type={d.type} id={doc.id} /></TabsContent>

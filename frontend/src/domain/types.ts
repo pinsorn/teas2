@@ -37,7 +37,9 @@ export interface DocLine { id: string; itemId?: string; description: string; qty
   whtTypeCode?: string; expenseCategory?: string;
   /** PV service line paid to a foreign payee: the service is used in Thailand, so PP.36 reverse-charge VAT applies (feeds TX2). Engine-defaulted for a foreign payee. */ pnd36?: boolean;
   /** EX line with VAT: the vendor's tax invoice behind it (ม.82/3, ม.86/4). Without all four details the line's VAT is cost (InputVatUnclaimed), never input VAT; with them the claim window of the invoice date applies, per line. */
-  vendorInvoice?: VendorInvoice }
+  vendorInvoice?: VendorInvoice;
+  /** JV line (AC1): the account, and ONE of debit / credit (the other '0.00'). The journal posts these verbatim. `partyId` only for an account that needs one (none today). */
+  accountCode?: string; debit?: Money; credit?: Money; partyId?: string }
 /** The vendor's tax invoice an expense-claim line carries: who issued it (name, TIN), its number and its date. */
 export interface VendorInvoice { vendorName: string; vendorTin: string; number: string; date: IsoDate;
   /** The employee confirms it is a FULL tax invoice made out to the company (ม.86/4): only then is its VAT claimable; false or absent = cost. */ fullTaxInvoice?: boolean }
@@ -60,12 +62,40 @@ export interface DocHeader { partyId?: string; documentDate: IsoDate; dueDate?: 
   /** PB / PDN of a VAT company: the claim window of the vendor's tax invoice had closed when the document was recorded (ม.82/3), so its VAT is cost; a PCN follows its bill. Server-derived at issue and revise. */ inputVatForfeited?: boolean;
   /** PB / PCN / PDN: the vendor's VAT status when the document was ISSUED (M2; a PCN inherits its bill's). Server-owned: the ม.82/5 check judges against it, not the live party master. */ vendorVatRegistered?: boolean;
   /** WT (50 ทวิ, server-written when its PV is issued): the return the tax falls on, the WHT type, its income type and the tax withheld. */ whtForm?: 'PND2' | 'PND3' | 'PND53' | 'PND54'; whtTypeCode?: string; whtIncomeType?: string; whtTax?: Money;
-  /** PB: the vendor paperwork is complete (เอกสารครบ). Absent = complete; `false` still issues but the Home inbox counts it (HC1). */ complete?: boolean }
+  /** PB: the vendor paperwork is complete (เอกสารครบ). Absent = complete; `false` still issues but the Home inbox counts it (HC1). */ complete?: boolean;
+  /** OB, server-owned (never accepted from a caller): a frozen open item (`obSide`) or in-transit bank item (`obKind`) of the opening-balance batch `obBatchId`. */ obBatchId?: string; obSide?: ObSide; obKind?: 'DIT' | 'OP';
+  /** JV (accrual): on issue the system posts the reversing entry on day 1 of the next month. */ autoReverse?: boolean;
+  /** JV, server-owned (never accepted from a caller): the JV this one reverses; `autoReversal` = the system's own reversal of an `autoReverse` accrual. */ reversalOf?: string; autoReversal?: true;
+  /** JV, server-owned (AC4): this JV is the run of an amortisation schedule for the plan month `scheduleMonth`. */ scheduleId?: string; scheduleMonth?: string;
+  /** TI / IV, server-owned (AC5): this invoice IS the sale of a fixed asset; its journal is the frozen disposal entry, not revenue. Never accepted from a caller. */ disposal?: Disposal & { faId: string; faNumber?: string } }
+/** AC5 fixed assets. Everything here is FROZEN when the asset is registered / disposed (CLAUDE.md freeze rule): cost, salvage, life, start, class, opening accumulated and the account codes. `accumulated` / `nbv` are the server's running figures (opening + live depreciation rows + disposal partial). */
+export type FaSource = { kind: 'bill'; docId: string; lineId: string } | { kind: 'ob'; docId: string; rowId: string };
+export interface FaCodes { cost: string; accumulated: string; expense: string; gain: string; loss: string }
+/** The disposal entry's figures, frozen: `accumulated` includes the disposal-month `partial`; `gainLoss` is absolute (`outcome` says which side). `codes.ar` / `codes.vat` only for a sale. */
+export interface Disposal { date: IsoDate; kind: 'sale' | 'write_off'; name: string; cost: Money; accumulated: Money; partial: Money; nbv: Money; proceeds?: Money; vat?: Money;
+  outcome: 'gain' | 'loss' | 'none'; gainLoss: Money; codes: FaCodes & { ar?: string; vat?: string }; tiId?: string; buyerId?: string }
+export interface AssetData { name: string; assetClass: string; cost: Money; salvage: Money; lifeMonths: number; method: 'straight_line'; startDate: IsoDate; /** the first month a depreciation run may cover (start month; an opening-balance asset: the month after the cut-off) */ depFrom: string;
+  /** AC7a: set only when the asset was registered after a run already covered its natural first month: that month (depFrom is then the month after the latest run). The first run's row catches the months up. */ catchUpFrom?: string;
+  opening: Money; source: FaSource; codes: FaCodes; accumulated: Money; nbv: Money; disposed?: Disposal }
+export interface DpRow { assetId: string; assetNumber?: string; name: string; assetClass: string; amount: Money; expenseCode: string; accumulatedCode: string; /** AC7a: on the asset's first row only - the months (from `from`, `months` of them, counting the run month) the amount adds up */ catchUp?: { from: string; months: number } }
+export interface DpData { month: string; rows: DpRow[] }
+/** AC3 opening balances. `side`: AR / AP = customer / vendor invoices, EMP = owed to an employee (2180), DEP = customer deposit (2140), PRE = vendor prepayment (1140). */
+export type ObSide = 'AR' | 'AP' | 'EMP' | 'DEP' | 'PRE';
+/** `id` and `partyName` are server-owned (set at issue / revise: the id survives a revise that echoes it, the name is the party's AS OF that write and never re-read). */
+export interface ObOpenItem { id?: string; partyName?: string; side: ObSide; partyId: string; docNumber: string; docDate: IsoDate; dueDate?: IsoDate; amount: Money }
+export interface ObAsset { /** server-owned (AC5): survives a revise that echoes it; the fixed asset registered from this row points at it */ id?: string; name: string; assetClass: string; cost: Money; accumulated: Money; acquired: IsoDate; lifeMonths: number }
+export interface ObPayrollYtd { employeeId: string; income: Money; pit: Money; sso: Money }
+/** One bank / cash account: the statement balance at the cut-off (signed) and its in-transit items (deposits in transit / outstanding payments). GL line = statement + deposits - payments. */
+export interface ObBank { accountId: string; statement: Money; inTransit: { id?: string; kind: 'deposit' | 'payment'; date: IsoDate; description: string; amount: Money }[] }
+/** `codes` is server-owned: the account each role / asset class / bank account resolved to AS OF the issue or revise that wrote it (the journal reads these, never the live posting rules). */
+export interface DocOpening { openItems: ObOpenItem[]; assets: ObAsset[]; payrollYtd: ObPayrollYtd[]; bank: ObBank[]; codes?: Record<string, string> }
+/** What the opening-balance check says (compute): each controlled account against its step (`tb` = the trial-balance line, `sub` = the step total, both debit-normal), and the 3900 plug. */
+export interface ObCheck { debit: Money; credit: Money; plug: Money; plugSide: 'Dr' | 'Cr' | null; ties: { key: string; label: string; code: string; tb: Money; sub: Money; ok: boolean }[] }
 /** `cash` = money that moves: received (RC) / paid (PV). `wht` = withholding tax of the document. */
 export interface DocTotals { gross: Money; discount: Money; net: Money; vat: Money; total: Money; wht?: Money; cash?: Money;
   amountInWords: string }
 /** `href`: where an exit button goes when the exit is a page elsewhere (the reconciliation lock: the bank line). */
-export interface Lock { kind: 'period' | 'filing' | 'settlement' | 'reconciliation'; reason: string; exits: string[]; href?: string }
+export interface Lock { kind: 'period' | 'filing' | 'settlement' | 'reconciliation' | 'reversal' | 'schedule' | 'asset'; reason: string; exits: string[]; href?: string }
 /** Document marks: facts about the document that are not status (customer accepted / rejected a QT, DO delivered, PO sent, SO closed). Never a revision. */
 export type MarkKey = 'accepted' | 'rejected' | 'delivered' | 'sent';
 export interface DocMarks { accepted?: { at: string; by: string }; rejected?: { at: string; by: string; reason: string };
@@ -77,7 +107,7 @@ export interface RemainingLine { lineId: string; description: string; unit: stri
 export interface WhtFrozen { bases: { targetId: string; whtTypeCode: string; base: Money; clamped?: true; full?: true; billBase?: Money }[]; lines: WhtLine[]; expense: Money; cashDelta: Money }
 export interface Doc { id: string; type: DocType; number?: string; status: DocStatus; correctionClass: CorrectionClass;
   revision: number; version: number; header: DocHeader; party?: PartySummary; lines: DocLine[]; totals: DocTotals;
-  outstanding?: Money; locks: Lock[]; createdBy: Actor; issuedAt?: string; allocations?: Allocation[]; whtFrozen?: WhtFrozen;
+  outstanding?: Money; locks: Lock[]; createdBy: Actor; issuedAt?: string; allocations?: Allocation[]; whtFrozen?: WhtFrozen; /** OB batch (AC3): the steps behind the trial balance. */ opening?: DocOpening; /** FA (AC5): the registered asset. */ asset?: AssetData; /** DP (AC5): the depreciation run's frozen rows. */ dp?: DpData;
   /** CN / DN (ม.86/10): the invoice's net, the correct value after this note, the difference and its VAT, taken when the note is issued; the paper prints these. Server-written. */
   adjustSnapshot?: { originalNet: Money; correctNet: Money; diffNet: Money; vat: Money };
   cancel?: { reasonCode: string; reasonText: string; at: string }; replacedById?: string; replacesId?: string; marks?: DocMarks;
@@ -137,6 +167,17 @@ export interface SettlementRecord { id: string; companyId: string; kind: Settlem
   reversal?: { at: string; by: Actor; reason?: string } }
 /** One unapplied customer deposit (RC) or vendor prepayment (PV): what was kept, what settlements took, what is left. */
 export interface DepositRow { docId: string; type: 'RC' | 'PV'; number: string; documentDate: IsoDate; partyId: string; partyName: string; amount: Money; applied: Money; remaining: Money }
+/** AC4 schedules. Recurring: a frozen copy of the template, "run now" makes a DRAFT dated `nextRun`. Amortisation: everything is FROZEN at creation (total, months, startMonth, both accounts, the plan table);
+ *  a run posts a system JV (`resultDocId`), a reversed run (`reversed`) lets its month run again. `active` is false once stopped, exhausted (recurring `endAfter`) or done (every month run). */
+export type ScheduleFrequency = 'monthly' | 'quarterly' | 'yearly';
+export interface SchedulePlanRow { month: string; amount: Money }
+export interface ScheduleRun { at: IsoDate; resultDocId?: string; amount?: Money; /** amortisation: the plan month */ month?: string; reversed?: boolean }
+export interface ScheduleRecord { id: string; companyId: string; version: number; kind: 'recurring' | 'amortisation'; name: string; active: boolean;
+  frequency: ScheduleFrequency; nextRun: IsoDate; endAfter?: number; /** recurring: the day of month the schedule started on (a 31st is kept through a short month) */ day?: number;
+  template?: { type: DocType; header: Omit<DocHeader, 'documentDate'>; lines: DocLine[]; /** the party's name as at the last template save (frozen; the master may be renamed later) */ partyName?: string };
+  /** AC7b: every template this schedule had before an edit (who / when), newest last. Drafts already made are never touched. */ templateHistory?: { at: string; by: Actor; template: NonNullable<ScheduleRecord['template']> }[];
+  source?: { docId: string; lineId?: string }; total?: Money; months?: number; startMonth?: string; expenseAccount?: string; prepaidAccount?: string; plan?: SchedulePlanRow[];
+  runs: ScheduleRun[]; stopped?: { at: string; by: Actor; reason?: string }; createdAt: string; createdBy: Actor }
 export interface ActivityEntry{ id: string; at: string; actor: Actor; action: string; detail?: string; reportId?: string }
 export interface FieldChange { path: string; before: string | null; after: string | null }
 export interface Revision { revision: number; at: string; actor: Actor; reason?: string; snapshot: Doc; diff: FieldChange[] }
@@ -156,6 +197,7 @@ export interface WhtLine { code: string; nameTh: string; form: 'PND2' | 'PND3' |
 export interface OpenItem { id: string; type: DocType; number: string; documentDate: IsoDate; dueDate?: IsoDate; total: Money; outstanding: Money }
 export interface ComputeResult { lines: { id: string; net: Money; vat: Money; total: Money }[]; totals: DocTotals;
   missing: MissingItem[]; /** Omitted without ledger.read (D-09). */ journal?: JournalPreview; whtLines?: WhtLine[];
+  /** JV: the server's Σ debit, Σ credit and their difference (the grid shows these, it never sums). */ balance?: { debit: Money; credit: Money; diff: Money }; /** OB: the sub-ledger ties and the 3900 plug. */ opening?: ObCheck;
   /** The approval policy needs this document approved before it can be issued (server-decided on the computed total, §7.6). */ approvalRequired?: boolean;
   allocation?: { allocated: Money; unallocated: Money; suggestedWht: { targetId: string; wht: Money; whtTypeCode?: string }[] } }
 
@@ -199,7 +241,17 @@ export interface PaperModel {
   /** WT (50 ทวิ, D-21): everything the certificate prints, server-built and frozen at the first print (I7). */
   certificate?: { form: 'PND2' | 'PND3' | 'PND53' | 'PND54'; sequence?: string; incomeType: string; incomeLabel: string; paidOn: IsoDate; income: Money; tax: Money; taxInWords: string;
     condition: 'withhold' | 'forever' | 'once'; voucher?: string };
+  /** JV (ใบสำคัญทั่วไป): the account lines as posted, with the server's totals. */
+  journal?: { lines: { no: number; accountCode: string; accountName: string; description: string; debit: Money; credit: Money }[]; debit: Money; credit: Money };
   replacementNote?: string;                    // 'ยกเลิกและออกแทนฉบับเดิม เลขที่ … ลงวันที่ …' (on the NEW document)
   voidMark?: { label: string; note?: string }; // cancelled / replaced originals: diagonal stamp on every page
   signatures: string[];                        // ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม']
 }
+
+/** AC6 period close. A checklist item as the server states it (read-only); `note` marks a check that waits for a later group (filings: TX1). */
+export interface ChecklistItem { code: 'drafts_in_month' | 'unreconciled_bank_lines' | 'depreciation_not_run' | 'schedules_not_run' | 'filings_not_finalized' | 'ob_difference_open'; severity: 'blocking' | 'warning'; count: number; labelTh: string; href: string; note?: string }
+export interface PeriodMonth { month: string; status: 'open' | 'closed'; closedAt?: string; closedBy?: string; acknowledged: ChecklistItem[]; reopened: { at: string; reason: string; by: string }[]; /** the month belongs to a closed fiscal year */ inClosedYear: boolean }
+export interface YearCloseView { id: string; year: number; date: IsoDate; closedAt: string; closedBy: string; net: Money; lines: JournalLinePreview[] }
+export interface PeriodsView { year: number; years: number[]; months: PeriodMonth[]; yearClose?: YearCloseView; yearReopened: { at: string; reason: string; by: string }[];
+  /** what the person may do next: the next month to close, the one that may reopen (the latest closed, not in a closed year), whether the year may close / reopen */
+  next: { close?: string; reopen?: string; closeYear: boolean; reopenYear: boolean } }

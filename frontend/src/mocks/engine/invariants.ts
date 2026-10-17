@@ -1,8 +1,13 @@
-import { ADJUSTS, CREDIT_NOTES, DOC_TYPES, GROUPS, LIVE, SETTLES } from '@/domain/doc-types';
+import { ADJUSTS, CREDIT_NOTES, DOC_TYPES, GROUPS, LIVE, SETTLES, carriesBalance } from '@/domain/doc-types';
 import type { DocType, WhtLine, WhtMode } from '@/domain/types';
 import type { Doc, JournalEntryPreview } from '@/domain/types';
 import type { MockState } from '../store';
 import { approvalRequired } from './approval';
+import { jvInvariants } from './journal';
+import { assetInvariants } from './assets';
+import { scheduleInvariants } from './schedules';
+import { closeInvariants } from './close';
+import { obInvariants } from './opening';
 import { appliedOf, docCash, toleranceOf } from './locks';
 import { payoutOf, resolvedBankId } from './settlement';
 import { consumed, q4 } from './chain';
@@ -88,6 +93,7 @@ export function checkInvariants(st: MockState): string[] {
   };
   const gl = new Map<string, number>(); // `${companyId}|${code}` -> debit - credit
   const credit = new Map<string, number>(); // the same, credit - debit (WHT payable accounts)
+  const obGl = new Map<string, number>(), obCredit = new Map<string, number>(); // AC3: what opening-balance batches posted (a balance with no document behind it: the VAT / WHT ties below judge the documents only) [SP-R]
   const arByParty = new Map<string, number>(); // `${companyId}|${party}` -> debit - credit on 1130
   const apByParty = new Map<string, number>(); // the same on 2110 (payables)
   const empByParty = new Map<string, number>(); // the same on 2180 (owed to employees)
@@ -102,6 +108,7 @@ export function checkInvariants(st: MockState): string[] {
     jsrc.push({ id: d.id, companyId: d.companyId, d, entries: j.preview.entries });
   }
   for (const j of st.bankJournals) jsrc.push({ id: `bank journal ${j.id}`, companyId: j.companyId, entries: j.entries });
+  for (const y of st.yearCloses) jsrc.push({ id: `year close ${y.id}`, companyId: y.companyId, entries: y.journal }); // AC6: the closing entries balance and post to postable accounts like any other
   for (const s of st.settlements) jsrc.push({ id: `settlement ${s.id}`, companyId: s.companyId, entries: s.journal }); // FN3: a settlement's own journal feeds every GL map below like a document's
   for (const { id, companyId, d, entries } of jsrc) {
     for (const e of entries) {
@@ -117,6 +124,7 @@ export function checkInvariants(st: MockState): string[] {
         const k = `${companyId}|${l.accountCode}`;
         gl.set(k, (gl.get(k) ?? 0) + a - b);
         credit.set(k, (credit.get(k) ?? 0) + b - a);
+        if (d?.type === 'OB') { obGl.set(k, (obGl.get(k) ?? 0) + a - b); obCredit.set(k, (obCredit.get(k) ?? 0) + b - a); }
         { const pk = `${companyId}|${l.accountCode}|${l.partyName ?? ''}`; byParty.set(pk, (byParty.get(pk) ?? 0) + a - b); }
         if (l.accountCode === '1130') { const pk = `${companyId}|${l.partyName ?? ''}`; arByParty.set(pk, (arByParty.get(pk) ?? 0) + a - b); }
         if (l.accountCode === '2110') { const pk = `${companyId}|${l.partyName ?? ''}`; apByParty.set(pk, (apByParty.get(pk) ?? 0) + b - a); }
@@ -130,15 +138,16 @@ export function checkInvariants(st: MockState): string[] {
   // 2 + 3. outstanding follows the links; status follows settlements (a TI credited to zero without a settlement stays issued)
   const sub = new Map<string, number>(); // `${companyId}|${type}` -> Σ outstanding of live documents
   for (const d of st.docs) {
-    if (!LIVE.includes(d.status) || !DOC_TYPES[d.type].outstanding) continue;
+    if (!LIVE.includes(d.status) || !carriesBalance(d)) continue;
     const exp = expectedBalance(st, d);
     if (d.outstanding !== fromSatang(exp.out)) out.push(`${d.id}: outstanding ${d.outstanding ?? 'missing'} but the links say ${fromSatang(exp.out)}`);
     if (d.status !== exp.status) out.push(`${d.id}: status ${d.status} but the settlements and outstanding say ${exp.status}`);
-    sub.set(`${d.companyId}|${d.type}`, (sub.get(`${d.companyId}|${d.type}`) ?? 0) + sat(d.outstanding ?? '0.00', d.id));
+    const sk = `${d.companyId}|${d.type === 'OB' ? `OB:${d.header.obSide}` : d.type}`; // an opening item is a subledger row of its side
+    sub.set(sk, (sub.get(sk) ?? 0) + sat(d.outstanding ?? '0.00', d.id));
   }
 
   // 4. subledger = GL, per company
-  const SUBLEDGERS: [string, number, string[]][] = [['1130', 1, ['TI', 'IV']], ['2110', -1, ['PB']], ['2180', -1, ['EX']]];
+  const SUBLEDGERS: [string, number, string[]][] = [['1130', 1, ['TI', 'IV', 'OB:AR']], ['2110', -1, ['PB', 'OB:AP']], ['2180', -1, ['EX', 'OB:EMP']]];
   for (const c of st.companies) {
     for (const [code, sign, types] of SUBLEDGERS) {
       const glBal = sign * (gl.get(`${c.id}|${code}`) ?? 0);
@@ -150,7 +159,7 @@ export function checkInvariants(st: MockState): string[] {
   // 4b. each customer's AR (1130 lines labelled with their name) = Σ that customer's live TI / IV outstanding
   const subByParty = new Map<string, number>();
   for (const d of st.docs) {
-    if (!LIVE.includes(d.status) || (d.type !== 'TI' && d.type !== 'IV')) continue;
+    if (!LIVE.includes(d.status) || (d.type !== 'TI' && d.type !== 'IV' && !(d.type === 'OB' && d.header.obSide === 'AR'))) continue;
     const k = `${d.companyId}|${d.party?.name ?? ''}`;
     subByParty.set(k, (subByParty.get(k) ?? 0) + sat(d.outstanding ?? '0.00', d.id));
   }
@@ -164,7 +173,7 @@ export function checkInvariants(st: MockState): string[] {
   // 4c. each vendor's AP (2110 lines labelled with their name) = Σ that vendor's live PB outstanding
   const apSub = new Map<string, number>();
   for (const d of st.docs) {
-    if (!LIVE.includes(d.status) || d.type !== 'PB') continue;
+    if (!LIVE.includes(d.status) || !(d.type === 'PB' || (d.type === 'OB' && d.header.obSide === 'AP'))) continue;
     const k = `${d.companyId}|${d.party?.name ?? ''}`;
     apSub.set(k, (apSub.get(k) ?? 0) + sat(d.outstanding ?? '0.00', d.id));
   }
@@ -178,7 +187,7 @@ export function checkInvariants(st: MockState): string[] {
   // 4e. each employee's 2180 (lines labelled with their name) = Σ that employee's live EX outstanding (a voucher that pays a claim clears it under the same name)
   const empSub = new Map<string, number>();
   for (const d of st.docs) {
-    if (!LIVE.includes(d.status) || d.type !== 'EX') continue;
+    if (!LIVE.includes(d.status) || !(d.type === 'EX' || (d.type === 'OB' && d.header.obSide === 'EMP'))) continue;
     const k = `${d.companyId}|${d.party?.name ?? ''}`;
     empSub.set(k, (empSub.get(k) ?? 0) + sat(d.outstanding ?? '0.00', d.id));
   }
@@ -235,7 +244,7 @@ export function checkInvariants(st: MockState): string[] {
     else if (a.companyId !== b.companyId || (l.companyId !== undefined && l.companyId !== a.companyId)) out.push(`link ${l.from} → ${l.to} joins different companies`);
   }
   for (const d of st.docs) {
-    if (d.status === 'draft' || d.status === 'pending' || d.status === 'approved' || !DOC_TYPES[d.type].ledger || d.totals.total === '0.00') continue;
+    if (d.status === 'draft' || d.status === 'pending' || d.status === 'approved' || !DOC_TYPES[d.type].ledger || d.totals.total === '0.00' || d.header.obBatchId || d.type === 'FA') continue; // an opening item posts nothing itself (its batch does); an asset posts nothing when registered (AC5: its source did; a write-off writes its own entry, judged by assetInvariants)
     const entries = st.journals.find((j) => j.docId === d.id)?.preview.entries;
     if (!entries?.length) { out.push(`${d.id}: ${d.status} ${d.type} has no journal`); continue; }
     if ((d.status === 'cancelled' || d.status === 'replaced') && entries[entries.length - 1].kind !== 'reversal') out.push(`${d.id}: ${d.status} but its journal ends without a reversal`);
@@ -248,7 +257,7 @@ export function checkInvariants(st: MockState): string[] {
     for (const e of j.preview.entries) {
       if (!e.postedAt) out.push(`${d.id} ${e.kind} entry ${e.date}: no postedAt (every written entry carries when it was posted)`);
       const p = st.periods.find((x) => x.companyId === d.companyId && x.month === e.date.slice(0, 7));
-      if (p?.status !== 'closed') continue;
+      if (p?.status !== 'closed' || d.type === 'OB') continue; // an opening balance defines the opening: it may post into a closed month (D-10 exemption)
       if (!e.postedAt || !p.closedAt || !(Date.parse(e.postedAt) <= Date.parse(p.closedAt))) {
         out.push(`${d.id} ${e.kind} entry ${e.date}: dated in closed period ${p.month} but was posted after it closed (or has no posted-at)`);
       }
@@ -310,7 +319,8 @@ export function checkInvariants(st: MockState): string[] {
     let acct = '';
     try { acct = resolveRole(st, 'WhtReceivable', { companyId: c.id, docType: 'RC' }).code; } catch (e) { out.push(`${c.id}: WhtReceivable does not resolve (${(e as Error).message})`); continue; }
     const want = st.docs.filter((d) => d.companyId === c.id && d.type === 'RC' && LIVE.includes(d.status)).reduce((n, d) => n + sat(d.totals.wht ?? '0.00', d.id), 0);
-    if ((gl.get(`${c.id}|${acct}`) ?? 0) !== want) out.push(`${c.id}: GL ${acct} ${fromSatang(gl.get(`${c.id}|${acct}`) ?? 0)} but the live receipts withheld ${fromSatang(want)}`);
+    const glDocs = (gl.get(`${c.id}|${acct}`) ?? 0) - (obGl.get(`${c.id}|${acct}`) ?? 0);
+    if (glDocs !== want) out.push(`${c.id}: GL ${acct} ${fromSatang(glDocs)} but the live receipts withheld ${fromSatang(want)}`);
   }
 
   // 9. a billing statement (BL): total = the sum of its amounts, its active groups links are its list, every target is a groupable document of the same company and customer, and it posts nothing
@@ -421,8 +431,8 @@ export function checkInvariants(st: MockState): string[] {
   for (const c of st.companies) {
     const accounts = new Set<string>();
     for (const form of ['PND1', 'PND2', 'PND3', 'PND53', 'PND54'] as const) { try { accounts.add(resolveRole(st, 'WhtPayable', { companyId: c.id, docType: 'PV', whtForm: form }).code); } catch { /* not in this chart */ } }
-    for (const a of accounts) if ((credit.get(`${c.id}|${a}`) ?? 0) !== (wtTax.get(`${c.id}|${a}`) ?? 0)) {
-      out.push(`${c.id}: GL ${a} (WHT payable) credit movement ${fromSatang(credit.get(`${c.id}|${a}`) ?? 0)} but the live WTs of that return carry ${fromSatang(wtTax.get(`${c.id}|${a}`) ?? 0)}`);
+    for (const a of accounts) if ((credit.get(`${c.id}|${a}`) ?? 0) - (obCredit.get(`${c.id}|${a}`) ?? 0) !== (wtTax.get(`${c.id}|${a}`) ?? 0)) {
+      out.push(`${c.id}: GL ${a} (WHT payable) credit movement ${fromSatang((credit.get(`${c.id}|${a}`) ?? 0) - (obCredit.get(`${c.id}|${a}`) ?? 0))} but the live WTs of that return carry ${fromSatang(wtTax.get(`${c.id}|${a}`) ?? 0)}`);
     }
   }
 
@@ -564,6 +574,10 @@ export function checkInvariants(st: MockState): string[] {
         if (rest < 0) out.push(`${d.id}: ${fromSatang(appliedOf(st, d.id))} applied from a ${role === 'CustomerDeposit' ? 'deposit' : 'prepayment'} of ${fromSatang(dep)}`);
         kept.set(d.party?.name ?? '', (kept.get(d.party?.name ?? '') ?? 0) + rest);
       }
+      for (const d of st.docs) { // AC3: an opening deposit / prepayment is kept in full (nothing applies it yet)
+        if (d.companyId !== c.id || d.type !== 'OB' || d.header.obSide !== (role === 'CustomerDeposit' ? 'DEP' : 'PRE') || !LIVE.includes(d.status)) continue;
+        kept.set(d.party?.name ?? '', (kept.get(d.party?.name ?? '') ?? 0) + sat(d.outstanding ?? '0.00', d.id));
+      }
       const total = [...kept.values()].reduce((n, x) => n + x, 0);
       if (sign * (gl.get(`${c.id}|${code}`) ?? 0) !== total) out.push(`${c.id}: GL ${code} (${role}) ${fromSatang(sign * (gl.get(`${c.id}|${code}`) ?? 0))} but the unapplied ${role === 'CustomerDeposit' ? 'customer deposits' : 'vendor prepayments'} are ${fromSatang(total)}`);
       const names = new Set([...kept.keys(), ...[...byParty.keys()].filter((k) => k.startsWith(`${c.id}|${code}|`)).map((k) => k.slice(`${c.id}|${code}|`.length))]);
@@ -574,10 +588,16 @@ export function checkInvariants(st: MockState): string[] {
     }
   }
 
+  out.push(...obInvariants(st)); // 16. opening balances (AC3): the journal is what its steps say, the ties hold, the frozen items are the steps' items, go-live follows the batch
+  out.push(...assetInvariants(st)); // 18. fixed assets and depreciation runs (AC5): accumulated = opening + live run rows, GL per class, each run journal is its rows, a disposal entry removes exactly the frozen cost and accumulated
+  out.push(...closeInvariants(st)); // 19. year-end closing entries (AC6): per-account sweep, 3300 nets to nothing, 3200 = net profit, every revenue / expense account 0 after
+  out.push(...scheduleInvariants(st)); // 17. schedules (AC4): plan = total, each run JV = its plan row, the prepaid account moved by the live runs
+  out.push(...jvInvariants(st)); // 15. journal vouchers (AC1): no controlled account, the journal is the lines, reversals mirror, accruals net to zero
+
   // numbering: gap-free per company x type x month, and the series counter agrees
   const groups = new Map<string, number[]>();
   for (const d of st.docs) {
-    if (!d.number) continue;
+    if (!d.number || d.header.obBatchId) continue; // an opening item's number is the old document's, printed '(ยกมา)'
     const m = /^([A-Z]+)-(\d{4})(\d{2})-(\d{4})$/.exec(d.number);
     if (!m || m[1] !== d.type) { out.push(`${d.id}: numbering: "${d.number}" is not a ${d.type} number`); continue; }
     const k = `${d.companyId}|${d.type}|${m[2]}-${m[3]}`;

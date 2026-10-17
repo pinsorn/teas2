@@ -17,7 +17,7 @@ export const searchHandlers = [
     const q = (new URL(request.url).searchParams.get('q') ?? '').trim().toLowerCase();
     if (!q) return HttpResponse.json({ items: [] });
     const docs: SearchHit[] = st.docs
-      .filter((d) => d.companyId === company.id && d.number && d.number.toLowerCase().startsWith(q) && perms.includes(`doc.${d.type}.read`))
+      .filter((d) => d.companyId === company.id && !d.header.obBatchId && d.number && d.number.toLowerCase().startsWith(q) && perms.includes(`doc.${d.type}.read`))
       .slice(0, 5).map((d) => ({ kind: 'doc', id: d.id, label: `${d.number} · ${d.party?.name ?? ''}`, href: docViewHref(d.type, d.id) }));
     const parties: SearchHit[] = perms.includes('party.read')
       ? st.parties.filter((p) => p.companyId === company.id && p.name.toLowerCase().includes(q)).slice(0, 5)

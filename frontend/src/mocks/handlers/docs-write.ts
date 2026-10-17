@@ -6,8 +6,11 @@ import { PAPER_BUILDERS } from '../engine/paper';
 import { buildChain } from '../engine/chain';
 import { approve, sendBack } from '../engine/approval';
 import { type Body, keepOmitted, unavailableTh, approveAndIssue, cancel, compute, convert, createDraft, deleteDraft, issue, publicDoc, submitForApproval, updateDraft } from '../engine/commands';
+import { refuseJvRevise, reverseJv } from '../engine/journal';
+import { controlExit } from '../engine/reconcile';
 import { resolvedBankId } from '../engine/settlement';
 import { buildPlan, correctionPlan, executePlan, planStale } from '../engine/corrections';
+import { activateAsset, disposeAsset, planDepreciation, reverseDisposal, reviseAsset, reviseDp, runDepreciation, saleNeedsApproval, suggestMonth, unregisteredCapex } from '../engine/assets';
 import { MockError } from '../engine/log';
 import { closeRemainder, remainingOf, setMark } from '../engine/marks';
 import { CLASS } from '../fixtures/documents';
@@ -23,6 +26,10 @@ export const stripOverrides = <T extends Body>(b0: T): T => {
   let b = b0;
   // the shape of the request, refused where it enters (create, update, compute, correction plan): an unknown withholding mode would otherwise be read as "deduct" by some paths and as a gross-up by others
   if (b?.header?.whtMode != null && !WHT_MODES.includes(b.header.whtMode)) throw new MockError(422, 'wht.mode_invalid', `โหมดภาษีหัก ณ ที่จ่าย “${String(b.header.whtMode)}” ไม่ถูกต้อง ใช้ได้เฉพาะ: ${WHT_MODES.join(', ')}`);
+  if (b?.header && ('reversalOf' in b.header || 'autoReversal' in b.header)) { const { reversalOf, autoReversal, ...h } = b.header; void reversalOf; void autoReversal; b = { ...b, header: h }; } // JV: a reversal's link is engine-set (reverse / auto-reverse), never accepted from a caller
+  if (b?.header && ('obBatchId' in b.header || 'obSide' in b.header || 'obKind' in b.header)) { const { obBatchId, obSide, obKind, ...h } = b.header; void obBatchId; void obSide; void obKind; b = { ...b, header: h }; } // OB: the frozen items are engine-made, never accepted from a caller
+  if (b?.opening) { const { codes, ...o } = b.opening; void codes; b = { ...b, opening: { ...o, openItems: Array.isArray(o.openItems) ? o.openItems.map((i) => { const { partyName, ...r } = i; void partyName; return r; }) : o.openItems } }; } // OB: the frozen account codes and party names are engine-set at issue / revise, never accepted (an item id is kept: the engine checks it against the stored batch)
+  if (b?.header && 'disposal' in b.header) { const { disposal, ...h } = b.header; void disposal; b = { ...b, header: h }; } // AC5: a disposal invoice is made by the asset's dispose command only; its frozen figures are never accepted from a caller
   if (b?.header && 'bankSnapshot' in b.header) { const { bankSnapshot, ...h } = b.header; void bankSnapshot; b = { ...b, header: h }; } // engine-set at issue (I3): never accepted from a caller
   if (!Array.isArray(b?.lines)) return b;
   const lines = b.lines.map((l) => { if (!l || typeof l !== 'object') return l; const { vatOverride, ...r } = l; void vatOverride; return r; });
@@ -53,12 +60,19 @@ async function guarded(type: string | undefined, perm: ((t: DocType) => string) 
   }
 }
 
+/** AC5: an asset and a depreciation run are made by their own commands (register / run), never by the generic routes. Cancel is the generic route (the engine's rules decide). */
+const generic: typeof guarded = (type, perm, run) => guarded(type, perm, (c, t) => (t === 'FA' || t === 'DP'
+  ? problem(409, 'doc.use_asset_screen', t === 'FA' ? 'สินทรัพย์ลงทะเบียนจากหน้า “ลงทะเบียนสินทรัพย์” (จากรายการซื้อสินทรัพย์หรือยอดยกมา) แก้ไขเงื่อนไขและจำหน่ายได้จากหน้าสินทรัพย์' : 'ค่าเสื่อมราคาคิดจากหน้า “คิดค่าเสื่อมราคา” รายเดือน แก้ไขโดยคำนวณใหม่หรือยกเลิกจากงวดล่าสุด')
+  : run(c, t)));
+
 /** The document must exist in the active company with the URL's type. */
 function own(c: Ctx, type: DocType, id: unknown) {
   const d = c.st.docs.find((x) => x.id === id && x.type === type && x.companyId === c.company.id);
   if (!d) throw new MockError(404, 'doc.not_found', 'ไม่พบเอกสาร');
   return d;
 }
+/** AC5: an optional `version` the caller holds; a stale one is refused (same as /recompute). */
+const staleVersion = (d: { version: number }, v: number | undefined) => { if (v !== undefined && v !== d.version) throw new MockError(409, 'doc.version_conflict', 'เอกสารถูกแก้ไขโดยผู้อื่นแล้ว กรุณาโหลดใหม่'); };
 const versionOf = (req: Request, body?: { version?: number }) => {
   const v = body?.version ?? Number(req.headers.get('If-Match')?.replace(/"/g, ''));
   if (!Number.isFinite(v)) throw new MockError(422, 'doc.version_required', 'ต้องระบุเวอร์ชันของเอกสาร');
@@ -73,7 +87,7 @@ const refuseInactive = (c: Ctx, type: DocType, header: DocHeader | undefined, ke
 const P = (perm: string) => (t: DocType) => `doc.${t}.${perm}`;
 
 export const docsWriteHandlers = [
-  http.post('*/bff/v1/docs/:type/compute', ({ request, params }) => guarded(String(params.type), P('read'), async (c, t) =>
+  http.post('*/bff/v1/docs/:type/compute', ({ request, params }) => generic(String(params.type), P('read'), async (c, t) =>
     {
     const docId = new URL(request.url).searchParams.get('docId') ?? undefined; // revise mode: the issued document's own settlements are given back
     if (docId) own(c, t, docId);
@@ -81,7 +95,7 @@ export const docsWriteHandlers = [
     return HttpResponse.json(c.perms.includes('ledger.read') ? { ...r, journal } : r); // D-09: no journal without ledger.read
   })),
 
-  http.post('*/bff/v1/docs/:type', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
+  http.post('*/bff/v1/docs/:type', ({ request, params }) => generic(String(params.type), P('create'), async (c, t) => {
     const key = request.headers.get('Idempotency-Key') ?? crypto.randomUUID();
     const body = stripOverrides((await request.json()) as Body);
     refuseInactive(c, t, body?.header); // the shape of the request, refused where it enters: a new document does not pick a closed account
@@ -90,7 +104,7 @@ export const docsWriteHandlers = [
     return HttpResponse.json(doc, { status: 201 });
   })),
 
-  http.put('*/bff/v1/docs/:type/:id', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
+  http.put('*/bff/v1/docs/:type/:id', ({ request, params }) => generic(String(params.type), P('create'), async (c, t) => {
     const stored = own(c, t, params.id);
     const body = stripOverrides((await request.json()) as Body & { version?: number });
     refuseInactive(c, t, body?.header, stored.header); // keeping the account it already has is fine
@@ -99,7 +113,7 @@ export const docsWriteHandlers = [
     return HttpResponse.json(doc);
   })),
 
-  http.delete('*/bff/v1/docs/:type/:id', ({ request, params }) => guarded(String(params.type), P('create'), (c, t) => {
+  http.delete('*/bff/v1/docs/:type/:id', ({ request, params }) => generic(String(params.type), P('create'), (c, t) => {
     own(c, t, params.id);
     const q = new URL(request.url).searchParams.get('version');
     deleteDraft(c.st, String(params.id), versionOf(request, q ? { version: Number(q) } : undefined), ACTOR);
@@ -107,7 +121,7 @@ export const docsWriteHandlers = [
     return new HttpResponse(null, { status: 204 });
   })),
 
-  http.post('*/bff/v1/docs/:type/:id/issue', ({ request, params }) => guarded(String(params.type), P('issue'), async (c, t) => {
+  http.post('*/bff/v1/docs/:type/:id/issue', ({ request, params }) => generic(String(params.type), P('issue'), async (c, t) => {
     own(c, t, params.id);
     const body = (await request.json().catch(() => ({}))) as { version?: number };
     const doc = issue(c.st, String(params.id), versionOf(request, body), ACTOR);
@@ -116,21 +130,21 @@ export const docsWriteHandlers = [
   })),
 
   // §7.6 approval. The gate itself is in the engine (issue refuses an unapproved document); these are the ways through it, each with its own right.
-  http.post('*/bff/v1/docs/:type/:id/submit', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
+  http.post('*/bff/v1/docs/:type/:id/submit', ({ request, params }) => generic(String(params.type), P('create'), async (c, t) => {
     own(c, t, params.id);
     const body = (await request.json().catch(() => ({}))) as { version?: number };
     const doc = submitForApproval(c.st, String(params.id), versionOf(request, body), ACTOR);
     done(c);
     return HttpResponse.json(doc);
   })),
-  http.post('*/bff/v1/docs/:type/:id/approve', ({ request, params }) => guarded(String(params.type), P('approve'), async (c, t) => {
+  http.post('*/bff/v1/docs/:type/:id/approve', ({ request, params }) => generic(String(params.type), P('approve'), async (c, t) => {
     own(c, t, params.id);
     const body = (await request.json().catch(() => ({}))) as { version?: number };
     const doc = approve(c.st, String(params.id), versionOf(request, body), ACTOR);
     done(c);
     return HttpResponse.json(doc);
   })),
-  http.post('*/bff/v1/docs/:type/:id/approve-and-issue', ({ request, params }) => guarded(String(params.type), P('approve'), async (c, t) => {
+  http.post('*/bff/v1/docs/:type/:id/approve-and-issue', ({ request, params }) => generic(String(params.type), P('approve'), async (c, t) => {
     own(c, t, params.id);
     if (!c.perms.includes(`doc.${t}.issue`)) return forbidden(`doc.${t}.issue`); // one action only for a person who holds BOTH rights
     const body = (await request.json().catch(() => ({}))) as { version?: number };
@@ -138,7 +152,7 @@ export const docsWriteHandlers = [
     done(c);
     return HttpResponse.json(doc);
   })),
-  http.post('*/bff/v1/docs/:type/:id/send-back', ({ request, params }) => guarded(String(params.type), P('approve'), async (c, t) => {
+  http.post('*/bff/v1/docs/:type/:id/send-back', ({ request, params }) => generic(String(params.type), P('approve'), async (c, t) => {
     own(c, t, params.id);
     const body = (await request.json().catch(() => ({}))) as { version?: number; reason?: string };
     const doc = sendBack(c.st, String(params.id), versionOf(request, body), typeof body.reason === 'string' ? body.reason : '', ACTOR);
@@ -154,9 +168,24 @@ export const docsWriteHandlers = [
     return HttpResponse.json(doc);
   })),
 
-  http.post('*/bff/v1/docs/:type/:id/correction-plan', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
+  // AC1 "กลับรายการ": a JV's entry is reversed by a reversing JV; any other document is refused with the exit (its own cancel / correction)
+  http.post('*/bff/v1/docs/:type/:id/reverse', ({ request, params }) => generic(String(params.type), P('issue'), async (c, t) => {
+    own(c, t, params.id);
+    const body = ((await request.json().catch(() => ({}))) ?? {}) as { date?: string; reason?: string };
+    if (body.date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(body.date))) throw new MockError(422, 'ledger.reverse_date', 'วันที่กลับรายการไม่ถูกต้อง');
+    const r = reverseJv(c.st, String(params.id), ACTOR, { ...(body.date ? { date: body.date } : {}), ...(typeof body.reason === 'string' && body.reason.trim() ? { reason: body.reason.trim() } : {}) });
+    done(c);
+    return HttpResponse.json(publicDoc(r), { status: 201 });
+  })),
+  // the accounts a journal voucher may post to: postable, none a document owns (the server refuses the others at issue)
+  // AC3 (?for=OB): the opening balance posts to controlled accounts too (it ties them to their steps); only 3900, the system's plug, is left out
+  http.get('*/bff/v1/accounting/journal-accounts', ({ request }) => guarded(new URL(request.url).searchParams.get('for') === 'OB' ? 'OB' : 'JV', P('create'), (c) => HttpResponse.json(
+    c.st.accounts.filter((a) => a.companyId === c.company.id && a.postable && a.active !== false && (new URL(request.url).searchParams.get('for') === 'OB' ? a.subClass !== 'opening' && a.subClass !== 'current-year' : !controlExit(c.st, c.company.id, a.code, 'jv'))).map((a) => ({ code: a.code, nameTh: a.nameTh, class: a.class }))))),
+
+  http.post('*/bff/v1/docs/:type/:id/correction-plan', ({ request, params }) => generic(String(params.type), P('create'), async (c, t) => {
     const orig = own(c, t, params.id);
     const proposal = stripOverrides((await request.json()) as Body);
+    if (t === 'JV') refuseJvRevise(c.st, orig, proposal); // a reversed JV and a reversal are final: refused before a plan is shown
     refuseInactive(c, t, proposal?.header && keepOmitted(orig, proposal.header), orig.header); // I2: a correction cannot re-point the document to a closed account
     const plan = correctionPlan(c.st, String(params.id), proposal, c.s.role);
     done(c);
@@ -185,7 +214,7 @@ export const docsWriteHandlers = [
     }
   }),
 
-  http.post('*/bff/v1/docs/:type/:id/convert', ({ request, params }) => guarded(String(params.type), P('read'), async (c, t) => {
+  http.post('*/bff/v1/docs/:type/:id/convert', ({ request, params }) => generic(String(params.type), P('read'), async (c, t) => {
     own(c, t, params.id);
     const body = (await request.json()) as { targetType: DocType; lines: { sourceLineId: string; qty: Qty }[] };
     if (!Object.hasOwn(CLASS, body.targetType)) throw new MockError(422, 'doc.conversion_not_allowed', 'ประเภทเอกสารปลายทางไม่ถูกต้อง');
@@ -196,7 +225,7 @@ export const docsWriteHandlers = [
     return HttpResponse.json(doc, { status: 201 });
   })),
 
-  http.post('*/bff/v1/docs/:type/:id/marks', ({ request, params }) => guarded(String(params.type), P('issue'), async (c, t) => {
+  http.post('*/bff/v1/docs/:type/:id/marks', ({ request, params }) => generic(String(params.type), P('issue'), async (c, t) => {
     own(c, t, params.id);
     const body = (await request.json()) as { mark: MarkKey; version?: number; reason?: string };
     const doc = setMark(c.st, String(params.id), body.mark, versionOf(request, body), ACTOR, body.reason);
@@ -204,7 +233,7 @@ export const docsWriteHandlers = [
     return HttpResponse.json(doc);
   })),
 
-  http.post('*/bff/v1/docs/:type/:id/close-remainder', ({ request, params }) => guarded(String(params.type), P('issue'), async (c, t) => {
+  http.post('*/bff/v1/docs/:type/:id/close-remainder', ({ request, params }) => generic(String(params.type), P('issue'), async (c, t) => {
     own(c, t, params.id);
     const body = (await request.json()) as { version?: number; reason?: string };
     const doc = closeRemainder(c.st, String(params.id), versionOf(request, body), body.reason ?? '', ACTOR);
@@ -270,5 +299,60 @@ export const docsWriteHandlers = [
     if (['draft', 'pending', 'approved'].includes(d.status)) return problem(409, 'doc.not_printable', 'เอกสารที่ยังไม่ได้ออกพิมพ์ไม่ได้ ต้องออกเอกสารก่อน');
     return HttpResponse.json(builder(c, publicDoc(d), new URL(request.url).searchParams.get('copy') === '1'));
   })),
+
+  // ---- AC5 fixed assets and depreciation runs: their own commands (the generic routes refuse FA / DP, see `generic`)
+  http.get('*/bff/v1/assets/unregistered', () => guarded('FA', 'doc.FA.read', (c) => HttpResponse.json({ items: unregisteredCapex(c.st, c.company.id) }))),
+  http.post('*/bff/v1/assets', ({ request }) => guarded('FA', 'doc.FA.create', async (c) => {
+    const b = ((await request.json().catch(() => ({}))) ?? {}) as { source?: never; name?: string; salvage?: string; lifeMonths?: number; startDate?: string };
+    const fa = activateAsset(c.st, c.company.id, { source: b.source as never, ...(typeof b.name === 'string' ? { name: b.name } : {}), ...(typeof b.salvage === 'string' ? { salvage: b.salvage } : {}), ...(b.lifeMonths !== undefined ? { lifeMonths: b.lifeMonths } : {}), ...(typeof b.startDate === 'string' ? { startDate: b.startDate } : {}) }, ACTOR);
+    done(c);
+    return HttpResponse.json(publicDoc(fa), { status: 201 });
+  })),
+  http.post('*/bff/v1/docs/FA/:id/dispose', ({ request, params }) => guarded('FA', 'doc.FA.issue', async (c) => {
+    const d = own(c, 'FA', params.id);
+    const b = ((await request.json().catch(() => ({}))) ?? {}) as { date?: string; kind?: 'sale' | 'write_off'; proceeds?: string; buyerId?: string; version?: number };
+    staleVersion(d, b.version);
+    const inv = c.company.vatRegistered ? 'TI' : 'IV';
+    if (b.kind === 'sale') for (const v of ['create', 'issue']) if (!c.perms.includes(`doc.${inv}.${v}`)) return forbidden(`doc.${inv}.${v}`); // the sale issues the invoice: its rights too
+    if (b.kind === 'sale' && saleNeedsApproval(c.st, c.company.id, b.proceeds) && !c.perms.includes(`doc.${inv}.approve`)) return forbidden(`doc.${inv}.approve`); // a policy-gated invoice is approved by whoever may, not by the dispose command
+    const fa = disposeAsset(c.st, c.company.id, String(params.id), { date: String(b.date), kind: b.kind as 'sale', ...(b.proceeds !== undefined ? { proceeds: b.proceeds } : {}), ...(b.buyerId ? { buyerId: b.buyerId } : {}) }, ACTOR);
+    done(c);
+    return HttpResponse.json(publicDoc(fa));
+  })),
+  http.post('*/bff/v1/docs/FA/:id/undispose', ({ request, params }) => guarded('FA', 'doc.FA.cancel', async (c) => {
+    const d = own(c, 'FA', params.id);
+    staleVersion(d, (((await request.json().catch(() => ({}))) ?? {}) as { version?: number }).version);
+    const fa = reverseDisposal(c.st, c.company.id, String(params.id), ACTOR);
+    done(c);
+    return HttpResponse.json(publicDoc(fa));
+  })),
+  http.post('*/bff/v1/docs/FA/:id/terms', ({ request, params }) => guarded('FA', 'doc.FA.correct', async (c) => {
+    const d = own(c, 'FA', params.id);
+    const b = ((await request.json().catch(() => ({}))) ?? {}) as { name?: string; salvage?: string; lifeMonths?: number; startDate?: string; version?: number };
+    staleVersion(d, b.version);
+    const fa = reviseAsset(c.st, c.company.id, String(params.id), { ...(typeof b.name === 'string' ? { name: b.name } : {}), ...(typeof b.salvage === 'string' ? { salvage: b.salvage } : {}), ...(b.lifeMonths !== undefined ? { lifeMonths: b.lifeMonths } : {}), ...(typeof b.startDate === 'string' ? { startDate: b.startDate } : {}) }, ACTOR);
+    done(c);
+    return HttpResponse.json(publicDoc(fa));
+  })),
+  http.get('*/bff/v1/depreciation/preview', ({ request }) => guarded('DP', 'doc.DP.read', (c) => {
+    const month = new URL(request.url).searchParams.get('month') || suggestMonth(c.st, c.company.id);
+    const { problem: pb, ...plan } = planDepreciation(c.st, c.company.id, month);
+    return HttpResponse.json({ ...plan, suggested: suggestMonth(c.st, c.company.id), ...(pb ? { problem: { status: pb.status, code: pb.code, title: pb.title } } : {}) });
+  })),
+  http.post('*/bff/v1/depreciation/runs', ({ request }) => guarded('DP', 'doc.DP.issue', async (c) => {
+    const b = ((await request.json().catch(() => ({}))) ?? {}) as { month?: string };
+    const dp = runDepreciation(c.st, c.company.id, String(b.month), ACTOR);
+    done(c);
+    return HttpResponse.json(publicDoc(dp), { status: 201 });
+  })),
+  http.post('*/bff/v1/docs/DP/:id/recompute', ({ request, params }) => guarded('DP', 'doc.DP.correct', async (c) => {
+    const d = own(c, 'DP', params.id);
+    const b = ((await request.json().catch(() => ({}))) ?? {}) as { version?: number };
+    staleVersion(d, b.version);
+    const dp = reviseDp(c.st, d.id, ACTOR);
+    done(c);
+    return HttpResponse.json(publicDoc(dp));
+  })),
 ];
+
 

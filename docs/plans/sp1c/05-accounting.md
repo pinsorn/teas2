@@ -55,15 +55,15 @@ Modify `descriptors/index.ts`, `domain/types.ts` (`DocLine.accountCode/debit/cre
 
 **Permissions:** accountant + all `doc.JV.*`, `doc.JV.approve`; operator / admin none (JV is accountant-only, §3.1).
 
-- [ ] **Step 1: Failing tests** — `journal.test.ts`: unbalanced refused with the difference; control account refused;
+- [x] **Step 1: Failing tests** — `journal.test.ts`: unbalanced refused with the difference; control account refused;
   AR without party refused; reverse of a TI entry creates a balanced reversing JV and does not change the TI's
   outstanding (subledger rule still holds only if the reversal carries the party — assert the reversal lines carry the
   party); auto-reverse creates the next-month reversal; `checkInvariants` `[]`. `AccountLineGrid.test.tsx`: balance
   text comes from compute. e2e: `screenContract` JV list (forbiddenRole operator), JV view (`jvAccrual`), journals page
   (`both`, forbiddenRole operator); flow create a 2-line JV with Tab / Enter only, issue, then "กลับรายการ" from the
   ledger tab.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(accounting): journal vouchers, reversals and the general journal`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(accounting): journal vouchers, reversals and the general journal`.
 
 ---
 
@@ -89,11 +89,11 @@ moving an account under a header of a different class refused.
 
 **Permissions:** accountant `ledger.coa.manage`.
 
-- [ ] **Step 1: Failing tests** — every rule above with its exit message; tree order and search keeping ancestors.
+- [x] **Step 1: Failing tests** — every rule above with its exit message; tree order and search keeping ancestors.
   e2e: `screenContract` COA (`both`, forbiddenRole operator); add account 5190 "ค่าใช้จ่ายเบ็ดเตล็ด" under 5000; try to
   deactivate 1130 → refusal names the posting rule.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(accounting): chart of accounts management`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(accounting): chart of accounts management`.
 
 ---
 
@@ -139,11 +139,11 @@ settles an OB open item, `GL(1130) = Σ outstanding(TI ∪ IV ∪ OB AR items)` 
 
 **Permissions:** accountant `doc.OB.*`.
 
-- [ ] **Step 1: Failing tests** — subledger mismatch refused with both numbers; 3900 plug equals the imbalance; RC
+- [x] **Step 1: Failing tests** — subledger mismatch refused with both numbers; 3900 plug equals the imbalance; RC
   settling an OB AR item reduces it and keeps the AR identity; cancel reverses. e2e: `screenContract` OB list
   (`both`, forbiddenRole operator); wizard walk-through on the VAT draft ending at step 5 showing the 3900 difference.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(accounting): opening balances wizard`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.** (AC3: engine written before `opening.test.ts` for the first slice - not red-first; the tests were then mutation-checked, see task-AC3-report.md)
+- [x] **Step 6: Controller commits** — `feat(accounting): opening balances wizard`.
 
 ---
 
@@ -173,15 +173,24 @@ Missing runs show on the period-close checklist (AC6).
 
 **Money invariants:** Σ amortisation plan = total exactly; after all runs `GL(1150)` contribution of the schedule = 0.
 
+**Source and run rules (AC4 reviews):** a run is refused until its month has ended (`schedule.not_due`; nothing is posted ahead, a run
+reversal follows the plain AC1 date rules). A schedule cannot start before its source document's month (`schedule.before_source`) and
+its total is capped by what the source line still holds (line + live PDN − live PCN − live runs of every schedule on the line).
+While a schedule is not stopped (done ones are released) the source line's money / account / date, a PCN / PDN on it, and the
+source's cancel / JV reversal are refused (`schedule.source_locked`, exit "หยุดตารางตัดจ่าย <name>"); there is no cascade: cancelling the
+source never stops its schedules. After the stop (or when done) the line may shrink only down to Σ live runs, and the source date
+cannot move while any run is live (`schedule.source_consumed`, exit: reverse the runs). The expense / prepaid account of a schedule that is
+not stopped cannot be deactivated (`account.scheduled`).
+
 **Fixtures:** VAT: recurring monthly TI to pc-04 "ดูแลเว็บไซต์รายเดือน" (next run 2026-11-01); recurring JV accrual;
 amortisation of an annual insurance PB line 12,000.00 over 12 months from 2026-07 (3 runs done). Non-VAT: recurring IV.
 Keys `schedRecurringTi`, `schedAmortisation`.
 
-- [ ] **Step 1: Failing tests** — plan residue in the last month; run creates a draft (not issued); amortisation run
+- [x] **Step 1: Failing tests** — plan residue in the last month; run creates a draft (not issued); amortisation run
   balances; double run in the same month refused (`schedule.already_run`). e2e: `screenContract` schedules list
   (`both`, forbiddenRole operator) and detail; run-now → a draft TI appears in the TI list's draft view.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(accounting): recurring templates and amortisation schedules`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.** (AC4: `schedules.test.ts` written first and red on the missing module; every money guard and invariant mutation-checked, see task-AC4-report.md)
+- [x] **Step 6: Controller commits** — `feat(accounting): recurring templates and amortisation schedules`.
 
 ---
 
@@ -225,12 +234,12 @@ output VAT register (TX1).
 
 **Permissions:** accountant `doc.FA.*`, `doc.DP.*`.
 
-- [ ] **Step 1: Failing tests** — proration vectors (start 15 Aug 2026 of 31 days: `round(monthly × 17/31)`), cap at
+- [x] **Step 1: Failing tests** — proration vectors (start 15 Aug 2026 of 31 days: `round(monthly × 17/31)`), cap at
   cost − salvage, one run per month, disposal-by-sale TI totals and journal balance, write-off journal,
   `checkInvariants` `[]`. e2e: `screenContract` FA list / view, DP list (`both`, forbiddenRole operator); flow run
   October depreciation → preview → issue → FA view shows the new accumulated value.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(accounting): fixed assets, disposals with tax invoices and depreciation runs`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(accounting): fixed assets, disposals with tax invoices and depreciation runs`.
 
 ---
 
@@ -266,19 +275,19 @@ Modify `mocks/engine/periods.ts`, `mocks/handlers` (`/periods/*`), permissions (
 **Money invariants:** after year-end close, every revenue / expense account balance for the year = 0 and
 `Δ GL(3200) = net profit of the year`; reopen restores exactly.
 
-- [ ] **Step 1: Failing tests** — blocking checklist refuses close with exits; order rule; reopen needs reason and
+- [x] **Step 1: Failing tests** — blocking checklist refuses close with exits; order rule; reopen needs reason and
   appears in history and audit; year close sweep identity; corrections in a closed month post "แก้ไขย้อนหลัง" (F4 rule
   re-checked through a UI flow). e2e: `screenContract` period close (`both`, forbiddenRole operator); close 2026-07
   with warnings acknowledged; try 2026-10 with `dpDue` → refusal with link to depreciation.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(accounting): period close checklist, reopen with reason and year-end close`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(accounting): period close checklist, reopen with reason and year-end close`.
 
 ---
 
 ### Task GAC: Ham gate — accounting
 
-- [ ] Consolidated gate green; production build / staging.
-- [ ] Send Ham: JV keyboard entry and control-account refusal (G4); reverse any entry; COA rules with exits; OB wizard
+- [x] Consolidated gate green; production build / staging.
+- [x] Send Ham: JV keyboard entry and control-account refusal (G4); reverse any entry; COA rules with exits; OB wizard
   (and the decision that OB open items are settleable OB sub-items, not a new type); schedules (drafts only, §5.9);
   assets with disposal-by-TI (G4) and proration; period close checklist + reopen history.
-- [ ] AskUserQuestion "Accounting approve?" — approve / approve with changes / rework. Record in `STATUS.md`.
+- [x] AskUserQuestion "Accounting approve?" — approve / approve with changes / rework. Record in `STATUS.md`.

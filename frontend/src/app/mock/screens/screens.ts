@@ -26,6 +26,11 @@ export const EX_BASE = '/purchases/expense-claims';
 export const WT_BASE = '/tax/wht-certificates';
 export const BANK_BASE = '/finance/bank-accounts';
 export const SETTLEMENT_BASE = '/finance/settlements';
+export const JV_BASE = '/accounting/journal-vouchers';
+export const OB_BASE = '/accounting/opening-balances';
+export const SCHEDULE_BASE = '/accounting/schedules';
+export const FA_BASE = '/accounting/fixed-assets';
+export const DP_BASE = '/accounting/depreciation-runs';
 // names are keys of messages `screens.name.*`; fixture keys live in src/mocks/fixtures/ids.ts (later tasks append their screens here)
 export const SCREENS: Screen[] = [
   { name: 'home', route: '/', company: 'both', states: true },
@@ -129,6 +134,7 @@ export const SCREENS: Screen[] = [
   { name: 'dnPrint', route: { fixture: 'dnIssued', base: '/print/DN' }, company: 'vat', states: false },
   { name: 'tiCreditedToZero', route: { fixture: 'tiCreditedToZero' }, company: 'vat', states: true },
   { name: 'trialBalance', route: '/reports/financial-statements', company: 'both', states: true },
+  { name: 'assetRegisterReport', route: '/reports/asset-register', company: 'both', states: true },
   { name: 'customers', route: '/master/customers', company: 'both', states: true },
   { name: 'customerView', route: '/master/customers/pc-01', company: 'vat', states: true },
   { name: 'vendors', route: '/master/vendors', company: 'both', states: true },
@@ -143,5 +149,33 @@ export const SCREENS: Screen[] = [
   { name: 'settlementPosted', route: `${SETTLEMENT_BASE}/stl-001`, company: 'vat', states: true }, // the seeded settlement: pc-05's deposit rc-dep2 applied to ti-dep2
   { name: 'rcDepositApplied', route: { fixture: 'rcDepositApplied', base: RC_BASE }, company: 'vat', states: true },
   { name: 'pvPrepayment', route: { fixture: 'pvPrepayment', base: PV_BASE }, company: 'vat', states: true },
+  { name: 'jvList', route: JV_BASE, company: 'both', states: true },
+  { name: 'jvNew', route: `${JV_BASE}/new`, company: 'both', states: true },
+  { name: 'jvDraft', route: { fixture: 'jvDraftUnbalanced', base: JV_BASE }, company: 'vat', states: true },
+  { name: 'jvAccrual', route: { fixture: 'jvAccrual', base: JV_BASE }, company: 'vat', states: true },
+  { name: 'jvIssued', route: { fixture: 'jvIssued', base: JV_BASE }, company: 'vat', states: true },
+  { name: 'jvReversal', route: { fixture: 'jvReversal', base: JV_BASE }, company: 'vat', states: true },
+  { name: 'jvPrint', route: { fixture: 'jvAccrual', base: '/print/JV' }, company: 'vat', states: false },
+  { name: 'njvIssued', route: { fixture: 'njvIssued', base: JV_BASE }, company: 'nonvat', states: true },
+  { name: 'journalsList', route: '/accounting/journals', company: 'both', states: true },
+  { name: 'coaList', route: '/accounting/chart-of-accounts', company: 'both', states: true },
+  { name: 'obList', route: OB_BASE, company: 'both', states: true },
+  { name: 'obNew', route: `${OB_BASE}/new`, company: 'vat', states: true },
+  { name: 'obDraft', route: { fixture: 'obDraft', base: OB_BASE, suffix: '/edit' }, company: 'vat', states: true },
+  { name: 'obIssued', route: { fixture: 'obIssued', base: OB_BASE }, company: 'nonvat', states: true },
+  { name: 'schedulesList', route: SCHEDULE_BASE, company: 'both', states: true },
+  { name: 'scheduleAmortisation', route: { fixture: 'schedAmortisation', base: SCHEDULE_BASE }, company: 'vat', states: true },
+  { name: 'scheduleRecurringTi', route: { fixture: 'schedRecurringTi', base: SCHEDULE_BASE }, company: 'vat', states: true },
+  { name: 'nscheduleRecurring', route: { fixture: 'nschedRecurring', base: SCHEDULE_BASE }, company: 'nonvat', states: true },
+  { name: 'faList', route: FA_BASE, company: 'both', states: true },
+  { name: 'faNew', route: `${FA_BASE}/new`, company: 'both', states: true },
+  { name: 'faActive', route: { fixture: 'faActive', base: FA_BASE }, company: 'vat', states: true },
+  { name: 'faDisposed', route: { fixture: 'faDisposed', base: FA_BASE }, company: 'vat', states: true },
+  { name: 'nfaActive', route: { fixture: 'nfaActive', base: FA_BASE }, company: 'nonvat', states: true },
+  { name: 'faCar', route: { fixture: 'faCar', base: FA_BASE }, company: 'nonvat', states: true },
+  { name: 'dpList', route: DP_BASE, company: 'both', states: true },
+  { name: 'dpNew', route: `${DP_BASE}/new`, company: 'both', states: true },
+  { name: 'dpRun', route: { fixture: 'dpRun', base: DP_BASE }, company: 'vat', states: true },
+  { name: 'periodClose', route: '/accounting/period-close', company: 'both', states: true },
   { name: 'styleGuide', route: '/style-guide', company: 'both', states: false },
 ];

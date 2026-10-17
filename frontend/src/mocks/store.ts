@@ -1,17 +1,20 @@
 import type {
-  ActivityEntry, Allocation, ApprovalPolicy, Attachment, AuditEntry, BankImport, BankJournal, BankLine, ChainEdge, Company, CorrectionPlan, Doc, DocHeader, DocLine, ItemSummary, JournalPreview, Membership, Money, PaperModel, PartySummary, Revision, Role, SettlementRecord,
+  ActivityEntry, Allocation, ApprovalPolicy, Attachment, AuditEntry, BankImport, BankJournal, BankLine, ChainEdge, Company, CorrectionPlan, Doc, DocHeader, DocLine, ItemSummary, JournalPreview, Membership, Money, PaperModel, PartySummary, Revision, Role, ScheduleRecord, SettlementRecord,
 } from '@/domain/types';
 import { DOC_TYPES, LIVE } from '@/domain/doc-types';
 import { recomputeSettlement } from './engine/commands';
 import { ledgerFor } from './engine/ledger';
 import { withBankSnapshot } from './engine/settlement';
 import { adjustSnapshot, hasSnapshot } from './engine/notes';
+import type { YearClose } from './engine/close';
 import type { Period } from './engine/periods';
 import type { PostingRule } from './engine/posting';
 import type { BankAccount } from './fixtures/bank-accounts';
 import type { CompanyAccount } from './fixtures/coa';
 import type { CompanyWhtType } from './fixtures/wht-types';
 import { SEED_SPECS } from './fixtures';
+import { seedAssets } from './fixtures/specs/assets';
+import { seedSchedules } from './fixtures/specs/schedules';
 import { runSeed } from './fixtures/seed-runner';
 import { buildSeed } from './fixtures';
 import { clearAttachmentBlobs } from './engine/attachments';
@@ -19,7 +22,7 @@ import { getSettings } from './settings';
 import { seedBankStatements } from './fixtures/statements';
 
 export interface MockState {
-  version: 28;
+  version: 36;
   companies: Company[];
   memberships: (Membership & { userId: string })[];
   /** `active` (default true) and `version` (default 1) are the master record's; documents keep their own party snapshot. */
@@ -42,6 +45,10 @@ export interface MockState {
   bankJournals: BankJournal[];
   /** FN3: settlement records (deposits / prepayments applied, netting, write-offs; D-13). Each carries its own journal and its frozen legs; its links are `settles` links whose `from` is the record id. */
   settlements: SettlementRecord[];
+  /** AC4: recurring templates and prepaid / deferred amortisation schedules (frozen at creation; a run posts a system JV or makes a draft). */
+  schedules: ScheduleRecord[];
+  /** AC6: the year-end closing entries (one live per company-year; a reopen keeps the record and reverses its entry). Each carries its own journal and its frozen lines. */
+  yearCloses: YearClose[];
   /** FN3: per company, the largest difference a settlement may absorb: satang rounding, and a small write-off (also the bank fee) [SP-R]. */
   settlementTolerance: { companyId: string; rounding: Money; smallWriteOff: Money }[];
   /** [SP-R] mock WHT types per company (fixtures/wht-types.ts). */
@@ -76,6 +83,8 @@ export function buildSeedState(role: Role = 'accountant'): MockState {
     if (ti && !d.adjustSnapshot) d.adjustSnapshot = adjustSnapshot(s, ti, d);
   }
   runSeed(s, SEED_SPECS); // later groups' documents, produced through the engine (D-23)
+  seedSchedules(s); // AC4: recurring templates and the insurance amortisation (3 runs), after the bill they come from
+  seedAssets(s); // AC5: fixed assets, depreciation runs and the sale of one asset, after every bill / opening balance they come from
   for (const d of s.docs) if (d.issuedAt && !d.header.bankSnapshot) d.header = withBankSnapshot(s, d.companyId, d.type, d.header); // seeded receipts / vouchers entered directly: freeze the account they print, like an issued one (I3)
   seedBankStatements(s); // FN1: the September statements, imported through the same engine the upload uses
   return s;
@@ -86,7 +95,7 @@ export const seed = (): MockState => buildSeedState(getSettings().role);
 export function loadState(): MockState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 28) return s; }
+    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 36) return s; }
   } catch { /* fall through to a fresh seed */ }
   return seed();
 }
