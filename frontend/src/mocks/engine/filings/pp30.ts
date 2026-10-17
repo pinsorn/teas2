@@ -6,7 +6,7 @@ import { docEditHref, docViewHref } from '@/descriptors';
 import { formatDateBE } from '@/lib/format';
 import { isValidTin } from '@/domain/tin';
 import type { MockState } from '../../store';
-import { MockError } from '../log';
+import { MockError, today } from '../log';
 import { fromSatang, toSatang } from '../money';
 import { monthLabelTh } from '../periods';
 import { claimPeriodOf, exForfeited, isRecoverable } from '../purchase-vat';
@@ -17,10 +17,14 @@ import { computeDoc, vatOf } from '../vat';
 export interface Pp30Doc {
   id: string; kind: 'out' | 'in'; type: DocType; number?: string; date: IsoDate; partyName?: string; tin?: string; branch?: string; description: string; state: 'live' | 'cancelled';
   base7: Money; base0: Money; baseEx: Money; vat: Money; claimPeriod?: string; vendorDocDate?: string; forfeit?: boolean;
+  /** M6: an input row's paper, frozen with it: the number printed on the vendor's own tax invoice / note, and for an expense claim one entry per vendor tax invoice (the register prints one row each). */
+  vendorDocNo?: string; invoices?: Pp30Invoice[];
 }
+export interface Pp30Invoice { number: string; date: IsoDate; name: string; tin: string; base7: Money; vat: Money }
 /** A finalized filing: the boxes, the tie-outs and the exact documents, all frozen at finalize. */
 export interface Filing {
   companyId: string; form: FilingForm; period: string; status: 'finalized'; boxes: FilingBox[]; tieOuts: TieOut[]; docs: Pp30Doc[]; carryIn: Money; pp36: Money; finalizedAt: string; finalizedBy: string; dueDate: IsoDate;
+  /** M2: who filed, as the company was at finalize (the file and the page read this, never the master now) */ company: { taxId: string; branchCode: string; legalNameTh: string };
 }
 
 const sat = (m: string | undefined) => toSatang(m ?? '0.00');
@@ -56,8 +60,17 @@ export function pp30RowOf(st: MockState, d: DocLike): Pp30Doc | undefined {
   const vat = d.lines.reduce((n, l, i) => n + (claim[i] ? sat(rs[i].vat) : 0), 0);
   const claimedBase = d.lines.reduce((n, l, i) => n + (claim[i] && l.taxCode === 'S7' ? sat(rs[i].net) : 0), 0);
   const tins = d.type === 'EX' ? [...new Set(d.lines.filter((_, i) => claim[i] && sat(rs[i].vat) !== 0).map((l) => l.vendorInvoice?.vendorTin ?? ''))].sort().join(',') : base.tin; // an expense claim's vendor is on its lines
+  const groups = new Map<string, Pp30Invoice & { b: number; v: number }>(); // an expense claim: one entry per vendor tax invoice, from the lines that claim
+  if (d.type === 'EX') d.lines.forEach((l, i) => {
+    const x = l.vendorInvoice;
+    if (!x || !claim[i] || sat(rs[i].vat) === 0) return;
+    const g = groups.get(`${x.vendorTin}|${x.number}|${x.date}`) ?? { number: x.number, date: x.date, name: x.vendorName, tin: x.vendorTin, base7: zero, vat: zero, b: 0, v: 0 };
+    g.b += l.taxCode === 'S7' ? sat(rs[i].net) : 0; g.v += sat(rs[i].vat);
+    groups.set(`${x.vendorTin}|${x.number}|${x.date}`, g);
+  });
+  const invoices = [...groups.values()].sort((a, b) => a.date.localeCompare(b.date) || a.number.localeCompare(b.number)).map(({ b, v, ...g }) => ({ ...g, base7: fromSatang(k * b), vat: fromSatang(k * v) }));
   return { ...base, tin: tins, kind: 'in', state: 'live', description: d.lines[0]?.description ?? '', base7: fromSatang(k * claimedBase), base0: zero, baseEx: zero, vat: fromSatang(k * vat),
-    claimPeriod: claimPeriodOf(d.type, h), ...(h.vendorDocDate ? { vendorDocDate: h.vendorDocDate } : {}), forfeit: !!h.inputVatForfeited };
+    claimPeriod: claimPeriodOf(d.type, h), ...(h.vendorDocDate ? { vendorDocDate: h.vendorDocDate } : {}), forfeit: !!h.inputVatForfeited, ...(h.vendorDocNumber ? { vendorDocNo: h.vendorDocNumber } : {}), ...(invoices.length ? { invoices } : {}) };
 }
 
 /** The documents of a month, computed from the live document set (I12): TI / CN / DN by document month, the vendor documents by claim period. An input row exists only when it claims VAT. */
@@ -119,7 +132,11 @@ const reg = (kind: 'vat-output-register' | 'vat-input-register', titleKey: strin
       ? [{ key: 'base7', labelKey: 'filing.reg.base7', kind: MONEY, align: 'end' as const }, { key: 'base0', labelKey: 'filing.reg.base0', kind: MONEY, align: 'end' as const }, { key: 'baseEx', labelKey: 'filing.reg.baseEx', kind: MONEY, align: 'end' as const }]
       : [{ key: 'base7', labelKey: 'filing.reg.claimedBase', kind: MONEY, align: 'end' as const }]), { key: 'vat', labelKey: 'filing.reg.vat', kind: MONEY, align: 'end' as const }];
   const mine = docs.filter((d) => d.kind === (out ? 'out' : 'in'));
-  const rows: ReportRow[] = mine.map((d) => ({ level: 0, kind: 'row', href: docViewHref(d.type, d.id), cells: { date: d.date, number: d.number ?? d.id, party: d.partyName ?? '', tin: d.tin ?? '', branch: d.branch ?? '', description: d.description, base7: d.base7, base0: d.base0, baseEx: d.baseEx, vat: d.vat } }));
+  const row = (d: Pp30Doc, c: Partial<ReportRow['cells']>): ReportRow => ({ level: 0, kind: 'row', href: docViewHref(d.type, d.id), cells: { date: d.date, number: d.number ?? d.id, party: d.partyName ?? '', tin: d.tin ?? '', branch: d.branch ?? '', description: d.description, base7: d.base7, base0: d.base0, baseEx: d.baseEx, vat: d.vat, ...c } });
+  // M6: the input register is the buyer's list of VENDOR tax invoices: the vendor's number and date (ours only when the paper was not recorded), and an expense claim gives one row per vendor invoice
+  const rows: ReportRow[] = mine.flatMap((d) => (out ? [row(d, {})] : d.invoices?.length
+    ? d.invoices.map((v) => row(d, { date: v.date, number: v.number, party: v.name, tin: v.tin, branch: '', base7: v.base7, vat: v.vat }))
+    : [row(d, { date: d.vendorDocDate ?? d.date, number: d.vendorDocNo ?? d.number ?? d.id })]));
   const t = (f: (d: Pp30Doc) => string) => fromSatang(mine.reduce((n, d) => n + sat(f(d)), 0));
   if (rows.length) rows.push({ level: 0, kind: 'total', cells: { base7: t((d) => d.base7), base0: t((d) => d.base0), baseEx: t((d) => d.baseEx), vat: t((d) => d.vat) } });
   return { kind, titleKey, params, columns, rows, tieOuts };
@@ -158,6 +175,7 @@ export function blockersOf(st: MockState, companyId: string, period: string): Fi
   for (const d of st.docs.filter((x) => x.companyId === companyId && OUT.includes(x.type) && DRAFTISH.includes(x.status) && x.header.documentDate.startsWith(period)).sort((a, b) => a.header.documentDate.localeCompare(b.header.documentDate) || a.id.localeCompare(b.id))) {
     out.push({ code: 'draft_document', labelTh: `${d.type} ฉบับร่างลงวันที่ ${formatDateBE(d.header.documentDate)} ยังไม่ได้ออก`, href: docEditHref(d.type, d.id) });
   }
+  if (period >= today().slice(0, 7)) out.push({ code: 'period_not_ended', labelTh: `เดือน ${monthLabelTh(period)} ยังไม่สิ้นเดือน ยืนยันแบบ ภ.พ.30 ได้หลังสิ้นเดือน` }); // B1a: a month still open would be filed before its last invoice
   const start = chainStart(st, companyId);
   if (start && period < start) out.push({ code: 'before_chain', labelTh: `งวดนี้อยู่ก่อนงวดแรกที่ยื่นในระบบ (${monthLabelTh(start)})` });
   else if (start && period > start && !filedIn(st, companyId, prevMonth(period))) out.push({ code: 'previous_open', labelTh: `ยังไม่ได้ยืนยันแบบ ภ.พ.30 เดือน ${monthLabelTh(prevMonth(period))}`, href: `/tax/vat?period=${prevMonth(period)}` });
@@ -183,6 +201,6 @@ export function pp30Model(st: MockState, companyId: string, period: string): Fil
 }
 const getModel = (st: MockState, companyId: string, period: string): FilingModel => {
   const f = filedIn(st, companyId, period);
-  return f ? { form: 'PP30', period, status: 'finalized', boxes: f.boxes, tieOuts: f.tieOuts, blockers: [], warnings: [], finalizedAt: f.finalizedAt, finalizedBy: f.finalizedBy, version: 1, dueDate: f.dueDate, exports: ['rdprep-txt', 'pdf'] } : pp30Model(st, companyId, period);
+  return f ? { form: 'PP30', period, status: 'finalized', boxes: f.boxes, tieOuts: f.tieOuts, blockers: [], warnings: [], finalizedAt: f.finalizedAt, finalizedBy: f.finalizedBy, company: f.company, version: 1, dueDate: f.dueDate, exports: ['rdprep-txt', 'pdf'] } : pp30Model(st, companyId, period);
 };
 export { getModel as getPp30, dueDateOf };

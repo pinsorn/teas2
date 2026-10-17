@@ -20,7 +20,7 @@ import { buildOb, cancelObItems, EMPTY_OPENING, freezeOpening, obCalc, obMissing
 import { firstOpenDate, isClosed, monthLabelTh, refuseClosedYearEntry, refuseYearClosed } from './periods';
 import { balanceOf, certError, cleanAllocations, fiscalAllocations, freezeWht, groupTotals, payDefaults, payLines, payoutOf, resolvedBankId, settleExtras, settleProblem, settleTotals, withBankSnapshot } from './settlement';
 import { syncWts } from './wht-certificates';
-import { refuseFiled } from './filings';
+import { filingLock, refuseFiled, refuseIntoFiled } from './filings';
 import { cleanInvoices, isVendorBill, issueVendorStatus, purchaseProblem, snapshotCategories, snapshotWhtTypes, withClaimPeriod, withForfeit, withVendorStatus } from './purchase-vat';
 import { computeDoc, vatBasisOf, vatOf } from './vat';
 
@@ -425,7 +425,8 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   const jp = journalProblem(st, d.companyId, d.type, body); // a journal voucher: postable own accounts, none a document owns, the auto-reversal month open
   if (jp) throw jp;
   refuseOverConversion(st, d, body);
-  body = { ...body, header: withClaimPeriod(st, d.companyId, d.type, body.header) }; // the document month unless a period was chosen
+  body = { ...body, header: withClaimPeriod(st, d.companyId, d.type, body.header) }; // the first unfiled month of its window (normally the document month) unless a period was chosen
+  refuseIntoFiled(st, { ...d, status: 'issued', header: body.header, lines: body.lines }); // B1: nothing enters a month whose ภ.พ.30 is finalized (plans, approvals, schedule runs and disposals all issue here)
   body = withWht(st, d.companyId, d.type, body); // a voucher: the WHT as of now, fixed from here on (C1)
   body = { ...body, header: withBankSnapshot(st, d.companyId, d.type, body.header) }; // an RC / PV: the account as it is now, fixed from here on (I3)
   const bad = settleProblem(st, d.companyId, d.type, body, outstandingNow(st), { partyExempt: opts?.partyExempt, prior: opts?.prior, priorParty: opts?.priorParty });
@@ -656,7 +657,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
     refuseSelfApproval(st, { ...d, moneyBy: actor }, opts.approver); // the person making this change is now the one who set the money
   }
   const next: Stored = {
-    ...rest, header: fin.header, lines: fin.lines, totals, party: partyOf(st, d.companyId, fin.header.partyId),
+    ...rest, header: fin.header, lines: fin.lines, totals, party: fin.header.partyId === d.header.partyId && filingLock(st, d) ? d.party : partyOf(st, d.companyId, fin.header.partyId), // M4: a filed document keeps the party as filed
     revision: d.revision + 1, version: d.version + 1, ...(fin.allocations ? { allocations: fin.allocations } : {}), ...(fin.whtFrozen ? { whtFrozen: fin.whtFrozen } : {}), ...(fin.opening ? { opening: fin.opening } : {}),
     ...(moneyChanged(d, totals.total, fin) ? { moneyBy: actor } : {}),
     ...(reapprove ? { approval: { submittedBy: actor, submittedAt: stamp(), approvedBy: opts!.approver, approvedAt: stamp(), amount: payout } } : {}),

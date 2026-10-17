@@ -13,7 +13,7 @@ type DocFixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssuedUnpa
   | 'ivDraft' | 'ivIssuedUnpaid' | 'ivPartly' | 'ivSettled' | 'blVat' | 'blNonVat'
   | 'poDraft' | 'poSent' | 'poPartlyBilled' | 'poClosed' | 'npoIssued'
   | 'rcStatement' | 'rcMulti' | 'rcNoCert' | 'rcDeposit' | 'nrcCashBill' | 'cnIssued' | 'dnIssued' | 'tiCreditedToZero'
-  | 'pbDraft' | 'pbIssuedUnpaid' | 'pb1Settled' | 'pbMixedVat' | 'pbFromPo' | 'pbCapex' | 'pbClaimLate' | 'pbIncomplete' | 'pcnIssued' | 'pdnIssued' | 'npbVatToCost'
+  | 'pbDraft' | 'pbIssuedUnpaid' | 'pb1Settled' | 'pbMixedVat' | 'pbFromPo' | 'pbCapex' | 'filedBill' | 'pbClaimLate' | 'pbIncomplete' | 'pcnIssued' | 'pdnIssued' | 'npbVatToCost'
   | 'pvMultiWt' | 'pvGrossUp' | 'pvForeign' | 'pvCancelled' | 'wtIssued' | 'wtCancelled'
   | 'exDraft' | 'exPending' | 'exApproved' | 'exUnpaid' | 'exPaid' | 'exForfeit' | 'nexIssued'
   | 'tiDeposit' | 'rcDepositApplied' | 'pvPrepayment'
@@ -91,6 +91,7 @@ export const FIXTURE_PREDICATES: Record<DocFixtureKey, (d: D, st: MockState) => 
   // P2 purchase bills / vendor notes
   pbDraft: byId('pb-d1', (d) => d.status === 'draft'),
   pbIssuedUnpaid: byId('pb-claim-late', (d) => d.status === 'issued'), // issued, no voucher, no note against it (pb-1 is settled by pv-pay1: pb1Settled)
+  filedBill: byId('pb-aug', (d, st) => LIVE.includes(d.status) && derivedLocks(st, d).some((l) => l.kind === 'filing')), // TX1: an August bill the finalized ภ.พ.30 took (derived lock)
   pb1Settled: byId('pb-1', (d) => d.status === 'settled'), // rent with a vendor credit (pcn-1) against it, paid in full by pv-pay1 (P3)
   pbMixedVat: byId('pb-2', (d) => LIVE.includes(d.status)), // services + non-claimable entertainment, with a debit (pdn-1)
   pbFromPo: byId('pb-po', (d) => LIVE.includes(d.status) && !!d.lines[0]?.sourceLineId),

@@ -74,3 +74,14 @@ test('the two registers list the month and tie to the ledger; 390 px never scrol
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await shot(page, 'pp30-output-mobile');
 });
+
+test('M7: the August bill the filing took (filedBill) carries the lock banner, and the input register prints the vendor invoice number', async ({ page }) => {
+  await page.goto('/');
+  const id = await fixtureId(page, 'filedBill');
+  await page.goto(`/purchases/bills/${id}`);
+  const lock = page.locator('[data-screen-state="locked"]');
+  await expect(lock).toContainText('ภ.พ.30 เดือน ส.ค. 2569 ยื่นแล้ว');
+  await shot(page, 'pp30-bill-locked');
+  await page.goto('/tax/vat?tab=input&period=2026-08');
+  await expect(page.getByRole('table').first()).toContainText('SI-5390');
+});

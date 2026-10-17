@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { Doc, DocLine } from '@/domain/types';
 import { USER as me } from '../../fixtures/documents';
 import { seed, type MockState } from '../../store';
-import { cancel, createDraft, issue, reissue, revise } from '../commands';
+import { approveAndIssue, cancel, createDraft, issue, reissue, revise } from '../commands';
 import { correctionPlan, executePlan } from '../corrections';
 import { checkInvariants } from '../invariants';
 import { derivedLocks } from '../locks';
+import { tinCheckDigit } from '@/domain/tin';
 import { toSatang } from '../money';
 import { chainStart, exportFilingText, filingHistory, finalizeFiling, getFiling } from './index';
 import { pp30Docs, pp30Model } from './pp30';
@@ -190,7 +191,9 @@ describe('finalize', () => {
     const m = buildReport(st, CO, 'vat-output-register', { period: '2026-08' });
     expect(JSON.stringify(m.rows)).toBe(was);
     expect(m.rows.at(-1)!.cells.vat).toBe(box(getFiling(st, CO, 'PP30', '2026-08'), '5'));
-    expect(buildReport(st, CO, 'vat-input-register', { period: '2026-08' }).rows).toEqual([]);
+    const inp = buildReport(st, CO, 'vat-input-register', { period: '2026-08' }).rows;
+    expect(inp.filter((r) => r.kind === 'row').map((r) => [r.cells.number, r.cells.date])).toEqual([['SI-5390', '2026-08-11']]); // M6/M7: the vendor's invoice number and date
+    expect(inp.at(-1)!.cells.vat).toBe(box(getFiling(st, CO, 'PP30', '2026-08'), '7'));
   });
   it('exports the RD Prep text with CRLF line ends, and lists the filings in the history', () => {
     const txt = exportFilingText(st, CO, 'PP30', '2026-08');
@@ -256,11 +259,17 @@ describe('filing lock: revise (ruling 2, M5 + R2-M1)', () => {
     st.parties.push({ ...st.parties.find((p) => p.id === pb.header.partyId)!, id: 'v-branch-2', code: 'V-BR2', branchCode: '00002' });
     expect(err(() => revise(st, pb.id, body(pb, { partyId: 'v-branch-2' }), pb.version, 'x', me)).code).toBe('filing.locked');
   });
-  it('a filed bill: a revise re-reads the party master, so a vendor TIN edited after filing makes even a notes-only revise refused (it would re-stamp the filed TIN)', () => {
+  it('M4: a vendor TIN edited in the master after filing does not stop a notes-only revise: the stored party snapshot (as filed) is kept; changing the party itself stays refused', () => {
     const { pb } = filedSep();
+    const filedTin = get(pb.id).party?.taxId;
     st.parties.find((p) => p.id === pb.header.partyId)!.taxId = '0105500000019';
-    expect(err(() => revise(st, pb.id, body(pb, { notes: 'x' }), pb.version, 'x', me)).code).toBe('filing.locked');
+    const r = revise(st, pb.id, body(pb, { notes: 'x' }), pb.version, 'x', me);
+    expect(r.header.notes).toBe('x');
+    expect(get(pb.id).party?.taxId).toBe(filedTin);
     expect(checkInvariants(st)).toEqual([]);
+    const other = st.parties.find((p) => p.companyId === CO && p.kind === 'vendor' && p.vatRegistered && p.id !== pb.header.partyId && p.taxId === filedTin);
+    const clone = other ?? (st.parties.push({ ...st.parties.find((p) => p.id === pb.header.partyId)!, id: 'v-same-tin', code: 'V-ST', taxId: filedTin }), st.parties.at(-1)!); // same TIN and branch, other party
+    expect(err(() => revise(st, pb.id, body(get(pb.id), { partyId: clone.id }), get(pb.id).version, 'x', me)).code).toBe('filing.locked');
   });
   it('a filed bill: notes and paper-only fields stay free', () => {
     const { pb } = filedSep();
@@ -356,5 +365,183 @@ describe('finalized filings are frozen (invariants)', () => {
   it('a month finalized twice', () => {
     st.filings.push(structuredClone(aug()));
     expect(bad().join('\n')).toMatch(/finalized twice/);
+  });
+});
+
+// ---------------------------------------------------------------- TX1 fix 1: B1 / B1a / M1 - M4 / M6 / M7
+
+const mkNote = (type: 'CN' | 'DN', tiId: string, header: Partial<Doc['header']>): Doc => {
+  const ti = get(tiId);
+  return mk(type as never, [L('n', ti.lines[0].taxCode, '10.00', { sourceLineId: ti.lines[0].id })], { refDocId: ti.id, reasonCode: type === 'CN' ? 'PRICE_REDUCTION' : 'PRICE_INCREASE', partyId: ti.header.partyId, ...header });
+};
+/** An expense claim (EX) of the VAT company with these vendor tax invoices, approved and issued in one go. */
+const mkEx = (documentDate: string, invoices: { name: string; first12: string; no: string; date: string; price: string }[]): Doc => {
+  const lines = invoices.map((v, i) => L(`e${i}`, 'S7', v.price, { expenseCategory: 'supplies', vendorInvoice: { vendorName: v.name, vendorTin: v.first12 + tinCheckDigit(v.first12), number: v.no, date: v.date, fullTaxInvoice: true } }));
+  const d = createDraft(st, CO, 'EX' as never, { header: { documentDate, partyId: 'emp-02' }, lines }, me, `ex-fx-${++n}`);
+  return approveAndIssue(st, d.id, d.version, me);
+};
+const inv = (name: string, first12: string, no: string, date: string, price: string) => ({ name, first12, no, date, price });
+const REFUSED = { status: 409, code: 'filing.period_filed' };
+
+describe('B1: nothing enters a filed month (the engine, every issue path)', () => {
+  it('a TI dated in a filed month is refused, says why and what to do, and leaves no invoice and no invariant broken', () => {
+    const e = err(() => mk('TI', [L('a', 'S7', '1000.00')], { documentDate: '2026-08-31' }));
+    expect(e).toMatchObject(REFUSED);
+    expect(e.title).toContain('ภ.พ.30 เดือน ส.ค. 2569 ยื่นแล้ว');
+    expect(e.title).toContain('ลงวันที่ในงวดที่ยังไม่ยื่น');
+    expect(st.docs.some((d) => d.type === 'TI' && d.header.documentDate === '2026-08-31' && d.status === 'issued' && d.totals.net === '1000.00')).toBe(false);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('a TI dated in an open month still issues (September, October)', () => {
+    expect(mk('TI', [L('a', 'S7', '1000.00')], { documentDate: '2026-09-30' }).status).toBe('issued');
+    expect(mk('TI', [L('a', 'S7', '1000.00')], { documentDate: '2026-10-10' }).status).toBe('issued');
+  });
+  it('a CN and a DN on a filed invoice, dated in the filed month, are refused (the exit is a note in an open month)', () => {
+    expect(err(() => mkNote('CN', 'ti-015', { documentDate: '2026-08-31' }))).toMatchObject(REFUSED);
+    expect(err(() => mkNote('DN', 'ti-015', { documentDate: '2026-08-31' }))).toMatchObject(REFUSED);
+    expect(mkNote('CN', 'ti-015', { documentDate: '2026-10-05' }).status).toBe('issued');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('a bill dated in a filed month claims in the first UNFILED month inside its window (ม.82/3), and the filed month does not move', () => {
+    const before = JSON.stringify(getFiling(st, CO, 'PP30', '2026-08').boxes);
+    const b = mk('PB', [L('a', 'S7', '1000.00')], { documentDate: '2026-08-10', vendorDocDate: '2026-08-10' });
+    expect(get(b.id).header.claimPeriod).toBe('2026-09');
+    expect(pp30Docs(st, CO, '2026-09').some((d) => d.id === b.id && d.vat === '70.00')).toBe(true);
+    expect(JSON.stringify(getFiling(st, CO, 'PP30', '2026-08').boxes)).toBe(before);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('a bill with an EXPLICITLY chosen filed claim period is refused, naming the first open month', () => {
+    const e = err(() => mk('PB', [L('a', 'S7', '1000.00')], { documentDate: '2026-08-10', vendorDocDate: '2026-08-10', claimPeriod: '2026-08' }));
+    expect(e).toMatchObject(REFUSED);
+    expect(e.title).toContain('ก.ย. 2569');
+  });
+  it('a bill whose whole claim window is filed is refused; one already past its window keeps the existing forfeit (cost, not refused)', () => {
+    expect(err(() => mk('PB', [L('a', 'S7', '1000.00')], { documentDate: '2026-08-10', vendorDocDate: '2026-02-10' }))).toMatchObject(REFUSED); // V+6 = 2026-08: no open month left
+    const late = mk('PB', [L('a', 'S7', '1000.00')], { documentDate: '2026-09-10', vendorDocDate: '2026-02-10' }); // D > V+6: the forfeit rule of R1-I1 already covers it
+    expect(get(late.id).header.inputVatForfeited).toBe(true);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('a bill revised INTO a filed month (date and claim period) is refused', () => {
+    const pb = mk('PB', [L('a', 'S7', '1000.00')], { documentDate: '2026-09-02', vendorDocDate: '2026-08-20' });
+    const d = get(pb.id);
+    expect(err(() => revise(st, d.id, body(d, { documentDate: '2026-08-25', claimPeriod: '2026-08' }), d.version, 'x', me))).toMatchObject(REFUSED);
+    expect(get(pb.id).header.documentDate).toBe('2026-09-02');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('a correction plan that moves a bill into a filed month is never shown', () => {
+    const pb = mk('PB', [L('a', 'S7', '1000.00')], { documentDate: '2026-09-02', vendorDocDate: '2026-08-20' });
+    const d = get(pb.id);
+    expect(err(() => correctionPlan(st, d.id, body(d, { documentDate: '2026-08-25', claimPeriod: '2026-08' }), 'accountant'))).toMatchObject(REFUSED);
+    expect(st.plans ?? {}).toEqual({});
+  });
+  it('a vendor credit note and an expense claim claim in their document month: refused when it is filed', () => {
+    const pb = mk('PB', [L('a', 'S7', '1000.00')], { documentDate: '2026-09-03', vendorDocDate: '2026-09-03' });
+    finalizeFiling(st, CO, 'PP30', '2026-09', getFiling(st, CO, 'PP30', '2026-09').version, me);
+    const p = get(pb.id);
+    const pcn = (date: string) => mk('PCN' as never, [L('n', 'S7', '10.00', { sourceLineId: p.lines[0].id })], { documentDate: date, refDocId: p.id, reasonCode: 'PRICE_REDUCTION', partyId: p.header.partyId });
+    expect(err(() => pcn('2026-09-30'))).toMatchObject(REFUSED);
+    expect(pcn('2026-10-05').status).toBe('issued');
+    expect(err(() => mkEx('2026-09-20', [inv('บริษัท ก จำกัด', '010556000881', 'EX-1', '2026-09-19', '100.00')]))).toMatchObject(REFUSED);
+    expect(mkEx('2026-10-06', [inv('บริษัท ก จำกัด', '010556000881', 'EX-2', '2026-10-05', '100.00')]).status).toBe('issued');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('an approval reaches the same issue(): an approved draft dated into a filed month cannot be issued', () => {
+    const d = createDraft(st, CO, 'TI', { header: { documentDate: '2026-08-20', partyId: customer().id }, lines: [L('a', 'S7', '100.00')] }, me, 'late-ti');
+    expect(err(() => approveAndIssue(st, d.id, d.version, me))).toMatchObject(REFUSED);
+  });
+  it('invariant: a live TI of a filed month that is missing from the snapshot fails, and so does a claiming bill of its claim period (single-fault)', () => {
+    const bad = (p: string) => checkInvariants(st).filter((m) => m.includes(`filing PP30 ${p}`));
+    expect(bad('2026-08')).toEqual([]);
+    st.docs.push({ ...structuredClone(get('ti-015')), id: 'ti-sneak', number: 'TI-SNEAK' });
+    expect(bad('2026-08').join('\n')).toMatch(/ti-sneak is missing from the snapshot/);
+    const { pb } = filedSep();
+    st.docs.push({ ...structuredClone(get(pb.id)), id: 'pb-sneak', number: 'PB-SNEAK' });
+    expect(bad('2026-09').join('\n')).toMatch(/pb-sneak is missing from the snapshot/);
+  });
+});
+
+describe('B1a: a month that has not ended cannot be finalized', () => {
+  it('the current month (and later) carries period_not_ended; a finished month does not', () => {
+    expect(getFiling(st, CO, 'PP30', '2026-10').blockers.map((b) => b.code)).toContain('period_not_ended');
+    expect(getFiling(st, CO, 'PP30', '2026-11').blockers.map((b) => b.code)).toContain('period_not_ended');
+    expect(getFiling(st, CO, 'PP30', '2026-09').blockers.map((b) => b.code)).not.toContain('period_not_ended');
+    expect(getFiling(st, CO, 'PP30', '2026-10').blockers.find((b) => b.code === 'period_not_ended')?.labelTh).toContain('ยังไม่สิ้นเดือน');
+  });
+  it('October cannot be finalized on 14 October even with no drafts and September filed', () => {
+    finalizeFiling(st, CO, 'PP30', '2026-09', getFiling(st, CO, 'PP30', '2026-09').version, me);
+    st.docs = st.docs.filter((d) => !(['TI', 'CN', 'DN'].includes(d.type) && ['draft', 'pending', 'approved'].includes(d.status)));
+    const m = getFiling(st, CO, 'PP30', '2026-10');
+    expect(m.blockers.map((b) => b.code)).toEqual(['period_not_ended']);
+    expect(err(() => finalizeFiling(st, CO, 'PP30', '2026-10', m.version, me)).code).toBe('filing.blocked');
+  });
+});
+
+describe('M1: the lock is per form', () => {
+  it('a filing of another form that lists a document does not lock it as a ภ.พ.30; the lock reason names the form filed', () => {
+    const t = mk('TI', [L('a', 'S7', '10.00')], {});
+    const f = { ...structuredClone(st.filings[0]), form: 'PP36' as const, period: '2026-09', docs: [{ ...st.filings[0].docs[0], id: t.id, state: 'live' as const }] };
+    st.filings.push(f as never);
+    expect(derivedLocks(st, get(t.id)).some((l) => l.kind === 'filing')).toBe(false);
+    expect(cancel(st, t.id, t.version, 'OTHER', 'x', me).status).toBe('cancelled');
+    expect(derivedLocks(st, get('ti-015')).find((l) => l.kind === 'filing')?.reason).toContain('ภ.พ.30');
+  });
+});
+
+describe('M2: the company is frozen on the filing', () => {
+  it('the text file and the model read the company as it was at finalize, not the master now', () => {
+    const co = st.companies.find((c) => c.id === CO)!;
+    const was = { taxId: co.taxId, branchCode: co.branchCode, legalNameTh: co.legalNameTh };
+    const txt = exportFilingText(st, CO, 'PP30', '2026-08');
+    co.taxId = '0105500000019'; co.branchCode = '00009'; co.legalNameTh = 'ชื่อใหม่ จำกัด';
+    expect(exportFilingText(st, CO, 'PP30', '2026-08')).toBe(txt);
+    expect(txt).toContain(`|${was.taxId}|${was.branchCode}|`);
+    expect(getFiling(st, CO, 'PP30', '2026-08').company).toEqual(was);
+  });
+});
+
+describe('M3: the snapshot is what the filing printed', () => {
+  const aug = () => st.filings.find((f) => f.period === '2026-08')!;
+  const bad = () => checkInvariants(st).filter((m) => m.includes('filing PP30 2026-08')).join('\n');
+  it('a deleted tie-out entry fails', () => {
+    aug().tieOuts = aug().tieOuts.slice(1);
+    expect(bad()).toMatch(/tie-out .* is missing/);
+  });
+  it('a tie-out whose left is not the stored box fails', () => {
+    const t = aug().tieOuts.find((x) => x.labelKey.endsWith('outputGl'))!;
+    t.left = '1.00'; t.diff = (Number(t.left) - Number(t.right)).toFixed(2);
+    expect(bad()).toMatch(/is not the stored box/);
+  });
+  it.each(['number', 'partyName', 'description'] as const)('a snapshot row whose %s differs from the document fails', (k) => {
+    (aug().docs.find((d) => d.state === 'live' && d[k])! as unknown as Record<string, string>)[k] = 'ผิด';
+    expect(bad()).toMatch(new RegExp(`${k} .* differs`));
+  });
+});
+
+describe('M6: the input register carries the vendor invoice', () => {
+  it('a bill row shows the vendor tax-invoice number and date, not our number and recording date', () => {
+    mk('PB', [L('a', 'S7', '1000.00')], { documentDate: '2026-09-20', vendorDocDate: '2026-09-10', vendorDocNumber: 'TX-77/1' });
+    const r = buildReport(st, CO, 'vat-input-register', { period: '2026-09' }).rows.find((x) => x.kind === 'row' && x.cells.number === 'TX-77/1')!;
+    expect(r.cells.date).toBe('2026-09-10');
+  });
+  it('an expense claim with two vendor invoices gives one row per invoice; the boxes do not change; the fields are frozen in the snapshot', () => {
+    const before = box(pp30Model(st, CO, '2026-09'), '7');
+    const ex = mkEx('2026-09-20', [inv('บริษัท ก จำกัด', '010556000881', 'A-1', '2026-09-01', '100.00'), inv('บริษัท ข จำกัด', '010556000892', 'B-1', '2026-09-02', '200.00')]);
+    const rows = () => buildReport(st, CO, 'vat-input-register', { period: '2026-09' }).rows.filter((x) => x.kind === 'row' && x.href?.includes(ex.id));
+    expect(rows().map((x) => [x.cells.number, x.cells.date, x.cells.party, x.cells.vat])).toEqual([['A-1', '2026-09-01', 'บริษัท ก จำกัด', '7.00'], ['B-1', '2026-09-02', 'บริษัท ข จำกัด', '14.00']]);
+    expect(sat(box(pp30Model(st, CO, '2026-09'), '7')) - sat(before)).toBe(2100);
+    finalizeFiling(st, CO, 'PP30', '2026-09', getFiling(st, CO, 'PP30', '2026-09').version, me);
+    get(ex.id).lines[0].vendorInvoice!.number = 'CHANGED';
+    expect(rows().map((x) => x.cells.number)).toEqual(['A-1', 'B-1']);
+  });
+});
+
+describe('M7: the seed has a claimed bill in a filed month', () => {
+  it('pb-aug is in the August snapshot with input VAT, carries the filing lock, and August ties out', () => {
+    const f = st.filings.find((x) => x.period === '2026-08')!;
+    expect(f.docs.find((d) => d.id === 'pb-aug')).toMatchObject({ kind: 'in', claimPeriod: '2026-08' });
+    expect(sat(box(getFiling(st, CO, 'PP30', '2026-08'), '7'))).toBeGreaterThan(0);
+    expect(derivedLocks(st, get('pb-aug')).some((l) => l.kind === 'filing')).toBe(true);
+    expect(getFiling(st, CO, 'PP30', '2026-08').tieOuts.every((t) => t.diff === '0.00')).toBe(true);
+    expect(checkInvariants(st)).toEqual([]);
   });
 });

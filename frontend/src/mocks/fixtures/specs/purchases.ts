@@ -50,6 +50,9 @@ export const PURCHASE_SPECS: SeedSpec[] = [
     lines: [], convertFrom: { id: 'po-part', lines: [{ sourceLineId: 'po-part-l1', qty: '20' }, { sourceLineId: 'po-part-l2', qty: '50' }] } },
   { id: 'pb-capex', type: 'PB', companyId: VAT, date: '2026-10-09', partyId: 'pv-10', status: 'issued', header: vendorDoc('IT-2026-0093', '2026-10-09'),
     lines: [exp('pb-capex', 1, 'เครื่องคอมพิวเตอร์โน้ตบุ๊ก', 'เครื่อง', '32000.00', 'EXP-08', 'capex-equipment')] },
+  // pb-aug: an August bill claimed in August (VAT 280.00): the input side of the finalized 2026-08 ภ.พ.30, so the bill-side filing lock has a fixture (TX1 M7)
+  { id: 'pb-aug', type: 'PB', companyId: VAT, date: '2026-08-12', partyId: 'pv-02', status: 'issued', header: { ...vendorDoc('SI-5390', '2026-08-11'), dueDate: '2026-09-11' },
+    lines: [exp('pb-aug', 1, 'ค่าบริการทำความสะอาด สิงหาคม', 'เดือน', '4000.00', 'EXP-02', 'services')] },
   // pb-claim-late: dated October, claimed two months later (2026-12)
   { id: 'pb-claim-late', type: 'PB', companyId: VAT, date: '2026-10-05', partyId: 'pv-02', status: 'issued', header: { ...vendorDoc('SI-5521', '2026-10-05'), claimPeriod: '2026-12' },
     lines: [exp('pb-claim-late', 1, 'ค่าบริการทำความสะอาด', 'เดือน', '8500.00', 'EXP-02', 'services')] },

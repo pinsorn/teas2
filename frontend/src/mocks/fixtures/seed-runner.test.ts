@@ -41,10 +41,10 @@ describe('runSeed (D-23)', () => {
   });
   it('drafts stay drafts; cancelled specs are issued then cancelled (journal gets its reversal)', () => {
     const st = buildSeedState();
-    runSeed(st, [ti(st, 'dr', '2026-08-03', { status: 'draft' }), ti(st, 'cx', '2026-08-04', { status: 'cancelled' })]);
+    runSeed(st, [ti(st, 'dr', '2026-09-03', { status: 'draft' }), ti(st, 'cx', '2026-09-04', { status: 'cancelled' })]);
     expect(st.docs.find((x) => x.id === 'dr')!.status).toBe('draft');
     expect(st.docs.find((x) => x.id === 'cx')!.status).toBe('cancelled');
-    expect(st.journals.find((j) => j.docId === 'cx')!.preview.entries.map((e) => [e.kind, e.date, e.late ?? false])).toEqual([['original', '2026-08-04', false], ['reversal', '2026-08-04', false]]);
+    expect(st.journals.find((j) => j.docId === 'cx')!.preview.entries.map((e) => [e.kind, e.date, e.late ?? false])).toEqual([['original', '2026-09-04', false], ['reversal', '2026-09-04', false]]);
     expect(checkInvariants(st)).toEqual([]);
   });
   it('a cancellation inside a closed month reverses on its own (pinned) date, not late', () => {

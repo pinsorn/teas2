@@ -129,7 +129,7 @@ describe('doc detail, locked, forbidden', () => {
     paid.locks = [];
     localStorage.setItem('teas2.mock.state.v2', JSON.stringify({ ...state, version: 2 }));
     localStorage.removeItem('teas2.mock.state.v27');
-    expect(loadState().version).toBe(37);
+    expect(loadState().version).toBe(38);
     expect(loadState().docs.find((d) => d.id === paid.id)!.locks).toContainEqual(expect.objectContaining({ kind: 'settlement' }));
   });
   it('GET derives the period lock for a document dated in a closed month, and not for an open-month one (F4)', async () => {

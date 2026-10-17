@@ -8,7 +8,7 @@ export interface FilingBlocker { code: string; labelTh: string; href?: string }
 export interface FilingModel {
   form: FilingForm; period: string /* YYYY-MM or YYYY */; status: 'draft' | 'finalized';
   boxes: FilingBox[]; tieOuts: TieOut[]; blockers: FilingBlocker[]; warnings: string[];
-  finalizedAt?: string; finalizedBy?: string; version: number; dueDate: IsoDate; exports: ('rdprep-txt' | 'pdf')[];
+  finalizedAt?: string; finalizedBy?: string; /** a finalized filing: the company as it was when filed (M2) */ company?: { taxId: string; branchCode: string; legalNameTh: string }; version: number; dueDate: IsoDate; exports: ('rdprep-txt' | 'pdf')[];
 }
 /** One finalized filing in the history list. `net` = box 11 (the tax to pay, or the excess). */
 export interface FilingHistoryItem { form: FilingForm; period: string; finalizedAt: string; finalizedBy: string; net: Money; overpaid: boolean }

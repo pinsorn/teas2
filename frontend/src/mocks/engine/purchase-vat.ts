@@ -82,8 +82,21 @@ export const withClaimPeriod = (st: MockState, companyId: string, type: DocType,
   const h = withForfeit(st, companyId, type, h0);
   if (!isVendorBill(type) || !vatOf(st, companyId) || !h.documentDate) return h;
   if (type === 'PCN') { const { claimPeriod: _c, ...rest } = h; void _c; return rest; }
-  return h.claimPeriod || h.inputVatForfeited ? h : { ...h, claimPeriod: claimPeriodOf(type, h) };
+  return h.claimPeriod || h.inputVatForfeited ? h : { ...h, claimPeriod: openClaimMonth(st, companyId, h.documentDate, h.vendorDocDate) ?? claimPeriodOf(type, h) };
 };
+
+/** TX1: a month whose ภ.พ.30 is finalized takes nothing new (nothing enters a filed month). */
+export const isFiledPeriod = (st: MockState, companyId: string, period: string): boolean => st.filings.some((f) => f.companyId === companyId && f.form === 'PP30' && f.period === period);
+/** TX1 / ม.82/3: the first month inside the claim window (D .. V+6) whose ภ.พ.30 is not finalized - where a late vendor invoice is claimed by default. Undefined = every month of the window is filed. */
+export function openClaimMonth(st: MockState, companyId: string, documentDate: string, vendorDocDate?: string): string | undefined {
+  const d = documentDate.slice(0, 7), v = (vendorDocDate || documentDate).slice(0, 7);
+  if (!YM.test(d) || !YM.test(v)) return undefined;
+  for (let i = monthIndex(d); i <= monthIndex(v) + 6; i++) {
+    const p = `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}`;
+    if (!isFiledPeriod(st, companyId, p)) return p;
+  }
+  return undefined;
+}
 
 /** M2 / R1-M2: a draft carries no vendor VAT status (the party master is read when it is checked); a client-sent value is dropped, and an empty `vendorDocDate` means absent (R1-M3).
  *  An issued document keeps the status it was issued with (`prev`) while its vendor stays the same. */
