@@ -172,6 +172,7 @@ export const SCREENS: Screen[] = [
   { name: 'faActive', route: { fixture: 'faActive', base: FA_BASE }, company: 'vat', states: true },
   { name: 'faDisposed', route: { fixture: 'faDisposed', base: FA_BASE }, company: 'vat', states: true },
   { name: 'nfaActive', route: { fixture: 'nfaActive', base: FA_BASE }, company: 'nonvat', states: true },
+  { name: 'faCar', route: { fixture: 'faCar', base: FA_BASE }, company: 'nonvat', states: true },
   { name: 'dpList', route: DP_BASE, company: 'both', states: true },
   { name: 'dpNew', route: `${DP_BASE}/new`, company: 'both', states: true },
   { name: 'dpRun', route: { fixture: 'dpRun', base: DP_BASE }, company: 'vat', states: true },

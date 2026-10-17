@@ -23,29 +23,32 @@ export function assetRegister(st: MockState, companyId: string, p: Record<string
   };
   const fas = liveFas(st, companyId).filter((f) => dateOf(f.asset!.source.docId) <= asOf).sort((a, b) => (a.asset!.assetClass).localeCompare(b.asset!.assetClass) || (a.number ?? '').localeCompare(b.number ?? ''));
   const rows: ReportRow[] = [];
-  const classes = [...new Set(fas.map((f) => f.asset!.assetClass))];
-  let cost = 0, acc = 0, nbv = 0, heldAcc = 0;
-  for (const cls of classes) {
-    const label = st.accounts.find((a) => a.companyId === companyId && a.code === fas.find((x) => x.asset!.assetClass === cls)!.asset!.codes.cost)?.nameTh ?? cls;
+  const held = fas.filter((f) => !at(f).gone), sold = fas.filter((f) => at(f).gone);
+  const line = (f: (typeof fas)[number]): ReportRow => { const x = f.asset!, w = at(f); return { level: 1, kind: 'row', href: docViewHref('FA', f.id), cells: { number: f.number ?? f.id, name: x.name, start: x.startDate, cost: x.cost, accumulated: fromSatang(w.acc), nbv: fromSatang(w.nbv), status: w.gone ? (x.disposed!.kind === 'sale' ? 'ขาย' : 'ตัดจำหน่าย') : 'ใช้งานอยู่' } }; };
+  let cost = 0, acc = 0, nbv = 0;
+  for (const cls of [...new Set(held.map((f) => f.asset!.assetClass))]) { // the totals are the assets HELD at asOf: what the ledger carries
+    const mine = held.filter((x) => x.asset!.assetClass === cls);
+    const label = st.accounts.find((a) => a.companyId === companyId && a.code === mine[0].asset!.codes.cost)?.nameTh ?? cls;
     rows.push({ level: 0, kind: 'group', cells: { number: label } });
     let c = 0, a = 0, n = 0;
-    for (const f of fas.filter((x) => x.asset!.assetClass === cls)) {
-      const x = f.asset!, w = at(f);
-      c += sat(x.cost); a += w.acc; n += w.nbv;
-      if (!w.gone) heldAcc += w.acc;
-      rows.push({ level: 1, kind: 'row', href: docViewHref('FA', f.id), cells: { number: f.number ?? f.id, name: x.name, start: x.startDate, cost: x.cost, accumulated: fromSatang(w.acc), nbv: fromSatang(w.nbv), status: w.gone ? (x.disposed!.kind === 'sale' ? 'ขาย' : 'ตัดจำหน่าย') : 'ใช้งานอยู่' } });
-    }
+    for (const f of mine) { const w = at(f); c += sat(f.asset!.cost); a += w.acc; n += w.nbv; rows.push(line(f)); }
     rows.push({ level: 0, kind: 'subtotal', cells: { name: label, cost: fromSatang(c), accumulated: fromSatang(a), nbv: fromSatang(n) } });
     cost += c; acc += a; nbv += n;
   }
   rows.push({ level: 0, kind: 'total', cells: { cost: fromSatang(cost), accumulated: fromSatang(acc), nbv: fromSatang(nbv) } });
+  if (sold.length) { // sold / written off by asOf: listed with their status, outside every total
+    rows.push({ level: 0, kind: 'group', cells: { number: 'จำหน่ายแล้ว (ไม่รวมในยอดรวม)' } });
+    for (const f of sold) rows.push(line(f));
+  }
 
   const accCodes = new Set(st.accounts.filter((a) => a.companyId === companyId && a.subClass === 'accumulated-depreciation').map((a) => a.code));
-  let gl = 0;
-  for (const e of companyEntries(st, companyId)) if (e.date <= asOf) for (const l of e.lines) if (accCodes.has(l.accountCode)) gl += sat(l.credit) - sat(l.debit);
+  const costCodes = new Set(st.accounts.filter((a) => a.companyId === companyId && a.subClass === 'fixed-asset').map((a) => a.code));
+  let gl = 0, glCost = 0;
+  for (const e of companyEntries(st, companyId)) if (e.date <= asOf) for (const l of e.lines) { if (accCodes.has(l.accountCode)) gl += sat(l.credit) - sat(l.debit); if (costCodes.has(l.accountCode)) glCost += sat(l.debit) - sat(l.credit); }
   const waiting = unregisteredCapex(st, companyId);
   const unregistered = waiting.filter((u) => u.docType === 'OB' && dateOf(u.source.docId) <= asOf).reduce((n, u) => n + sat(u.accumulated), 0);
-  const books = heldAcc + unregistered;
+  const unregisteredCost = waiting.filter((u) => dateOf(u.source.docId) <= asOf).reduce((n, u) => n + sat(u.cost), 0); // capex the ledger carries that no asset stands on yet
+  const books = acc + unregistered, booksCost = cost + unregisteredCost;
   return {
     kind: 'asset-register', titleKey: 'reports.assetRegister.title', asOf, params: { asOf },
     columns: [
@@ -54,7 +57,7 @@ export function assetRegister(st: MockState, companyId: string, p: Record<string
       { key: 'nbv', labelKey: 'reports.assetRegister.nbv', kind: 'money', align: 'end' }, { key: 'status', labelKey: 'reports.assetRegister.status', kind: 'text' },
     ],
     rows,
-    tieOuts: [{ labelKey: 'reports.assetRegister.tie', left: fromSatang(books), right: fromSatang(gl), diff: fromSatang(books - gl) }],
+    tieOuts: [{ labelKey: 'reports.assetRegister.tie', left: fromSatang(books), right: fromSatang(gl), diff: fromSatang(books - gl) }, { labelKey: 'reports.assetRegister.tieCost', left: fromSatang(booksCost), right: fromSatang(glCost), diff: fromSatang(booksCost - glCost) }],
     ...(waiting.length ? { notes: [`ยังไม่ได้ลงทะเบียน ${waiting.length} รายการ`] } : {}),
   };
 }

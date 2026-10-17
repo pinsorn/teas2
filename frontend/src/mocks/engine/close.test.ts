@@ -79,7 +79,7 @@ describe('checklist (ruling 2)', () => {
   });
   it('a company without assets in the month is never blocked', () => {
     expect(item('2025-03', 'depreciation_not_run').count).toBe(0);
-    expect(item('2026-09', 'depreciation_not_run', 'co-nonvat')).toMatchObject({ count: 1, severity: 'blocking' }); // nfa-1 ran through August
+    expect(item('2026-09', 'depreciation_not_run', 'co-nonvat')).toMatchObject({ count: 2, severity: 'blocking' }); // nfa-1 ran through August; nfa-car (AC7a, depFrom September: its catch-up) is due too
   });
   it('schedules_not_run counts plan months up to the month with no live run (warning)', () => {
     expect(item('2026-09', 'schedules_not_run').count).toBe(0); // July, August, September ran

@@ -404,7 +404,7 @@ describe('an asset from an opening-balance row (ruling 1, 2)', () => {
     expect(fa.asset).toMatchObject({ cost: '45000.00', opening: '9000.00', accumulated: '9000.00', nbv: '36000.00', startDate: '2025-03-01', lifeMonths: 60, depFrom: '2026-01', assetClass: 'equipment', salvage: '1.00', codes: { cost: '1210', accumulated: '1211' } });
     expect(fa.party).toBeUndefined();
     expect(err(() => activateAsset(st, NV, { source: { kind: 'ob', docId: ob.id, rowId: a.id! } }, ME)).code).toBe('fa.source_taken');
-    expect(unregisteredCapex(st, NV).some((r) => r.source.kind === 'ob')).toBe(false);
+    expect(unregisteredCapex(st, NV).some((r) => r.source.kind === 'ob' && r.source.rowId === a.id)).toBe(false); // the car row (AC7a) is still waiting
   });
   it('AC7a: an opening row registered after the runs of its first months is caught up in the next run (natural first month = the month after the cut-off)', () => {
     blank();
@@ -422,14 +422,14 @@ describe('an asset from an opening-balance row (ruling 1, 2)', () => {
     blank();
     const { ob, a } = row();
     const fa = activateAsset(st, NV, { source: { kind: 'ob', docId: ob.id, rowId: a.id! } }, ME);
-    const body = (op: Partial<typeof a>, over: { notes?: string; date?: string } = {}) => ({ header: { ...ob.header, ...(over.notes ? { notes: over.notes } : {}), ...(over.date ? { documentDate: over.date } : {}) }, lines: ob.lines, opening: { ...ob.opening!, assets: [{ ...a, ...op }] } });
+    const body = (op: Partial<typeof a>, over: { notes?: string; date?: string } = {}) => ({ header: { ...ob.header, ...(over.notes ? { notes: over.notes } : {}), ...(over.date ? { documentDate: over.date } : {}) }, lines: ob.lines, opening: { ...ob.opening!, assets: ob.opening!.assets.map((x) => (x.id === a.id ? { ...a, ...op } : x)) } });
     expect(err(() => cancel(st, ob.id, ob.version, 'OTHER', 'x', ME)).code).toBe('fa.source_locked');
     for (const op of [{ cost: '46000.00' }, { accumulated: '9500.00' }, { acquired: '2025-04-01' }, { lifeMonths: 36 }, { assetClass: 'vehicle' }]) {
       expect(err(() => revise(st, ob.id, body(op), ob.version, 'x', ME)).code, JSON.stringify(op)).toBe('fa.source_locked');
     }
     expect(err(() => revise(st, ob.id, { ...body({}), opening: { ...ob.opening!, assets: [] } }, ob.version, 'x', ME)).code).toBe('fa.source_locked'); // the row cannot be dropped
     expect(err(() => revise(st, ob.id, { ...body({ cost: '46000.00' }), opening: { ...ob.opening!, assets: [{ ...a, cost: '46000.00', id: undefined }] } }, ob.version, 'x', ME)).code).toBe('fa.source_locked'); // nor re-created under a new id with other money
-    expect(revise(st, ob.id, { ...body({}), opening: { ...ob.opening!, assets: [{ ...a, id: undefined }] } }, ob.version, 'x', ME).opening!.assets[0].id).toBe(a.id); // the same row without its id keeps the id it had
+    expect(revise(st, ob.id, { ...body({}), opening: { ...ob.opening!, assets: [{ ...a, id: undefined }, ob.opening!.assets[1]] } }, ob.version, 'x', ME).opening!.assets[0].id).toBe(a.id); // the same row without its id keeps the id it had
     expect(revise(st, ob.id, body({ name: 'เครื่องพิมพ์ (แก้ชื่อ)' }, { notes: 'แก้หมายเหตุ' }), doc(ob.id).version, 'x', ME).header.notes).toBe('แก้หมายเหตุ');
     expect(derivedLocks(st, doc(ob.id)).some((l) => l.kind === 'asset')).toBe(true);
     cancel(st, fa.id, fa.version, 'OTHER', 'x', ME);
@@ -597,6 +597,16 @@ describe('the seed (fixtures)', () => {
     expect(planDepreciation(s, 'co-vat', '2026-10').problem?.code).toBe('dp.out_of_order');
     runDepreciation(s, 'co-vat', '2026-09', ME);
     expect(planDepreciation(s, 'co-vat', '2026-10').problem?.code).toBe('dp.not_due'); // October has not ended
+    expect(checkInvariants(s)).toEqual([]);
+  });
+});
+
+describe('the seed car (AC7a): an opening-balance asset registered after the August run', () => {
+  it('nfa-car (non-VAT, row of nob-1, acquired 1 Jan 2025) starts at depFrom 2026-09 with the catch-up from 2026-01; September is its first row', () => {
+    const s = buildSeedState(), fa = s.docs.find((x) => x.id === 'nfa-car')!;
+    expect(fa.asset).toMatchObject({ assetClass: 'vehicle', cost: '480000.00', opening: '96000.00', accumulated: '96000.00', startDate: '2025-01-01', lifeMonths: 60, depFrom: '2026-09', catchUpFrom: '2026-01', codes: { cost: '1220', accumulated: '1221' } });
+    expect(planDepreciation(s, 'co-nonvat', '2026-09').rows.find((r) => r.assetId === 'nfa-car')).toMatchObject({ amount: '72000.00', catchUp: { from: '2026-01', months: 9 } }); // 9 x 8,000.00
+    expect(liveDps(s, 'co-nonvat').some((d) => d.dp!.rows.some((r) => r.assetId === 'nfa-car'))).toBe(false); // none of the seeded runs carries it
     expect(checkInvariants(s)).toEqual([]);
   });
 });

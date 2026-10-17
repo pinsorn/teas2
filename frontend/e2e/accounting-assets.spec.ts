@@ -13,6 +13,7 @@ screenContract({ name: 'FA list', path: FA, heading: 'ทะเบียนส�
 screenContract({ name: 'FA view (in use)', path: async (p) => `${FA}/${await fixtureId(p, 'faActive')}`, heading: /FA-\d{6}-\d{4}/, company: 'vat', otherCompany: 'not-found', states: ['loading', 'error', 'forbidden'], forbiddenRole: 'operator' });
 screenContract({ name: 'FA view (sold)', path: async (p) => `${FA}/${await fixtureId(p, 'faDisposed')}`, heading: /FA-\d{6}-\d{4}/, company: 'vat', otherCompany: 'not-found', states: ['loading', 'error', 'forbidden'] });
 screenContract({ name: 'FA view (non-VAT, from the opening balance)', path: async (p) => `${FA}/${await fixtureId(p, 'nfaActive')}`, heading: /FA-\d{6}-\d{4}/, company: 'nonvat', otherCompany: 'not-found', states: ['loading', 'error', 'forbidden'] });
+screenContract({ name: 'FA view (non-VAT car, catch-up pending)', path: async (p) => `${FA}/${await fixtureId(p, 'faCar')}`, heading: /FA-\d{6}-\d{4}/, company: 'nonvat', otherCompany: 'not-found', states: ['loading', 'error', 'forbidden'], forbiddenRole: 'operator' });
 screenContract({ name: 'FA register (new)', path: `${FA}/new`, heading: 'ลงทะเบียนสินทรัพย์', company: 'both', states: ['loading', 'error', 'forbidden'], forbiddenRole: 'operator' });
 screenContract({ name: 'DP list', path: DP, heading: 'ค่าเสื่อมราคาประจำงวด', company: 'both', states: [...STATES], forbiddenRole: 'operator' });
 screenContract({ name: 'DP view', path: async (p) => `${DP}/${await fixtureId(p, 'dpRun')}`, heading: /DP-\d{6}-\d{4}/, company: 'vat', otherCompany: 'not-found', states: ['loading', 'error', 'forbidden'], forbiddenRole: 'operator' });
@@ -187,6 +188,7 @@ test('AC7a: a bill registered after the runs it belongs to is caught up in the n
   await expect(tbl.getByRole('row').filter({ hasText: 'เครื่องล้างรถ' })).toContainText('2,709.68');
   await expect(tbl.getByRole('link', { name: fa.number })).toBeVisible();
   await expect(page.getByText('ยอดกระทบตรงกัน').first()).toBeVisible();
+  await expect(tbl).toContainText('จำหน่ายแล้ว (ไม่รวมในยอดรวม)'); // the printer sold on 20 Sep: listed, outside the totals
   await shot(page, 'asset-register-report');
   await axeClean(page);
   await page.setViewportSize({ width: 390, height: 844 });
@@ -195,4 +197,17 @@ test('AC7a: a bill registered after the runs it belongs to is caught up in the n
     const rep = await api<{ asOf: string; tieOuts: { diff: string }[] }>(page, `/reports/asset-register?asOf=${asOf}`);
     expect([rep.asOf, rep.tieOuts[0].diff]).toEqual([asOf, '0.00']);
   }
+});
+
+test('AC7a: the seeded non-VAT car is waiting for the September catch-up (from January)', async ({ page }) => {
+  await page.goto('/'); const id = await fixtureId(page, 'faCar');
+  await page.goto(`${FA}/${id}?company=nonvat`);
+  await expect(page.getByTestId('fa-catchup')).toContainText('ม.ค. 2569');
+  await expect(page.getByTestId('fa-summary')).toContainText('ยานพาหนะ');
+  await expect(page.getByTestId('fa-accumulated')).toHaveText('96,000.00');
+  await shot(page, 'fa-car');
+  await page.goto(`${DP}/new?company=nonvat`);
+  await expect(page.getByTestId('dp-catchup')).toHaveText('รวมย้อนหลัง ม.ค. 2569–ก.ย. 2569 (9 เดือน)');
+  await expect(page.getByTestId('dp-rows')).toContainText('72,000.00');
+  await shot(page, 'dp-preview-car');
 });

@@ -16,7 +16,7 @@ type DocFixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssuedUnpa
   | 'pvMultiWt' | 'pvGrossUp' | 'pvForeign' | 'pvCancelled' | 'wtIssued' | 'wtCancelled'
   | 'exDraft' | 'exPending' | 'exApproved' | 'exUnpaid' | 'exPaid' | 'exForfeit' | 'nexIssued'
   | 'tiDeposit' | 'rcDepositApplied' | 'pvPrepayment'
-  | 'jvDraftUnbalanced' | 'jvAccrual' | 'jvIssued' | 'jvReversal' | 'njvIssued' | 'obIssued' | 'obDraft' | 'faActive' | 'faDisposed' | 'dpRun' | 'nfaActive'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
+  | 'jvDraftUnbalanced' | 'jvAccrual' | 'jvIssued' | 'jvReversal' | 'njvIssued' | 'obIssued' | 'obDraft' | 'faActive' | 'faDisposed' | 'dpRun' | 'nfaActive' | 'faCar'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
 
 /** FN1 bank accounts: not documents, so no predicate - a fixed record id that must exist in the seed. `bankEmpty` is the VAT company's account with no imports. */
 export const BANK_FIXTURES = { bankKbank: 'ba-kbank', bankEmpty: 'ba-scb', nbankKbank: 'nba-kbank' } as const;
@@ -128,6 +128,7 @@ export const FIXTURE_PREDICATES: Record<DocFixtureKey, (d: D, st: MockState) => 
   // AC5 fixed assets: fa-scan (a scanner of pb-printer, in service 1 Jul) is live, has run twice and is the asset September depreciates (fa-nb, the notebook of pb-capex, is in service from 9 Oct: nothing is due yet); nfa-1 is the non-VAT company's asset (an opening-balance row); fa-sold (the printer) was sold on 20 Sep by tax invoice; dp-2026-08 is the August run (September is due, October has not ended)
   faActive: byId('fa-scan', (d) => d.status === 'issued' && !d.asset?.disposed),
   nfaActive: byId('nfa-1', (d) => d.status === 'issued' && !d.asset?.disposed && d.companyId === 'co-nonvat'),
+  faCar: byId('nfa-car', (d) => d.status === 'issued' && d.companyId === 'co-nonvat'),
   faDisposed: byId('fa-sold', (d) => d.status === 'issued' && d.asset?.disposed?.kind === 'sale'),
   dpRun: byId('dp-2026-08', (d) => d.status === 'issued'),
 };

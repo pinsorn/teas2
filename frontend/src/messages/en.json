@@ -453,6 +453,7 @@
       "faActive": "Asset in use (2 runs done)",
       "faDisposed": "Asset sold (tax invoice issued)",
       "nfaActive": "Asset from the opening balance (non-VAT)",
+      "faCar": "Car, catch-up depreciation pending (non-VAT)",
       "dpList": "Depreciation runs list",
       "dpNew": "Run depreciation",
       "periodClose": "Period and year close",
@@ -1061,7 +1062,7 @@
       "from": "From", "to": "To", "accountFilter": "Account (code)", "source": "Source",
       "sources": { "JV": "Journal voucher", "OB": "Opening balances", "TI": "Tax invoice", "IV": "Invoice", "RC": "Receipt", "CN": "Credit note", "DN": "Debit note", "PB": "Purchase bill", "PCN": "Vendor credit note", "PDN": "Vendor debit note", "PV": "Payment voucher", "EX": "Expense claim", "STL": "Netting and settlements", "BANK": "Bank reconciliation" }
     },
-    "assetRegister": {"title":"Fixed asset register","number":"Number","name":"Item","start":"In service","cost":"Cost","accumulated":"Accumulated","nbv":"Net book value","status":"Status","tie":"Register accumulated depreciation {left} baht against the ledger {right} baht"},
+    "assetRegister": {"tieCost":"Register cost plus lines not yet registered {left} baht against the ledger asset accounts {right} baht","title":"Fixed asset register","number":"Number","name":"Item","start":"In service","cost":"Cost","accumulated":"Accumulated","nbv":"Net book value","status":"Status","tie":"Register accumulated depreciation {left} baht against the ledger {right} baht"},
     "bankRec": { "title": "Bank reconciliation", "item": "Item", "date": "Date", "amount": "Amount", "tie": "Adjusted statement balance {left} baht against adjusted book balance {right} baht" }
   },
   "records": {

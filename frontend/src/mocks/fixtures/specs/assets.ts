@@ -21,9 +21,11 @@ export function seedAssets(st: MockState): void {
   at('2026-07-01', () => activateAsset(st, 'co-vat', { source: { kind: 'bill', docId: 'pb-printer', lineId: 'pb-printer-l2' }, name: 'เครื่องสแกนเอกสาร', lifeMonths: 36, startDate: '2026-07-01' }, USER, { id: 'fa-scan', date: '2026-07-01' }));
   at('2026-10-09', () => activateAsset(st, 'co-vat', { source: { kind: 'bill', docId: 'pb-capex', lineId: 'pb-capex-l1' }, name: 'โน้ตบุ๊ก', lifeMonths: 36, startDate: '2026-10-09' }, USER, { id: 'fa-nb', date: '2026-10-09' }));
   const ob = st.docs.find((d) => d.id === 'nob-1')!;
+  const car = ob.opening!.assets[1];
   at('2026-01-02', () => activateAsset(st, 'co-nonvat', { source: { kind: 'ob', docId: 'nob-1', rowId: ob.opening!.assets[0].id! }, salvage: '1.00' }, USER, { id: 'nfa-1', date: '2026-01-02' }));
   at('2026-08-02', () => runDepreciation(st, 'co-vat', '2026-07', USER, { id: 'dp-2026-07' }));
   at('2026-09-02', () => runDepreciation(st, 'co-vat', '2026-08', USER, { id: 'dp-2026-08' }));
   for (const m of ['01', '02', '03', '04', '05', '06', '07', '08']) at(`2026-${String(Number(m) + 1).padStart(2, '0')}-02`, () => { runDepreciation(st, 'co-nonvat', `2026-${m}`, USER, { id: `ndp-2026-${m}` }); });
+  at('2026-09-03', () => activateAsset(st, 'co-nonvat', { source: { kind: 'ob', docId: 'nob-1', rowId: car.id! } }, USER, { id: 'nfa-car', date: '2026-09-03' })); // registered after the August run: September's run is its catch-up from January
   at('2026-09-20', () => disposeAsset(st, 'co-vat', 'fa-sold', { date: '2026-09-20', kind: 'sale', proceeds: '20000.00', buyerId: 'pc-07' }, USER));
 }
