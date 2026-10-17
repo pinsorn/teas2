@@ -18,16 +18,20 @@ export function columnsFor(d: DocDescriptor, t: Translate, common: Translate): D
     dueDate: (r) => r.dueDate ? formatDateBE(r.dueDate) : common('placeholder'),
     reference: (r) => r.reference ?? common('placeholder'),
     progress: (r) => r.progress ?? common('placeholder'),
+    whtForm: (r) => (r.wht ? t(`whtForms.${r.wht.form}`) : common('placeholder')),
+    whtIncome: (r) => (r.wht ? formatTHB(r.wht.income) : common('placeholder')),
+    whtTax: (r) => (r.wht ? formatTHB(r.wht.tax) : common('placeholder')),
     marks: (r) => r.marks ? <span className="inline-flex flex-wrap gap-1"><MarksChips marks={r.marks} /></span> : common('placeholder'),
   };
-  return d.listColumns.map((key) => ({ key, header: t(`columns.${key === 'party' ? partyHeader[d.partyKind ?? ''] ?? 'party' : key}`), cell: cells[key],
-    ...(['total', 'outstanding'].includes(key) ? { align: 'end' as const } : {}) }));
+  return d.listColumns.map((key) => ({ key, header: t(`columns.${key === 'party' ? (d.type === 'WT' ? 'payee' : partyHeader[d.partyKind ?? ''] ?? 'party') : key}`), cell: cells[key],
+    ...(['total', 'outstanding', 'whtIncome', 'whtTax'].includes(key) ? { align: 'end' as const } : {}) }));
 }
 const PARAMS: Record<SavedViewKey, Record<string, string>> = {
   draft: { status: 'draft' }, pending: { status: 'pending' },
   outstanding: { status: 'issued,partly_settled', outstanding: 'positive' },
   overdue: { status: 'issued,partly_settled', outstanding: 'positive', overdue: '1' },
   cancelled: { status: 'cancelled' }, agent: { agent: '1' },
+  pnd3: { form: 'PND3' }, pnd53: { form: 'PND53' }, pnd2: { form: 'PND2' }, pnd54: { form: 'PND54' },
 };
 export function savedViewsFor(d: DocDescriptor, t: Translate): SavedView[] {
   const keys: SavedViewKey[] = d.savedViews.includes('agent') ? d.savedViews : [...d.savedViews, 'agent']; // "created by an AI agent" exists for every document type

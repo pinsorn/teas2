@@ -24,7 +24,7 @@ import { ForbiddenState } from '../states/ForbiddenState';
 import { LoadingState } from '../states/LoadingState';
 import { NotAvailableState } from '../states/NotAvailableState';
 import { TieOutBanner } from '../report/TieOutBanner';
-import { FilingBoxes } from './FilingBoxes';
+import { FilingAttachment, FilingBoxes } from './FilingBoxes';
 import { FilingHistory } from './FilingHistory';
 import { FinalizeDialog } from './FinalizeDialog';
 
@@ -45,19 +45,21 @@ function Inner({ form }: { form: FilingForm; periodKind: 'month' | 'year' }) {
   const qc = useQueryClient();
   const { me, isError: meFailed, error: meError, refetch: refetchMe } = useMe();
   const companyId = me?.activeCompanyId ?? '';
-  const hist = useQuery({ queryKey: qk.filings(companyId, form), queryFn: () => endpoints.listFilings(form), enabled: !!companyId && !!me?.vatRegistered });
+  // only the ภ.พ.30 is VAT-only: the withholding returns and the ภ.พ.36 belong to every company
+  const applies = !!me && (form !== 'PP30' || me.vatRegistered);
+  const hist = useQuery({ queryKey: qk.filings(companyId, form), queryFn: () => endpoints.listFilings(form), enabled: !!companyId && applies });
   const period = search.get('period') || hist.data?.next || '';
-  const q = useQuery({ queryKey: qk.filing(companyId, form, period), queryFn: () => endpoints.getFiling(form, period), enabled: !!companyId && !!me?.vatRegistered && !!period });
+  const q = useQuery({ queryKey: qk.filing(companyId, form, period), queryFn: () => endpoints.getFiling(form, period), enabled: !!companyId && applies && !!period });
   const [confirming, setConfirming] = useState(false);
   const finalize = useMutation({
-    mutationFn: () => endpoints.finalizeFiling(form, period, q.data!.version),
+    mutationFn: (ack: boolean) => endpoints.finalizeFiling(form, period, q.data!.version, ack),
     onSuccess: async () => { setConfirming(false); await qc.invalidateQueries({ queryKey: [companyId, 'filings'] }); await qc.invalidateQueries({ queryKey: [companyId, 'doc'] }); },
   });
   const pick = (value: string) => { const u = new URLSearchParams(search.toString()); if (value) u.set('period', value); else u.delete('period'); router.replace(`${pathname}?${u}`); };
 
   if (meFailed && !me) return <ErrorState error={meError} onRetry={() => void refetchMe()} />;
   if (!me) return <LoadingState />;
-  if (!me.vatRegistered) return <NotAvailableState reason="vatOnly" />;
+  if (!applies) return <NotAvailableState reason="vatOnly" />;
   const failed = (hist.isError && !hist.data ? hist.error : undefined) ?? (q.isError && !q.data ? q.error : undefined);
   if (failed) return isForbidden(failed) ? <ForbiddenState detail={failed instanceof ApiError ? failed.problem.detail : undefined} permission="tax.read" /> : <ErrorState error={failed} onRetry={() => { void hist.refetch(); void q.refetch(); }} />;
   if (!q.data || !hist.data) return <LoadingState />;
@@ -83,19 +85,21 @@ function Inner({ form }: { form: FilingForm; periodKind: 'month' | 'year' }) {
         </div>
         <p className="text-body text-muted-foreground">{t('due', { date: formatDateBE(m.dueDate) })}</p>
       </div>
-      <h2 className="text-section font-semibold">{t('title', { month: monthBE(period) })}</h2>
+      <h2 className="text-section font-semibold">{t('title', { form: t(`forms.${form}`), month: monthBE(period) })}</h2>
       {filed ? (
         <Alert role="status" data-testid="filed-banner">
           <LockIcon aria-hidden />
           <AlertTitle>{t('filed.title')}</AlertTitle>
-          <AlertDescription>{t('filed.body', { by: m.finalizedBy ?? '', at: formatDateBE((m.finalizedAt ?? '').slice(0, 10)) })}</AlertDescription>
+          <AlertDescription>{t(form === 'PP30' ? 'filed.body' : 'filed.bodyOther', { by: m.finalizedBy ?? '', at: formatDateBE((m.finalizedAt ?? '').slice(0, 10)) })}</AlertDescription>
         </Alert>
       ) : null}
       <TieOutBanner tieOuts={m.tieOuts} />
       {m.boxes.length === 0 ? <EmptyState title={t('empty.title')} body={t('empty.body')} /> : <FilingBoxes boxes={m.boxes} period={period} />}
       {m.tieOuts.filter((o) => o.diff === '0.00').map((o) => (
-        <p key={o.labelKey} className="text-small text-muted-foreground tabular-nums">{tr('tieOut.ok')}: {dyn(o.labelKey, { left: formatMoney(o.left), right: formatMoney(o.right) })}</p>
+        <p key={o.labelKey} className="text-small text-muted-foreground tabular-nums">{tr('tieOut.ok')}: {dyn(o.labelKey, { left: formatMoney(o.left), right: formatMoney(o.right) })}
+          {o.reconciling?.map((r) => <span key={r.labelTh} data-testid="reconciling"> ({t('tie.reconciling')}: {r.labelTh} {formatMoney(r.amount)})</span>)}</p>
       ))}
+      {m.attachment ? <FilingAttachment attachment={m.attachment} /> : null}
       {m.warnings.map((w) => <p key={w} className="flex items-start gap-2 text-small text-muted-foreground"><TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0" />{w}</p>)}
       {!filed && m.blockers.length ? (
         <section aria-label={t('blockers.title')} className="grid gap-2 rounded-lg border bg-card p-4" data-testid="blockers">
@@ -117,11 +121,11 @@ function Inner({ form }: { form: FilingForm; periodKind: 'month' | 'year' }) {
             {disabledWhy ? <span className="text-small text-muted-foreground" data-testid="finalize-why">{disabledWhy}</span> : null}
           </>
         ) : (
-          <Button variant="outline" onClick={() => void exportTxt()}><DownloadIcon aria-hidden />{t('export.txt')}</Button>
+          m.exports.includes('rdprep-txt') ? <Button variant="outline" onClick={() => void exportTxt()}><DownloadIcon aria-hidden />{t('export.txt')}</Button> : null
         )}
         <Button variant="outline" onClick={() => window.print()}><PrinterIcon aria-hidden />{t('export.print')}</Button>
       </div>
-      <FinalizeDialog open={confirming} month={monthBE(period)} boxes={m.boxes} pending={finalize.isPending} error={finalize.error} onConfirm={() => finalize.mutate()} onCancel={() => setConfirming(false)} />
+      <FinalizeDialog open={confirming} form={form} month={monthBE(period)} boxes={m.boxes} pending={finalize.isPending} error={finalize.error} onConfirm={(ack) => finalize.mutate(ack)} onCancel={() => setConfirming(false)} />
       <FilingHistory items={hist.data.items} />
     </div>
   );

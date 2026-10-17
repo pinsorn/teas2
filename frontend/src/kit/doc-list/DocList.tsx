@@ -85,7 +85,7 @@ export function DocList({ descriptor: d, columns, savedViews, bulkActions }: Doc
   const rangeBad = !!filters.from && !!filters.to && filters.from > filters.to;
   const wanted = {
     status: filters.status, q: filters.q, from: filters.from, to: filters.to, outstanding: filters.outstanding === 'positive' ? ('positive' as const) : undefined,
-    overdue: filters.overdue === '1' ? ('1' as const) : undefined, agent: filters.agent === '1' ? ('1' as const) : undefined,
+    overdue: filters.overdue === '1' ? ('1' as const) : undefined, agent: filters.agent === '1' ? ('1' as const) : undefined, form: filters.form,
   };
   // An impossible date range is never sent: the last valid query stays on screen under the inline error.
   const [lastOk, setLastOk] = useState(rangeBad ? { ...wanted, from: undefined, to: undefined } : wanted);

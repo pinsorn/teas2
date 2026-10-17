@@ -43,7 +43,7 @@ export function getFiling(st: MockState, companyId: string, form: FilingForm, pe
 }
 
 /** Finalize (ยืนยันยื่นแบบ): one per company x form x period (I10); refused while a blocker stands and on a preview that went stale. Stores the boxes, the tie-outs and the exact list of documents with the figures each gave. */
-export function finalizeFiling(st: MockState, companyId: string, form: FilingForm, period: string, version: number, actor: Actor): FilingModel {
+export function finalizeFiling(st: MockState, companyId: string, form: FilingForm, period: string, version: number, actor: Actor, ack = false): FilingModel {
   if (form !== 'PP30' && !isAnnex(form)) throw NOT_BUILT();
   if (form === 'PP30') requireVat(st, companyId);
   if (!PERIOD.test(period)) throw fail(422, 'filing.bad_period', 'งวดต้องอยู่ในรูปแบบ ปปปป-ดด');
@@ -52,6 +52,7 @@ export function finalizeFiling(st: MockState, companyId: string, form: FilingFor
   const m = form === 'PP30' ? pp30Model(st, companyId, period) : form === 'PP36' ? pp36Model(st, companyId, period) : pndModel(st, companyId, form as PndForm, period);
   if (m.version !== version) throw fail(409, 'filing.stale', 'เอกสารในงวดนี้เปลี่ยนไปตั้งแต่ที่ดูตัวอย่าง โหลดใหม่แล้วตรวจอีกครั้ง');
   if (m.blockers.length) throw fail(422, 'filing.blocked', `ยืนยันแบบ ${name} เดือน ${monthLabelTh(period)} ไม่ได้: ${m.blockers[0].labelTh}`);
+  if (form === 'PP36' && !ack) throw fail(422, 'filing.ack_required', 'ต้องติ๊กรับทราบก่อนยืนยันยื่นแบบ ภ.พ.36'); // parity: the acknowledgement is mandatory
   const co = st.companies.find((c) => c.id === companyId)!;
   const prev = filingOf(st, companyId, prevMonth(period));
   const snap = form === 'PP30'

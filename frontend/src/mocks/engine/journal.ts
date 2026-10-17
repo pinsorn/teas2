@@ -260,6 +260,7 @@ function sources(st: MockState, companyId: string): Source[] {
   for (const j of st.bankJournals) if (j.companyId === companyId) out.push({ type: 'BANK', label: `${j.id} · ${j.label}`, href: `/finance/bank-accounts/${j.accountId}${j.lineId ? `?line=${j.lineId}` : ''}`, entries: j.entries });
   for (const y of st.yearCloses) if (y.companyId === companyId) out.push({ type: 'YC', label: `ปิดบัญชีสิ้นปี ${y.year + 543}`, href: '/accounting/period-close', entries: y.journal }); // AC6
   for (const s of st.settlements) if (s.companyId === companyId) out.push({ type: 'STL', label: `${s.id.toUpperCase()} · หักกลบ/ปรับปรุงการชำระ`, href: `/finance/settlements/${s.id}`, entries: s.journal });
+  for (const f of st.filings) if (f.companyId === companyId && f.journal?.length) out.push({ type: f.form, label: `ภ.พ.36 เดือน ${monthLabelTh(f.period)}`, href: `/tax/wht?tab=pp36&period=${f.period}`, entries: f.journal }); // TX2: the ภ.พ.36 entry, dated the payment month's last day
   return out;
 }
 

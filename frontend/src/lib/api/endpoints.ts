@@ -23,7 +23,7 @@ export interface Reconciliation { reconciledTo: string | null; counts: Record<Ba
 export interface DepositsView { items: DepositRow[]; tolerance?: { rounding: Money; smallWriteOff: Money }; pairs?: { customerId: string; customerName: string; vendorId: string; vendorName: string }[] }
 export interface SettleInput { kind: SettlementKind; date: string; partyId: string; sources?: { docId: string; amount: Money }[]; targets: { docId: string; amount: Money }[]; difference?: { role: SettlementDifferenceRole; amount: Money }; reason?: string }
 export interface WhtTypeRef { code: string; nameTh: string; rate: string; incomeType: string }
-export interface ListDocsParams { status?: string; from?: string; to?: string; q?: string; outstanding?: 'positive'; overdue?: '1'; agent?: '1'; limit?: number; cursor?: string }
+export interface ListDocsParams { status?: string; from?: string; to?: string; q?: string; outstanding?: 'positive'; overdue?: '1'; agent?: '1'; /** WT: the return (`PND3` ...) */ form?: string; limit?: number; cursor?: string }
 
 /** Query string without undefined / empty values. */
 const qs = (p: Record<string, string | number | undefined>) => {
@@ -142,7 +142,7 @@ export const endpoints = {
   /** TX1 tax filings: the finalized ones with the month to look at next (tax.read), one period (draft: tax.filing.preview too), finalize (tax.filing.finalize; `version` is the preview's), and the RD Prep text of a finalized one. */
   listFilings: (form: FilingForm) => api<{ items: FilingHistoryItem[]; next: string }>('GET', `/filings/${form}`),
   getFiling: (form: FilingForm, period: string) => api<FilingModel>('GET', `/filings/${form}/${encodeURIComponent(period)}`),
-  finalizeFiling: (form: FilingForm, period: string, version: number) => api<FilingModel>('POST', `/filings/${form}/${encodeURIComponent(period)}/finalize`, { version }),
+  finalizeFiling: (form: FilingForm, period: string, version: number, ack?: boolean) => api<FilingModel>('POST', `/filings/${form}/${encodeURIComponent(period)}/finalize`, { version, ...(ack ? { ack } : {}) }),
   exportFiling: async (form: FilingForm, period: string, kind: 'rdprep-txt'): Promise<string> => {
     const res = await fetch(new URL(`/bff/v1/filings/${form}/${encodeURIComponent(period)}/export${qs({ kind })}`, window.location.origin));
     if (!res.ok) throw new ApiError(normalizeProblem(res.status, await res.json().catch(() => undefined)));

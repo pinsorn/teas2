@@ -17,7 +17,7 @@ export function FilingHistory({ items }: { items: FilingHistoryItem[] }) {
           <TableBody>
             {items.map((h) => (
               <TableRow key={`${h.form}-${h.period}`} className="h-(--row-h)">
-                <TableCell><Link href={`/tax/vat?period=${h.period}`} className="text-primary underline underline-offset-2">{monthBE(h.period)}</Link></TableCell>
+                <TableCell><Link href={h.form === 'PP30' ? `/tax/vat?period=${h.period}` : `/tax/wht?tab=${h.form.toLowerCase()}&period=${h.period}`} className="text-primary underline underline-offset-2">{monthBE(h.period)}</Link></TableCell>
                 <TableCell>{formatDateBE(h.finalizedAt.slice(0, 10))}</TableCell>
                 <TableCell>{h.finalizedBy}</TableCell>
                 <TableCell className="text-end tabular-nums">{formatMoney(h.net)} <span className="text-small text-muted-foreground">{h.overpaid ? t('overpaid') : t('payable')}</span></TableCell>

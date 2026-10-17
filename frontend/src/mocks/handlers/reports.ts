@@ -13,7 +13,7 @@ async function run(kind: string, url: URL) {
   const gate = await screenGate('item');
   if (gate) return gate;
   const { st, company, perms, s } = ctx();
-  const need = kind === 'general-journal' ? 'ledger.read' : kind.startsWith('vat-') ? 'tax.read' : PERM; // the general journal is the ledger itself; the VAT registers are the tax area's
+  const need = kind === 'general-journal' ? 'ledger.read' : kind.startsWith('vat-') || kind === 'wht-receivable' || kind === 'missing-wht-cert' ? 'tax.read' : PERM; // the general journal is the ledger itself; the VAT registers and the withholding lists are the tax area's
   if (!perms.includes(need)) return forbidden(need);
   if (!isBuilt(kind)) return problem(404, 'report.not_built', 'รายงานนี้ยังไม่เปิดให้ใช้งาน');
   const p = Object.fromEntries(url.searchParams);

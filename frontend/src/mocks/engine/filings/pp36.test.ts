@@ -25,7 +25,7 @@ const pv = (date: string, lines: DocLine[], header: Partial<Doc['header']> = {},
   const d = createDraft(st, company, 'PV', { header: { partyId: party, documentDate: date, ...header }, lines }, me, `p36-${++n}`);
   return issue(st, d.id, d.version, me);
 };
-const fin = (form: 'PP36' | 'PP30', period: string, company = CO) => finalizeFiling(st, company, form, period, (form === 'PP36' ? pp36Model(st, company, period) : pp30Model(st, company, period)).version, me);
+const fin = (form: 'PP36' | 'PP30', period: string, company = CO) => finalizeFiling(st, company, form, period, (form === 'PP36' ? pp36Model(st, company, period) : pp30Model(st, company, period)).version, me, true);
 const input = (period: string) => sat(box(pp30Model(st, CO, period), '7'));
 
 describe('the draft (October is the seed month: pv-foreign)', () => {
@@ -112,6 +112,13 @@ describe('finalize: the entry, the claim month, the tie-outs', () => {
     fin('PP36', '2026-09');
     expect(err(() => fin('PP36', '2026-09')).code).toBe('filing.already_finalized');
     expect(pp36Model(st, CO, '2026-08').blockers.map((b) => b.code)).toContain('no_documents');
+  });
+  it('TX2b: the acknowledgement is mandatory for a ภ.พ.36 (parity): refused without it, nothing stored; a ภ.ง.ด. needs none', () => {
+    const v = pp36Model(st, CO, '2026-09').version;
+    expect(err(() => finalizeFiling(st, CO, 'PP36', '2026-09', v, me)).code).toBe('filing.ack_required');
+    expect(err(() => finalizeFiling(st, CO, 'PP36', '2026-09', v, me, false)).code).toBe('filing.ack_required');
+    expect(st.filings.some((f) => f.form === 'PP36' && f.period === '2026-09')).toBe(false);
+    expect(finalizeFiling(st, CO, 'PP36', '2026-09', v, me, true).status).toBe('finalized');
   });
   it('the chain (ruling 4): from the first filed ภ.พ.36 on, the previous month with vouchers must be filed', () => {
     const f = st.filings; // pretend August was the first filed month

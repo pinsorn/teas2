@@ -182,5 +182,13 @@ export const SCREENS: Screen[] = [
   { name: 'vatBlocked', route: '/tax/vat?period=2026-10', company: 'vat', states: true }, // drafts and September still open
   { name: 'vatOutputRegister', route: '/tax/vat?tab=output&period=2026-09', company: 'vat', states: true },
   { name: 'vatInputRegister', route: '/tax/vat?tab=input&period=2026-10', company: 'vat', states: true },
+  { name: 'whtPnd3', route: '/tax/wht', company: 'both', states: true }, // TX2b: the hub opens on the ภ.ง.ด.3
+  { name: 'whtPnd53Filed', route: '/tax/wht?tab=pnd53&period=2026-09', company: 'both', states: true }, // finalized: the frozen snapshot with its attachment
+  { name: 'whtPnd53Blocked', route: '/tax/wht?tab=pnd53&period=2026-10', company: 'both', states: true },
+  { name: 'whtPnd2', route: '/tax/wht?tab=pnd2', company: 'both', states: true },
+  { name: 'whtPnd54', route: '/tax/wht?tab=pnd54&period=2026-10', company: 'both', states: true },
+  { name: 'whtPp36', route: '/tax/wht?tab=pp36&period=2026-10', company: 'both', states: true },
+  { name: 'whtWithheld', route: '/tax/wht?tab=withheld', company: 'both', states: true },
+  { name: 'whtMissingCert', route: '/tax/wht?tab=missing', company: 'both', states: true },
   { name: 'styleGuide', route: '/style-guide', company: 'both', states: false },
 ];

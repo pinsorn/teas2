@@ -12,7 +12,7 @@ type DocFixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssuedUnpa
   | 'soPartlyDelivered' | 'soClosed' | 'doDelivered' | 'nsoIssued' | 'ndoDelivered'
   | 'ivDraft' | 'ivIssuedUnpaid' | 'ivPartly' | 'ivSettled' | 'blVat' | 'blNonVat'
   | 'poDraft' | 'poSent' | 'poPartlyBilled' | 'poClosed' | 'npoIssued'
-  | 'rcStatement' | 'rcMulti' | 'rcNoCert' | 'rcDeposit' | 'nrcCashBill' | 'cnIssued' | 'dnIssued' | 'tiCreditedToZero'
+  | 'rcStatement' | 'rcMulti' | 'rcNoCert' | 'missingCertRc' | 'rcDeposit' | 'nrcCashBill' | 'cnIssued' | 'dnIssued' | 'tiCreditedToZero'
   | 'pbDraft' | 'pbIssuedUnpaid' | 'pb1Settled' | 'pbMixedVat' | 'pbFromPo' | 'pbCapex' | 'filedBill' | 'pbClaimLate' | 'pbIncomplete' | 'pcnIssued' | 'pdnIssued' | 'npbVatToCost'
   | 'pvMultiWt' | 'pvGrossUp' | 'pvForeign' | 'pvCancelled' | 'wtIssued' | 'wtCancelled'
   | 'exDraft' | 'exPending' | 'exApproved' | 'exUnpaid' | 'exPaid' | 'exForfeit' | 'nexIssued'
@@ -24,7 +24,8 @@ export const BANK_FIXTURES = { bankKbank: 'ba-kbank', bankEmpty: 'ba-scb', nbank
 /** AC4 schedules: not documents either, a fixed record id that must exist in the seed. */
 export const SCHEDULE_FIXTURES = { schedRecurringTi: 'sch-rec-ti', schedAmortisation: 'sch-amort', nschedRecurring: 'nsch-rec-iv' } as const;
 /** TX1 filing periods (YYYY-MM): not documents. 2026-08 is finalized, 2026-09 is a draft that can be finalized (the gate demo), 2026-10 is a draft with blockers (drafts, and September still open). */
-export const FILING_FIXTURES = { pp30Finalized: '2026-08', pp30Due: '2026-09', pp30Draft: '2026-10' } as const;
+/** TX2b: the ภ.ง.ด.53 and ภ.พ.36 drafts are October's (blocked until the month ends); the ภ.ง.ด.3 / 53 of 2026-08 and 2026-09 are filed. */
+export const FILING_FIXTURES = { pp30Finalized: '2026-08', pp30Due: '2026-09', pp30Draft: '2026-10', pnd53Draft: '2026-10', pp36Draft: '2026-10' } as const;
 export type FixtureKey = DocFixtureKey | keyof typeof BANK_FIXTURES | keyof typeof SCHEDULE_FIXTURES | keyof typeof FILING_FIXTURES;
 
 /** An issued, untouched TI of pc-01 (the multi-target receipt vector settles two of them). */
@@ -82,6 +83,7 @@ export const FIXTURE_PREDICATES: Record<DocFixtureKey, (d: D, st: MockState) => 
   rcStatement: byId('rc-013', (d) => d.status === 'issued' && d.totals.cash === '6955.00'), // FN2: the September receipt whose cash equals a seeded statement line (bi-001-003)
   rcMulti: byId('rc-multi', (d) => d.status === 'issued'),
   rcNoCert: byId('rc-nocert', (d) => d.status === 'issued' && !!d.allocations?.some((a) => a.wht && !a.certNumber)),
+  missingCertRc: byId('rc-nocert', (d) => d.status === 'issued' && !!d.allocations?.some((a) => a.wht && !a.certNumber)), // TX2b: the receipt on the "missing 50 tawi" list (= rcNoCert)
   rcDeposit: byId('rc-dep', (d) => d.status === 'issued'),
   nrcCashBill: byId('nrc-cash', (d) => d.status === 'issued'),
   // S5 credit / debit notes
@@ -153,8 +155,8 @@ export function fixtureIds(st: MockState): Record<FixtureKey, string> {
   }
   const co = st.companies.find((c) => c.vatRegistered)!.id;
   for (const [k, period] of Object.entries(FILING_FIXTURES) as [keyof typeof FILING_FIXTURES, string][]) {
-    const m = getFiling(st, co, 'PP30', period);
-    if (m.status === (k === 'pp30Finalized' ? 'finalized' : 'draft') && (k !== 'pp30Due' || !m.blockers.length) && (k !== 'pp30Draft' || m.blockers.length)) out[k] = period; else missing.push(k);
+    const m = getFiling(st, co, k === 'pnd53Draft' ? 'PND53' : k === 'pp36Draft' ? 'PP36' : 'PP30', period);
+    if (m.status === (k === 'pp30Finalized' ? 'finalized' : 'draft') && (k === 'pp30Due' ? !m.blockers.length : k !== 'pp30Finalized' ? m.blockers.length : true)) out[k] = period; else missing.push(k);
   }
   if (missing.length) throw new Error(`fixture ids unresolved: ${missing.join(', ')}`);
   return out as Record<FixtureKey, string>;

@@ -22,6 +22,7 @@ export const toSummary = (d: Doc): DocSummary => ({
   id: d.id, type: d.type, number: d.number, status: d.status, documentDate: d.header.documentDate, partyName: d.party?.name ?? '',
   total: d.totals.total, outstanding: d.outstanding, dueDate: d.header.dueDate, reference: (isVendorBill(d.type) && d.header.vendorDocNumber) || d.header.reference, createdByAgent: d.createdBy.kind === 'agent', // a vendor's document is found by the number printed on it
   ...(d.marks ? { marks: d.marks } : {}),
+  ...(d.type === 'WT' && d.header.whtForm ? { wht: { form: d.header.whtForm, incomeType: d.header.whtIncomeType ?? '', income: d.totals.total, tax: d.header.whtTax ?? '0.00' } } : {}),
 });
 
 export const docsReadHandlers = [
@@ -75,13 +76,13 @@ export const docsReadHandlers = [
     const u = new URL(request.url);
     const statuses = u.searchParams.get('status')?.split(',').filter(Boolean), from = u.searchParams.get('from'), to = u.searchParams.get('to');
     const q = (u.searchParams.get('q') ?? '').toLowerCase(), owing = u.searchParams.get('outstanding') === 'positive';
-    const overdue = u.searchParams.get('overdue') === '1', agent = u.searchParams.get('agent') === '1', now = today();
+    const overdue = u.searchParams.get('overdue') === '1', agent = u.searchParams.get('agent') === '1', form = u.searchParams.get('form'), now = today();
     const limit = Math.min(Number(u.searchParams.get('limit')) || 25, 100);
     const offset = u.searchParams.get('cursor') ? Number(atob(u.searchParams.get('cursor')!)) || 0 : 0;
     const rows = st.docs
       .filter((d) => d.companyId === company.id && d.type === type && !d.header.obBatchId && (!statuses?.length || statuses.includes(d.status))
         && (!owing || Number(d.outstanding ?? 0) > 0)
-        && (!overdue || (!!d.header.dueDate && d.header.dueDate < now && Number(d.outstanding ?? 0) > 0)) && (!agent || d.createdBy.kind === 'agent') && (!from || d.header.documentDate >= from) && (!to || d.header.documentDate <= to)
+        && (!overdue || (!!d.header.dueDate && d.header.dueDate < now && Number(d.outstanding ?? 0) > 0)) && (!agent || d.createdBy.kind === 'agent') && (!form || d.header.whtForm === form) && (!from || d.header.documentDate >= from) && (!to || d.header.documentDate <= to)
         && (!q || `${d.number ?? ''} ${d.party?.name ?? ''} ${d.header.vendorDocNumber ?? ''}`.toLowerCase().includes(q)))
       .sort((a, b) => b.header.documentDate.localeCompare(a.header.documentDate) || (a.number ?? '').localeCompare(b.number ?? ''));
     const items = rows.slice(offset, offset + limit).map((d) => ({ ...toSummary(d), ...progressField(st, d) }));

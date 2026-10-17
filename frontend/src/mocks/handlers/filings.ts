@@ -45,7 +45,7 @@ export const filingHandlers = [
     return { items, next: items[0] ? nextMonth(items[0].period) : prevMonth(today().slice(0, 7)) };
   })),
   http.post('*/bff/v1/filings/:form/:period/finalize', async ({ request, params }) => {
-    const b = (await request.json().catch(() => ({}))) as { version?: number };
-    return act(FINALIZE, (c) => finalizeFiling(c.st, c.company.id, form(params.form), String(params.period), Number(b.version), ACTOR), true);
+    const b = (await request.json().catch(() => ({}))) as { version?: number; ack?: boolean };
+    return act(FINALIZE, (c) => finalizeFiling(c.st, c.company.id, form(params.form), String(params.period), Number(b.version), ACTOR, b.ack === true), true);
   }),
 ];

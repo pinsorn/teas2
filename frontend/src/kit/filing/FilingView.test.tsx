@@ -6,16 +6,18 @@ import { setSettings } from '@/mocks/settings';
 import { resetState } from '@/mocks/store';
 import { testServer } from '@/mocks/test-server';
 import { __setSearch } from '@/test/next-navigation';
+import type { FilingForm } from '@/domain/filings';
 import { FilingView } from './FilingView';
+import { FinalizeDialog } from './FinalizeDialog';
 
 vi.mock('next/navigation', () => import('@/test/next-navigation'));
 beforeAll(() => testServer.listen({ onUnhandledFrame: 'error' }));
 afterAll(() => testServer.close());
 afterEach(() => { testServer.resetHandlers(); vi.restoreAllMocks(); });
 beforeEach(() => { localStorage.clear(); setSettings({ companyKey: 'vat', role: 'accountant', screenState: 'normal' }); resetState(); __setSearch(''); });
-const ui = () => {
+const ui = (form: FilingForm = 'PP30') => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={qc}><FilingView form="PP30" periodKind="month" /></QueryClientProvider>);
+  return render(<QueryClientProvider client={qc}><FilingView form={form} periodKind="month" /></QueryClientProvider>);
 };
 
 it('a month with blockers disables finalize and names the first blocker, with a link to fix it', async () => {
@@ -64,4 +66,36 @@ it('a company outside VAT has no ภ.พ.30', async () => {
   setSettings({ companyKey: 'nonvat' });
   const { container } = ui();
   await waitFor(() => expect(container.querySelector('[data-screen-state="not-available"]')).not.toBeNull());
+});
+
+it('TX2b: a filed ภ.ง.ด.53 shows the frozen boxes (payees are a count, not baht), its attachment and the RD Prep file', async () => {
+  __setSearch('period=2026-09');
+  ui('PND53');
+  expect(await screen.findByTestId('filed-banner')).toHaveTextContent('ยื่นแล้ว');
+  expect(screen.getByRole('heading', { level: 2, name: /ภ\.ง\.ด\.53 เดือน/ })).toBeTruthy();
+  expect(screen.getByTestId('box-payees')).toHaveTextContent('1 ราย');
+  expect(screen.getByTestId('box-tax')).toHaveTextContent('450.00');
+  expect(within(screen.getByTestId('filing-attachment')).getAllByRole('row').length).toBeGreaterThan(1);
+  expect(screen.getByRole('button', { name: /RD Prep/ })).toBeTruthy();
+});
+
+it('TX2b: the ภ.ง.ด.54 is PDF only (no RD Prep file); a company outside VAT has the withholding returns', async () => {
+  setSettings({ companyKey: 'nonvat' });
+  __setSearch('period=2026-10');
+  const { container } = ui('PND54');
+  expect(await screen.findByTestId('filing-view')).toBeTruthy();
+  expect(container.querySelector('[data-screen-state="not-available"]')).toBeNull();
+  expect(screen.getByRole('button', { name: /พิมพ์แบบ/ })).toBeTruthy();
+});
+
+it('TX2b: the ภ.พ.36 confirm needs the acknowledgement ticked, and sends it', async () => {
+  const onConfirm = vi.fn();
+  render(<FinalizeDialog open form="PP36" month="ก.ย. 2569" boxes={[{ code: 'base', labelTh: 'มูลค่า', amount: '10000.00' }, { code: 'vat', labelTh: 'ภาษี', amount: '700.00' }]} pending={false} error={undefined} onConfirm={onConfirm} onCancel={() => undefined} />);
+  const dialog = await screen.findByRole('alertdialog');
+  const confirm = within(dialog).getByRole('button', { name: /ยืนยันยื่นแบบ/ }) as HTMLButtonElement;
+  expect(confirm.disabled).toBe(true);
+  await userEvent.click(within(dialog).getByRole('checkbox'));
+  expect(confirm.disabled).toBe(false);
+  await userEvent.click(confirm);
+  expect(onConfirm).toHaveBeenCalledWith(true);
 });

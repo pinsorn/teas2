@@ -142,7 +142,8 @@ export interface BankJournal { id: string; companyId: string; accountId: string;
 export interface BankImport { id: string; accountId: string; fileName: string; format: 'kbiz-csv' | 'kplus-pdf'; from: IsoDate; to: IsoDate;
   opening: Money; closing: Money; lines: number; at: string; warnings: string[] }
 export interface DocSummary { id: string; type: DocType; number?: string; status: DocStatus; documentDate: IsoDate;
-  partyName: string; total: Money; outstanding?: Money; dueDate?: IsoDate; reference?: string; createdByAgent: boolean; marks?: DocMarks; progress?: string }
+  partyName: string; total: Money; outstanding?: Money; dueDate?: IsoDate; reference?: string; createdByAgent: boolean; marks?: DocMarks; progress?: string;
+  /** WT: the return the tax falls on, the income type, the income and the tax withheld (list columns) */ wht?: { form: string; incomeType: string; income: Money; tax: Money } }
 export interface Page<T> { items: T[]; nextCursor?: string; total?: number }
 
 export type LinkKind = 'converted_from' | 'settles' | 'adjusts' | 'groups' | 'replaces' | 'issues';
