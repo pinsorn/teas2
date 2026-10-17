@@ -121,5 +121,6 @@ export function* companyEntries(st: MockState, companyId: string, closing = true
   for (const j of st.journals) if (mine.has(j.docId)) yield* j.preview.entries;
   for (const j of st.bankJournals) if (j.companyId === companyId) yield* j.entries;
   for (const s of st.settlements) if (s.companyId === companyId) yield* s.journal; // FN3: deposits / prepayments applied, netting, write-offs
+  for (const f of st.filings) if (f.companyId === companyId && f.journal) yield* f.journal; // TX2: a filing's entry - the ภ.พ.36 VAT (payment month end), the ภ.พ.30 netting (finalize day)
   if (closing) for (const y of st.yearCloses) if (y.companyId === companyId) yield* y.journal; // AC6: the year-end closing entries (and their reversals); `closing` false = everything they close
 }

@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { ReportModel } from '@/domain/reports';
 import { reportCsv } from '../engine/reports';
+import { PERMISSIONS_BY_ROLE } from '../permissions';
 import { setSettings } from '../settings';
 import { resetState } from '../store';
 import { testServer } from '../test-server';
@@ -76,5 +77,19 @@ describe('report parameters and CSV safety', () => {
     expect(lines[1]).toBe("1,'=1+1,-1234.00,0.00");
     expect(csv).toContain("1,'\tx,-1234.00,0.00");
     expect(csv).toContain('1,"\'\rx",-1234.00,0.00');
+  });
+});
+
+describe('TX1 M8: the VAT registers of a month not yet filed need the filing preview right', () => {
+  it('tax.read alone reads a finalized month (2026-08) but is refused an unfiled one (2026-09) naming tax.filing.preview', async () => {
+    const perms = PERMISSIONS_BY_ROLE.accountant, kept = [...perms];
+    perms.splice(0, perms.length, ...kept.filter((p) => p !== 'tax.filing.preview'));
+    try {
+      expect((await get('/reports/vat-output-register?period=2026-08')).status).toBe(200);
+      const r = await get('/reports/vat-input-register?period=2026-09');
+      expect(r.status).toBe(403);
+      expect((await r.json()).detail).toContain('tax.filing.preview');
+    } finally { perms.splice(0, perms.length, ...kept); }
+    expect((await get('/reports/vat-output-register?period=2026-09')).status).toBe(200);
   });
 });

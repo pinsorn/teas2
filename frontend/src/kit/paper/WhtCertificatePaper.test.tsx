@@ -19,21 +19,35 @@ describe('WhtCertificatePaper (50 ทวิ)', () => {
     const { container } = render(<WhtCertificatePaper model={base} />);
     const pages = [...container.querySelectorAll('[data-paper-page]')];
     expect(pages).toHaveLength(2);
-    expect(pages[0].textContent).toContain('ฉบับที่ 1');
-    expect(pages[1].textContent).toContain('ฉบับที่ 2');
+    expect(pages[0].textContent).toContain('ฉบับที่ 1 (สำหรับผู้ถูกหักภาษี ณ ที่จ่าย ใช้แนบพร้อมกับแบบแสดงรายการภาษี)');
+    expect(pages[1].textContent).toContain('ฉบับที่ 2 (สำหรับผู้ถูกหักภาษี ณ ที่จ่าย เก็บไว้เป็นหลักฐาน)');
+    expect(pages[0].textContent).not.toContain('ฉบับที่ 2');
     for (const p of pages) {
       expect(p.textContent).toContain('บริษัท มะลิวัลย์ ดีไซน์ เวิร์คส์ จำกัด');
-      expect(p.textContent).toContain('0105569012345');
-      expect(p.textContent).toContain('3100600111224');
+      expect(p.querySelector('[data-field="payer"] [data-field="tin"]')!.getAttribute('aria-label')).toBe('0105569012345'); // the 13 digits in the form's boxes
+      expect(p.querySelector('[data-field="payee"] [data-field="tin"]')!.getAttribute('aria-label')).toBe('3100600111224');
+      expect(p.querySelector('[data-field="issued"]')!.textContent).toContain('2569'); // the date of issue, BE
       expect(p.textContent).toContain('7/8 ถนนมิตรภาพ');
       expect(p.querySelector('[data-field="number"]')!.textContent).toBe('WT-202610-0001');
       expect(checked(p)).toEqual(['(4) ภ.ง.ด.3', '(1) หัก ณ ที่จ่าย']); // the return and the payer's condition
-      expect(p.querySelector('[data-field="income-row"]')!.textContent).toContain('40(8) ค่าบริการ');
+      expect(p.querySelector('[data-field="income-row"]')!.textContent).toContain('40(8) ค่าบริการ'); // a domestic 40(8) service is a ม.3 เตรส payment: row 5, with its type label
+      expect(p.querySelector('[data-field="income-row"]')!.getAttribute('data-row')).toBe('5');
       expect(p.querySelector('[data-field="income-row"]')!.textContent).toContain('5,000.00');
       expect(p.querySelector('[data-field="tax-total"]')!.textContent).toBe('150.00');
       expect(p.textContent).toContain('(หนึ่งร้อยห้าสิบบาทถ้วน)');
       expect(p.querySelector('[data-field="sequence"]')!.textContent).toContain('ลำดับที่'); // [SP-R]: the box exists, the number is not known at issue
     }
+  });
+  it('an income type with its own row on the form fills that row, not row 6', () => {
+    const { container } = render(<WhtCertificatePaper model={{ ...base, certificate: { ...base.certificate!, incomeType: '40(2)', incomeLabel: '40(2) ค่านายหน้า' } }} />);
+    const p = container.querySelector('[data-paper-page]')!;
+    expect(p.querySelector('[data-field="income-row"]')!.getAttribute('data-row')).toBe('2');
+    expect(p.querySelector('[data-field="income-row"]')!.textContent).toContain('5,000.00');
+    expect(p.querySelectorAll('[data-field="income-row"]')).toHaveLength(1);
+  });
+  it('rent 40(5) is row 5 too; a PND54 foreign payment (ม.70) and an unknown type stay on row 6; a 40(4)ข dividend is not the interest row', () => {
+    const row = (form: 'PND3' | 'PND54', incomeType: string) => render(<WhtCertificatePaper model={{ ...base, certificate: { ...base.certificate!, form, incomeType, incomeLabel: `${incomeType} x` } }} />).container.querySelector('[data-paper-page] [data-field="income-row"]')!.getAttribute('data-row');
+    expect([row('PND3', '40(5)'), row('PND3', '40(6)'), row('PND3', '40(7)'), row('PND54', '40(8)'), row('PND54', '40(3)'), row('PND3', '40(4)ก'), row('PND3', '40(4)ข'), row('PND3', '')]).toEqual(['5', '5', '5', '6', '3', '4a', '4b', '6']);
   });
   it('the return and the condition follow the model: PND53 / gross-up forever; PND54 / once', () => {
     const a = render(<WhtCertificatePaper model={{ ...base, certificate: { ...base.certificate!, form: 'PND53', condition: 'forever' } }} />);

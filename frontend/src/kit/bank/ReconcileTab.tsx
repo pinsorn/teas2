@@ -1,6 +1,8 @@
 'use client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
+import { monthBE } from '../close/PeriodGrid';
 import { useId, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -37,6 +39,7 @@ export function ReconcileTab({ accountId, accountCode, permissions, focusLine, o
   accountId: string; accountCode: string; permissions: string[]; focusLine?: string; onShowAll: () => void;
 }) {
   const t = useTranslations('bank.reconcile');
+  const tf = useTranslations('filing');
   const qc = useQueryClient();
   const { me } = useMe();
   const id = useId();
@@ -73,6 +76,7 @@ export function ReconcileTab({ accountId, accountCode, permissions, focusLine, o
       ...(l.transferPending ? [b(t('transfer.reverse'), () => { setReason(''); setAsking({ line: l, command: 'reverse' }); })] : [])];
     if (l.status === 'matched') return [b(t('unmatch'), () => { setReason(''); setAsking({ line: l, command: 'unmatch' }); }), ...(l.transfer ? [b(t('transfer.reverse'), () => { setReason(''); setAsking({ line: l, command: 'reverse' }); })] : [])];
     if (l.status === 'ignored') return [b(t('unignore'), () => { setReason(''); setAsking({ line: l, command: 'unignore' }); })];
+    if (l.taxPayment) return [<Link key="tax" href={l.taxPayment.href} className="text-small text-primary underline underline-offset-2">{t('taxPaid', { form: tf(`forms.${l.taxPayment.form}`), month: monthBE(l.taxPayment.period) })}</Link>];
     return [<span key="p" className="text-small text-muted-foreground">{t('postedFinal')}</span>];
   };
   const need = (asking?.line.locked || asking?.command === 'reverse') && !reason.trim();

@@ -18,3 +18,19 @@
 | 2026-10-17 | SP1c AC6 review (period close / reopen, year-end close, closing entry) | opus-reviewer | money + control (period locks, closing entry) diff — plan marks Opus; warm reviewer |
 | 2026-10-17 | SP1c AC7a review (late registration catch-up, fa-car, asset-register report) | opus-reviewer | money diff (depreciation math, invariants, GL tie) — warm reviewer |
 | 2026-10-17 | SP1c AC7b review (recurring schedule template editor, template re-freeze) | opus-reviewer | frozen money data a run turns into a draft — warm reviewer |
+| 2026-10-17 | SP1c TX1 review (PP30 filing kit, registers, frozen finalize, filing lock) | opus-reviewer (fresh) | tax + lock diff — plan marks Opus; warm reviewer context full, new area |
+| 2026-10-17 | SP1c TX2 implement (WHT returns, PP36, WHT receivable, missing 50 ทวิ, pay-to-RD) | sonnet-implementer | default implementer; Opus review after |
+| 2026-10-17 | SP1c TX2a review (PND returns, PP36, voucher filing lock) | opus-reviewer (warm TX1) | tax + lock diff; reviewer holds the TX1 filing kit |
+| 2026-10-17 | SP1c TX2c design (pay finalized returns to RD; PP30 netting vs GL tie-outs) | opus-designer | footgun: ledger netting, liability clearing, invariants — design before Sonnet implements |
+| 2026-10-17 | SP1c TX2b implement (WHT hub UI, PP36 screen, WHT receivable, missing 50 ทวิ, WT list) | sonnet-implementer | UI + reports on the approved TX2a engine |
+| 2026-10-17 | SP1c TX2b review (WHT hub UI, receivable / missing-cert reports) | sonnet-reviewer | UI + read-only money reports; one small engine change (PP36 ack) |
+| 2026-10-17 | SP1c TX2c implement (PP30 netting at finalize, pay tax from a bank line) | sonnet-implementer | airtight Opus design spec; Opus review after |
+| 2026-10-17 | SP1c TX2c review (PP30 netting, payTax / reverse, payable invariants) | opus-reviewer (fresh) | money + ledger diff; warm reviewer context ~320k |
+| 2026-10-17 | SP1c TX3a implement (CIT PND50/51 engine, adjustments, loss carry, credits) | sonnet-implementer | default implementer; Opus review after |
+| 2026-10-17 | SP1c TX3a review (CIT PND50/51, profit-loss refactor of close.ts) | opus-reviewer (fresh) | tax + money; touches AC6 closing entry |
+| 2026-10-17 | SP1c TX3b implement (tax summary, VAT threshold watch, forms catalogue + history) | sonnet-implementer | UI + read models |
+| 2026-10-17 | SP1c TX3a fix1 (PND51 after PND50, loss used once, frozen mapping, tampers) | sonnet-implementer | fix round from Opus REJECT |
+| 2026-10-17 | SP1c TX3b review (tax summary, VAT threshold, forms) | sonnet-reviewer | read models + UI |
+| 2026-10-17 | SP1c GTX consolidated gate | haiku-gate-runner | Tier 3 run-and-report |
+| 2026-10-17 | SP1c TX4 implement (50 ทวิ RD layout, PP30 official boxes 8-12) | sonnet-implementer | Ham gate follow-ups; Opus review after (filing kit) |
+| 2026-10-17 | SP1c TX4 review (PP30 official boxes, 50 ทวิ layout) | opus-reviewer (fresh) | filing kit money: carry / cap / netting consumers |

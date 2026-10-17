@@ -13,17 +13,18 @@ async function run(kind: string, url: URL) {
   const gate = await screenGate('item');
   if (gate) return gate;
   const { st, company, perms, s } = ctx();
-  const need = kind === 'general-journal' ? 'ledger.read' : PERM; // the general journal is the ledger itself
+  const need = kind === 'general-journal' ? 'ledger.read' : kind.startsWith('vat-') || kind === 'tax-summary' || kind === 'wht-receivable' || kind === 'missing-wht-cert' ? 'tax.read' : PERM; // the general journal is the ledger itself; the VAT registers and the withholding lists are the tax area's
   if (!perms.includes(need)) return forbidden(need);
   if (!isBuilt(kind)) return problem(404, 'report.not_built', 'รายงานนี้ยังไม่เปิดให้ใช้งาน');
   const p = Object.fromEntries(url.searchParams);
   if (DATE_KEYS.some((k) => p[k] && !isDate(p[k]))) return problem(422, 'report.bad_param', 'วันที่ไม่ถูกต้อง');
+  if (kind.startsWith('vat-') && !perms.includes('tax.filing.preview') && !st.filings.some((f) => f.companyId === company.id && f.form === 'PP30' && f.period === p.period)) return forbidden('tax.filing.preview'); // M8: a month not yet filed is the filing's preview, with the same right
   if (kind === 'bank-reconciliation') { // one account's report: it needs the bank right too, and the account named
     if (!perms.includes('bank.read')) return forbidden('bank.read');
     if (!p.account) return problem(422, 'report.bad_param', 'ต้องระบุบัญชีธนาคาร');
   }
   let model;
-  try { model = buildReport(st, company.id, kind, p); } catch (e) { if (e instanceof MockError) return problem(e.status, e.code, e.title); throw e; }
+  try { model = buildReport(st, company.id, kind, p, perms); } catch (e) { if (e instanceof MockError) return problem(e.status, e.code, e.title); throw e; }
   // the toolbar's "empty" state: a successful report with no rows (never an error)
   return { model: s.screenState === 'empty' ? { ...model, rows: [] } : model };
 }

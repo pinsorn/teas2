@@ -7,6 +7,10 @@ import { jvInvariants } from './journal';
 import { assetInvariants } from './assets';
 import { scheduleInvariants } from './schedules';
 import { closeInvariants } from './close';
+import { filingInvariants } from './filings';
+import { inForceTax } from './filings/payment';
+import { boxOf, pp30Net } from './filings/pp30';
+import type { FilingBox } from '@/domain/filings';
 import { obInvariants } from './opening';
 import { appliedOf, docCash, toleranceOf } from './locks';
 import { payoutOf, resolvedBankId } from './settlement';
@@ -109,6 +113,7 @@ export function checkInvariants(st: MockState): string[] {
   }
   for (const j of st.bankJournals) jsrc.push({ id: `bank journal ${j.id}`, companyId: j.companyId, entries: j.entries });
   for (const y of st.yearCloses) jsrc.push({ id: `year close ${y.id}`, companyId: y.companyId, entries: y.journal }); // AC6: the closing entries balance and post to postable accounts like any other
+  for (const f of st.filings) if (f.journal) jsrc.push({ id: `filing ${f.form} ${f.period}`, companyId: f.companyId, entries: f.journal }); // TX2: a filing's entry (the ภ.พ.36 VAT, the ภ.พ.30 netting) feeds the GL maps like a document's
   for (const s of st.settlements) jsrc.push({ id: `settlement ${s.id}`, companyId: s.companyId, entries: s.journal }); // FN3: a settlement's own journal feeds every GL map below like a document's
   for (const { id, companyId, d, entries } of jsrc) {
     for (const e of entries) {
@@ -129,7 +134,7 @@ export function checkInvariants(st: MockState): string[] {
         if (l.accountCode === '1130') { const pk = `${companyId}|${l.partyName ?? ''}`; arByParty.set(pk, (arByParty.get(pk) ?? 0) + a - b); }
         if (l.accountCode === '2110') { const pk = `${companyId}|${l.partyName ?? ''}`; apByParty.set(pk, (apByParty.get(pk) ?? 0) + b - a); }
         if (l.accountCode === '2180') { const pk = `${companyId}|${l.partyName ?? ''}`; empByParty.set(pk, (empByParty.get(pk) ?? 0) + b - a); }
-        if (l.accountCode === '1170' && (!d || d.type === 'PB' || d.type === 'EX' || ADJUSTS[d.type] === 'PB')) { const pk = `${companyId}|${d ? claimPeriodOf(d.type, d.header) : 'bank journal'}`; inputVat.set(pk, (inputVat.get(pk) ?? 0) + a - b); }
+        if (l.accountCode === '1170' && (d ? d.type === 'PB' || d.type === 'EX' || ADJUSTS[d.type] === 'PB' : !id.startsWith('filing '))) { const pk = `${companyId}|${d ? claimPeriodOf(d.type, d.header) : 'bank journal'}`; inputVat.set(pk, (inputVat.get(pk) ?? 0) + a - b); }
       }
       if (dr !== cr) out.push(`${where}: unbalanced (Dr ${fromSatang(dr)} / Cr ${fromSatang(cr)})`);
     }
@@ -428,12 +433,23 @@ export function checkInvariants(st: MockState): string[] {
     const from = st.links.filter((l) => l.active && l.kind === 'issues' && l.to === wt.id);
     if (from.length !== 1 || !LIVE.includes(doc(from[0].from)?.status ?? 'cancelled')) out.push(`${wt.id}: a live WT needs exactly one active issues link from a live PV (has ${from.length})`);
   }
+  const paidOn = new Map<string, number>(); // TX2c T5: `${companyId}|${payable account}` -> Σ the live tax payments debited to it
+  for (const j of st.bankJournals) if (j.kind === 'tax' && inForceTax(j)) { const k = `${j.companyId}|${j.entries[0].lines[0].accountCode}`; paidOn.set(k, (paidOn.get(k) ?? 0) + sat(j.entries[0].lines[0].debit, j.id)); }
   for (const c of st.companies) {
     const accounts = new Set<string>();
     for (const form of ['PND1', 'PND2', 'PND3', 'PND53', 'PND54'] as const) { try { accounts.add(resolveRole(st, 'WhtPayable', { companyId: c.id, docType: 'PV', whtForm: form }).code); } catch { /* not in this chart */ } }
-    for (const a of accounts) if ((credit.get(`${c.id}|${a}`) ?? 0) - (obCredit.get(`${c.id}|${a}`) ?? 0) !== (wtTax.get(`${c.id}|${a}`) ?? 0)) {
-      out.push(`${c.id}: GL ${a} (WHT payable) credit movement ${fromSatang((credit.get(`${c.id}|${a}`) ?? 0) - (obCredit.get(`${c.id}|${a}`) ?? 0))} but the live WTs of that return carry ${fromSatang(wtTax.get(`${c.id}|${a}`) ?? 0)}`);
+    for (const a of accounts) if ((credit.get(`${c.id}|${a}`) ?? 0) - (obCredit.get(`${c.id}|${a}`) ?? 0) + (paidOn.get(`${c.id}|${a}`) ?? 0) !== (wtTax.get(`${c.id}|${a}`) ?? 0)) {
+      out.push(`${c.id}: GL ${a} (WHT payable) credit movement ${fromSatang((credit.get(`${c.id}|${a}`) ?? 0) - (obCredit.get(`${c.id}|${a}`) ?? 0))} less payments ${fromSatang(paidOn.get(`${c.id}|${a}`) ?? 0)} but the live WTs of that return carry ${fromSatang(wtTax.get(`${c.id}|${a}`) ?? 0)}`);
     }
+    // 11c (TX2c). the payables a return fills are exactly what the finalized returns say less what was paid; the carried-forward VAT is Σ (excess - carry used)
+    const mine = st.filings.filter((f) => f.companyId === c.id);
+    const role = (r: 'VatPayable' | 'VatCarryForward' | 'Pnd36VatPayable') => { try { return resolveRole(st, r, { companyId: c.id, docType: 'JV' }).code; } catch { return undefined; } };
+    const V = role('VatPayable'), C = role('VatCarryForward'), P = role('Pnd36VatPayable');
+    const sumNet = (f: (n: number, b: FilingBox[]) => number) => mine.filter((x) => x.form === 'PP30').reduce((n, x) => n + f(pp30Net(x.boxes), x.boxes), 0);
+    if (V && (credit.get(`${c.id}|${V}`) ?? 0) - (obCredit.get(`${c.id}|${V}`) ?? 0) !== sumNet((n) => Math.max(n, 0)) - (paidOn.get(`${c.id}|${V}`) ?? 0)) out.push(`${c.id}: GL ${V} (VAT payable) is ${fromSatang((credit.get(`${c.id}|${V}`) ?? 0) - (obCredit.get(`${c.id}|${V}`) ?? 0))} but the finalized ภ.พ.30 less payments give ${fromSatang(sumNet((n) => Math.max(n, 0)) - (paidOn.get(`${c.id}|${V}`) ?? 0))}`);
+    if (C && (gl.get(`${c.id}|${C}`) ?? 0) - (obGl.get(`${c.id}|${C}`) ?? 0) !== sumNet((n, b) => Math.max(-n, 0) - boxOf(b, '10'))) out.push(`${c.id}: GL ${C} (VAT carried forward) is ${fromSatang((gl.get(`${c.id}|${C}`) ?? 0) - (obGl.get(`${c.id}|${C}`) ?? 0))} but the finalized ภ.พ.30 give ${fromSatang(sumNet((n, b) => Math.max(-n, 0) - boxOf(b, '10')))}`);
+    const p36 = mine.filter((x) => x.form === 'PP36').reduce((n, x) => n + boxOf(x.boxes, 'vat'), 0);
+    if (P && (credit.get(`${c.id}|${P}`) ?? 0) - (obCredit.get(`${c.id}|${P}`) ?? 0) !== p36 - (paidOn.get(`${c.id}|${P}`) ?? 0)) out.push(`${c.id}: GL ${P} (ภ.พ.36 payable) is ${fromSatang((credit.get(`${c.id}|${P}`) ?? 0) - (obCredit.get(`${c.id}|${P}`) ?? 0))} but the finalized ภ.พ.36 less payments give ${fromSatang(p36 - (paidOn.get(`${c.id}|${P}`) ?? 0))}`);
   }
 
   // 12. approval (§7.6): a pending / approved document is not issued - no number, no journal, no link - and carries who sent it (and who approved it); an issued one never carries an approval nobody gave
@@ -458,7 +474,11 @@ export function checkInvariants(st: MockState): string[] {
     const where = `bank line ${l.id}`, amount = sat(l.amount, where), ms = l.matches ?? [];
     if (l.status !== 'matched' && (ms.length || l.diff)) out.push(`${where}: ${l.status} but carries a match`);
     if (l.status === 'posted' && !l.journalId) out.push(`${where}: posted without its journal`);
-    if (l.status === 'posted' && !st.bankJournals.some((j) => j.id === l.journalId && j.lineId === l.id && j.kind === 'inline')) out.push(`${where}: posted but its inline journal is missing`);
+    if (l.status === 'posted') {
+      const pj = st.bankJournals.find((j) => j.id === l.journalId && j.lineId === l.id && (j.kind === 'inline' || j.kind === 'tax'));
+      if (!pj) out.push(`${where}: posted but its inline journal is missing`);
+      else if (pj.kind === 'tax' && !inForceTax(pj)) out.push(`${where}: posted but its tax payment journal is reversed`); // TX2c
+    }
     if (l.transfer && l.status !== 'matched') out.push(`${where}: ${l.status} but carries a transfer match`);
     if (l.status !== 'matched') continue;
     if (l.transfer) {
@@ -591,6 +611,7 @@ export function checkInvariants(st: MockState): string[] {
   out.push(...obInvariants(st)); // 16. opening balances (AC3): the journal is what its steps say, the ties hold, the frozen items are the steps' items, go-live follows the batch
   out.push(...assetInvariants(st)); // 18. fixed assets and depreciation runs (AC5): accumulated = opening + live run rows, GL per class, each run journal is its rows, a disposal entry removes exactly the frozen cost and accumulated
   out.push(...closeInvariants(st)); // 19. year-end closing entries (AC6): per-account sweep, 3300 nets to nothing, 3200 = net profit, every revenue / expense account 0 after
+  out.push(...filingInvariants(st)); // 20. finalized ภ.พ.30 (TX1): the boxes are what the stored documents give, every listed document still carries what the filing took, none of the month is missing
   out.push(...scheduleInvariants(st)); // 17. schedules (AC4): plan = total, each run JV = its plan row, the prepaid account moved by the live runs
   out.push(...jvInvariants(st)); // 15. journal vouchers (AC1): no controlled account, the journal is the lines, reversals mirror, accruals net to zero
 

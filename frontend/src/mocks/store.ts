@@ -6,7 +6,9 @@ import { recomputeSettlement } from './engine/commands';
 import { ledgerFor } from './engine/ledger';
 import { withBankSnapshot } from './engine/settlement';
 import { adjustSnapshot, hasSnapshot } from './engine/notes';
+import type { CitYearData } from '@/domain/filings';
 import type { YearClose } from './engine/close';
+import { type Filing, seedFilings } from './engine/filings';
 import type { Period } from './engine/periods';
 import type { PostingRule } from './engine/posting';
 import type { BankAccount } from './fixtures/bank-accounts';
@@ -22,7 +24,7 @@ import { getSettings } from './settings';
 import { seedBankStatements } from './fixtures/statements';
 
 export interface MockState {
-  version: 36;
+  version: 44;
   companies: Company[];
   memberships: (Membership & { userId: string })[];
   /** `active` (default true) and `version` (default 1) are the master record's; documents keep their own party snapshot. */
@@ -49,6 +51,10 @@ export interface MockState {
   schedules: ScheduleRecord[];
   /** AC6: the year-end closing entries (one live per company-year; a reopen keeps the record and reverses its entry). Each carries its own journal and its frozen lines. */
   yearCloses: YearClose[];
+  /** TX1: finalized tax filings (ภ.พ.30): the boxes, tie-outs and the exact documents, frozen at finalize. A draft is never stored: it is computed from the documents. */
+  filings: Filing[];
+  /** TX3a: the corporate income tax year data per company and fiscal year (paid-up capital, prior losses, user adjustments, the ภ.ง.ด.51 estimate). */
+  citYears: (CitYearData & { companyId: string })[];
   /** FN3: per company, the largest difference a settlement may absorb: satang rounding, and a small write-off (also the bank fee) [SP-R]. */
   settlementTolerance: { companyId: string; rounding: Money; smallWriteOff: Money }[];
   /** [SP-R] mock WHT types per company (fixtures/wht-types.ts). */
@@ -87,6 +93,7 @@ export function buildSeedState(role: Role = 'accountant'): MockState {
   seedAssets(s); // AC5: fixed assets, depreciation runs and the sale of one asset, after every bill / opening balance they come from
   for (const d of s.docs) if (d.issuedAt && !d.header.bankSnapshot) d.header = withBankSnapshot(s, d.companyId, d.type, d.header); // seeded receipts / vouchers entered directly: freeze the account they print, like an issued one (I3)
   seedBankStatements(s); // FN1: the September statements, imported through the same engine the upload uses
+  seedFilings(s); // TX1: the ภ.พ.30 of 2026-07 and 2026-08 are filed (last: they lock the documents they took)
   return s;
 }
 
@@ -95,7 +102,7 @@ export const seed = (): MockState => buildSeedState(getSettings().role);
 export function loadState(): MockState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 36) return s; }
+    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 44) return s; }
   } catch { /* fall through to a fresh seed */ }
   return seed();
 }

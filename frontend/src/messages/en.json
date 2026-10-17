@@ -146,8 +146,9 @@
     "loadingMore": "Loading",
     "create": "Create {title}",
     "viewsLabel": "Saved views",
-    "columns": {"number": "Number", "date": "Date", "customer": "Customer", "vendor": "Vendor", "total": "Total", "outstanding": "Outstanding", "status": "Status", "party": "Party", "dueDate": "Due date", "reference": "Reference", "progress": "Progress", "marks": "Marks"},
-    "views": {"draft": "Drafts", "outstanding": "Outstanding", "overdue": "Overdue", "cancelled": "Cancelled", "pending": "Pending approval", "agent": "Created by AI agent"},
+    "columns": {"number": "Number", "date": "Date", "customer": "Customer", "vendor": "Vendor", "total": "Total", "outstanding": "Outstanding", "status": "Status", "party": "Party", "dueDate": "Due date", "reference": "Reference", "progress": "Progress", "marks": "Marks", "payee": "Payee", "whtForm": "Return", "whtIncome": "Income", "whtTax": "Tax withheld"},
+    "whtForms": {"PND2": "PND.2", "PND3": "PND.3", "PND53": "PND.53", "PND54": "PND.54"},
+    "views": {"draft": "Drafts", "outstanding": "Outstanding", "overdue": "Overdue", "cancelled": "Cancelled", "pending": "Pending approval", "agent": "Created by AI agent", "pnd3": "PND.3", "pnd53": "PND.53", "pnd2": "PND.2", "pnd54": "PND.54"},
     "viewAll": "All",
     "saveView": "Save this view",
     "viewName": "View name",
@@ -244,6 +245,7 @@
       "wht": "Withholding tax",
       "whtCertificates": "Withholding certificates (50 tawi)",
       "cit": "Corporate income tax",
+      "taxForms": "Forms and filing history",
       "employees": "Employees",
       "payrollRuns": "Payroll runs",
       "payrollFilings": "Payroll filings",
@@ -319,6 +321,7 @@
       "tiNew": "Tax invoices: new",
       "tiIssued": "Tax invoice: issued",
       "tiLocked": "Tax invoice: settled and locked by a filing",
+      "vat": "VAT return (PP.30) and registers", "vatFiled": "PP.30 already filed (Jul-Aug)", "vatBlocked": "PP.30 with blockers before filing", "vatOutputRegister": "Output VAT register", "vatInputRegister": "Input VAT register",
       "tiReplaced": "Tax invoice: replaced",
       "tiDraft": "Tax invoice: draft",
       "tiEdit": "Tax invoice: edit",
@@ -644,7 +647,7 @@
       "base": "Base",
       "payee": "Payee receives",
       "form": "Form",
-      "forms": { "PND2": "PND.2", "PND3": "PND.3", "PND53": "PND.53", "PND54": "PND.54" }
+      "forms": { "PND2": "PND.2", "PND3": "PND.3", "PND53": "PND.53", "PND54": "PND.54", "PND50": "PND.50", "PND51": "PND.51" }
     },
     "group": {
       "title": "Documents billed",
@@ -1061,9 +1064,15 @@
     "gj": {
       "title": "General journal", "entry": "Entry / account", "date": "Date", "rule": "Description", "balanced": "Total debit {left} baht against total credit {right} baht",
       "from": "From", "to": "To", "accountFilter": "Account (code)", "source": "Source",
-      "sources": { "JV": "Journal voucher", "OB": "Opening balances", "TI": "Tax invoice", "IV": "Invoice", "RC": "Receipt", "CN": "Credit note", "DN": "Debit note", "PB": "Purchase bill", "PCN": "Vendor credit note", "PDN": "Vendor debit note", "PV": "Payment voucher", "EX": "Expense claim", "STL": "Netting and settlements", "BANK": "Bank reconciliation" }
+      "sources": { "JV": "Journal voucher", "OB": "Opening balances", "TI": "Tax invoice", "IV": "Invoice", "RC": "Receipt", "CN": "Credit note", "DN": "Debit note", "PB": "Purchase bill", "PCN": "Vendor credit note", "PDN": "Vendor debit note", "PV": "Payment voucher", "EX": "Expense claim", "STL": "Netting and settlements", "BANK": "Bank reconciliation", "PP30": "VAT return (PP30) closing", "PP36": "PP36 reverse-charge VAT" }
     },
     "assetRegister": {"tieCost":"Register cost plus lines not yet registered {left} baht against the ledger asset accounts {right} baht","title":"Fixed asset register","number":"Number","name":"Item","start":"In service","cost":"Cost","accumulated":"Accumulated","nbv":"Net book value","status":"Status","tie":"Register accumulated depreciation {left} baht against the ledger {right} baht"},
+    "whtRec": { "title": "Tax withheld by customers", "receipt": "Receipt", "date": "Date", "customer": "Customer", "cert": "Certificate number", "wht": "Tax withheld", "d0": "0-30 days", "d31": "31-60 days", "d61": "61-90 days", "d90": "Over 90 days", "tie": "Tax withheld {left} baht against ledger 1180 {right} baht" },
+    "missingCert": { "title": "Withholding certificates not yet received", "receipt": "Receipt", "date": "Received on", "customer": "Customer", "target": "Invoice paid", "wht": "Tax withheld", "age": "Days outstanding" },
+    "taxSummary": { "title": "Monthly tax summary", "year": "Year", "month": "Month", "sales": "Sales", "outVat": "Output VAT", "inVat": "Input VAT", "netVat": "Net VAT", "pnd2": "PND.2", "pnd3": "PND.3", "pnd53": "PND.53", "pnd54": "PND.54", "whtIn": "Tax withheld from us", "status": "Filing status",
+      "states": { "finalized": "filed", "paid": "paid", "draft": "draft", "owed": "overdue", "na": "nothing to file" } },
+    "vatOutput": { "title": "Output VAT register" },
+    "vatInput": { "title": "Input VAT register" },
     "bankRec": { "title": "Bank reconciliation", "item": "Item", "date": "Date", "amount": "Amount", "tie": "Adjusted statement balance {left} baht against adjusted book balance {right} baht" }
   },
   "records": {
@@ -1118,6 +1127,52 @@
       "docsEmpty": "No documents for this party yet", "openEmpty": "Nothing outstanding", "openTotal": "Total outstanding", "number": "Number", "type": "Type",
       "date": "Date", "status": "Status", "total": "Total", "outstanding": "Outstanding", "due": "Due"
     }
+  },
+  "taxPage": {
+    "threshold": { "message": { "warning": "Close to the VAT registration threshold", "danger": "Over the threshold: register for VAT within 30 days" }, "title": "VAT registration threshold", "revenue": "Sales in the last 12 months", "of": "of the {threshold} baht threshold", "window": "{from} to {to}", "ok": "Still below the registration threshold", "bar": "Sales as a share of the threshold" },
+    "forms": { "title": "Forms and filing history", "catalogue": "Forms", "form": "Form", "periodKind": "Period", "due": "Due", "last": "Last period filed", "none": "Never filed", "open": "Open", "print": "Print form with company data",
+      "kinds": { "month": "Monthly", "year": "Yearly", "half-year": "Half-year", "event": "On an event" },
+      "history": { "title": "Filing history", "empty": "Nothing filed yet", "period": "Period", "at": "Confirmed", "by": "By", "files": "Files", "rdprep": "RD Prep", "pdf": "PDF" },
+      "paper": { "back": "Back to the forms", "printNow": "Print", "note": "Pre-filled from the company record. Not the Revenue Department's official form; use it to fill the real one.", "name": "Business name", "tin": "Tax ID", "branch": "Branch", "address": "Address", "date": "Date", "sign": "Signature of the owner / authorised signatory", "pp01": "VAT registration application (PP.01)", "pp09": "Application to change VAT registration details (PP.09)", "changes": "Changes requested", "reason": "Reason for registering: sales exceed the threshold" }
+    }
+  },
+  "cit": {
+    "title": "Corporate income tax (PND.50 and 51)",
+    "tabs": { "label": "Corporate income tax returns", "pnd50": "PND.50 (annual)", "pnd51": "PND.51 (half year)" },
+    "data": { "title": "Year data", "paidUp": "Paid-up capital (baht)", "revenue": "Revenue per books (baht)", "netProfit": "Net profit per books (baht)", "sme": "SME status", "smeYes": "Meets the SME test", "smeNo": "Not an SME",
+      "yearOpen": "The fiscal year is not closed yet", "yearClosed": "Fiscal year closed", "save": "Save year data", "locked": "Already filed: this year's data can no longer be edited (exit: file an additional return outside the system)", "estimateLocked": "PND.51 filed: paid-up capital and the estimate can no longer be edited" },
+    "losses": { "title": "Losses brought forward", "hint": "Usable within 5 accounting periods of the loss year, oldest first; older ones expire", "year": "Loss year (CE)", "amount": "Amount (baht)", "add": "Add a loss year", "remove": "Remove" },
+    "estimate": { "title": "Profit estimate for PND.51", "mode": "Method", "h1x2": "Actual profit of months 1-6 x 2", "input": "Type the estimate", "amount": "Estimated net profit for the year (baht)" },
+    "adj": { "title": "Tax adjustments (sections 65 bis / ter)", "hint": "Pick the line of item 2, an amount (may be negative) and a reason. Editable until PND.50 is confirmed", "line": "Line", "line10": "10 Add: income treated as income by the Revenue Code", "line11": "11 Add: expenses not deductible", "line13": "13 Deduct: exempt income / extra deductible expenses",
+      "amount": "Amount (baht)", "reason": "Reason", "by": "Entered by", "add": "Add adjustment", "save": "Save adjustment", "edit": "Edit", "delete": "Delete", "cancel": "Cancel", "empty": "No user adjustments yet" }
+  },
+  "wht": {
+    "title": "Withholding returns and PP.36",
+    "tabs": { "label": "Withholding returns and PP.36", "pnd3": "PND.3", "pnd53": "PND.53", "pnd2": "PND.2", "pnd54": "PND.54", "pp36": "PP.36", "withheld": "Tax withheld from us", "missing": "Missing certificates" },
+    "missingCount": "{n} items"
+  },
+  "filing": {
+    "title": "Form {form} for {month}",
+    "forms": { "PP30": "PP.30", "PP36": "PP.36", "PND2": "PND.2", "PND3": "PND.3", "PND53": "PND.53", "PND54": "PND.54" },
+    "period": "Tax month",
+    "periodYear": "Fiscal year (CE)", "yearLabel": "Fiscal year {year}", "titleYear": "Form {form} for fiscal year {year}",
+    "due": "Due {date}",
+    "tabs": { "label": "VAT return and registers", "pp30": "PP.30", "output": "Output VAT register", "input": "Input VAT register" },
+    "filed": { "bodyCit": "Confirmed by {by} on {at}. The year data and reopening the fiscal year are now locked; to correct, file an additional return outside the system.", "bodyOther": "Confirmed by {by} on {at}. The documents in this return can no longer be edited; issue a new payment voucher in a later month.", "title": "Filed", "body": "Confirmed by {by} on {at}. The documents in this return can no longer have their figures edited; use a credit or debit note in a later month." },
+    "empty": { "title": "No tax entries in this period", "body": "There are no documents to show in this form for this month." },
+    "boxes": { "title": "Boxes of the form", "count": "{n}", "code": "Box", "label": "Item", "amount": "Amount (baht)", "source": "Source", "open": "Open register" },
+    "blockers": { "title": "Cannot be confirmed yet", "open": "Fix it" },
+    "finalize": { "titleYear": "Confirm form {form} for fiscal year {year}", "bodyCit": "Once confirmed the figures are stored; the year data cannot be edited and the fiscal year cannot be reopened. To correct, file an additional return outside the system.", "button": "Confirm filing (close the tax period)", "working": "Confirming", "back": "Back", "title": "Confirm form {form} for {month}", "bodyOther": "Once confirmed, the certificates and vouchers in this return can no longer be edited. Issue a new payment voucher in a later month.", "ack": "I understand that confirming books the VAT of this form on the last day of the month and that the vouchers in it can no longer be edited.",
+      "body": "Once confirmed, the documents in this return can no longer have their figures edited. Use a credit or debit note in a later month.", "taxOut": "Output VAT (box 5)", "taxIn": "Input VAT (box 7)",
+      "disabledBy": "Cannot confirm: {why}", "needPermission": "You need the right to finalize tax filings" },
+    "attachment": { "title": "Attachment" },
+    "export": { "txt": "File for RD Prep (.txt)", "print": "Print the form", "failed": "Could not create the file. Try again." },
+    "history": { "title": "Filed returns", "empty": "Nothing has been confirmed in the system yet", "period": "Tax month", "at": "Confirmed on", "by": "By", "net": "Net tax", "payable": "payable", "overpaid": "overpaid", "payment": "Payment", "paidOn": "Paid {date}", "unpaid": "Not paid" },
+    "payment": { "title": "Paying the Revenue Department", "nothingDue": "No tax to pay", "due": "Tax to pay {amount} baht", "pay": "Pay tax", "needPermission": "Paying tax needs the bank reconciliation permission", "paid": "Paid on {date}", "extras": "Including other items (fees, surcharge) {amount} baht", "openLine": "Open the statement line", "reverse": "Cancel the payment", "reverseDesc": "Reverses the payment journal and puts the statement line back to unmatched.", "reason": "Reason", "back": "Back", "confirm": "Confirm", "working": "Saving…", "pickLine": "Pick the statement line that paid this tax", "exact": "Same amount as the tax", "noLines": "No outgoing statement line can pay this tax", "importFirst": "Import the bank statement first", "extraHalf": "Fill both the account and the amount of the extra row, or leave both empty", "extraTitle": "Other items in the same amount (optional)", "extraHint": "A bank fee, or the surcharge / penalty on the Revenue Department receipt, booked as expense to the account you pick.", "extraAccount": "Account", "extraAmount": "Amount (baht)", "extraNone": "None", "submit": "Pay tax", "failed": "Could not pay the tax. Try again." },
+    "tie": { "citGl": "Corporate income tax computed on the return {left} baht against the income tax booked {right} baht (book the tax with a journal voucher before closing the year)", "pndGl": "Tax withheld (all payees) {left} baht against the withholding tax payable account of this form {right} baht", "pp36Gl": "VAT to remit {left} baht against ledger 2152 VAT payable {right} baht", "reconciling": "Including the reconciling item", "outputGl": "Output VAT (box 5) {left} baht against ledger 2151 {right} baht", "inputGl": "Input VAT (box 7) {left} baht against ledger 1170 {right} baht",
+      "outputRegister": "Output VAT (box 5) {left} baht against the output register total {right} baht", "inputRegister": "Input VAT (box 7) {left} baht against the input register total {right} baht" },
+    "reg": { "date": "Date", "number": "Number", "party": "Buyer / seller", "tin": "Tax ID", "branch": "Branch", "description": "Description",
+      "base7": "Taxable value", "base0": "Zero-rated value", "baseEx": "Exempt value", "claimedBase": "Purchases with the right to claim", "vat": "VAT" }
   },
   "periodClose": {
     "title": "Period and year close",
@@ -1252,7 +1307,7 @@
     "tabs": { "label": "Account views", "lines": "Statement lines", "reconcile": "Reconcile" },
     "reconcile": {
       "actions": "Actions", "locked": "Locked", "onlyLine": "Showing the one selected line", "showAll": "Show all",
-      "find": "Find a match", "ignore": "Skip", "unmatch": "Cancel match", "unignore": "Stop skipping", "postedFinal": "Posted and final (reverse the journal to undo)",
+      "find": "Find a match", "ignore": "Skip", "unmatch": "Cancel match", "unignore": "Stop skipping", "taxPaid": "Tax paid: {form} {month}", "postedFinal": "Posted and final (reverse the journal to undo)",
       "unmatchTitle": "Cancel the match", "unignoreTitle": "Stop skipping this line", "reason": "Reason", "reasonOptional": "You may give a reason (optional)",
       "lockedReason": "This line is inside the locked reconciliation period, so a reason is required. It is recorded on the line and on the documents.",
       "cancel": "Cancel", "failed": "The action failed",
@@ -1430,6 +1485,9 @@
     "audit_read": "Read audit trail",
     "settings_manage": "Manage settings",
     "users_manage": "Manage users",
-    "report_read": "Read reports"
+    "report_read": "Read reports",
+    "tax_read": "View tax filings and VAT registers",
+    "tax_filing_preview": "Preview tax filings",
+    "tax_filing_finalize": "Finalize tax filings"
   }
 }

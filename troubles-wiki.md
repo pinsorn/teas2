@@ -171,3 +171,28 @@ Entry format — terse, greppable by symptom:
 - **Symptom:** after giving a role `ledger.period.close` in `mocks/permissions.ts`, the catalogue test fails with `PERMISSIONS[code]` undefined.
 - **Root cause:** the catalogue (`domain/permissions.ts`) is built from the `permissions` section of `messages/{th,en}.json` (key `ledger_period_close` = code with `.` -> `_`), and the "is exactly the master catalog" test lists every non-document code in `NON_DOC`.
 - **Fix:** add the key to both message files and the code to `NON_DOC` in `domain/permissions.test.ts` (3 files besides the role list).
+
+## `seed()` dies with `ledger.account_invalid: 2160` right after adding an account to `fixtures/coa.ts` (TX2c)
+- **Symptom:** every seeded test fails with `seed spec nob-1: ledger.account_invalid: บัญชี 2160 ... ไม่มีในผังบัญชี` after adding a chart row.
+- **Root cause:** `POSTABLE` packs several rows per source line; a trailing `// comment` placed after a new row swallowed the rest of that line (`2160` and the others on it), so those accounts silently vanished from the chart.
+- **Fix:** put the comment on its own line (or after the last row of the line); check the chart row count / `seed()` right after editing the array.
+
+## A test that issues a PV dated before the bank's go-live fails with `bank.before_go_live` (TX2c)
+- **Symptom:** a unit test issuing a PV in 2026-08 (to build a ภ.พ.36 month) throws `bank.before_go_live` (ba-kbank starts reconciling 2026-09-01).
+- **Root cause:** a PV resolves to the default bank account, whose go-live date refuses earlier document dates.
+- **Fix:** give the PV `header.bankAccountId: 'ba-cash'` (the cash box has no go-live).
+
+## A report tie-out is red after cancelling a document on the real clock, green under `withFixedClock` (TX2c review)
+- **Symptom:** `wht-receivable` (or any report that decides whether a cancelled document counts at an as-of date) ties in a pinned-clock test but shows a false diff in the running app / an unpinned test after a cancel.
+- **Root cause:** `ledger.ts withReversal` (the computed preview) dates a reversal at `doc.cancel.at` (wall clock), while the entry actually STORED in `st.journals` (`commands.ts reverseEntry` / `correctionReversal`) is dated `today()` (the mock anchor), the first open date (closed month) or the original date. `companyEntries` (the GL side of every tie-out) reads the stored entry. They coincide only under `withFixedClock`.
+- **Fix:** anything that needs "when did this document's reversal hit the GL" reads the stored entry (`st.journals.find(j => j.docId === id)?.preview.entries`, kind `reversal` -> `date`), never `cancel.at` or `withReversal` (`whtAllocations` does this). Test it with an UNPINNED cancel and a closed-month (late) reversal.
+
+## `git worktree remove --force` deletes the main worktree's `node_modules` contents (Windows, TX3a review)
+- **Symptom:** after removing a probe worktree, `vitest` / `tsc` in the MAIN worktree fail with "not found" / ENOENT; `.bin` and some `node_modules/.pnpm` files are gone.
+- **Root cause:** the probe worktree's `node_modules` was a junction to the main one; `--force` follows the junction and deletes the target's contents.
+- **Fix:** remove the junction first with `cmd /c rmdir <worktree>\node_modules` (no `/s`), THEN `git worktree remove`. Recovery: `corepack pnpm install --frozen-lockfile --offline --force`.
+
+## A test that closes FY2026 fails with `period.year_not_ended` (TX3a fix1)
+- **Symptom:** `closeYear(st, co, 2026, ...)` throws `period.year_not_ended`; once forced past that, the seed invariants report "posted after it closed" for every 2026 entry.
+- **Root cause:** the mock world's today is the fixed `ANCHOR` (2026-10-17, `engine/log.ts`), and months set `status: 'closed'` by hand have no `closedAt`.
+- **Fix:** in the test, `vi.mock('../log')` to return a settable `today`, set the months `closed` WITH `closedAt` in the far future, and close FY2025 first (`period.year_order`). See `close2026` in `filings/cit-engine.test.ts`.

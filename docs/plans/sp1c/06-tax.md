@@ -73,7 +73,7 @@ exactly once.
 **Permissions:** accountant `tax.read`, `tax.filing.preview`, `tax.filing.finalize`; admin `tax.read`? no (admin has
 no tax); operator none.
 
-- [ ] **Step 1: Failing tests** — `pp30.test.ts`: box identities above; CN in the month reduces output; cancelled TI
+- [x] **Step 1: Failing tests** — `pp30.test.ts`: box identities above; CN in the month reduces output; cancelled TI
   appears as ยกเลิก 0.00; PB with claim period +2 lands two months later; non-recoverable VAT excluded; carry-forward;
   finalize derives filing locks and refuses a second finalize; tie-outs zero on the seed; a corrupted register
   (remove a TI's VAT line from 2151) produces a non-zero tie-out (can fail). `FilingView.test.tsx`: finalize disabled
@@ -82,9 +82,9 @@ no tax); operator none.
   finalized period shows the read-only "ยื่นแล้ว" banner instead);
   flow: 2026-10 shows its blockers with links; finalize 2026-09 (`pp30Due`) → then open a September TI → filing lock
   banner with the CN / DN exit (each test resets the mock state in `beforeEach`, so the finalize does not leak).
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS**; the full TI / PV e2e still green.
-- [ ] **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(tax): filing kit, ภ.พ.30 with VAT registers, tie-outs and filing locks`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS**; the full TI / PV e2e still green.
+- [x] **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(tax): filing kit, ภ.พ.30 with VAT registers, tie-outs and filing locks`.
 
 ---
 
@@ -116,12 +116,12 @@ form, payee, income type), messages, `screens.ts`, `ids.ts`.
 **Fixtures:** finalized ภ.ง.ด.3 / 53 for 2026-08 and 2026-09; October draft; a PP36 for 2026-09 from `pv-foreign`
 (if its date is in October, the PP36 draft is October). Keys `pnd53Draft`, `pp36Draft`, `missingCertRc` (= `rcNoCert`).
 
-- [ ] **Step 1: Failing tests** — form routing totals; TIN blocker; tie-outs zero on the seed; PP36 VAT rounding vector
+- [x] **Step 1: Failing tests** — form routing totals; TIN blocker; tie-outs zero on the seed; PP36 VAT rounding vector
   (base 10,000.05 × 7 % = 700.0035 → 700.00) and journal date = month end; PP36 VAT appears in the next PP30 input
   (only once); missing-cert list shrinks after entering the number on `rcNoCert`. e2e: `screenContract` for the hub tabs
   (`both` for 3 / 53 / 54 / receivable / missing; PP36 `both`), WT list (`both`).
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(tax): WHT returns, ภ.พ.36, WHT receivable and the missing-certificate list`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(tax): WHT returns, ภ.พ.36, WHT receivable and the missing-certificate list`.
 
 ---
 
@@ -153,17 +153,17 @@ form, payee, income type), messages, `screens.ts`, `ids.ts`.
 **Invariants:** CIT net profit = P&L net profit of the fiscal year (same engine function as RP1); SME ladder applied to
 taxable profit after adjustments; history rows are never edited (a second finalize is refused).
 
-- [ ] **Step 1: Failing tests** — threshold watch fires at 80 % for the non-VAT seed and never for the VAT company;
+- [x] **Step 1: Failing tests** — threshold watch fires at 80 % for the non-VAT seed and never for the VAT company;
   CIT ladder vectors (`[SP-R]` fixture values) including loss carry-forward expiry after 5 years; ภ.ง.ด.51 estimate
   path vs H1 × 2 path. e2e: `screenContract` summary (`both`), CIT (`both`, forbiddenRole operator), forms (`both`).
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(tax): tax summary, CIT, form catalogue, filing history and the VAT threshold watch`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(tax): tax summary, CIT, form catalogue, filing history and the VAT threshold watch`.
 
 ---
 
 ### Task GTX: Ham gate — tax
 
-- [ ] Consolidated gate green; production build / staging.
+- [x] Consolidated gate green; production build / staging.
 - [ ] Send Ham: ภ.พ.30 with registers and tie-outs; filing lock + exit; WHT returns and the chase list; ภ.พ.36 at the
   payment month into ภ.พ.30 input (G2); CIT; threshold watch (G1); the `[SP-R]` status of every number (O-3) and the
   React-rendition forms (D-21, O-1).

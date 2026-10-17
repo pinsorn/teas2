@@ -120,18 +120,43 @@
 .paper-void b { display: block; font-size: 44pt; font-weight: 700; line-height: 1.7; }
 .paper-void span { display: block; margin-bottom: 1mm; font-size: 12pt; font-weight: 600; }
 
-/* ---------- WT (50 ทวิ) ---------- */
-.paper-wht-seq { display: grid; grid-template-columns: auto 1fr auto; gap: 4mm; align-items: start; padding-top: 4mm; }
-.paper-wht-seqbox { display: flex; gap: 2mm; align-items: baseline; padding: 1.5mm 3mm; min-width: 36mm; }
-.paper-wht-seqbox b { flex: 1; min-width: 12mm; border-bottom: 0.5pt solid var(--paper-hair); }
-.paper-wht-forms { display: flex; flex-wrap: wrap; gap: 1mm 4mm; margin: 0; padding: 0; list-style: none; font-size: 8.5pt; }
+/* ---------- WT (50 ทวิ): recreated from the RD approved form ---------- */
 .paper-check { display: inline-grid; place-items: center; width: 3.2mm; height: 3.2mm; border: 0.75pt solid var(--paper-ink); font-size: 8pt; line-height: 1; vertical-align: middle; }
-.paper-wht-no { display: grid; grid-template-columns: auto auto; gap: 0.8mm 3mm; font-size: 8.8pt; }
-.paper-wht-no dt { color: var(--paper-muted); }
-.paper-wht-party { margin-top: 3mm; }
-.paper-wht-party h3 { font-size: 10.5pt; font-weight: 700; }
-.paper-wht-party p { font-size: 8.8pt; line-height: 1.45; }
-.paper-wht-table { margin-top: 4mm; }
-.paper-wht-total td { font-weight: 700; background: var(--paper-tint); }
-.paper-root .paper-wht-cond { margin-top: 3mm; }
-.paper-root .paper-wht-cert { margin-top: 3mm; font-size: 8.8pt; }
+.paper-rd .paper-page { padding: 8mm 10mm; font-size: 8pt; line-height: 1.3; gap: 1.6mm; }
+.paper-rd-copy { font-size: 7.5pt; font-style: italic; }
+.paper-rd-box { border: 0.75pt solid var(--paper-ink); border-radius: 2mm; padding: 1.5mm 2.5mm; }
+.paper-rd-head { text-align: center; position: relative; }
+.paper-rd-head h2 { font-size: 12pt; font-weight: 700; }
+.paper-rd-no { position: absolute; right: 2.5mm; top: 1.5mm; display: grid; text-align: left; font-size: 7.5pt; }
+.paper-rd-no u { display: inline-block; width: 18mm; border-bottom: 0.5pt dotted var(--paper-ink); text-decoration: none; }
+.paper-rd-party { border: 0.75pt solid var(--paper-ink); border-radius: 2mm; padding: 1.2mm 2.5mm; display: grid; gap: 0.8mm; }
+.paper-rd-row { display: flex; gap: 2mm; align-items: baseline; }
+.paper-rd-row b { flex: none; font-weight: 700; }
+.paper-rd-tinl { margin-left: auto; font-weight: 600; }
+.paper-rd-fill { flex: 1; border-bottom: 0.5pt dotted var(--paper-ink); min-height: 4mm; overflow-wrap: anywhere; }
+.paper-rd-tin { display: inline-flex; gap: 1mm; flex: none; }
+.paper-rd-tin-g { display: inline-flex; border: 0.5pt solid var(--paper-ink); }
+.paper-rd-tin-g i { font-style: normal; display: inline-grid; place-items: center; width: 3.4mm; height: 4.2mm; border-left: 0.5pt dotted var(--paper-rule); }
+.paper-rd-tin-g i:first-child { border-left: 0; }
+.paper-rd-seq { display: grid; gap: 0.8mm; }
+.paper-rd-seqbox { display: inline-block; min-width: 22mm; min-height: 4.5mm; border: 0.75pt solid var(--paper-ink); font-style: normal; text-align: center; vertical-align: middle; }
+.paper-rd-seq ul { display: flex; flex-wrap: wrap; gap: 0.6mm 4mm; margin: 0; padding: 0; list-style: none; }
+.paper-rd-table { width: 100%; table-layout: fixed; border-collapse: collapse; border: 0.75pt solid var(--paper-ink); }
+.paper-rd-table th { font-weight: 700; text-align: center; padding: 1mm; border: 0.5pt solid var(--paper-ink); }
+.paper-rd-table td { padding: 0.5mm 1.5mm; border-left: 0.5pt solid var(--paper-ink); border-bottom: 0.5pt dotted var(--paper-ink); vertical-align: top; font-size: 7.5pt; line-height: 1.25; }
+.paper-rd-table td:first-child { border-left: 0; }
+.paper-rd-table .c { text-align: center; } .paper-rd-table .r { text-align: right; }
+.paper-rd-ind1 td:first-child { padding-left: 4mm; } .paper-rd-ind2 td:first-child { padding-left: 6mm; } .paper-rd-ind3 td:first-child { padding-left: 9mm; }
+.paper-rd-table tr[data-field="income-row"] td { font-weight: 700; }
+.paper-rd-total td { font-weight: 700; text-align: right; border-top: 0.75pt solid var(--paper-ink); }
+.paper-rd-words { display: flex; gap: 3mm; align-items: baseline; padding: 1mm 2mm; background: var(--paper-tint); }
+.paper-rd-words span { flex: 1; font-weight: 700; }
+.paper-rd-funds { font-size: 7.5pt; }
+.paper-rd-cond { display: flex; gap: 5mm; align-items: baseline; flex-wrap: wrap; }
+.paper-rd-foot { display: grid; grid-template-columns: 4fr 6fr; gap: 2mm; }
+.paper-rd-warn { font-size: 7.5pt; }
+.paper-rd-signrow { display: flex; gap: 3mm; align-items: flex-end; justify-content: space-between; margin-top: 3mm; }
+.paper-rd-sigline { border-top: 0; font-size: 8pt; }
+.paper-rd-date { font-size: 7.5pt; font-style: italic; text-align: center; margin-top: 1mm; }
+.paper-rd-seal { flex: none; width: 17mm; height: 17mm; border: 0.5pt solid var(--paper-ink); border-radius: 50%; display: grid; place-items: center; text-align: center; font-size: 6pt; line-height: 1.15; }
+.paper-rd-note { font-size: 6.5pt; line-height: 1.3; }

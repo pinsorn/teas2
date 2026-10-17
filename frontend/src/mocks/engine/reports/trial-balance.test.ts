@@ -14,7 +14,7 @@ describe('trial balance', () => {
       expect(report.tieOuts![0].diff).toBe('0.00');
       expect(report.tieOuts![0].left).toBe(report.tieOuts![0].right);
       const lines = s.journals.filter((j) => s.docs.some((d) => d.id === j.docId && d.companyId === company))
-        .flatMap((j) => j.preview.entries).concat(s.bankJournals.filter((j) => j.companyId === company).flatMap((j) => j.entries), s.settlements.filter((x) => x.companyId === company).flatMap((x) => x.journal)) // FN2: the opening balance the statements start from; FN3: settlements
+        .flatMap((j) => j.preview.entries).concat(s.bankJournals.filter((j) => j.companyId === company).flatMap((j) => j.entries), s.settlements.filter((x) => x.companyId === company).flatMap((x) => x.journal), s.filings.filter((f) => f.companyId === company).flatMap((f) => f.journal ?? [])) // FN2: the opening balance the statements start from; FN3: settlements; TX2c: a filing's own entry (the ภ.พ.30 netting)
         .filter((e) => e.date <= asOf).flatMap((e) => e.lines);
       const expectedCodes = [...new Set(lines.map((l) => l.accountCode))].sort();
       expect(report.rows.filter((r) => r.kind === 'row').map((r) => r.cells.code).sort()).toEqual(expectedCodes);

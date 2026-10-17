@@ -123,10 +123,11 @@ describe('claim period (I6): document month .. +6, default the document month', 
     const d = pb(VAT, PV1, [L('a', 'S7', '100.00')], { documentDate: '2026-10-10' });
     expect(get(d.id).header.claimPeriod).toBe('2026-10');
   });
-  it('a revision that leaves the claim period out files the bill in its document month (the editor clears a period that only followed the date)', () => {
+  it('a revision that leaves the claim period out keeps the stored one while the dates stand; a moved date files it in the new document month (R2-2)', () => {
     const d = pb(VAT, PV1, [L('a', 'S7', '100.00')], { documentDate: '2026-10-10', claimPeriod: '2026-12' });
     const { claimPeriod: _c, ...header } = get(d.id).header; void _c;
-    const r = revise(st, d.id, { header, lines: get(d.id).lines }, get(d.id).version, 'x', me);
+    expect(revise(st, d.id, { header, lines: get(d.id).lines }, get(d.id).version, 'x', me).header.claimPeriod).toBe('2026-12');
+    const r = revise(st, d.id, { header: { ...header, documentDate: '2026-10-12' }, lines: get(d.id).lines }, get(d.id).version, 'x', me);
     expect(r.header.claimPeriod).toBe('2026-10');
     assertBalanced(st);
   });
@@ -344,7 +345,7 @@ describe('the P2 seed (hand-checked)', () => {
     expect(buildChain(st, 'po-part').nodes.find((x) => x.id === 'po-part')!.progress).toBe('รับวางบิลแล้ว 70/140');
     expect(period(VAT, '2026-10')).toBe(sat('5719.00')); // + pb-prep 70.00 and pb-net 280.00 (FN3)
     expect(period(VAT, '2026-12')).toBe(sat('595.00'));
-    expect(gl(VAT, '2110')).toBe(-sat('112484.00')); // Σ outstanding of the live bills: 0 (pb-1, paid) + 12,305 (pb-2, half paid) + 1,033 (pb-po, 1,000 paid) + 34,240 + 9,095 + 2,461 + 1,070 (pb-prep) + 4,280 (pb-net), FN3, + 12,000 (pb-ins, AC4) + 36,000 (pb-printer, AC5: two EX capex lines, no VAT)
+    expect(gl(VAT, '2110')).toBe(-sat('116764.00')); // Σ outstanding of the live bills: 4,280 (pb-aug, TX1 M7) + 0 (pb-1, paid) + 12,305 (pb-2, half paid) + 1,033 (pb-po, 1,000 paid) + 34,240 + 9,095 + 2,461 + 1,070 (pb-prep) + 4,280 (pb-net), FN3, + 12,000 (pb-ins, AC4) + 36,000 (pb-printer, AC5: two EX capex lines, no VAT)
   });
   it('pb-incomplete issued with its paperwork flag off; the pb-d1 draft posts nothing', () => {
     expect(get('pb-incomplete')).toMatchObject({ status: 'issued', header: { complete: false } });

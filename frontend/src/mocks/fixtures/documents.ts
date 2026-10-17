@@ -21,7 +21,6 @@ export const AGENT: Actor = { kind: 'agent', id: 'ag-1', name: 'ผู้ช่�
 export { CLASS } from '@/domain/doc-types';
 const pad = (n: number, w = 3) => String(n).padStart(w, '0');
 const strip = (p: SeedParty): PartySummary => { const r: Partial<SeedParty> = { ...p }; delete r.companyId; return r as PartySummary; };
-const FILING_LOCK: Lock = { kind: 'filing', reason: 'ภ.พ.30 เดือน ก.ย. 2569 ยื่นแล้ว', exits: ['ออกใบลดหนี้ / ใบเพิ่มหนี้ในงวดถัดไป'] };
 
 interface Spec {
   key: string; type: DocType; party: SeedParty; date: string; lines: DocLine[]; status: DocStatus; by: Actor; order: number;
@@ -80,9 +79,6 @@ export function buildDocs(parties: SeedParty[], items: SeedItem[]) {
       term: true, replaces: old.key });
     old.replacedBy = key;
   }
-  const filing = tis().find((s) => s.status === 'settled' && s.date.startsWith('2026-09'));
-  if (!filing) throw new Error('seed: no settled TI in September 2026 for the filing lock');
-  filing.locks = [FILING_LOCK];
 
   // ---- 4 QT -> SO -> DO -> TI chains on the first four settled TIs ----
   tis().filter((s) => s.status === 'settled').slice(0, 4).forEach((ti, n) => {

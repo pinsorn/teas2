@@ -177,5 +177,24 @@ export const SCREENS: Screen[] = [
   { name: 'dpNew', route: `${DP_BASE}/new`, company: 'both', states: true },
   { name: 'dpRun', route: { fixture: 'dpRun', base: DP_BASE }, company: 'vat', states: true },
   { name: 'periodClose', route: '/accounting/period-close', company: 'both', states: true },
+  { name: 'vat', route: '/tax/vat', company: 'vat', states: true }, // TX1: the month after the last one filed
+  { name: 'vatFiled', route: '/tax/vat?period=2026-08', company: 'vat', states: true }, // finalized: the frozen snapshot
+  { name: 'vatBlocked', route: '/tax/vat?period=2026-10', company: 'vat', states: true }, // drafts and September still open
+  { name: 'vatOutputRegister', route: '/tax/vat?tab=output&period=2026-09', company: 'vat', states: true },
+  { name: 'vatInputRegister', route: '/tax/vat?tab=input&period=2026-10', company: 'vat', states: true },
+  { name: 'whtPnd3', route: '/tax/wht', company: 'both', states: true }, // TX2b: the hub opens on the ภ.ง.ด.3
+  { name: 'whtPnd53Filed', route: '/tax/wht?tab=pnd53&period=2026-09', company: 'both', states: true }, // finalized: the frozen snapshot with its attachment
+  { name: 'whtPnd53Blocked', route: '/tax/wht?tab=pnd53&period=2026-10', company: 'both', states: true },
+  { name: 'whtPnd2', route: '/tax/wht?tab=pnd2', company: 'both', states: true },
+  { name: 'whtPnd54', route: '/tax/wht?tab=pnd54&period=2026-10', company: 'both', states: true },
+  { name: 'whtPp36', route: '/tax/wht?tab=pp36&period=2026-10', company: 'both', states: true },
+  { name: 'whtWithheld', route: '/tax/wht?tab=withheld', company: 'both', states: true },
+  { name: 'whtMissingCert', route: '/tax/wht?tab=missing', company: 'both', states: true },
+  { name: 'cit', route: '/tax/cit', company: 'both', states: true }, // TX3a: the ภ.ง.ด.50 of the last year that ended (2025: the year-end close is not done in the seed)
+  { name: 'citPnd51', route: '/tax/cit?tab=pnd51&period=2026', company: 'both', states: true },
+  { name: 'citYear2026', route: '/tax/cit?period=2026', company: 'both', states: true },
+  { name: 'taxSummary', route: '/tax/summary', company: 'both', states: true }, // TX3b: twelve months of 2026; the non-VAT company also shows the threshold card at 85 %
+  { name: 'taxForms', route: '/tax/forms', company: 'both', states: true },
+  { name: 'taxFormPp01', route: '/tax/forms?print=PP01', company: 'both', states: false },
   { name: 'styleGuide', route: '/style-guide', company: 'both', states: false },
 ];

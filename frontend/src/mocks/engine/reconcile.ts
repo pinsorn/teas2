@@ -1,5 +1,6 @@
 import { LIVE } from '@/domain/doc-types';
 import type { AccountingRole } from './posting';
+import type { FilingForm, TaxPaymentLines } from '@/domain/filings';
 import type { Actor, BankJournal, BankLine, BankMatch, IsoDate, JournalEntryPreview, Money } from '@/domain/types';
 import { formatDateBE, formatMoney } from '@/lib/format';
 import type { BankAccount } from '../fixtures/bank-accounts';
@@ -9,7 +10,13 @@ import { companyEntries } from './ledger';
 import { docCash } from './locks';
 import { MockError, logActivity, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
+import { monthLabelTh } from './periods';
 import { resolveRole } from './posting';
+import { formName } from './filings/pnd-wht';
+import { inForceTax, livePaymentOf, payableAccountOf, filingHref, taxDueOf } from './filings/payment';
+import { isCit } from './filings/cit';
+import { type Filing, nextMonth } from './filings/pp30';
+import { lastDayOf } from './filings/pp36';
 import { resolvedBankId } from './settlement';
 
 type Stored = MockState['docs'][number];
@@ -20,7 +27,7 @@ const abs = (n: number) => Math.abs(n);
 export const cashSide = (d: { type: string; header: { obKind?: 'DIT' | 'OP' } }): 'RC' | 'PV' | undefined => (d.type === 'OB' ? (d.header.obKind === 'DIT' ? 'RC' : d.header.obKind === 'OP' ? 'PV' : undefined) : d.type === 'RC' || d.type === 'PV' ? d.type : undefined);
 
 /** SP0 G4 + I1: an inline journal posts only to accounts no subledger or document owns. The roles a document writes (tax, receivable / payable, deposits, prepayments, payroll payables, cash / bank, equity) are refused. */
-const TAX_ROLES: AccountingRole[] = ['OutputVat', 'InputVat', 'InputVatUnclaimed', 'Pnd36VatPayable', 'WhtReceivable', 'WhtPayable', 'WhtExpense'];
+const TAX_ROLES: AccountingRole[] = ['OutputVat', 'InputVat', 'InputVatUnclaimed', 'Pnd36VatPayable', 'WhtReceivable', 'WhtPayable', 'WhtExpense', 'VatPayable', 'VatCarryForward'];
 
 /** The roles an account of the company plays: its chart `controlRole` and every posting rule that points at it. */
 export function rolesOf(st: MockState, companyId: string, code: string): AccountingRole[] {
@@ -39,7 +46,7 @@ export function controlExit(st: MockState, companyId: string, code: string, scop
   if (has('AP', 'EmployeePayable', 'VendorPrepayment') || sub === 'payable') return 'บัญชีเจ้าหนี้/เงินจ่ายล่วงหน้า ใช้ใบสำคัญจ่าย (PV)';
   if (!jv && (has('Revenue', 'SalesReturn', 'SalesDiscount') || sub === 'sales' || sub === 'contra-sales')) return 'บัญชีรายได้จากการขาย ลงจากใบกำกับภาษี/ใบลดหนี้เท่านั้น (ต้องมีภาษีขาย)';
   if (has('FixedAsset', 'AccumulatedDepreciation') || sub === 'fixed-asset' || sub === 'accumulated-depreciation') return 'บัญชีสินทรัพย์ถาวร/ค่าเสื่อมราคาสะสม ลงจากทะเบียนสินทรัพย์ (/accounting/fixed-assets) และรายการค่าเสื่อมราคา (/accounting/depreciation-runs) เท่านั้น';
-  if ((jv ? has('OutputVat', 'InputVat', 'Pnd36VatPayable', 'WhtReceivable', 'WhtPayable') : has(...TAX_ROLES)) || sub === 'tax-asset' || sub === 'tax-liability') return 'บัญชีควบคุมภาษี ภาษีลงจากเอกสารเท่านั้น';
+  if ((jv ? has('OutputVat', 'InputVat', 'Pnd36VatPayable', 'WhtReceivable', 'WhtPayable', 'VatPayable', 'VatCarryForward') : has(...TAX_ROLES)) || sub === 'tax-asset' || sub === 'tax-liability') return 'บัญชีควบคุมภาษี ภาษีลงจากเอกสารเท่านั้น (ภาษีที่ยื่นแบบในระบบแล้ว ชำระด้วยปุ่ม "ชำระภาษี" ที่หน้าแบบภาษี)';
   if ((has('SalaryPayable', 'PitPayable', 'SsoPayable') || sub === 'payroll-liability')) return jv ? 'บัญชีเจ้าหนี้เงินเดือน/ภาษี-ประกันสังคมหัก ณ ที่จ่าย ลงจากรอบเงินเดือนเท่านั้น (ตั้งค้างจ่ายเงินเดือนที่ 2120 ไปก่อน)' : 'บัญชีเจ้าหนี้เงินเดือน ลงจากเอกสารเงินเดือนเท่านั้น';
   return undefined;
 }
@@ -59,7 +66,8 @@ export function publicLine(st: MockState, l: StoredLine): BankLine {
   const { companyId, ...rest } = l;
   const to = st.bankAccounts.find((b) => b.id === l.accountId && b.companyId === companyId)?.reconciledTo;
   const pending = l.status === 'unmatched' ? pendingTransfer(st, companyId, l.id)?.id : undefined;
-  return { ...rest, ...(to && l.date <= to ? { locked: true } : {}), ...(pending ? { transferPending: pending } : {}) };
+  const tj = l.status === 'posted' ? st.bankJournals.find((j) => j.id === l.journalId && j.kind === 'tax' && j.filing && inForceTax(j)) : undefined; // TX2c: a line posted by a tax payment links to its return
+  return { ...rest, ...(to && l.date <= to ? { locked: true } : {}), ...(pending ? { transferPending: pending } : {}), ...(tj ? { taxPayment: { form: tj.filing!.form, period: tj.filing!.period, journalId: tj.id, href: filingHref(tj.filing!.form, tj.filing!.period) } } : {}) };
 }
 const isLocked = (st: MockState, l: StoredLine) => publicLine(st, l).locked === true;
 
@@ -385,4 +393,84 @@ export function glBalance(st: MockState, companyId: string, code: string, to: Is
   let n = 0;
   for (const e of companyEntries(st, companyId)) if (e.date <= to) for (const g of e.lines) if (g.accountCode === code) n += toSatang(g.debit) - toSatang(g.credit);
   return n;
+}
+
+// ---------------------------------------------------------------- TX2c: paying a finalized return
+
+export interface PayTaxRequest { form: FilingForm; period: string; extras?: { accountCode: string; amount: Money; description?: string }[] }
+const taxWhat = (form: FilingForm, period: string) => `${formName(form)} เดือน ${monthLabelTh(period)}`;
+/** The filing a payment is for, with its tax (satang): P3 not finalized, P4 nothing due, P5 already paid - the refusals the dialog's list shares with the command. */
+function payableFiling(st: MockState, companyId: string, form: FilingForm, period: string): { f: Filing; due: number } {
+  if (isCit(form)) throw fail(422, 'tax_payment.not_supported', 'ภาษีเงินได้นิติบุคคลชำระผ่านระบบนี้ไม่ได้ (ไม่มีการลงบัญชีภาษีเงินได้ค้างจ่ายในระบบ) บันทึกการชำระด้วยใบสำคัญสมุดรายวัน');
+  const f = st.filings.find((x) => x.companyId === companyId && x.form === form && x.period === period);
+  if (!f) throw fail(409, 'tax_payment.not_finalized', `แบบ ${taxWhat(form, period)} ยังไม่ได้ยืนยัน ทางออก: ยืนยันแบบก่อนชำระภาษี`);
+  const due = taxDueOf(f);
+  if (due === 0) throw fail(422, 'tax_payment.nothing_due', `แบบ ${taxWhat(form, period)} ไม่มียอดภาษีต้องชำระ${form === 'PP30' ? ' (ภาษีชำระเกินยกไปเครดิตเดือนถัดไป)' : ''}`);
+  const live = livePaymentOf(st, f);
+  if (live) throw fail(409, 'tax_payment.already_paid', `แบบ ${taxWhat(form, period)} ชำระแล้วจากรายการเดินบัญชีวันที่ ${formatDateBE(live.entries[0].date)} ทางออก: ยกเลิกการชำระเดิมก่อน`);
+  return { f, due };
+}
+
+/** TX2c D3/D4: pay a finalized return from an unmatched money-out line: exactly the return's tax (one live payment per return, no partial payment) plus optional other debit legs (a bank fee, เงินเพิ่ม typed from the RD receipt) to non-control accounts.
+ *  Dr the return's payable [+ extras] / Cr the bank, dated the line; the line is posted. Everything is judged before anything is written. */
+export function payTax(st: MockState, companyId: string, lineId: string, req: PayTaxRequest, actor: Actor): BankLine {
+  const l = lineOf(st, companyId, lineId);
+  if (l.status !== 'unmatched') throw statusError(l, '- ชำระภาษีไม่ได้');
+  refuseIfTransferPending(st, companyId, l);
+  const amount = toSatang(l.amount);
+  if (amount >= 0) throw fail(422, 'tax_payment.direction', 'รายการเงินเข้า ใช้ชำระภาษีไม่ได้ เลือกรายการเงินออก');
+  const { f, due } = payableFiling(st, companyId, req.form, req.period);
+  if (l.date <= lastDayOf(req.period)) throw fail(422, 'tax_payment.before_period_end', `ชำระภาษีเดือน ${monthLabelTh(req.period)} ด้วยรายการก่อนสิ้นเดือนไม่ได้ เลือกรายการตั้งแต่ ${formatDateBE(`${nextMonth(req.period)}-01`)}`);
+  const bank = bankOf(st, companyId, l.accountId);
+  if (req.extras !== undefined && !Array.isArray(req.extras)) throw fail(422, 'tax_payment.extra_amount', 'รายการอื่นในยอดชำระไม่ถูกต้อง');
+  const extras = (req.extras ?? []).map((x) => {
+    if (typeof x !== 'object' || x === null) throw fail(422, 'tax_payment.extra_amount', 'รายการอื่นในยอดชำระไม่ถูกต้อง');
+    const acc = st.accounts.find((a) => a.companyId === companyId && a.code === x.accountCode);
+    if (!acc || !acc.postable || acc.active === false) throw fail(422, 'ledger.account_invalid', 'เลือกบัญชีที่ลงรายการได้');
+    if (acc.code === bank.accountCode) throw fail(422, 'bank.post_same_account', 'บัญชีที่เลือกต้องไม่ใช่บัญชีธนาคารของรายการนี้');
+    const exit = controlExit(st, companyId, acc.code);
+    if (exit) throw fail(422, 'ledger.control_account', `${acc.code} ${acc.nameTh} ลงรายการเองไม่ได้: ${exit}`);
+    if (typeof x.amount !== 'string' || !/^\d+(\.\d{1,2})?$/.test(x.amount.trim())) throw fail(422, 'tax_payment.extra_amount', `ยอดรายการอื่น (${acc.code}) ต้องเป็นจำนวนเงิน เช่น 1234.50 (ไม่ใส่เครื่องหมายจุลภาค)`);
+    if (toSatang(x.amount.trim()) <= 0) throw fail(422, 'tax_payment.extra_amount', `ยอดรายการอื่น (${acc.code}) ต้องมากกว่า 0.00 บาท`);
+    return { code: acc.code, debit: toSatang(x.amount.trim()), credit: 0 };
+  });
+  const extra = extras.reduce((n, x) => n + x.debit, 0);
+  if (due + extra !== abs(amount)) {
+    throw fail(422, 'tax_payment.amount', `ยอดภาษี ${formatMoney(fromSatang(due))}${extra ? ` + รายการอื่น ${formatMoney(fromSatang(extra))}` : ''} ไม่เท่ากับยอดรายการเดินบัญชี ${formatMoney(fromSatang(abs(amount)))} บาท — ส่วนที่เกิน (ค่าธรรมเนียม เงินเพิ่ม) ระบุเป็นรายการอื่น`);
+  }
+  dateGuards(st, companyId, l.date);
+
+  // all judged - write. Line ORDER is the contract: lines[0] the payable, the last line the bank (invariant T1)
+  const tag = `ชำระภาษี ${taxWhat(req.form, req.period)}`;
+  const notes = (req.extras ?? []).map((x) => (x.description ?? '').trim()).filter(Boolean);
+  const j = addJournal(st, { companyId, accountId: l.accountId, lineId, kind: 'tax', label: tag, filing: { form: req.form, period: req.period, amount: fromSatang(due) }, entries: [entry(st, companyId, l.date, tag, [
+    { code: payableAccountOf(st, f), debit: due, credit: 0 }, ...extras, { code: bank.accountCode, debit: 0, credit: abs(amount) },
+  ])] });
+  l.status = 'posted';
+  l.journalId = j.id;
+  logActivity(st, l.id, actor, 'bank.pay_tax', notes.length ? `${tag} (${notes.join(', ')})` : tag);
+  logAudit(st, actor, companyId, 'bank.pay_tax', l.id, { status: 'unmatched' }, { status: 'posted', journalId: j.id, form: req.form, period: req.period, amount: fromSatang(due) });
+  return publicLine(st, l);
+}
+
+/** The way out of a tax payment: reverse its journal (SP0 5.9: on its own date while that month is open, else late on the first open date; a closed year refuses) and put the line back to unmatched. */
+export function reverseTaxPayment(st: MockState, companyId: string, journalId: string, actor: Actor, reason?: string): BankJournal {
+  const why = (reason ?? '').trim();
+  if (!why) throw fail(422, 'bank.reason_required', 'ต้องระบุเหตุผลในการยกเลิกการชำระภาษี');
+  const j = st.bankJournals.find((x) => x.id === journalId && x.companyId === companyId && x.kind === 'tax');
+  if (!j) throw fail(404, 'record.not_found', 'ไม่พบรายการชำระภาษีนี้');
+  if (!inForceTax(j)) throw fail(409, 'tax_payment.reversed', 'การชำระนี้ยกเลิกไปแล้ว');
+  j.entries = [...j.entries, correctionReversal(st, companyId, j.entries[0])];
+  const l = st.bankLines.find((x) => x.id === j.lineId && x.companyId === companyId);
+  if (l) { l.status = 'unmatched'; delete l.journalId; logActivity(st, l.id, actor, 'bank.tax_reverse', `ยกเลิกการชำระภาษี ${j.label} เหตุผล: ${why}`); }
+  logAudit(st, actor, companyId, 'bank.tax_reverse', j.id, { reversed: false }, { reversed: true, reason: why });
+  return j;
+}
+
+/** The dialog's candidates: unmatched money-out lines of any own account dated after the period, at least the tax, no transfer pending; the exact amount first, then the earliest. P3-P5 refuse like the command. */
+export function taxPaymentLines(st: MockState, companyId: string, form: FilingForm, period: string): TaxPaymentLines {
+  const { due } = payableFiling(st, companyId, form, period);
+  const lines = st.bankLines.filter((l) => l.companyId === companyId && l.status === 'unmatched' && toSatang(l.amount) < 0 && l.date > lastDayOf(period) && abs(toSatang(l.amount)) >= due && !pendingTransfer(st, companyId, l.id))
+    .sort((a, b) => Number(abs(toSatang(b.amount)) === due) - Number(abs(toSatang(a.amount)) === due) || a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  return { due: fromSatang(due), lines: lines.map((l) => ({ ...publicLine(st, l), accountName: st.bankAccounts.find((b) => b.id === l.accountId)?.nameTh ?? l.accountId })) };
 }

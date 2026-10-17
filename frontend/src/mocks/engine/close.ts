@@ -1,14 +1,15 @@
 import { DESCRIPTORS } from '@/descriptors';
-import { GROUP_OF } from '@/records/accounts';
 import type { Actor, ChecklistItem, IsoDate, JournalEntryPreview, JournalLinePreview, Money, PeriodMonth, PeriodsView } from '@/domain/types';
 import type { MockState } from '../store';
 import { liveDps, planDepreciation } from './assets';
-import { companyEntries, reversalOf } from './ledger';
+import { reversalOf } from './ledger';
 import { MockError, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
 import { buildOb, liveBatches } from './opening';
 import { type Period, monthLabelTh, yearClosed } from './periods';
 import { liveRuns } from './schedules';
+import { filingHref, unfiledForms } from './filings';
+import { balances, plOf } from './reports/profit-loss';
 
 // AC6: closing a month (a checklist the server computes; blocking items refuse, warnings need an acknowledgement that is frozen on the period) and the year-end closing entry. The month rules: closed months are a prefix
 // (close in order, reopen only the latest closed month of an open year). The year rules: the closing entry sweeps every revenue / expense account of the year into 3300, then 3300 into 3200; the invariant
@@ -39,6 +40,7 @@ export function checklistOf(st: MockState, companyId: string, month: string): Ch
     const ran = new Set(liveRuns(st, s).map((r) => r.month));
     return n + (s.plan ?? []).filter((r) => r.month <= month && !ran.has(r.month)).length;
   }, 0);
+  const owed = unfiledForms(st, companyId, month); // TX1 / TX2: the ภ.พ.30 from the company's first finalized one on, and each ภ.ง.ด. / the ภ.พ.36 that has documents in the month and is not finalized
   const ob = liveBatches(st, companyId).filter((d) => buildOb(st, companyId, d).check.plug !== '0.00').length;
   const item = (code: ChecklistItem['code'], severity: ChecklistItem['severity'], count: number, href: string, note?: string): ChecklistItem => ({ code, severity, count, labelTh: LABEL[code], href, ...(note ? { note } : {}) });
   return [
@@ -46,7 +48,7 @@ export function checklistOf(st: MockState, companyId: string, month: string): Ch
     item('unreconciled_bank_lines', 'warning', bank, '/finance/bank-accounts'),
     item('depreciation_not_run', 'blocking', dep, '/accounting/depreciation-runs/new'),
     item('schedules_not_run', 'warning', sched, '/accounting/schedules'),
-    item('filings_not_finalized', 'warning', 0, '/tax/summary', 'ยังไม่มีแบบยื่นภาษีในระบบ (มากับกลุ่มภาษี) จึงนับเป็น 0'), // [TX1]: filings arrive with group 06; nothing is invented here
+    item('filings_not_finalized', 'warning', owed.length, filingHref(owed[0] ?? 'PP30', month)),
     item('ob_difference_open', 'warning', ob, '/accounting/opening-balances'),
   ];
 }
@@ -94,14 +96,6 @@ export interface YearClose {
 }
 export const liveYearClose = (st: MockState, companyId: string, year: number): YearClose | undefined => st.yearCloses.find((y) => y.companyId === companyId && y.year === year && !y.reopened);
 const accountName = (st: MockState, companyId: string, code: string) => st.accounts.find((a) => a.companyId === companyId && a.code === code)?.nameTh ?? code;
-const isPl = (st: MockState, companyId: string, code: string) => { const a = st.accounts.find((x) => x.companyId === companyId && x.code === code); return !!a && ['revenue', 'expense'].includes(GROUP_OF[a.class]); };
-/** Σ debit - Σ credit (satang) per account of the entries dated in `year`; `closing` false leaves the year-end entries out (what they close). */
-function balances(st: MockState, companyId: string, year: number, closing: boolean): Map<string, number> {
-  const m = new Map<string, number>();
-  for (const e of companyEntries(st, companyId, closing)) if (e.date.startsWith(`${year}-`)) for (const l of e.lines) m.set(l.accountCode, (m.get(l.accountCode) ?? 0) + sat(l.debit) - sat(l.credit));
-  return m;
-}
-const plOf = (st: MockState, companyId: string, m: Map<string, number>): [string, number][] => [...m].filter(([c, v]) => v !== 0 && isPl(st, companyId, c)).sort(([a], [b]) => a.localeCompare(b));
 const equityCode = (st: MockState, companyId: string, sub: 'current-year' | 'retained') => st.accounts.find((a) => a.companyId === companyId && a.subClass === sub && a.postable)!.code;
 
 /** The closing entry as the books stand: each revenue / expense account to 0, the sum into 3300, and 3300 into 3200 for the net. */
@@ -139,6 +133,7 @@ export function closeYear(st: MockState, companyId: string, year: number, actor:
 export function reopenYear(st: MockState, companyId: string, year: number, actor: Actor, reason: string): YearClose {
   const y = liveYearClose(st, companyId, year);
   if (!y) throw fail(409, 'period.year_not_closed', `ปีบัญชี ${year + 543} ยังไม่ได้ปิด`);
+  if (st.filings.some((f) => f.companyId === companyId && f.form === 'PND50' && f.period === String(year))) throw fail(409, 'filing.locked', `ภ.ง.ด.50 ปีบัญชี ${year + 543} ยื่นแล้ว เปิดปีบัญชีไม่ได้ ทางออก: ยื่นแบบเพิ่มเติมนอกระบบ`); // TX3a ruling 7
   if (!reason?.trim()) throw fail(422, 'period.reason_required', 'ต้องระบุเหตุผลที่เปิดปีบัญชี');
   const later = st.yearCloses.filter((x) => x.companyId === companyId && x.year > year && !x.reopened).map((x) => x.year).sort()[0];
   if (later) throw fail(422, 'period.year_order', `เปิดปีบัญชี ${year + 543} ไม่ได้ ปีบัญชี ${later + 543} ยังปิดอยู่ ทางออก: เปิดปีบัญชี ${later + 543} ก่อน`);

@@ -2,8 +2,8 @@ import type { CorrectionClass, DocType } from './types';
 import type { VatScope } from './doc-types';
 
 export type LineEditorKind = 'item' | 'amount' | 'account' | 'payroll' | 'none';
-export type ListColumnKey = 'number' | 'date' | 'party' | 'total' | 'outstanding' | 'status' | 'dueDate' | 'reference' | 'progress' | 'marks';
-export type SavedViewKey = 'draft' | 'pending' | 'outstanding' | 'overdue' | 'cancelled' | 'agent';
+export type ListColumnKey = 'number' | 'date' | 'party' | 'total' | 'outstanding' | 'status' | 'dueDate' | 'reference' | 'progress' | 'marks' | 'whtForm' | 'whtIncome' | 'whtTax';
+export type SavedViewKey = 'draft' | 'pending' | 'outstanding' | 'overdue' | 'cancelled' | 'agent' | 'pnd3' | 'pnd53' | 'pnd2' | 'pnd54';
 export type HeaderFieldKey = 'documentDate' | 'dueDate' | 'reference' | 'notes' | 'bankAccount' | 'paymentMethod'
   | 'cheque' | 'whtMode' | 'claimPeriod' | 'vendorDocNumber' | 'vendorDocDate' | 'reason' | 'refDoc' | 'autoReverse' | 'complete';
 export interface DocDescriptor {

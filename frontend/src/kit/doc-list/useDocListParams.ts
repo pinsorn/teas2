@@ -2,7 +2,7 @@
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 
-export const FILTER_KEYS = ['status', 'q', 'from', 'to', 'view', 'overdue', 'outstanding', 'agent'] as const;
+export const FILTER_KEYS = ['status', 'q', 'from', 'to', 'view', 'overdue', 'outstanding', 'agent', 'form'] as const;
 export type DocListFilters = Partial<Record<(typeof FILTER_KEYS)[number], string>>;
 
 /** Filters live in the URL (shareable, survives reload). Reads useSearchParams, so the page must wrap DocList in <Suspense>.

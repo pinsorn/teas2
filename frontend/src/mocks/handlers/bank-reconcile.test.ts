@@ -4,6 +4,9 @@ import type { ReportModel } from '@/domain/reports';
 import { setSettings } from '../settings';
 import { loadState, resetState } from '../store';
 import { testServer } from '../test-server';
+import { utf8Base64 } from '../engine/bank-import';
+import { kbizCsv } from '../fixtures/statements/kbiz-2026-10.csv';
+import { KBANK_ACCOUNT_NO, KBANK_SEP_CLOSING, withBalances } from '../fixtures/statements/kplus-2026-09';
 
 beforeAll(() => testServer.listen({ onUnhandledFrame: 'error' }));
 afterEach(() => testServer.resetHandlers());
@@ -124,5 +127,41 @@ describe('transfer between own accounts over HTTP', () => {
     expect((await call('POST', `/finance/bank-journals/${j.id}/reverse`, { reason: 'ผิดบัญชี' })).status).toBe(200);
     const bad = await call('POST', '/finance/bank-lines/bi-001-002/transfer', { toAccountId: 'ba-kbank' });
     expect(((await bad.json()) as { code: string }).code).toBe('bank.transfer_same_account');
+  });
+});
+
+describe('TX2c: paying a finalized return over HTTP', () => {
+  const importLine = async () => {
+    const lines = withBalances(KBANK_SEP_CLOSING, [['2026-10-13', 'ชำระภาษี กรมสรรพากร', '-7875.00']]);
+    const content = utf8Base64(kbizCsv({ accountNo: KBANK_ACCOUNT_NO, accountName: 'บริษัท ตัวอย่าง จำกัด', from: '2026-10-01', opening: KBANK_SEP_CLOSING, lines }));
+    const r = await call('POST', '/finance/bank-accounts/ba-kbank/imports', { fileName: 'tax.csv', format: 'kbiz-csv', content });
+    expect(r.status).toBe(201);
+    return loadState().bankLines.find((l) => l.amount === '-7875.00')!.id;
+  };
+  it('payment-lines lists the exact line first; pay-tax posts it; the reverse endpoint routes a tax journal to its own reversal', async () => {
+    const id = await importLine();
+    const list = (await (await call('GET', '/filings/PP30/2026-08/payment-lines')).json()) as { due: string; lines: { id: string }[] };
+    expect(list.due).toBe('7875.00');
+    expect(list.lines[0].id).toBe(id);
+    const pay = await call('POST', `/finance/bank-lines/${id}/pay-tax`, { form: 'PP30', period: '2026-08' });
+    expect(pay.status).toBe(200);
+    const line = (await pay.json()) as BankLine;
+    expect(line).toMatchObject({ status: 'posted', taxPayment: { form: 'PP30', period: '2026-08' } });
+    expect(((await (await call('GET', '/filings/PP30/2026-08')).json()) as { payment: { status: string } }).payment.status).toBe('paid');
+    const again = await call('POST', `/finance/bank-lines/${id}/pay-tax`, { form: 'PP30', period: '2026-08' });
+    expect(again.status).toBe(409);
+    expect(((await again.json()) as { code: string }).code).toBe('bank.line_state');
+    expect((await call('POST', `/finance/bank-journals/${line.journalId}/reverse`, { reason: '' })).status).toBe(422);
+    const rev = await call('POST', `/finance/bank-journals/${line.journalId}/reverse`, { reason: 'ผิดแบบ' });
+    expect(rev.status).toBe(200);
+    expect(loadState().bankLines.find((l) => l.id === id)!.status).toBe('unmatched');
+    expect(loadState().bankJournals.find((j) => j.id === line.journalId)!.entries.map((e) => e.kind)).toEqual(['original', 'reversal']);
+  });
+  it('needs bank.reconcile: an operator is refused 403 on both and nothing is written', async () => {
+    const id = await importLine();
+    setSettings({ companyKey: 'vat', role: 'operator', screenState: 'normal' });
+    expect((await call('POST', `/finance/bank-lines/${id}/pay-tax`, { form: 'PP30', period: '2026-08' })).status).toBe(403);
+    expect((await call('GET', '/filings/PP30/2026-08/payment-lines')).status).toBe(403);
+    expect(loadState().bankJournals.some((j) => j.kind === 'tax')).toBe(false);
   });
 });

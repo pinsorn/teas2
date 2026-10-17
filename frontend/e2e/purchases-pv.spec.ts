@@ -108,8 +108,9 @@ test('WT view: print is the only action; the paper has two copies and is frozen 
   await page.waitForSelector('[data-paper-ready="true"]');
   const paper = page.locator('.paper-root');
   await expect(paper.locator('[data-paper-page]')).toHaveCount(2);
-  await expect(paper).toContainText('ฉบับที่ 1');
-  await expect(paper).toContainText('ฉบับที่ 2');
+  await expect(paper.locator('[data-paper-page]').nth(0)).toContainText('ฉบับที่ 1 (สำหรับผู้ถูกหักภาษี ณ ที่จ่าย ใช้แนบพร้อมกับแบบแสดงรายการภาษี)'); // the RD form's own captions (TX4)
+  await expect(paper.locator('[data-paper-page]').nth(1)).toContainText('ฉบับที่ 2 (สำหรับผู้ถูกหักภาษี ณ ที่จ่าย เก็บไว้เป็นหลักฐาน)');
+  expect(await page.$$eval('[data-paper-page]', (els) => els.map((e) => e.scrollHeight <= e.clientHeight + 1))).toEqual([true, true]); // each copy fits its A4 sheet
   await expect(paper.locator('[data-field="tax-total"]').first()).toHaveText('1,125.00');
   await expect(paper).toContainText('หนึ่งพันหนึ่งร้อยยี่สิบห้าบาทถ้วน');
   // the first print freezes it: rename the payee afterwards, the printed paper does not change

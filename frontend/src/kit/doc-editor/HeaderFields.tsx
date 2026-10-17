@@ -57,10 +57,11 @@ function RefDocField({ id, refDocId, type }: { id: string; refDocId?: string; ty
 /** The month a claim period follows until one is chosen: the month the document is recorded in. */
 const anchorMonth = (h: DocHeader): string => h.documentDate.slice(0, 7);
 
-/** PB / PDN of a VAT company: the month the input VAT is claimed in (I6). Shown as the document month until one is chosen (a PCN has none: it is filed in its own month); a non-VAT company claims nothing, so it has no field. */
+/** PB / PDN of a VAT company: the month the input VAT is claimed in (I6). Shown as the month the server will store (the first unfiled month of the window, normally the document month) until one is chosen (a PCN has none: it is filed in its own month); a non-VAT company claims nothing, so it has no field. */
 function ClaimPeriodField({ id, header, setHeader }: { id: string; header: DocHeader; setHeader: Dispatch<SetStateAction<DocHeader>> }) {
   const t = useTranslations('docEditor');
   const { me } = useMe();
+  const dflt = useQuery({ queryKey: [me?.activeCompanyId, 'claim-period', header.documentDate, header.vendorDocDate], queryFn: () => endpoints.claimPeriodDefault(header.documentDate, header.vendorDocDate), enabled: !!me && me.vatRegistered !== false && !!header.documentDate && !header.claimPeriod });
   if (me?.vatRegistered === false) return null;
   if (header.documentDate && inputVatExpired(header.documentDate, header.vendorDocDate)) { // R1-I1: nothing to claim - the server books the VAT as cost
     return <Badge variant="outline" className="self-end" data-testid="input-vat-forfeited">{t('inputVatForfeited')}</Badge>;
@@ -68,7 +69,7 @@ function ClaimPeriodField({ id, header, setHeader }: { id: string; header: DocHe
   return (
     <div className="grid gap-1.5">
       <Label htmlFor={id}>{t('claimPeriod')}</Label>
-      <Input id={id} type="month" value={header.claimPeriod ?? anchorMonth(header)} onChange={(e) => setHeader((h) => ({ ...h, claimPeriod: e.target.value || undefined }))} />
+      <Input id={id} type="month" value={header.claimPeriod ?? dflt.data?.claimPeriod ?? anchorMonth(header)} onChange={(e) => setHeader((h) => ({ ...h, claimPeriod: e.target.value || undefined }))} />
       <p className="text-small text-muted-foreground">{t('claimPeriodHint')}</p>
     </div>
   );

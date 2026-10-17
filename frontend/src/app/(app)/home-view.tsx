@@ -16,6 +16,7 @@ import type { DocSummary, HomeInbox, IsoDate } from '@/domain/types';
 import { endpoints } from '@/lib/api/endpoints';
 import { formatDateBE, formatTHB } from '@/lib/format';
 import { qk } from '@/lib/query/keys';
+import { VatThresholdCard } from '@/kit/tax/VatThresholdCard';
 
 type Home = ReturnType<typeof useHome>;
 
@@ -143,6 +144,7 @@ export function HomeView() {
           {quickCreate.map((x) => <Button key={x.type} asChild><Link href={routesOf(x).create}>{tl('create', { title: locale === 'en' ? x.titleEn : x.titleTh })}</Link></Button>)}
         </div>
       )}
+      <VatThresholdCard />
       <Kpis home={home} />
       <div className="grid gap-x-8 gap-y-6 lg:grid-cols-2">
         <Section id="h-approvals" title={t('approvals.title')} home={home} empty={d && !d.approvals.length ? t('approvals.empty') : null}>

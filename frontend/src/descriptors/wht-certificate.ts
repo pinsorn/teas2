@@ -6,7 +6,7 @@ export const whtCertificate: DocDescriptor = {
   type: 'WT', correctionClass: 'T', vat: 'both', titleTh: 'หนังสือรับรองการหักภาษี ณ ที่จ่าย', titleEn: 'Withholding tax certificate', partyKind: 'vendor',
   lineEditor: 'none', basePath: '/tax/wht-certificates',
   permissions: { read: 'doc.WT.read', create: 'doc.WT.create', issue: 'doc.WT.issue', cancel: 'doc.WT.cancel', correct: 'doc.WT.correct' },
-  listColumns: ['number', 'date', 'party', 'total', 'status'],
-  savedViews: ['cancelled'],
+  listColumns: ['number', 'date', 'party', 'whtForm', 'whtIncome', 'whtTax', 'status'],
+  savedViews: ['pnd3', 'pnd53', 'pnd2', 'pnd54', 'cancelled'],
   headerFields: [],
 };

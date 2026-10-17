@@ -50,6 +50,9 @@ export const PURCHASE_SPECS: SeedSpec[] = [
     lines: [], convertFrom: { id: 'po-part', lines: [{ sourceLineId: 'po-part-l1', qty: '20' }, { sourceLineId: 'po-part-l2', qty: '50' }] } },
   { id: 'pb-capex', type: 'PB', companyId: VAT, date: '2026-10-09', partyId: 'pv-10', status: 'issued', header: vendorDoc('IT-2026-0093', '2026-10-09'),
     lines: [exp('pb-capex', 1, 'เครื่องคอมพิวเตอร์โน้ตบุ๊ก', 'เครื่อง', '32000.00', 'EXP-08', 'capex-equipment')] },
+  // pb-aug: an August bill claimed in August (VAT 280.00): the input side of the finalized 2026-08 ภ.พ.30, so the bill-side filing lock has a fixture (TX1 M7)
+  { id: 'pb-aug', type: 'PB', companyId: VAT, date: '2026-08-12', partyId: 'pv-02', status: 'issued', header: { ...vendorDoc('SI-5390', '2026-08-11'), dueDate: '2026-09-11' },
+    lines: [exp('pb-aug', 1, 'ค่าบริการทำความสะอาด สิงหาคม', 'เดือน', '4000.00', 'EXP-02', 'services')] },
   // pb-claim-late: dated October, claimed two months later (2026-12)
   { id: 'pb-claim-late', type: 'PB', companyId: VAT, date: '2026-10-05', partyId: 'pv-02', status: 'issued', header: { ...vendorDoc('SI-5521', '2026-10-05'), claimPeriod: '2026-12' },
     lines: [exp('pb-claim-late', 1, 'ค่าบริการทำความสะอาด', 'เดือน', '8500.00', 'EXP-02', 'services')] },
@@ -115,6 +118,15 @@ export const PURCHASE_SPECS: SeedSpec[] = [
   // pv-foreign: a software service from Ireland, FOR-SVC grossed up (PND54); the service line feeds PP.36
   { id: 'pv-foreign', type: 'PV', companyId: VAT, date: '2026-10-13', partyId: 'pv-12', status: 'issued', header: { whtMode: 'grossup_always' },
     lines: [line('pv-foreign', 1, 'ค่าบริการซอฟต์แวร์ (ไอร์แลนด์)', '1', 'งาน', '10000.00', 'EX', { expenseCategory: 'services', whtTypeCode: 'FOR-SVC', pnd36: true })] },
+  // TX2: the voucher months behind the finalized ภ.ง.ด.3 / 53 of 2026-08 and 2026-09 (own lines, SVC 3 % deducted; the juristic payee is a ภ.ง.ด.53, the individual a ภ.ง.ด.3). New ids: no earlier e2e touches a filed voucher.
+  { id: 'pv-aug-53', type: 'PV', companyId: VAT, date: '2026-08-20', partyId: 'pv-02', status: 'issued', header: { reference: 'ค่าที่ปรึกษา ส.ค. 2569' },
+    lines: [line('pv-aug-53', 1, 'ค่าที่ปรึกษาการตลาด', '1', 'งาน', '20000.00', 'EX', { expenseCategory: 'services', whtTypeCode: 'SVC' })] },
+  { id: 'pv-aug-3', type: 'PV', companyId: VAT, date: '2026-08-22', partyId: 'pv-09', status: 'issued', header: { reference: 'ค่าถ่ายภาพ ส.ค. 2569' },
+    lines: [line('pv-aug-3', 1, 'ค่าถ่ายภาพงานแสดงสินค้า', '1', 'งาน', '5000.00', 'EX', { itemId: 'EXP-05', expenseCategory: 'services', whtTypeCode: 'SVC' })] },
+  { id: 'pv-sep-53', type: 'PV', companyId: VAT, date: '2026-09-18', partyId: 'pv-02', status: 'issued', header: { reference: 'ค่าที่ปรึกษา ก.ย. 2569' },
+    lines: [line('pv-sep-53', 1, 'ค่าที่ปรึกษาการตลาด', '1', 'งาน', '15000.00', 'EX', { expenseCategory: 'services', whtTypeCode: 'SVC' })] },
+  { id: 'pv-sep-3', type: 'PV', companyId: VAT, date: '2026-09-19', partyId: 'pv-09', status: 'issued', header: { reference: 'ค่าถ่ายภาพ ก.ย. 2569' },
+    lines: [line('pv-sep-3', 1, 'ค่าถ่ายภาพแคตตาล็อก', '1', 'งาน', '8000.00', 'EX', { itemId: 'EXP-05', expenseCategory: 'services', whtTypeCode: 'SVC' })] },
   // pv-can: a voucher cancelled after issue - its certificate is cancelled with it
   { id: 'pv-can', type: 'PV', companyId: VAT, date: '2026-10-12', partyId: 'pv-09', status: 'cancelled', header: {},
     lines: [line('pv-can', 1, 'ค่าถ่ายภาพงานอีเวนต์', '1', 'งาน', '3000.00', 'EX', { itemId: 'EXP-05', expenseCategory: 'services', whtTypeCode: 'SVC' })] },

@@ -8,6 +8,7 @@ const item = (key: string, href: string, permission?: string, flags: Pick<NavIte
 const group = (key: string, items: NavItem[]): NavGroup => ({ key, labelKey: `nav.groups.${key}`, items });
 const doc = (key: string, href: string, type: DocType, flags?: Pick<NavItem, 'vatOnly' | 'nonVatOnly'>) => item(key, href, `doc.${type}.read`, flags);
 const LEDGER = 'ledger.read';
+const TAX = 'tax.read';
 const SETTINGS = 'settings.manage';
 const BANK = 'bank.read';
 
@@ -45,11 +46,12 @@ export const NAV: NavGroup[] = [
     item('periodClose', '/accounting/period-close', LEDGER),
   ]),
   group('tax', [
-    item('taxSummary', '/tax/summary', LEDGER),
-    item('vat', '/tax/vat', LEDGER, { vatOnly: true }),
-    item('wht', '/tax/wht', LEDGER),
+    item('taxSummary', '/tax/summary', TAX),
+    item('vat', '/tax/vat', TAX, { vatOnly: true }),
+    item('wht', '/tax/wht', TAX),
     doc('whtCertificates', '/tax/wht-certificates', 'WT'),
-    item('cit', '/tax/cit', LEDGER),
+    item('cit', '/tax/cit', TAX),
+    item('taxForms', '/tax/forms', TAX),
   ]),
   group('payroll', [
     item('employees', '/payroll/employees', 'payroll.read'),

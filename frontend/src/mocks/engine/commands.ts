@@ -20,6 +20,7 @@ import { buildOb, cancelObItems, EMPTY_OPENING, freezeOpening, obCalc, obMissing
 import { firstOpenDate, isClosed, monthLabelTh, refuseClosedYearEntry, refuseYearClosed } from './periods';
 import { balanceOf, certError, cleanAllocations, fiscalAllocations, freezeWht, groupTotals, payDefaults, payLines, payoutOf, resolvedBankId, settleExtras, settleProblem, settleTotals, withBankSnapshot } from './settlement';
 import { syncWts } from './wht-certificates';
+import { filingLock, refuseFiled, refuseIntoFiled } from './filings';
 import { cleanInvoices, isVendorBill, issueVendorStatus, purchaseProblem, snapshotCategories, snapshotWhtTypes, withClaimPeriod, withForfeit, withVendorStatus } from './purchase-vat';
 import { computeDoc, vatBasisOf, vatOf } from './vat';
 
@@ -424,8 +425,9 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   const jp = journalProblem(st, d.companyId, d.type, body); // a journal voucher: postable own accounts, none a document owns, the auto-reversal month open
   if (jp) throw jp;
   refuseOverConversion(st, d, body);
-  body = { ...body, header: withClaimPeriod(st, d.companyId, d.type, body.header) }; // the document month unless a period was chosen
+  body = { ...body, header: withClaimPeriod(st, d.companyId, d.type, body.header) }; // the first unfiled month of its window (normally the document month) unless a period was chosen
   body = withWht(st, d.companyId, d.type, body); // a voucher: the WHT as of now, fixed from here on (C1)
+  refuseIntoFiled(st, { ...d, status: 'issued', header: body.header, lines: body.lines, allocations: body.allocations, whtFrozen: body.whtFrozen, party: partyOf(st, d.companyId, body.header.partyId) }); // B1: nothing enters a month whose ภ.พ.30 / ภ.ง.ด. / ภ.พ.36 is finalized (plans, approvals, schedule runs and disposals all issue here)
   body = { ...body, header: withBankSnapshot(st, d.companyId, d.type, body.header) }; // an RC / PV: the account as it is now, fixed from here on (I3)
   const bad = settleProblem(st, d.companyId, d.type, body, outstandingNow(st), { partyExempt: opts?.partyExempt, prior: opts?.prior, priorParty: opts?.priorParty });
   if (bad) throw bad; // nothing has been written yet: a refused issue leaves no number, link or journal behind
@@ -484,6 +486,7 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
   // SP0 §7.5: a period lock does not block cancel (blockingLocks leaves it out); the other locks do.
   if (blockingLocks(d).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ยกเลิกไม่ได้');
   refuseClosedYearEntry(st, d); // AC6: an entry of a closed year is final (exit: reopen the year)
+  refuseFiled(st, d); // TX1: a document a finalized ภ.พ.30 took is not cancelled (exit: the CN / DN of the next open month)
   refuseReconciled(st, d); // FN2: matched to a bank line - the exit is to unmatch it first
   refuseSettled(st, d); // FN3: a leg of a posted settlement - the exit is to reverse the settlement
   refuseScheduleSource(st, d); // AC4: a schedule that is not stopped holds the line (exit: stop it); after the stop the runs stay
@@ -586,7 +589,7 @@ function certNote(d: Stored, body: Body): string | undefined {
 }
 
 /** Revise in place (classes N and L). A T-class document only accepts non-fiscal changes here; fiscal ones go through a correction plan. */
-function reviseBody(st: MockState, d: Stored, raw: Body): Body {
+export function reviseBody(st: MockState, d: Stored, raw: Body): Body {
   const keepBank = keepOmitted(d, raw.header); // absent bank account / dimensions mean "unchanged": the company default must not fill the bank in (it would read as a move)
   const sent = stored(st, d.companyId, d.type, { ...raw, header: keepBank, lines: keepCategories(d, raw.lines), allocations: raw.allocations ?? d.allocations }, d.allocations, d.header);
   const kept = keepNoteLines(d, sent); // an API caller cannot send the engine-set VAT back: the issued lines stand
@@ -638,11 +641,13 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
     }
   }
   const fin0 = isNote(d.type) ? withNoteVat(st, d.companyId, d.type, body, d.id) : body; // a revised vendor note: rule B again, the note itself not among its own predecessors
-  const fin = { ...fin0, header: withBankSnapshot(st, d.companyId, d.type, withClaimPeriod(st, d.companyId, d.type, fin0.header)) }; // a bill is always filed in a claim period: the vendor invoice month unless one was chosen; a PCN keeps none
+  const kept = !fin0.header.claimPeriod && d.header.claimPeriod && fin0.header.documentDate === d.header.documentDate && fin0.header.vendorDocDate === d.header.vendorDocDate ? { ...fin0.header, claimPeriod: d.header.claimPeriod } : fin0.header; // R2-2: an absent claim period is "unchanged"; the default applies at issue (or when the dates moved)
+  const fin = { ...fin0, header: withBankSnapshot(st, d.companyId, d.type, withClaimPeriod(st, d.companyId, d.type, kept)) }; // a bill is always filed in a claim period: the vendor invoice month unless one was chosen; a PCN keeps none
   const { allocations: _a, ...rest } = d; void _a;
   const totals = totalsOf(st, d.companyId, d.type, fin, d.id);
   refuseReconciled(st, d, { header: fin.header, totals }); // FN2: a matched document keeps its cash, bank account and date; anything else stays editable
   refuseSettled(st, d, { header: fin.header, totals }); // FN3: a leg of a posted settlement keeps its amount, deposit, party and date
+  refuseFiled(st, d, { header: fin.header, lines: fin.lines, allocations: fin.allocations, whtFrozen: fin.whtFrozen }); // TX1 / TX2: a filed document keeps everything the return took (notes and paper-only fields stay free)
   refuseScheduleSource(st, d, { header: fin.header, lines: fin.lines }); // AC4: a line a schedule holds keeps its money, account and date
   refuseAssetSource(st, d, { header: fin.header, lines: fin.lines }); // AC5: likewise a line a live fixed asset was made from
   refuseScheduleNote(st, d, 'revise', { header: fin.header, lines: fin.lines });
@@ -653,7 +658,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
     refuseSelfApproval(st, { ...d, moneyBy: actor }, opts.approver); // the person making this change is now the one who set the money
   }
   const next: Stored = {
-    ...rest, header: fin.header, lines: fin.lines, totals, party: partyOf(st, d.companyId, fin.header.partyId),
+    ...rest, header: fin.header, lines: fin.lines, totals, party: fin.header.partyId === d.header.partyId && filingLock(st, d) ? d.party : partyOf(st, d.companyId, fin.header.partyId), // M4: a filed document keeps the party as filed
     revision: d.revision + 1, version: d.version + 1, ...(fin.allocations ? { allocations: fin.allocations } : {}), ...(fin.whtFrozen ? { whtFrozen: fin.whtFrozen } : {}), ...(fin.opening ? { opening: fin.opening } : {}),
     ...(moneyChanged(d, totals.total, fin) ? { moneyBy: actor } : {}),
     ...(reapprove ? { approval: { submittedBy: actor, submittedAt: stamp(), approvedBy: opts!.approver, approvedAt: stamp(), amount: payout } } : {}),
@@ -698,6 +703,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   if (!LIVE.includes(old.status)) throw new MockError(409, 'doc.not_correctable', 'ออกใหม่ได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   if (blockingLocks(old).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ออกใหม่ไม่ได้');
   refuseClosedYearEntry(st, old); // AC6 backstop: a reissue reverses the old entry and posts a new one, both into the first open date
+  refuseFiled(st, old); // TX1: likewise not reissued
   refuseReconciled(st, old);
   refuseSettled(st, old);
   if (st.links.some((l) => l.to === id && l.active)) throw new MockError(409, 'doc.has_dependents', 'มีเอกสารอ้างอิงอยู่ ต้องยกเลิกเอกสารนั้นก่อน');

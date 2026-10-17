@@ -146,7 +146,7 @@ describe('fix round 1: outstanding, seed validity, cancel blocks (SP0 7.4 / 7.11
 
 describe('cancel vs locks (SP0 7.5)', () => {
   const lockedTi = (kind: 'filing') => {
-    const d = createDraft(st, vatCo, 'TI', { header: { partyId: vatCustomer, documentDate: '2026-08-14' }, lines: [line({ qty: '2', unitPrice: '100.00' })] }, me, `lk-${kind}`);
+    const d = createDraft(st, vatCo, 'TI', { header: { partyId: vatCustomer, documentDate: '2026-09-14' }, lines: [line({ qty: '2', unitPrice: '100.00' })] }, me, `lk-${kind}`);
     const a = issue(st, d.id, d.version, me);
     const i = st.docs.findIndex((x) => x.id === a.id);
     st.docs[i] = { ...st.docs[i], locks: [{ kind, reason: 'ล็อก', exits: ['ทางออก'] }] };

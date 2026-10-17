@@ -3,8 +3,9 @@ import type {
   DocType, HomeInbox, MarkKey, Money, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, RemainingLine, Revision, SearchHit,
   DepositRow, DocOpening, SettlementDifferenceRole, SettlementKind, SettlementRecord, DpRow, FaSource, IsoDate, ChecklistItem, PeriodsView,
 } from '@/domain/types';
+import type { CitYearPatch, CitYearView, FilingForm, FilingHistoryItem, FilingModel, TaxPaymentLines } from '@/domain/filings';
 import type { RecordKind, RecordRow } from '@/domain/records';
-import type { ReportKind, ReportModel } from '@/domain/reports';
+import type { FormCatalogue, ReportKind, ReportModel, VatThresholdWatch } from '@/domain/reports';
 import { api, ApiError, normalizeProblem } from './client';
 
 export type DocInput = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[]; /** OB (AC3): the steps behind the trial balance */ opening?: DocOpening };
@@ -22,7 +23,7 @@ export interface Reconciliation { reconciledTo: string | null; counts: Record<Ba
 export interface DepositsView { items: DepositRow[]; tolerance?: { rounding: Money; smallWriteOff: Money }; pairs?: { customerId: string; customerName: string; vendorId: string; vendorName: string }[] }
 export interface SettleInput { kind: SettlementKind; date: string; partyId: string; sources?: { docId: string; amount: Money }[]; targets: { docId: string; amount: Money }[]; difference?: { role: SettlementDifferenceRole; amount: Money }; reason?: string }
 export interface WhtTypeRef { code: string; nameTh: string; rate: string; incomeType: string }
-export interface ListDocsParams { status?: string; from?: string; to?: string; q?: string; outstanding?: 'positive'; overdue?: '1'; agent?: '1'; limit?: number; cursor?: string }
+export interface ListDocsParams { status?: string; from?: string; to?: string; q?: string; outstanding?: 'positive'; overdue?: '1'; agent?: '1'; /** WT: the return (`PND3` ...) */ form?: string; limit?: number; cursor?: string }
 
 /** Query string without undefined / empty values. */
 const qs = (p: Record<string, string | number | undefined>) => {
@@ -136,6 +137,29 @@ export const endpoints = {
   reopenPeriod: (month: string, reason: string) => api<PeriodsView>('POST', `/periods/${encodeURIComponent(month)}/reopen`, { reason }),
   closeYear: (year: number) => api<PeriodsView>('POST', `/periods/year/${year}/close`, {}),
   reopenYear: (year: number, reason: string) => api<PeriodsView>('POST', `/periods/year/${year}/reopen`, { reason }),
+  /** The claim period the server will store for a bill with these dates (the first unfiled month of its window). */
+  claimPeriodDefault: (documentDate: string, vendorDocDate?: string) => api<{ claimPeriod: string }>('GET', `/claim-period${qs({ documentDate, vendorDocDate })}`),
+  /** TX1 tax filings: the finalized ones with the month to look at next (tax.read), one period (draft: tax.filing.preview too), finalize (tax.filing.finalize; `version` is the preview's), and the RD Prep text of a finalized one. */
+  listFilings: (form: FilingForm) => api<{ items: FilingHistoryItem[]; next: string }>('GET', `/filings/${form}`),
+  getFiling: (form: FilingForm, period: string) => api<FilingModel>('GET', `/filings/${form}/${encodeURIComponent(period)}`),
+  getFormCatalogue: () => api<FormCatalogue>('GET', '/form-catalogue'),
+  getVatThreshold: () => api<VatThresholdWatch | null>('GET', '/vat-threshold'),
+  finalizeFiling: (form: FilingForm, period: string, version: number, ack?: boolean) => api<FilingModel>('POST', `/filings/${form}/${encodeURIComponent(period)}/finalize`, { version, ...(ack ? { ack } : {}) }),
+  /** TX2c: the statement lines a finalized return can be paid from (bank.reconcile), pay it from one, and undo a payment (same URL as reverseBankTransfer). */
+  /** TX3a: the CIT year data (capital, prior losses, the ภ.ง.ด.51 estimate) and the user adjustments of a fiscal year (period = YYYY). */
+  getCitYear: (year: string) => api<CitYearView>('GET', `/cit-years/${encodeURIComponent(year)}`),
+  putCitYear: (year: string, patch: CitYearPatch) => api<CitYearView>('PUT', `/cit-years/${encodeURIComponent(year)}`, patch),
+  addCitAdjustment: (year: string, b: { line: number; amount: string; reason: string }) => api<CitYearView>('POST', `/cit-years/${encodeURIComponent(year)}/adjustments`, b),
+  updateCitAdjustment: (year: string, id: string, b: { line: number; amount: string; reason: string }) => api<CitYearView>('PUT', `/cit-years/${encodeURIComponent(year)}/adjustments/${encodeURIComponent(id)}`, b),
+  deleteCitAdjustment: (year: string, id: string) => api<CitYearView>('DELETE', `/cit-years/${encodeURIComponent(year)}/adjustments/${encodeURIComponent(id)}`),
+  taxPaymentLines: (form: FilingForm, period: string) => api<TaxPaymentLines>('GET', `/filings/${form}/${encodeURIComponent(period)}/payment-lines`),
+  payTax: (lineId: string, req: { form: FilingForm; period: string; extras?: { accountCode: string; amount: string; description?: string }[] }) => api<BankLine>('POST', `/finance/bank-lines/${encodeURIComponent(lineId)}/pay-tax`, req),
+  reverseTaxPayment: (journalId: string, reason: string) => api<{ id: string; reversed: boolean }>('POST', `/finance/bank-journals/${encodeURIComponent(journalId)}/reverse`, { reason }),
+  exportFiling: async (form: FilingForm, period: string, kind: 'rdprep-txt'): Promise<string> => {
+    const res = await fetch(new URL(`/bff/v1/filings/${form}/${encodeURIComponent(period)}/export${qs({ kind })}`, window.location.origin));
+    if (!res.ok) throw new ApiError(normalizeProblem(res.status, await res.json().catch(() => undefined)));
+    return res.text();
+  },
   getReport: (kind: ReportKind, params: Record<string, string>) => api<ReportModel>('GET', `/reports/${kind}${qs(params)}`),
   /** The CSV the server builds for the same parameters (text/csv, BOM, CRLF). */
   exportReport: async (kind: ReportKind, params: Record<string, string>): Promise<Blob> => {
