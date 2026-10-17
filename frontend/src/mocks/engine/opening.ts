@@ -159,6 +159,7 @@ export function obProblem(st: MockState, companyId: string, body: Part, selfId?:
   for (const l of body.lines.filter((x) => isUsed(x) && !!x.accountCode)) {
     const a = st.accounts.find((x) => x.companyId === companyId && x.code === l.accountCode);
     if (!a || !a.postable || (a as { active?: boolean }).active === false) return fail(422, 'ledger.account_invalid', `บัญชี ${l.accountCode} ใช้ลงรายการไม่ได้ (ไม่มีในผังบัญชีของบริษัท เป็นบัญชีหมวด หรือปิดใช้งานแล้ว)`);
+    if (a.subClass === 'current-year') return fail(422, 'ledger.control_account', `บัญชี ${a.code} ${a.nameTh} ลงจากยอดยกมาไม่ได้ — ระบบลงจากการปิดบัญชีสิ้นปีเท่านั้น ทางออก: ยกยอดกำไร(ขาดทุน)ปีปัจจุบันเป็นยอดของบัญชีรายได้/ค่าใช้จ่าย หรือใส่ในกำไรสะสม (3200)`);
     if (a.code === codeOf(st, companyId, 'OpeningBalanceEquity')) return fail(422, 'ob.plug_account', `บัญชี ${a.code} ${a.nameTh} ระบบคำนวณให้เอง (${PLUG_TH}) ไม่ต้องกรอก`);
     if (l.partyId && !st.parties.some((p) => p.id === l.partyId && p.companyId === companyId)) return fail(422, 'ledger.party_invalid', `ไม่พบคู่ค้าของรายการบัญชี ${a.code}`);
   }

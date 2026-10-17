@@ -10,6 +10,7 @@ import { refuseScheduleNote, refuseScheduleSource } from './schedules';
 import { MockError, today } from './log';
 import { fromSatang, toSatang } from './money';
 import { isNote, noteProblem } from './notes';
+import { refuseClosedYearEntry, refuseYearClosed } from './periods';
 import { vatOf } from './vat';
 
 /** Small sync FNV-1a (crypto.subtle is async). */
@@ -84,6 +85,8 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
   const d = getDoc(st, id);
   proposed = { ...proposed, header: keepOmitted(d, proposed.header) };
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_correctable', 'แก้ไขได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
+  refuseClosedYearEntry(st, d); // AC6: a closed year is final - refused before any plan is shown
+  if (proposed.header.documentDate) refuseYearClosed(st, d.companyId, proposed.header.documentDate);
   refuseDisposalCorrection(d); // AC5: the invoice of a disposal is cancelled (which un-disposes the asset), never revised or cancelled and reissued
   const label = `${d.type} ${d.number ?? ''}`.trim();
   const steps: Omit<CorrectionStep, 'order'>[] = [];

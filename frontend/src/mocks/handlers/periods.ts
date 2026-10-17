@@ -22,13 +22,13 @@ async function act(perm: string, run: (c: ReturnType<typeof ctx>) => unknown): P
     throw e;
   }
 }
-const body = async (req: Request) => ((await req.json().catch(() => ({}))) ?? {}) as { acknowledge?: boolean; reason?: string };
+const body = async (req: Request) => ((await req.json().catch(() => ({}))) ?? {}) as { acknowledge?: { code: string; count: number }[]; reason?: string };
 
 export const periodHandlers = [
   http.get('*/bff/v1/periods/checklist', ({ request }) => act(READ, (c) => ({ items: checklistOf(c.st, c.company.id, new URL(request.url).searchParams.get('month') ?? '') }))),
   http.get('*/bff/v1/periods', ({ request }) => act(READ, (c) => periodsView(c.st, c.company.id, Number(new URL(request.url).searchParams.get('year')) || Number(c.st.periods.find((p) => p.companyId === c.company.id && p.status === 'open')?.month.slice(0, 4)) || 0))),
   http.post('*/bff/v1/periods/year/:year/close', ({ params }) => act(CLOSE, (c) => { closeYear(c.st, c.company.id, Number(params.year), ACTOR); return periodsView(c.st, c.company.id, Number(params.year)); })),
   http.post('*/bff/v1/periods/year/:year/reopen', async ({ request, params }) => { const b = await body(request); return act(REOPEN, (c) => { reopenYear(c.st, c.company.id, Number(params.year), ACTOR, b.reason ?? ''); return periodsView(c.st, c.company.id, Number(params.year)); }); }),
-  http.post('*/bff/v1/periods/:month/close', async ({ request, params }) => { const b = await body(request); return act(CLOSE, (c) => { closePeriod(c.st, c.company.id, String(params.month), ACTOR, { acknowledge: b.acknowledge === true }); return periodsView(c.st, c.company.id, Number(String(params.month).slice(0, 4))); }); }),
+  http.post('*/bff/v1/periods/:month/close', async ({ request, params }) => { const b = await body(request); return act(CLOSE, (c) => { closePeriod(c.st, c.company.id, String(params.month), ACTOR, { acknowledge: Array.isArray(b.acknowledge) ? b.acknowledge : [] }); return periodsView(c.st, c.company.id, Number(String(params.month).slice(0, 4))); }); }),
   http.post('*/bff/v1/periods/:month/reopen', async ({ request, params }) => { const b = await body(request); return act(REOPEN, (c) => { reopenPeriod(c.st, c.company.id, String(params.month), ACTOR, b.reason ?? ''); return periodsView(c.st, c.company.id, Number(String(params.month).slice(0, 4))); }); }),
 ];

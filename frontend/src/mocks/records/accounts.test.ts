@@ -221,6 +221,12 @@ describe('chart of accounts record (AC2)', () => {
     });
   });
 
+  it('AC6 fix1: the opening-balance account picker leaves out 3300 (the year-end close owns it) and 3900', async () => {
+    const ob = (await call('GET', '/accounting/journal-accounts?for=OB')).json as unknown as { code: string }[];
+    expect(ob.some((a) => a.code === '3300' || a.code === '3900')).toBe(false);
+    expect(ob.some((a) => a.code === '3200')).toBe(true);
+  });
+
   describe('an inactive account cannot be picked anywhere new, but old entries keep it', () => {
     it('JV account list, inline-journal list, bank GL binding and the JV guard drop it; the posted entries still show it', async () => {
       await create();

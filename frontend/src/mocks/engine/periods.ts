@@ -19,10 +19,9 @@ export function refuseYearClosed(st: MockState, companyId: string, date: IsoDate
   if (yearClosed(st, companyId, date)) throw new MockError(422, 'period.year_closed', `ปีบัญชี ${Number(date.slice(0, 4)) + 543} ปิดแล้ว ลงรายการ แก้ไข หรือกลับรายการที่ลงวันที่ ${date} ไม่ได้ ทางออก: เปิดปีบัญชีอีกครั้ง (หน้าปิดงวดบัญชี)`);
 }
 
-/** AC6: a document whose live entry sits in a closed year is not cancelled, revised or reversed: the F4 late correction ("แก้ไขย้อนหลัง") stays for closed MONTHS of an open year only. */
-export function refuseClosedYearEntry(st: MockState, d: { id: string; companyId: string }): void {
-  const last = st.journals.find((j) => j.docId === d.id)?.preview.entries.at(-1);
-  if (last && last.kind !== 'reversal') refuseYearClosed(st, d.companyId, last.date);
+/** AC6: a document in a closed year (its date, or any entry it posted that is not a reversal) is not cancelled, revised, reversed or reissued: the F4 late correction ("แก้ไขย้อนหลัง") stays for closed MONTHS of an open year only. */
+export function refuseClosedYearEntry(st: MockState, d: { id: string; companyId: string; header: { documentDate: IsoDate } }): void {
+  for (const date of [d.header.documentDate, ...(st.journals.find((j) => j.docId === d.id)?.preview.entries.filter((e) => e.kind !== 'reversal').map((e) => e.date) ?? [])]) refuseYearClosed(st, d.companyId, date);
 }
 
 /** First day of the earliest open month >= today's month (where a late reversal / correction posts), or today. */

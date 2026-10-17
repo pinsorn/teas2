@@ -54,8 +54,8 @@ const said = (items: ChecklistItem[]) => items.map((i) => `${i.labelTh} ${i.coun
 
 // ---------------------------------------------------------------- months
 
-/** Close `month`: in order, never with a blocking item, and with the warnings acknowledged (`acknowledge`), which are stored on the period as they were. */
-export function closePeriod(st: MockState, companyId: string, month: string, actor: Actor, o?: { acknowledge?: boolean }): Period {
+/** Close `month`: in order, never with a blocking item, and with the warnings acknowledged: `acknowledge` is the list the closer saw ({code, count}) and must be exactly the current warnings (a warning that appeared or changed since is not accepted); stored on the period as they were. */
+export function closePeriod(st: MockState, companyId: string, month: string, actor: Actor, o?: { acknowledge?: { code: string; count: number }[] }): Period {
   const p = rowOf(st, companyId, month);
   if (p.status === 'closed') throw fail(409, 'period.already_closed', `งวดบัญชี ${monthLabelTh(month)} ปิดแล้ว`);
   const first = rows(st, companyId).find((x) => x.status === 'open')!;
@@ -63,7 +63,8 @@ export function closePeriod(st: MockState, companyId: string, month: string, act
   const items = checklistOf(st, companyId, month).filter((i) => i.count > 0);
   const blocking = items.filter((i) => i.severity === 'blocking'), warnings = items.filter((i) => i.severity === 'warning');
   if (blocking.length) throw fail(422, 'period.blocked', `ปิดงวดบัญชี ${monthLabelTh(month)} ไม่ได้: ${said(blocking)}`);
-  if (warnings.length && !o?.acknowledge) throw fail(422, 'period.warnings', `ปิดงวดบัญชี ${monthLabelTh(month)} ต้องรับทราบข้อควรระวังก่อน: ${said(warnings)}`);
+  const key = (l: { code: string; count: number }[]) => l.map((i) => `${i.code}:${i.count}`).sort().join(',');
+  if ((warnings.length || o?.acknowledge?.length) && key(o?.acknowledge ?? []) !== key(warnings)) throw fail(422, 'period.warnings', `ปิดงวดบัญชี ${monthLabelTh(month)} ต้องรับทราบข้อควรระวังก่อน: ${said(warnings)}`);
   p.status = 'closed'; p.closedAt = stamp(); p.closedBy = actor; p.acknowledged = warnings;
   logAudit(st, actor, companyId, 'period.close', month, { status: 'open' }, { status: 'closed', acknowledged: warnings.map((w) => `${w.code}:${w.count}`) });
   return p;
@@ -124,6 +125,8 @@ export function closeYear(st: MockState, companyId: string, year: number, actor:
   if (open) throw fail(422, 'period.year_months_open', `ปิดปีบัญชี ${year + 543} ไม่ได้ ต้องปิดครบ 12 งวดก่อน (ยังเปิดอยู่: ${monthLabelTh(open)})`);
   const date = `${year}-12-31`;
   if (date > today()) throw fail(422, 'period.year_not_ended', `ปีบัญชี ${year + 543} ยังไม่สิ้นสุด (ปิดบัญชีสิ้นปีได้เมื่อพ้น ${date})`);
+  const prior = [...new Set(st.periods.filter((p) => p.companyId === companyId && Number(p.month.slice(0, 4)) < year).map((p) => Number(p.month.slice(0, 4))))].sort().find((y) => !liveYearClose(st, companyId, y));
+  if (prior) throw fail(422, 'period.year_order', `ปิดปีบัญชี ${year + 543} ไม่ได้ ปีบัญชี ${prior + 543} ยังไม่ได้ปิดบัญชีสิ้นปี ทางออก: ปิดปีบัญชี ${prior + 543} ก่อน`);
   const { lines, net } = closingLines(st, companyId, year), at = stamp();
   const y: YearClose = { id: `yc-${companyId}-${year}-${st.yearCloses.filter((x) => x.companyId === companyId && x.year === year).length + 1}`, companyId, year, date, closedAt: at, closedBy: actor, net: fromSatang(net),
     journal: [{ date, kind: 'original', postedAt: at, lines }] };
@@ -137,6 +140,8 @@ export function reopenYear(st: MockState, companyId: string, year: number, actor
   const y = liveYearClose(st, companyId, year);
   if (!y) throw fail(409, 'period.year_not_closed', `ปีบัญชี ${year + 543} ยังไม่ได้ปิด`);
   if (!reason?.trim()) throw fail(422, 'period.reason_required', 'ต้องระบุเหตุผลที่เปิดปีบัญชี');
+  const later = st.yearCloses.filter((x) => x.companyId === companyId && x.year > year && !x.reopened).map((x) => x.year).sort()[0];
+  if (later) throw fail(422, 'period.year_order', `เปิดปีบัญชี ${year + 543} ไม่ได้ ปีบัญชี ${later + 543} ยังปิดอยู่ ทางออก: เปิดปีบัญชี ${later + 543} ก่อน`);
   const at = stamp();
   y.journal.push(reversalOf(y.journal[0], y.date, at));
   y.reopened = { at, reason: reason.trim(), by: actor };

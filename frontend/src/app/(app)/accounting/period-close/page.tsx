@@ -44,7 +44,7 @@ function Loaded({ view, perms, companyId, onYear }: { view: PeriodsView; perms: 
   const month = picked && view.months.some((m) => m.month === picked) ? picked : view.next.close && view.months.some((m) => m.month === view.next.close) ? view.next.close : view.months.find((m) => m.status === 'open')?.month ?? view.months.at(-1)?.month;
   const checklist = useQuery({ queryKey: [companyId, 'periods', 'checklist', month, view.months.find((m) => m.month === month)?.status], queryFn: () => endpoints.getChecklist(month!), enabled: !!month });
   const refresh = () => qc.invalidateQueries({ queryKey: [companyId] });
-  const close = useMutation({ mutationFn: () => endpoints.closePeriod(month!, ack), onSuccess: async () => { setAck(false); setPicked(undefined); await refresh(); } });
+  const close = useMutation({ mutationFn: () => endpoints.closePeriod(month!, ack ? (checklist.data?.items ?? []).filter((i) => i.severity === 'warning' && i.count > 0).map(({ code, count }) => ({ code, count })) : []), onSuccess: async () => { setAck(false); setPicked(undefined); await refresh(); } });
   const reopen = useMutation({
     mutationFn: (reason: string) => (reopening?.kind === 'year' ? endpoints.reopenYear(view.year, reason) : endpoints.reopenPeriod((reopening as { month: string }).month, reason)),
     onSuccess: async () => { setReopening(undefined); setPicked(undefined); await refresh(); },

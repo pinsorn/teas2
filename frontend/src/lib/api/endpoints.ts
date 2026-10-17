@@ -132,7 +132,7 @@ export const endpoints = {
   /** AC6 period close: the year's months, a month's checklist (ledger.read), close (ledger.period.close; `acknowledge` accepts the warnings) and reopen (ledger.period.reopen, with a reason) of a month and of a year. */
   getPeriods: (year?: number) => api<PeriodsView>('GET', `/periods${qs({ year })}`),
   getChecklist: (month: string) => api<{ items: ChecklistItem[] }>('GET', `/periods/checklist${qs({ month })}`),
-  closePeriod: (month: string, acknowledge: boolean) => api<PeriodsView>('POST', `/periods/${encodeURIComponent(month)}/close`, { acknowledge }),
+  closePeriod: (month: string, acknowledge: { code: string; count: number }[]) => api<PeriodsView>('POST', `/periods/${encodeURIComponent(month)}/close`, { acknowledge }),
   reopenPeriod: (month: string, reason: string) => api<PeriodsView>('POST', `/periods/${encodeURIComponent(month)}/reopen`, { reason }),
   closeYear: (year: number) => api<PeriodsView>('POST', `/periods/year/${year}/close`, {}),
   reopenYear: (year: number, reason: string) => api<PeriodsView>('POST', `/periods/year/${year}/reopen`, { reason }),

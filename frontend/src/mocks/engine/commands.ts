@@ -69,7 +69,8 @@ export const placed = (st: MockState, companyId: string, e: JournalEntryPreview)
 
 /** A correction's reversal (SP0 5.9): on the ORIGINAL entry's date while that period is open, else late on the first open date (never before a bank GL's go-live, never in a closed month). Only a user cancel posts its reversal today. */
 export const correctionReversal = (st: MockState, companyId: string, e: JournalEntryPreview): JournalEntryPreview =>
-  placed(st, companyId, isPinned() || isClosed(st, companyId, e.date) ? reverseEntry(st, companyId, e) : reversalOf(e, e.date, stamp()));
+  (refuseYearClosed(st, companyId, e.date), // AC6: one guard for every late reversal (settlement, transfer, fee / rounding, write-off undispose, reissue); a closed year's entry is final
+  placed(st, companyId, isPinned() || isClosed(st, companyId, e.date) ? reverseEntry(st, companyId, e) : reversalOf(e, e.date, stamp())));
 
 /** D-10: a NEW entry for a document dated in a closed month posts on the first open date, late; the document date is unchanged (I9). */
 const postedNow = (st: MockState, companyId: string, p: JournalPreview): JournalPreview => {
@@ -696,6 +697,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   const old = getDoc(st, id);
   if (!LIVE.includes(old.status)) throw new MockError(409, 'doc.not_correctable', 'ออกใหม่ได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   if (blockingLocks(old).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ออกใหม่ไม่ได้');
+  refuseClosedYearEntry(st, old); // AC6 backstop: a reissue reverses the old entry and posts a new one, both into the first open date
   refuseReconciled(st, old);
   refuseSettled(st, old);
   if (st.links.some((l) => l.to === id && l.active)) throw new MockError(409, 'doc.has_dependents', 'มีเอกสารอ้างอิงอยู่ ต้องยกเลิกเอกสารนั้นก่อน');
@@ -705,6 +707,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   }
   const dated = old.type === 'TI' || old.type === 'RC' || isNote(old.type); // I9 / T5: a reissue keeps the date and the total
   if (dated) body = { ...body, header: { ...body.header, documentDate: old.header.documentDate, ...(isNote(old.type) ? { refDocId: old.header.refDocId } : {}) } }; // a note stays on its invoice
+  refuseYearClosed(st, old.companyId, body.header.documentDate); // AC6: the new document's own date
   body = keepNoteLines(old, body); // a reason-only change keeps the note's VAT even after a sibling was cancelled
   const missing = missingOf(st, old.companyId, old.type, body);
   if (missing.length) throw incomplete(missing);
