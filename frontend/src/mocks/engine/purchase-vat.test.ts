@@ -123,10 +123,11 @@ describe('claim period (I6): document month .. +6, default the document month', 
     const d = pb(VAT, PV1, [L('a', 'S7', '100.00')], { documentDate: '2026-10-10' });
     expect(get(d.id).header.claimPeriod).toBe('2026-10');
   });
-  it('a revision that leaves the claim period out files the bill in its document month (the editor clears a period that only followed the date)', () => {
+  it('a revision that leaves the claim period out keeps the stored one while the dates stand; a moved date files it in the new document month (R2-2)', () => {
     const d = pb(VAT, PV1, [L('a', 'S7', '100.00')], { documentDate: '2026-10-10', claimPeriod: '2026-12' });
     const { claimPeriod: _c, ...header } = get(d.id).header; void _c;
-    const r = revise(st, d.id, { header, lines: get(d.id).lines }, get(d.id).version, 'x', me);
+    expect(revise(st, d.id, { header, lines: get(d.id).lines }, get(d.id).version, 'x', me).header.claimPeriod).toBe('2026-12');
+    const r = revise(st, d.id, { header: { ...header, documentDate: '2026-10-12' }, lines: get(d.id).lines }, get(d.id).version, 'x', me);
     expect(r.header.claimPeriod).toBe('2026-10');
     assertBalanced(st);
   });

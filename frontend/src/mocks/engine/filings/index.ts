@@ -98,8 +98,8 @@ export function refuseIntoFiled(st: MockState, d: DocLike): void {
 
 /** Every finalized filing is what it froze: one per company x form x period; its boxes are exactly what its stored documents give; its tie-outs add up; its carry is the previous month's excess; every listed live document is live and still carries the
  *  figures the snapshot took (a cancelled row only for a document that is cancelled); no live document of the month (TI / CN / DN by document month, a vendor document that claims VAT by claim period) is missing from the snapshot (B1);
- *  the four tie-outs are all there and start from the stored boxes (M3); a row's number, party name and description are still what the document says (they cannot be edited on an issued document, so a difference is a tamper). The paper fields
- *  (vendor invoice number, EX invoice list) stay outside the invariant: they are editable and the register keeps what was filed. */
+ *  the four tie-outs are all there and start from the stored boxes (M3); a row's number and party name are still what the document says (neither can change on an issued document, so a difference is a tamper). The paper fields
+ *  (line description, vendor invoice number, EX invoice list: a vendor document is revised in place) stay outside the invariant: they are editable and the register keeps what was filed. */
 export function filingInvariants(st: MockState): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
@@ -123,7 +123,7 @@ export function filingInvariants(st: MockState): string[] {
       const d = st.docs.find((x) => x.id === r.id && x.companyId === f.companyId);
       if (!d) { out.push(`${w}: document ${r.id} is gone`); continue; }
       const paper = pp30RowOf(st, d);
-      if (paper) for (const k of ['number', 'partyName', 'description'] as const) if (paper[k] !== r[k]) out.push(`${w}: ${r.id} ${k} "${r[k] ?? ''}" differs from the document "${paper[k] ?? ''}"`); // M3
+      if (paper) for (const k of ['number', 'partyName'] as const) if (paper[k] !== r[k]) out.push(`${w}: ${r.id} ${k} "${r[k] ?? ''}" differs from the document "${paper[k] ?? ''}"`); // M3
       if (r.state === 'cancelled') { if (d.status !== 'cancelled' && d.status !== 'replaced') out.push(`${w}: ${r.id} is listed as cancelled but is ${d.status}`); continue; }
       if (!LIVE.includes(d.status)) { out.push(`${w}: ${r.id} is listed live but is ${d.status}`); continue; }
       const now = pp30RowOf(st, d);

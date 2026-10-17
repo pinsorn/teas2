@@ -3,6 +3,7 @@ import type { FilingForm } from '@/domain/filings';
 import type { Actor } from '@/domain/types';
 import { exportFilingText, filingHistory, finalizeFiling, getFiling } from '../engine/filings';
 import { nextMonth, prevMonth } from '../engine/filings/pp30';
+import { openClaimMonth } from '../engine/purchase-vat';
 import { MockError, today } from '../engine/log';
 import { ctx, forbidden, persist, problem, screenGate } from './common';
 
@@ -15,7 +16,7 @@ async function act(perm: string, run: (c: ReturnType<typeof ctx>) => unknown, wr
   if (gate) return gate;
   try {
     const c = ctx();
-    if (!c.perms.includes(perm)) return forbidden(perm);
+    if (perm && !c.perms.includes(perm)) return forbidden(perm);
     const out = run(c);
     if (write) persist(c.st);
     return out instanceof Response ? out : HttpResponse.json(out as never);
@@ -27,6 +28,11 @@ async function act(perm: string, run: (c: ReturnType<typeof ctx>) => unknown, wr
 const form = (p: unknown) => String(p) as FilingForm;
 
 export const filingHandlers = [
+  /** R2-3: the claim period the server stores at issue for a bill with these dates (the first unfiled month of its window, else the document month); any signed-in role, it reveals no filing content. */
+  http.get('*/bff/v1/claim-period', ({ request }) => act('', (c) => {
+    const q = new URL(request.url).searchParams, dd = q.get('documentDate') ?? '';
+    return { claimPeriod: openClaimMonth(c.st, c.company.id, dd, q.get('vendorDocDate') || undefined) ?? dd.slice(0, 7) };
+  })),
   http.get('*/bff/v1/filings/:form/:period/export', ({ params }) => act(READ, (c) => new HttpResponse(exportFilingText(c.st, c.company.id, form(params.form), String(params.period)), { headers: { 'content-type': 'text/plain; charset=utf-8', 'content-disposition': `attachment; filename="${params.form}-${params.period}.txt"` } }))),
   http.get('*/bff/v1/filings/:form/:period', ({ params }) => act(READ, (c) => {
     const m = getFiling(c.st, c.company.id, form(params.form), String(params.period));

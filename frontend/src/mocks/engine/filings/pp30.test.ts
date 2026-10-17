@@ -402,6 +402,25 @@ describe('B1: nothing enters a filed month (the engine, every issue path)', () =
     expect(mkNote('CN', 'ti-015', { documentDate: '2026-10-05' }).status).toBe('issued');
     expect(checkInvariants(st)).toEqual([]);
   });
+  it('R2-1: a description-only revise of the filed bill leaves the invariants clean; a tampered number still fails', () => {
+    const d = get('pb-aug');
+    revise(st, d.id, body(d, {}, d.lines.map((l, i) => (i === 0 ? { ...l, description: 'renamed' } : l))), d.version, 'x', me);
+    expect(checkInvariants(st)).toEqual([]);
+    st.filings.find((f) => f.period === '2026-08')!.docs.find((r) => r.id === 'pb-aug')!.number = 'ผิด';
+    expect(checkInvariants(st).join('|')).toMatch(/number .* differs/);
+  });
+  it('R2-2: a revise without claimPeriod keeps the stored one (filed bill: accepted; late-chosen month: kept); a moved date re-defaults', () => {
+    const d = get('pb-aug');
+    const { claimPeriod: _c, ...h } = d.header; void _c;
+    expect(err(() => revise(st, d.id, { header: { ...h, notes: 'n' }, lines: d.lines }, d.version, 'x', me))).toEqual({});
+    expect(get(d.id).header.claimPeriod).toBe(d.header.claimPeriod);
+    const late = mk('PB', [L('a', 'S7', '1000.00')], { documentDate: '2026-09-10', vendorDocDate: '2026-09-10', claimPeriod: '2026-12' });
+    const { claimPeriod: _l, ...lh } = get(late.id).header; void _l;
+    revise(st, late.id, { header: { ...lh, notes: 'n' }, lines: late.lines }, get(late.id).version, 'x', me);
+    expect(get(late.id).header.claimPeriod).toBe('2026-12');
+    revise(st, late.id, { header: { ...lh, documentDate: '2026-09-12', notes: 'n' }, lines: late.lines }, get(late.id).version, 'x', me);
+    expect(get(late.id).header.claimPeriod).toBe('2026-09');
+  });
   it('a bill dated in a filed month claims in the first UNFILED month inside its window (ม.82/3), and the filed month does not move', () => {
     const before = JSON.stringify(getFiling(st, CO, 'PP30', '2026-08').boxes);
     const b = mk('PB', [L('a', 'S7', '1000.00')], { documentDate: '2026-08-10', vendorDocDate: '2026-08-10' });
@@ -511,7 +530,7 @@ describe('M3: the snapshot is what the filing printed', () => {
     t.left = '1.00'; t.diff = (Number(t.left) - Number(t.right)).toFixed(2);
     expect(bad()).toMatch(/is not the stored box/);
   });
-  it.each(['number', 'partyName', 'description'] as const)('a snapshot row whose %s differs from the document fails', (k) => {
+  it.each(['number', 'partyName'] as const)('a snapshot row whose %s differs from the document fails', (k) => {
     (aug().docs.find((d) => d.state === 'live' && d[k])! as unknown as Record<string, string>)[k] = 'ผิด';
     expect(bad()).toMatch(new RegExp(`${k} .* differs`));
   });

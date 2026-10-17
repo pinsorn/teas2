@@ -641,7 +641,8 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
     }
   }
   const fin0 = isNote(d.type) ? withNoteVat(st, d.companyId, d.type, body, d.id) : body; // a revised vendor note: rule B again, the note itself not among its own predecessors
-  const fin = { ...fin0, header: withBankSnapshot(st, d.companyId, d.type, withClaimPeriod(st, d.companyId, d.type, fin0.header)) }; // a bill is always filed in a claim period: the vendor invoice month unless one was chosen; a PCN keeps none
+  const kept = !fin0.header.claimPeriod && d.header.claimPeriod && fin0.header.documentDate === d.header.documentDate && fin0.header.vendorDocDate === d.header.vendorDocDate ? { ...fin0.header, claimPeriod: d.header.claimPeriod } : fin0.header; // R2-2: an absent claim period is "unchanged"; the default applies at issue (or when the dates moved)
+  const fin = { ...fin0, header: withBankSnapshot(st, d.companyId, d.type, withClaimPeriod(st, d.companyId, d.type, kept)) }; // a bill is always filed in a claim period: the vendor invoice month unless one was chosen; a PCN keeps none
   const { allocations: _a, ...rest } = d; void _a;
   const totals = totalsOf(st, d.companyId, d.type, fin, d.id);
   refuseReconciled(st, d, { header: fin.header, totals }); // FN2: a matched document keeps its cash, bank account and date; anything else stays editable

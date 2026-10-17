@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -35,6 +35,10 @@ describe('HeaderFields of a purchase bill', () => {
     expect(screen.getByLabelText('เลขที่เอกสารของผู้ขาย')).toHaveValue('');
     expect(await screen.findByLabelText('งวดที่ขอคืนภาษีซื้อ')).toHaveValue('2026-10');
     expect(screen.getByRole('checkbox', { name: /เอกสารครบ/ })).toBeChecked();
+  });
+  it('R2-3: a bill dated in a filed month shows the first unfiled month the server will store, not the document month', async () => {
+    ui({ documentDate: '2026-08-10', vendorDocDate: '2026-08-10' }); // the seed has filed 2026-08
+    await waitFor(() => expect(screen.getByLabelText('งวดที่ขอคืนภาษีซื้อ')).toHaveValue('2026-09'));
   });
   it('unchecking completeness stores complete=false, checking it again clears the field (absent = complete)', async () => {
     let last: DocHeader | undefined;

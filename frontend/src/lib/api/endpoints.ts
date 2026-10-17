@@ -137,6 +137,8 @@ export const endpoints = {
   reopenPeriod: (month: string, reason: string) => api<PeriodsView>('POST', `/periods/${encodeURIComponent(month)}/reopen`, { reason }),
   closeYear: (year: number) => api<PeriodsView>('POST', `/periods/year/${year}/close`, {}),
   reopenYear: (year: number, reason: string) => api<PeriodsView>('POST', `/periods/year/${year}/reopen`, { reason }),
+  /** The claim period the server will store for a bill with these dates (the first unfiled month of its window). */
+  claimPeriodDefault: (documentDate: string, vendorDocDate?: string) => api<{ claimPeriod: string }>('GET', `/claim-period${qs({ documentDate, vendorDocDate })}`),
   /** TX1 tax filings: the finalized ones with the month to look at next (tax.read), one period (draft: tax.filing.preview too), finalize (tax.filing.finalize; `version` is the preview's), and the RD Prep text of a finalized one. */
   listFilings: (form: FilingForm) => api<{ items: FilingHistoryItem[]; next: string }>('GET', `/filings/${form}`),
   getFiling: (form: FilingForm, period: string) => api<FilingModel>('GET', `/filings/${form}/${encodeURIComponent(period)}`),
