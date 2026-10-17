@@ -1,7 +1,7 @@
 'use client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useId, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -60,6 +60,7 @@ function Loaded({ s, canManage, companyId }: { s: View; canManage: boolean; comp
   const td = useTranslations('schedules.detail');
   const qc = useQueryClient();
   const hintId = useId();
+  const router = useRouter();
   const [stopping, setStopping] = useState(false);
   const [editing, setEditing] = useState(false);
   const [done, setDone] = useState<Run | undefined>();
@@ -89,6 +90,7 @@ function Loaded({ s, canManage, companyId }: { s: View; canManage: boolean; comp
             {canManage ? null : <span id={hintId} className="text-small text-muted-foreground">{t('needManage', { permission: MANAGE })}</span>}
           </span>
           <Button variant="outline" disabled={!canManage} onClick={() => setEditing(true)}>{td('edit')}</Button>
+          {amort ? null : <Button variant="outline" disabled={!canManage || !!s.stopped} onClick={() => router.push(`/accounting/schedules/${s.id}/template`)}>{td('editTemplate')}</Button>}
           <Button variant="outline" disabled={!canManage || !!s.stopped || (!s.active)} onClick={() => setStopping(true)}>{td('stop')}</Button>
         </div>
         {run.error ? <Problem error={run.error} /> : null}

@@ -172,3 +172,44 @@ test('phone width: the schedule page does not scroll sideways', async ({ page })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await shot(page, 'sched-list-mobile');
 });
+
+test('AC7b: the template opens in the document editor, an edited line is saved (old template kept in history), and the next run makes a draft carrying them', async ({ page }) => {
+  await page.goto('/'); const id = await fixtureId(page, 'schedRecurringTi');
+  await page.goto(`${BASE}/${id}`);
+  await page.getByRole('button', { name: 'แก้ไขแม่แบบ' }).click();
+  await expect(page).toHaveURL(`${BASE}/${id}/template`);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('แก้ไขแม่แบบ');
+  await expect(page.getByRole('combobox', { name: 'ลูกค้า' })).not.toHaveValue(''); // prefilled from the frozen template
+  await expect(page.getByLabel('วันที่เอกสาร')).toHaveCount(0); // no date, no number, no issue
+  await expect(page.getByRole('button', { name: /^ออก/ })).toHaveCount(0);
+  const price = page.getByRole('textbox', { name: /^ราคาต่อหน่วย/ }).first();
+  await expect(price).toHaveValue('8000.00');
+  await shot(page, 'sched-template-editor');
+  await price.fill('9500'); await price.blur();
+  const save = page.getByRole('button', { name: 'บันทึกแม่แบบ' });
+  await expect(page.getByRole('region', { name: 'ยังขาดอะไร' })).toContainText('ครบแล้ว', { timeout: 15000 });
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(page).toHaveURL(`${BASE}/${id}`);
+  await expect(page.getByRole('region', { name: 'แม่แบบ' }).last()).toContainText('9,500.00');
+  const row = await api<{ template: { lines: { unitPrice: string }[] }; templateHistory: { by: { name: string }; template: { lines: { unitPrice: string }[] } }[] }>(page, `/records/schedule/${id}`);
+  expect(row.template.lines[0].unitPrice).toBe('9500.00');
+  expect(row.templateHistory).toHaveLength(1);
+  expect(row.templateHistory[0].template.lines[0].unitPrice).toBe('8000.00'); // the old template is kept, with who / when
+  await page.getByRole('button', { name: 'รันตอนนี้' }).click();
+  const href = await page.getByTestId('run-result').getByRole('link').getAttribute('href');
+  const draft = await api<{ status: string; lines: { unitPrice: string }[] }>(page, `/docs/TI/${href!.split('/').pop()}`);
+  expect(draft).toMatchObject({ status: 'draft', lines: [{ unitPrice: '9500.00' }] }); // the draft carries the edited line
+});
+
+test('AC7b: the template editor on a phone does not scroll sideways, and an amortisation has no template editor', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/'); const id = await fixtureId(page, 'schedRecurringTi');
+  await page.goto(`${BASE}/${id}/template`);
+  await expect(page.getByRole('button', { name: 'บันทึกแม่แบบ' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'ยังขาดอะไร' })).toContainText('ครบแล้ว', { timeout: 15000 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await shot(page, 'sched-template-editor-mobile');
+  await page.goto(`${BASE}/${await fixtureId(page, 'schedAmortisation')}`);
+  await expect(page.getByRole('button', { name: 'แก้ไขแม่แบบ' })).toHaveCount(0);
+});

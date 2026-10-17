@@ -739,6 +739,7 @@
     "conflictHint": "Your input is still on this page but will not overwrite the other change. Reload the document to see the latest version.",
     "reload": "Reload document",
     "issueFailed": "Could not issue the document",
+    "template": { "heading": "Edit template: {title}", "save": "Save template", "hint": "A template has no date or number. Each run makes a draft from it; drafts already made do not change.", "saveFailed": "Could not save the template" },
     "issuing": "Issuing…",
     "whyDisabled": {
       "whtTypes": "The withholding types did not load. Retry in the withholding column.",
@@ -1194,7 +1195,7 @@
     "amortise": { "title": "Amortise {doc}", "body": "Spreads the amount of a line posted to the prepaid expense account over monthly runs. The amount, months, accounts and the plan you see are frozen from now on.", "namePrefix": "Amortise", "submit": "Create schedule" },
     "detail": {
       "state": { "active": "Active", "stopped": "Stopped", "done": "Fully amortised", "ended": "Finished" },
-      "runNow": "Run now", "running": "Running…", "edit": "Edit", "stop": "Stop",
+      "runNow": "Run now", "running": "Running…", "edit": "Edit", "editTemplate": "Edit template", "stop": "Stop",
       "ranMonth": "Amortised {month}: {amount}", "ranDraft": "Draft dated {date} created",
       "stoppedTitle": "Stopped on {at} by {by}", "stoppedRemaining": "The remaining {amount} stays on account {account}.", "endedTitle": "Ran {n} times, finished",
       "summary": "Summary", "source": "Source document", "total": "Amount to amortise", "months": "Months", "from": "from {month}", "expenseAccount": "Expense account", "prepaidAccount": "Prepaid expense account",

@@ -1,14 +1,14 @@
 import { LIVE, isTypeAvailable } from '@/domain/doc-types';
 import type { Actor, DocHeader, DocLine, DocType, IsoDate, Lock, Money, ScheduleFrequency, ScheduleRecord, SchedulePlanRow } from '@/domain/types';
 import type { MockState } from '../store';
-import { allocate, createDraft, newId, publicDoc, setJournal } from './commands';
+import { allocate, createDraft, missingOf, newId, publicDoc, setJournal } from './commands';
 import { isUsed, jvAccountProblem, jvMissing, jvTotals, userReversalOf } from './journal';
 import { ledgerFor } from './ledger';
 import { MockError, logActivity, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
 import { isClosed, monthLabelTh, refuseYearClosed } from './periods';
 import { resolveRole } from './posting';
-import { categoryOf } from './purchase-vat';
+import { categoryOf, snapshotCategories } from './purchase-vat';
 import { controlExit } from './reconcile';
 import { computeDoc } from './vat';
 
@@ -189,15 +189,39 @@ const EDITOR = (name: string) => `ทางออก: แก้ไขแม่�
 
 // ---------------------------------------------------------------- editing, stopping
 
-export function updateSchedule(st: MockState, companyId: string, id: string, v: Record<string, unknown>): ScheduleRecord {
+/** AC7b: the template body the editor sends ({ header, lines }) - dates, numbers and server-owned fields are not part of a template (templateOf); the rest is checked like a draft that must be issuable and re-frozen as at this save. */
+export function templateBody(st: MockState, companyId: string, s: ScheduleRecord, raw: unknown): { template: Template; missing: ReturnType<typeof missingOf> } {
+  const b = raw as { header?: Partial<DocHeader>; lines?: DocLine[] } | null;
+  if (s.kind !== 'recurring' || !b || typeof b !== 'object' || !Array.isArray(b.lines)) throw fail(422, 'schedule.invalid', s.kind === 'recurring' ? 'แม่แบบต้องมีหัวเอกสารและรายการ' : 'ตารางตัดจ่ายไม่มีแม่แบบ');
+  const type = s.template!.type, t = templateOf({ type, header: b.header ?? {}, lines: b.lines });
+  const lines = type === 'PB' ? snapshotCategories(st, companyId, t.lines) : t.lines, p = t.header.partyId ? st.parties.find((x) => x.id === t.header.partyId && x.companyId === companyId) : undefined;
+  const template: Template = { ...t, lines, ...(p ? { partyName: p.name } : {}) };
+  return { template, missing: missingOf(st, companyId, type, { header: { ...template.header, documentDate: s.nextRun }, lines }) };
+}
+function checkedTemplate(st: MockState, companyId: string, s: ScheduleRecord, raw: unknown, name: string): Template {
+  const { template, missing } = templateBody(st, companyId, s, raw);
+  if (missing.length) throw fail(422, 'doc.incomplete', missing.map((x) => x.message).join('; '));
+  checkTemplate(st, companyId, template, name, true);
+  return template;
+}
+function setTemplate(st: MockState, companyId: string, s: ScheduleRecord, template: Template, actor: Actor): void {
+  logAudit(st, actor, companyId, 'schedule.template', s.id, s.template, template);
+  (s.templateHistory ??= []).push({ at: stamp(), by: actor, template: s.template! });
+  s.template = template; delete s.source;
+}
+
+const USER: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
+export function updateSchedule(st: MockState, companyId: string, id: string, v: Record<string, unknown>, actor: Actor = USER): ScheduleRecord {
   const s = scheduleOf(st, companyId, id);
   const name = typeof v.name === 'string' ? v.name.trim() : s.name;
   if (!name) throw fail(422, 'schedule.invalid', 'ต้องตั้งชื่อ');
+  const nt = v.template !== undefined ? checkedTemplate(st, companyId, s, v.template, name) : undefined; // validated before anything is written
   s.name = name;
   if (s.kind === 'recurring') {
     if (v.frequency !== undefined) { if (!((v.frequency as string) in STEP)) throw fail(422, 'schedule.invalid', 'ความถี่ไม่ถูกต้อง'); s.frequency = v.frequency as ScheduleFrequency; }
     if (v.nextRun !== undefined && v.nextRun !== s.nextRun) { if (!validDate(v.nextRun)) throw fail(422, 'schedule.invalid', 'วันที่รันครั้งถัดไปไม่ถูกต้อง'); s.nextRun = v.nextRun; s.day = Number(v.nextRun.slice(8, 10)); }
     if ('endAfter' in v) { if (v.endAfter === undefined || v.endAfter === null || v.endAfter === '') delete s.endAfter; else if (Number.isInteger(v.endAfter) && (v.endAfter as number) >= 1) s.endAfter = v.endAfter as number; else throw fail(422, 'schedule.invalid', 'จำนวนครั้งต้องเป็นจำนวนเต็มตั้งแต่ 1'); }
+    if (nt) setTemplate(st, companyId, s, nt, actor);
     if (typeof v.templateDocId === 'string' && v.templateDocId.trim()) { // "แก้ไขแม่แบบ": a fresh frozen copy of another document of the same type
       const q = v.templateDocId.trim(), d = st.docs.find((x) => x.companyId === companyId && (x.id === q || x.number === q));
       if (!d || d.type !== s.template!.type) throw fail(422, 'schedule.invalid', `ไม่พบเอกสารประเภท ${s.template!.type} เลขที่ ${q}`);

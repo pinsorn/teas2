@@ -174,7 +174,8 @@ export interface SchedulePlanRow { month: string; amount: Money }
 export interface ScheduleRun { at: IsoDate; resultDocId?: string; amount?: Money; /** amortisation: the plan month */ month?: string; reversed?: boolean }
 export interface ScheduleRecord { id: string; companyId: string; version: number; kind: 'recurring' | 'amortisation'; name: string; active: boolean;
   frequency: ScheduleFrequency; nextRun: IsoDate; endAfter?: number; /** recurring: the day of month the schedule started on (a 31st is kept through a short month) */ day?: number;
-  template?: { type: DocType; header: Omit<DocHeader, 'documentDate'>; lines: DocLine[] };
+  template?: { type: DocType; header: Omit<DocHeader, 'documentDate'>; lines: DocLine[]; /** the party's name as at the last template save (frozen; the master may be renamed later) */ partyName?: string };
+  /** AC7b: every template this schedule had before an edit (who / when), newest last. Drafts already made are never touched. */ templateHistory?: { at: string; by: Actor; template: NonNullable<ScheduleRecord['template']> }[];
   source?: { docId: string; lineId?: string }; total?: Money; months?: number; startMonth?: string; expenseAccount?: string; prepaidAccount?: string; plan?: SchedulePlanRow[];
   runs: ScheduleRun[]; stopped?: { at: string; by: Actor; reason?: string }; createdAt: string; createdBy: Actor }
 export interface ActivityEntry{ id: string; at: string; actor: Actor; action: string; detail?: string; reportId?: string }

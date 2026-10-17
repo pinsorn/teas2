@@ -104,4 +104,18 @@ describe('the schedule record kit (AC4)', () => {
     const d = (await call('GET', `/docs/TI/${ran.json.runs![0].resultDocId}`)).json as { status?: string; header?: { documentDate: string }; createdBy?: { id: string } };
     expect(d).toMatchObject({ status: 'draft', header: { documentDate: '2026-11-01' }, createdBy: { id: 'u-1' } });
   });
+
+  it('AC7b: PUT with a template body refuses an incomplete template with field errors the editor shows, saves a good one frozen, and hands the editor its party', async () => {
+    const r = await get('sch-rec-ti');
+    const line = { id: 'tl-new', description: 'ดูแลเว็บไซต์ + โฆษณา', qty: '1', unit: 'เดือน', unitPrice: '9000.00', taxCode: 'S7' };
+    const bad = await call('PUT', '/records/schedule/sch-rec-ti', { name: r.name, template: { header: {}, lines: [] }, version: r.version });
+    expect(bad.status).toBe(422);
+    expect(bad.json.fieldErrors).toMatchObject({ 'header.partyId': [expect.any(String)], lines: [expect.any(String)] });
+    expect((await get('sch-rec-ti')).version).toBe(r.version);
+    const ok = await call('PUT', '/records/schedule/sch-rec-ti', { name: r.name, template: { header: { partyId: 'pc-04', reference: 'PO-1', documentDate: '1999-01-01' }, lines: [line] }, version: r.version });
+    expect(ok.status).toBe(200);
+    expect(ok.json).toMatchObject({ template: { header: { partyId: 'pc-04', reference: 'PO-1' }, lines: [{ id: 'tl-new', unitPrice: '9000.00' }] }, templateHistory: [{ by: { id: 'u-1' } }], templatePartyRef: { id: 'pc-04' } });
+    expect((ok.json.template as { header: object }).header).not.toHaveProperty('documentDate');
+    expect(checkInvariants(loadState())).toEqual([]);
+  });
 });

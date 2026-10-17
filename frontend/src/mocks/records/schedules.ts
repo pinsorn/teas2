@@ -1,6 +1,6 @@
 import type { RecordRow } from '@/domain/records';
 import type { Actor, ScheduleRecord } from '@/domain/types';
-import { createAmortisation, createRecurring, liveRuns, markStopped, remainingOf, resumeSchedule, scheduleOf, updateSchedule, validDate } from '../engine/schedules';
+import { createAmortisation, createRecurring, liveRuns, markStopped, remainingOf, resumeSchedule, scheduleOf, templateBody, updateSchedule, validDate } from '../engine/schedules';
 import type { MockState } from '../store';
 import type { RecordKindImpl } from './registry';
 
@@ -16,7 +16,8 @@ export function toRow(st: MockState, s: ScheduleRecord): RecordRow {
   const base = { ...structuredClone(rest), code: s.id, inUse: s.runs.length > 0 };
   if (s.kind === 'recurring') {
     const p = s.template?.header.partyId ? st.parties.find((x) => x.id === s.template!.header.partyId && x.companyId === co) : undefined;
-    return { ...base, runs: s.runs.map((r) => ({ ...r, number: numberOf(r.resultDocId), docType: s.template?.type })), templateParty: p?.name ?? null, runsDone: s.runs.length,
+    const { companyId: _pc, ...ref } = p ?? ({} as NonNullable<typeof p>); void _pc;
+    return { ...base, runs: s.runs.map((r) => ({ ...r, number: numberOf(r.resultDocId), docType: s.template?.type })), templateParty: s.template?.partyName ?? p?.name ?? null, ...(p ? { templatePartyRef: ref } : {}), runsDone: s.runs.length,
       ...(s.source ? { sourceNumber: numberOf(s.source.docId) ?? null } : {}) } as RecordRow;
   }
   const src = st.docs.find((d) => d.id === s.source?.docId);
@@ -46,6 +47,9 @@ export const scheduleImpl: RecordKindImpl = {
       if ((!prev || v.nextRun !== undefined) && !validDate(v.nextRun)) add('nextRun', 'วันที่รันครั้งถัดไปไม่ถูกต้อง');
       if (v.endAfter !== undefined && v.endAfter !== null && v.endAfter !== '' && !(Number.isInteger(v.endAfter) && (v.endAfter as number) >= 1)) add('endAfter', 'จำนวนครั้งต้องเป็นจำนวนเต็มตั้งแต่ 1');
       if (!prev && !str(v.docId)) add('docId', 'ต้องระบุเอกสารต้นแบบ');
+      if (prev && v.template !== undefined && Object.keys(e).length === 0) { // the template body: what a draft of this type needs before it can be issued, as the editor's own field errors (the engine re-checks)
+        try { for (const m of templateBody(st, prev.companyId, prev, v.template).missing) add(m.field, m.message); } catch { /* a malformed body: the engine refuses it with its own code */ }
+      }
     } else if (!prev) {
       if (!str(v.docId)) add('docId', 'ต้องระบุเอกสารต้นทาง');
       if (!str(v.lineId)) add('lineId', 'ต้องเลือกรายการต้นทาง');
@@ -66,7 +70,7 @@ export const scheduleImpl: RecordKindImpl = {
   },
 
   update(st, companyId, id, v) {
-    return toRow(st, updateSchedule(st, companyId, id, v));
+    return toRow(st, updateSchedule(st, companyId, id, v, ACTOR));
   },
 
   /** Deactivate = stop (the remaining balance stays on the prepaid account); only a recurring schedule that was stopped may be switched on again. */

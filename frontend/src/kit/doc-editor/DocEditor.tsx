@@ -38,11 +38,15 @@ import { cleanDecimal, isComposing, moneyText, qtyText } from './useLineGridKeys
 
 export interface DocEditorProps {
   descriptor: DocDescriptor;
-  mode: 'create' | 'edit-draft' | 'revise';
+  /** `template` (AC7b): the template of a recurring schedule - the same editor, no number / issue / approval, its action saves the template through `onSaveTemplate`. */
+  mode: 'create' | 'edit-draft' | 'revise' | 'template';
   initial?: Doc;
   onIssued: (doc: Doc) => void;
   onRevisionRequested?: (proposed: { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] }) => void; // revise mode: hands off to the correction plan
+  onSaveTemplate?: (proposed: { header: DocHeader; lines: DocLine[] }) => Promise<unknown>; // template mode: a refusal rejects and is shown in place
 }
+/** A template carries no dates and no vendor paperwork: those belong to one document of the series, not to the series. */
+const TEMPLATE_HIDDEN = ['documentDate', 'dueDate', 'vendorDocNumber', 'vendorDocDate', 'claimPeriod', 'complete'];
 
 const WIDE = '(min-width: 1700px)';
 const useWide = () => useSyncExternalStore(
@@ -83,7 +87,7 @@ export function DocEditor(props: DocEditorProps) {
   return <DocEditorInner key={useCompanyEpoch()} {...props} />;
 }
 
-function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequested }: DocEditorProps) {
+function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequested, onSaveTemplate }: DocEditorProps) {
   const t = useTranslations('docEditor');
   const ts = useTranslations('docEditor.settlement');
   const td = useTranslations(`docTypes.${d.type}`);
@@ -139,7 +143,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   };
   const compute = useCompute(d.type, payload, mode === 'revise' ? initial?.id : undefined); // revising: the document's own settlements are not 'used up'
   const autosave = useAutosave({
-    type: d.type, payload, enabled: mode !== 'revise',
+    type: d.type, payload, enabled: mode !== 'revise' && mode !== 'template',
     initial: mode === 'edit-draft' && initial ? { id: initial.id, version: initial.version } : undefined,
     startUnsaved: mode === 'create' && !!initial,
     flushOnLeave: () => qc.getQueryData<Me>(qk.me())?.activeCompanyId === owner.current,
@@ -184,13 +188,13 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   // editing an approved document returns it to draft (§7.6): from the first change it needs approval again (an untouched approved document is simply issued)
   const [edited, setEdited] = useState(false);
   if (!edited && initial?.status === 'approved' && (autosave.status === 'pending' || autosave.status === 'saving')) setEdited(true);
-  const needsApproval = mode !== 'revise' && !!compute.data?.approvalRequired && (initial?.status !== 'approved' || edited);
+  const needsApproval = mode !== 'revise' && mode !== 'template' && !!compute.data?.approvalRequired && (initial?.status !== 'approved' || edited);
   const bothRights = !!me?.permissions.includes(`doc.${d.type}.approve`) && !!me?.permissions.includes(d.permissions.issue);
   const canApprove = !!me?.permissions.includes(`doc.${d.type}.approve`);
   const reviseNeedsApprover = mode === 'revise' && !!compute.data?.approvalRequired; // C1: the revise raises the money above what was approved - the approver saves it, nobody else can
   const submitMode = needsApproval && !bothRights;
   const approveIssueMode = needsApproval && bothRights;
-  const canAct = !!me?.permissions.includes(mode === 'revise' || submitMode ? d.permissions.create : d.permissions.issue);
+  const canAct = !!me?.permissions.includes(mode === 'template' ? 'ledger.schedule.manage' : mode === 'revise' || submitMode ? d.permissions.create : d.permissions.issue);
   const why = me && !canAct ? 'permission'
     : autosave.status === 'conflict' ? 'conflict'
     : amountEditor && withholds && whtTypes.isError ? 'whtTypes'
@@ -206,11 +210,19 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   };
 
   const primary = () => {
-    if (mode === 'revise') {
+    if (mode === 'template') {
+      if (ready) void saveTemplate(); else missingRef.current?.focus();
+    } else if (mode === 'revise') {
       if (ready) onRevisionRequested?.(payload); else missingRef.current?.focus();
     } else if (compute.pending && canAct && autosave.status !== 'conflict') setWant(payloadJson);
     else if (ready) setConfirmOpen(true);
     else missingRef.current?.focus();
+  };
+
+  const saveTemplate = async () => {
+    if (issuing.current) return;
+    issuing.current = true; setIssuingNow(true); setIssueError(undefined);
+    try { await onSaveTemplate?.(payload); } catch (e) { setIssueError(e); } finally { issuing.current = false; setIssuingNow(false); }
   };
 
   const confirmIssue = async () => {
@@ -262,8 +274,8 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   };
 
   const amounts = useMemo(() => Object.fromEntries((compute.data?.lines ?? []).map((l) => [l.id, l.net])), [compute.data]);
-  const heading = mode === 'create' ? td('create') : mode === 'edit-draft' ? t('editDraft', { title }) : t('revise', { title });
-  const primaryLabel = mode === 'revise' ? (reviseNeedsApprover ? t('approveAndSaveRevision') : t('saveRevision')) : submitMode ? t('submitApproval') : td('issue');
+  const heading = mode === 'template' ? t('template.heading', { title }) : mode === 'create' ? td('create') : mode === 'edit-draft' ? t('editDraft', { title }) : t('revise', { title });
+  const primaryLabel = mode === 'template' ? t('template.save') : mode === 'revise' ? (reviseNeedsApprover ? t('approveAndSaveRevision') : t('saveRevision')) : submitMode ? t('submitApproval') : td('issue');
   const conflict = autosave.status === 'conflict' || (issueError instanceof ApiError && issueError.problem.status === 409);
   const reload = <Button size="sm" variant="outline" onClick={() => window.location.reload()}>{t('reload')}</Button>;
 
@@ -272,7 +284,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-title font-semibold">{heading}</h1>
         {initial?.number && <span className="tabular-nums text-muted-foreground">{initial.number}</span>}
-        <StatusChip status={edited ? 'draft' : initial?.status ?? 'draft'} />
+        {mode === 'template' ? null : <StatusChip status={edited ? 'draft' : initial?.status ?? 'draft'} />}
       </div>
 
       {initial?.createdBy.kind === 'agent' && initial.id ? <AgentBanner actor={initial.createdBy} status={initial.status} reportId={initial.agentReportId} /> : null}
@@ -280,7 +292,8 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
       {autosave.status === 'error' && <ProblemBanner error={autosave.problem} hint={t('saveFailedHint')}
         action={<Button size="sm" variant="outline" onClick={() => void autosave.flush()}>{t('save')}</Button>} />}
       {stale && <Alert variant="destructive"><AlertDescription className="text-foreground!">{t('staleConfirm')}</AlertDescription></Alert>}
-      {!!issueError && !conflict && <ProblemBanner error={issueError} hint={t('issueFailed')} />}
+      {mode === 'template' && <p className="text-small text-muted-foreground">{t('template.hint')}</p>}
+      {!!issueError && !conflict && <ProblemBanner error={issueError} hint={mode === 'template' ? t('template.saveFailed') : t('issueFailed')} />}
 
       <fieldset disabled={issuingNow} className={cn('m-0 grid min-w-0 gap-6 border-0 p-0', wide && previewOpen && !accountEditor && 'grid-cols-[minmax(0,1fr)_minmax(0,28rem)]')}>
         <div className="grid min-w-0 gap-6">
@@ -297,7 +310,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
                   search={(q) => endpoints.searchParties({ kind: party?.kind === 'employee' && partyKind === 'vendor' ? 'employee' : partyKind, q, limit: 8 }).then((p) => p.items)} />
               </div>
             )}
-            <HeaderFields type={d.type} keys={d.headerFields} ids={ids} header={header} setHeader={setHeader} />
+            <HeaderFields type={d.type} keys={mode === 'template' ? d.headerFields.filter((k) => !TEMPLATE_HIDDEN.includes(k)) : d.headerFields} ids={ids} header={header} setHeader={setHeader} />
           </section>
 
           {d.settles && (
@@ -353,7 +366,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
               partyLabel={partyKind ? t(`party.${partyKind}`) : undefined} onJump={jump} />
             {accountEditor ? null : <TotalsPanel totals={compute.data?.totals} whtLines={compute.data?.whtLines} pending={compute.pending} error={compute.error} onRetry={compute.retry} />}
           </div>
-          {me ? <AttachmentsPanel type={d.type} docId={draftId} ensureDocId={async () => draftId ?? (await autosave.flush())?.id}
+          {me && mode !== 'template' ? <AttachmentsPanel type={d.type} docId={draftId} ensureDocId={async () => draftId ?? (await autosave.flush())?.id}
             canEdit={me.permissions.includes(d.permissions.create)} issued={!!initial && initial.status !== 'draft'} /> : null}
         </div>
         {accountEditor ? null : <PreviewDrawer open={previewOpen} onOpenChange={setPreviewChoice} docked={wide} party={party} lines={lines} compute={compute.data} />}
@@ -375,7 +388,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
                 <Button type="button" variant="outline" disabled><ListTreeIcon aria-hidden data-icon="inline-start" />{t('journal')}<span className="sr-only"> ({t('journalNeedsPermission')})</span></Button>
               </span>
             ) : <Button type="button" variant="outline" onClick={() => setJournalOpen(true)}><ListTreeIcon aria-hidden data-icon="inline-start" />{t('journal')}</Button>}
-            {mode !== 'revise' && <Button type="button" variant="secondary" onClick={() => void autosave.flush()}>{t('save')}</Button>}
+            {mode !== 'revise' && mode !== 'template' && <Button type="button" variant="secondary" onClick={() => void autosave.flush()}>{t('save')}</Button>}
             <Button type="button" disabled={!ready || issuingNow} aria-describedby={why ? `${ids}-why` : undefined} onClick={primary}>
               {issuingNow ? t('issuing') : primaryLabel}
             </Button>

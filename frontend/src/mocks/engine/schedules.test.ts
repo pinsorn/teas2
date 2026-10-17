@@ -558,3 +558,60 @@ describe('done = released for the source lock (fix2)', () => {
     expect(c).toBe('account.scheduled');
   });
 });
+
+describe('AC7b: a recurring schedule template is edited as a whole (rulings 2-4)', () => {
+  const tl = (over: Partial<DocLine> = {}): DocLine => ({ id: `tx-${++n}`, description: 'ดูแลเว็บไซต์รายเดือน', qty: '1', unit: 'เดือน', unitPrice: '5000.00', taxCode: 'S7', ...over });
+  const rec = () => createRecurring(st, CO, { name: 'ดูแลเว็บไซต์', frequency: 'monthly', nextRun: '2026-11-01', template: { type: 'TI', header: { partyId: 'pc-04', documentDate: '2026-01-01' }, lines: [tl()] } }, ME);
+  const body = (over: Record<string, unknown> = {}, lines: DocLine[] = [tl({ description: 'ดูแลเว็บไซต์ + โฆษณา', unitPrice: '7500.00' })]) => ({ template: { header: { partyId: 'pc-04', reference: 'PO-77', notes: 'หมายเหตุใหม่', ...over }, lines } });
+
+  it('re-freezes the edited header and lines, keeps the previous template in a history (who / when), and a run makes a draft with the edited line', () => {
+    const s = rec(), old = structuredClone(s.template!), v0 = s.version;
+    const first = runSchedule(st, CO, s.id, ME).runs[0].resultDocId!; // a draft made before the edit
+    const upd = updateSchedule(st, CO, s.id, body(), ME);
+    expect(upd.version).toBeGreaterThan(v0);
+    expect(upd.template!.header).toEqual({ partyId: 'pc-04', reference: 'PO-77', notes: 'หมายเหตุใหม่' });
+    expect(upd.template!.lines.map((l) => [l.description, l.unitPrice])).toEqual([['ดูแลเว็บไซต์ + โฆษณา', '7500.00']]);
+    expect(upd.template!.partyName).toBe(st.parties.find((p) => p.id === 'pc-04')!.name);
+    expect(upd.templateHistory).toHaveLength(1);
+    expect(upd.templateHistory![0]).toMatchObject({ by: ME, template: old });
+    expect(upd.templateHistory![0].at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(upd.source).toBeUndefined(); // no longer a copy of a document
+    expect(st.audit.some((a) => a.command === 'schedule.template' && a.target === s.id)).toBe(true);
+    const second = runSchedule(st, CO, s.id, ME).runs[1].resultDocId!;
+    expect(doc(second).lines.map((l) => l.unitPrice)).toEqual(['7500.00']);
+    expect(doc(second).header).toMatchObject({ reference: 'PO-77', documentDate: '2026-12-01' });
+    expect(doc(first).lines.map((l) => l.unitPrice)).toEqual(['5000.00']); // a draft already made is untouched
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('never takes dates, numbers or server-owned fields from the body', () => {
+    const s = rec();
+    const upd = updateSchedule(st, CO, s.id, body({ documentDate: '2020-01-01', dueDate: '2020-02-01', vendorDocNumber: 'X', scheduleId: 'sch-x', disposal: {} }), ME);
+    expect(Object.keys(upd.template!.header).sort()).toEqual(['notes', 'partyId', 'reference']);
+  });
+  it('is refused like a draft that cannot be issued (same checks as creation); a refusal writes nothing', () => {
+    const s = rec(), before = JSON.stringify(sched(s.id));
+    expect(err(() => updateSchedule(st, CO, s.id, body({}, []), ME)).code).toBe('doc.incomplete');
+    expect(err(() => updateSchedule(st, CO, s.id, body({ partyId: undefined }), ME)).code).toBe('doc.incomplete');
+    expect(err(() => updateSchedule(st, CO, s.id, body({ partyId: 'nope' }), ME)).code).toBe('doc.incomplete');
+    st.parties.find((p) => p.id === 'pc-01')!.active = false;
+    expect(err(() => updateSchedule(st, CO, s.id, body({ partyId: 'pc-01' }), ME)).code).toBe('schedule.template_invalid');
+    expect(err(() => updateSchedule(st, CO, s.id, body({}, [tl({ itemId: 'no-such-item' })]), ME)).code).toBe('schedule.template_invalid');
+    expect(JSON.stringify(sched(s.id))).toBe(before);
+  });
+  it('a JV template keeps the JV rules (no controlled account)', () => {
+    const jl = (code: string, debit: string, credit: string): DocLine => ({ id: `t-${++n}`, description: code, qty: '1', unit: '', unitPrice: '0.00', taxCode: 'EX', accountCode: code, debit, credit });
+    const s = createRecurring(st, CO, { name: 'jv', frequency: 'monthly', nextRun: '2026-11-30', template: { type: 'JV', header: { documentDate: '2026-01-01' }, lines: [jl('5120', '8000.00', '0.00'), jl('2120', '0.00', '8000.00')] } }, ME);
+    expect(err(() => updateSchedule(st, CO, s.id, { template: { header: {}, lines: [jl('1130', '10.00', '0.00'), jl('2120', '0.00', '10.00')] } }, ME)).code).toBe('ledger.control_account');
+    expect(updateSchedule(st, CO, s.id, { template: { header: { reference: 'ใหม่', autoReverse: true }, lines: [jl('5120', '9000.00', '0.00'), jl('2120', '0.00', '9000.00')] } }, ME).template!.header).toEqual({ reference: 'ใหม่', autoReverse: true });
+  });
+  it('freezes the expense category of a purchase line at this save (a later item change does not move it)', () => {
+    const item = st.items.find((i) => i.companyId === CO && i.expenseCategory && i.active !== false)!;
+    const s = createRecurring(st, CO, { name: 'pb', frequency: 'monthly', nextRun: '2026-11-01', template: { type: 'PB', header: { partyId: 'pv-02', documentDate: '2026-01-01' }, lines: [tl({ itemId: item.id, taxCode: 'EX', expenseCategory: item.expenseCategory })] } }, ME);
+    const upd = updateSchedule(st, CO, s.id, { template: { header: { partyId: 'pv-02' }, lines: [tl({ itemId: item.id, taxCode: 'EX' })] } }, ME); // the editor sent no category of its own
+    expect(upd.template!.lines[0].expenseCategory).toBe(item.expenseCategory);
+  });
+  it('an amortisation has no template', () => {
+    const a = amort();
+    expect(err(() => updateSchedule(st, CO, a.id, body(), ME)).code).toBe('schedule.invalid');
+  });
+});
