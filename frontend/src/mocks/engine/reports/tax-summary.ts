@@ -47,7 +47,7 @@ export function taxSummary(st: MockState, companyId: string, p: Record<string, s
       const put = (key: string, sat: number) => { cells[key] = fromSatang(sat); sums[key] = (sums[key] ?? 0) + sat; };
       if (vat && show('PP30')) {
         const b = getFiling(st, companyId, 'PP30', month).boxes;
-        put('sales', boxOf(b, '1')); put('outVat', boxOf(b, '5')); put('inVat', boxOf(b, '7')); put('netVat', boxOf(b, '5') - boxOf(b, '7')); // the month's own net, signed: boxes 8 / 9 are after the carry-in (box 10)
+        put('sales', boxOf(b, '1')); put('outVat', boxOf(b, '5')); put('inVat', boxOf(b, '7')); put('netVat', boxOf(b, '5') - boxOf(b, '7')); // the month's own net, signed: boxes 11 / 12 are after the carry-in (box 10)
       } else if (!vat && canPreview) put('sales', salesRevenue(st, companyId, `${month}-01`, lastDayOf(month)));
       for (const form of PND_FORMS) if (show(form)) put(form.toLowerCase(), boxOf(getFiling(st, companyId, form, month).boxes, 'tax'));
       // what customers withheld from us is a receipt-side figure, not a filing: tax.read (the report's gate) is the intended right, no preview right needed

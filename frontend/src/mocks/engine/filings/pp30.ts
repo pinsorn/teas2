@@ -97,32 +97,33 @@ export function pp30Docs(st: MockState, companyId: string, period: string): Pp30
   return rows.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'out' ? -1 : 1) || a.date.localeCompare(b.date) || (a.number ?? a.id).localeCompare(b.number ?? b.id));
 }
 
-/** The ภ.พ.30 boxes from a document list. [SP-R] layout (the official form's field numbers are SP-R / SP4.8): 1 total sales, 2 zero-rated, 3 exempt, 4 taxable (= 1 - 2 - 3), 5 output VAT, 6 purchases with the right to claim, 7 input VAT,
- *  8 tax payable, 9 tax overpaid, 10 overpaid brought forward, 11 the net. [SP-R] An excess is CARRIED to the next month by default (refund vs carry is the company's election). */
+/** The ภ.พ.30 boxes from a document list, numbered as the official form (TX4; https://www.rd.go.th/fileadmin/tax_pdf/vat/2568/pp30_010968.pdf): 1 total sales, 2 zero-rated, 3 exempt, 4 taxable (= 1 - 2 - 3), 5 output VAT, 6 purchases with the right to claim, 7 input VAT,
+ *  8 tax payable this month (5 > 7: 5 - 7), 9 tax overpaid this month (5 < 7: 7 - 5), 10 overpaid brought forward, 11 net payable (8 - 10 when 8 > 10), 12 net overpaid (10 - 8, or 9 + 10) = what is CARRIED to the next month.
+ *  [SP-R] An excess is carried by default (refund vs carry is the company's election). */
 export function pp30Boxes(docs: Pp30Doc[], carryIn: number, pp36: number, period: string): FilingBox[] {
   const sum = (kind: Pp30Doc['kind'], f: (d: Pp30Doc) => string) => docs.filter((d) => d.kind === kind).reduce((n, d) => n + sat(f(d)), 0);
   const b2 = sum('out', (d) => d.base0), b3 = sum('out', (d) => d.baseEx), b4 = sum('out', (d) => d.base7), b5 = sum('out', (d) => d.vat);
   const b6 = sum('in', (d) => d.base7), b7 = sum('in', (d) => d.vat) + pp36;
-  const net = b5 - b7 - carryIn;
+  const own = b5 - b7, net = own - carryIn;
   const out = { reportKind: 'vat-output-register' as const, params: { period } }, inn = { reportKind: 'vat-input-register' as const, params: { period } };
   const box = (code: string, labelTh: string, v: number, source?: FilingBox['source']): FilingBox => ({ code, labelTh, amount: fromSatang(v), ...(source ? { source } : {}) });
   return [box('1', 'ยอดขายรวม', b2 + b3 + b4, out), box('2', 'ยอดขายอัตราร้อยละ 0', b2, out), box('3', 'ยอดขายที่ได้รับยกเว้น', b3, out), box('4', 'ยอดขายที่ต้องเสียภาษี', b4, out), box('5', 'ภาษีขาย', b5, out),
-    box('6', 'ยอดซื้อที่มีสิทธิ์นำภาษีซื้อมาหัก', b6, inn), box('7', 'ภาษีซื้อ', b7, inn), box('8', 'ภาษีที่ต้องชำระ', Math.max(net, 0)), box('9', 'ภาษีที่ชำระเกิน', Math.max(-net, 0)),
-    box('10', 'ภาษีชำระเกินยกมา', carryIn), box('11', net >= 0 ? 'ภาษีสุทธิที่ต้องชำระ' : 'ภาษีสุทธิที่ชำระเกิน', Math.abs(net))];
+    box('6', 'ยอดซื้อที่มีสิทธิ์นำภาษีซื้อมาหัก', b6, inn), box('7', 'ภาษีซื้อ', b7, inn), box('8', 'ภาษีที่ต้องชำระเดือนนี้', Math.max(own, 0)), box('9', 'ภาษีที่ชำระเกินเดือนนี้', Math.max(-own, 0)),
+    box('10', 'ภาษีที่ชำระเกินยกมา', carryIn), box('11', 'ภาษีสุทธิที่ต้องชำระ', Math.max(net, 0)), box('12', 'ภาษีสุทธิที่ชำระเกิน', Math.max(-net, 0))];
 }
 export const boxOf = (boxes: FilingBox[], code: string): number => sat(boxes.find((b) => b.code === code)?.amount);
 
 /** TX2c D1: the closing of a finalized month's VAT, posted on the finalize day: output VAT (box 5) and input VAT (box 7, the ภ.พ.36 part included: it sits in 1170 since its payment month) leave their accounts; the carry brought in (box 10) is used;
- *  the net goes to VAT payable, or (an excess) to VAT carried forward. Read from the STORED boxes 5, 7, 10 only. Signed: a negative amount posts on the other side. */
+ *  the net goes to VAT payable (box 11), or (an excess) to VAT carried forward (box 12). Read from the STORED boxes 5, 7, 10 only. Signed: a negative amount posts on the other side. */
 export const pp30Net = (boxes: FilingBox[]): number => boxOf(boxes, '5') - boxOf(boxes, '7') - boxOf(boxes, '10');
-/** Balance proof: Σ signed debits = b5 - b7 - b10 - n = 0 by the definition of n. Two lines on VatCarryForward (box 10 used, box 9 carried) are intended: never net them. */
+/** Balance proof: Σ signed debits = b5 - b7 - b10 - n = 0 by the definition of n. Two lines on VatCarryForward (box 10 used, box 12 carried) are intended: never net them. */
 export function pp30Netting(st: MockState, companyId: string, period: string, boxes: FilingBox[], date: IsoDate): JournalEntryPreview[] {
   const n = pp30Net(boxes);
   const legs: [AccountingRole, string, number][] = [ // [role, box label, signed DEBIT]
     ['OutputVat', '5', boxOf(boxes, '5')],
     ['InputVat', '7', -boxOf(boxes, '7')],
     ['VatCarryForward', '10', -boxOf(boxes, '10')],
-    n >= 0 ? ['VatPayable', '8', -n] : ['VatCarryForward', '9', -n],
+    n >= 0 ? ['VatPayable', '11', -n] : ['VatCarryForward', '12', -n],
   ];
   const lines = legs.filter(([, , v]) => v !== 0).map(([role, box, v]) => {
     const r = resolveRole(st, role, { companyId, docType: 'JV' });
@@ -240,9 +241,9 @@ export function pp30Model(st: MockState, companyId: string, period: string): Fil
   requireVat(st, companyId);
   if (!PERIOD.test(period)) throw fail(422, 'filing.bad_period', 'งวดต้องอยู่ในรูปแบบ ปปปป-ดด');
   const docs = pp30Docs(st, companyId, period), prev = filedIn(st, companyId, prevMonth(period));
-  const carryIn = prev ? boxOf(prev.boxes, '9') : 0, pp36 = pp36VatOf(st, companyId, period);
+  const carryIn = prev ? boxOf(prev.boxes, '12') : 0, pp36 = pp36VatOf(st, companyId, period);
   const boxes = pp30Boxes(docs, carryIn, pp36, period);
-  const warnings = boxOf(boxes, '9') > 0 ? ['ภาษีชำระเกิน ยกไปหักในเดือนถัดไป (ค่าเริ่มต้น ขอคืนเป็นเงินต้องทำนอกระบบนี้)'] : [];
+  const warnings = boxOf(boxes, '12') > 0 ? ['ภาษีชำระเกิน ยกไปหักในเดือนถัดไป (ค่าเริ่มต้น ขอคืนเป็นเงินต้องทำนอกระบบนี้)'] : [];
   const base: FilingModel = { form: 'PP30', period, status: 'draft', boxes, tieOuts: [], blockers: blockersOf(st, companyId, period), warnings, version: fnv(JSON.stringify([docs, carryIn, pp36])), dueDate: dueDateOf(period), exports: ['rdprep-txt', 'pdf'] };
   const tieOuts = [
     tie('filing.tie.outputGl', boxOf(boxes, '5'), glMovement(st, companyId, '2151', period)),

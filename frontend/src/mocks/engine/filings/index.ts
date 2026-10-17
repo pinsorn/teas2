@@ -72,7 +72,7 @@ export function finalizeFiling(st: MockState, companyId: string, form: FilingFor
   }
   const snap = built ? { docs: [], carryIn: '0.00', pp36: '0.00', ...(built.cit ? { cit: built.cit } : { pnd51: built.pnd51 }) }
     : form === 'PP30'
-    ? { docs: pp30Docs(st, companyId, period), carryIn: prev ? prev.boxes.find((b) => b.code === '9')!.amount : '0.00', pp36: fromSatang(pp36VatOf(st, companyId, period)), journal: netting }
+    ? { docs: pp30Docs(st, companyId, period), carryIn: prev ? prev.boxes.find((b) => b.code === '12')!.amount : '0.00', pp36: fromSatang(pp36VatOf(st, companyId, period)), journal: netting }
     : form === 'PP36' ? pp36Snapshot(st, companyId, period) : pndSnapshot(st, companyId, form as PndForm, period);
   const tieOuts = built ? m.tieOuts : form === 'PP36' ? [tie('filing.tie.pp36Gl', boxOf(m.boxes, 'vat'), pp36Gl(st, companyId, period, (snap as ReturnType<typeof pp36Snapshot>).journal ?? []))] : m.tieOuts;
   st.filings.push({ companyId, form, period, status: 'finalized', company: { taxId: co.taxId, branchCode: co.branchCode, legalNameTh: co.legalNameTh }, boxes: m.boxes, tieOuts, ...snap,
@@ -94,7 +94,7 @@ function pp36Gl(st: MockState, companyId: string, period: string, entry: Journal
 export function filingHistory(st: MockState, companyId: string, form: FilingForm): FilingHistoryItem[] {
   return st.filings.filter((f) => f.companyId === companyId && f.form === form).sort((a, b) => b.period.localeCompare(a.period))
     .map((f) => { const net = boxOf(f.boxes, NET_BOX[f.form]!), cit = isCit(f.form); // a ภ.ง.ด.50 'net' is signed (negative = overpaid)
-      return { form: f.form, period: f.period, finalizedAt: f.finalizedAt, finalizedBy: f.finalizedBy, net: cit ? fromSatang(Math.abs(net)) : f.boxes.find((b) => b.code === NET_BOX[f.form])!.amount, overpaid: cit ? net < 0 : f.form === 'PP30' && boxOf(f.boxes, '9') > 0, ...(cit ? {} : paymentItem(st, f)) }; });
+      return { form: f.form, period: f.period, finalizedAt: f.finalizedAt, finalizedBy: f.finalizedBy, net: cit ? fromSatang(Math.abs(net)) : f.boxes.find((b) => b.code === (f.form === 'PP30' && boxOf(f.boxes, '12') > 0 ? '12' : NET_BOX[f.form]))!.amount, overpaid: cit ? net < 0 : f.form === 'PP30' && boxOf(f.boxes, '12') > 0, ...(cit ? {} : paymentItem(st, f)) }; });
 }
 
 const paymentItem = (st: MockState, f: Filing) => { const p = paymentStateOf(st, f); return { payment: p.status, ...(p.paidOn ? { paidOn: p.paidOn } : {}) }; };
@@ -272,7 +272,7 @@ function ppInvariants(st: MockState, f: Filing, w: string, out: string[]): void 
   const listed = new Set(f.docs.map((r) => r.id));
   for (const r of pp30Docs(st, f.companyId, f.period)) if (r.state === 'live' && !listed.has(r.id)) out.push(`${w}: ${r.id} is missing from the snapshot`); // B1
   const prev = filingOf(st, f.companyId, prevMonth(f.period));
-  if (sat(f.carryIn) !== (prev ? boxOf(prev.boxes, '9') : 0)) out.push(`${w}: overpaid brought forward ${f.carryIn} is not the previous month's excess`);
+  if (sat(f.carryIn) !== (prev ? boxOf(prev.boxes, '12') : 0)) out.push(`${w}: overpaid brought forward ${f.carryIn} is not the previous month's excess`);
   for (const r of f.docs) {
     const d = st.docs.find((x) => x.id === r.id && x.companyId === f.companyId);
     if (!d) { out.push(`${w}: document ${r.id} is gone`); continue; }

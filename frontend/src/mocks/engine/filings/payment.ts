@@ -4,14 +4,14 @@ import type { MockState } from '../../store';
 import { fromSatang, toSatang } from '../money';
 import { resolveRole } from '../posting';
 import { controlExit } from '../reconcile';
-import { type Filing, boxOf, pp30Net } from './pp30';
+import { type Filing, boxOf } from './pp30';
 
 /** TX2c: paying a finalized return to the Revenue Department. The payment is a bank journal of kind 'tax' (Dr the return's payable [+ other legs] / Cr the bank) with a frozen reference to the return; "paid" is derived from it, the filing snapshot is never touched. */
 const sat = (m: string | undefined) => toSatang(m ?? '0.00');
 
-/** The tax a finalized return asks to be paid (satang): ภ.พ.30 the net payable (max(5 - 7 - 10, 0), from the stored boxes), ภ.ง.ด. box "tax", ภ.พ.36 box "vat". */
+/** The tax a finalized return asks to be paid (satang): ภ.พ.30 the net payable (box 11, = max(5 - 7 - 10, 0)), ภ.ง.ด. box "tax", ภ.พ.36 box "vat". */
 export function taxDueOf(f: Filing): number {
-  return f.form === 'PP30' ? Math.max(pp30Net(f.boxes), 0) : boxOf(f.boxes, f.form === 'PP36' ? 'vat' : 'tax');
+  return f.form === 'PP30' ? boxOf(f.boxes, '11') : boxOf(f.boxes, f.form === 'PP36' ? 'vat' : 'tax');
 }
 /** The payable a payment of this return clears: VatPayable (PP30), Pnd36VatPayable (PP36), WhtPayable keyed by the form (PND*). */
 export function payableAccountOf(st: MockState, f: Filing): string {

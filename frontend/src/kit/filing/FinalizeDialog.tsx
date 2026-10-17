@@ -24,7 +24,7 @@ export function FinalizeDialog({ open, form, month, boxes, pending, error, onCon
   const vat = form === 'PP30', cit = form === 'PND50' || form === 'PND51', needAck = form === 'PP36';
   const confirmRef = useRef<HTMLButtonElement>(null);
   const box = (code: string) => boxes.find((b) => b.code === code);
-  const net = box('11');
+  const net = Number(box('12')?.amount) > 0 ? box('12') : box('11'); // the net payable, or the net overpaid when the month overpays
   return (
     <AlertDialog open={open} onOpenChange={(o) => { if (!o) { setAck(false); onCancel(); } }}>
       <AlertDialogContent onOpenAutoFocus={(e) => { e.preventDefault(); confirmRef.current?.focus(); }}>

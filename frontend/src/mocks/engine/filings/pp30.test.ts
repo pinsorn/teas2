@@ -9,7 +9,7 @@ import { derivedLocks } from '../locks';
 import { tinCheckDigit } from '@/domain/tin';
 import { toSatang } from '../money';
 import { chainStart, exportFilingText, filingHistory, finalizeFiling, getFiling } from './index';
-import { pp30Docs, pp30Model } from './pp30';
+import { type Pp30Doc, pp30Boxes, pp30Docs, pp30Model } from './pp30';
 import { buildReport } from '../reports';
 
 // TX1: the ภ.พ.30 is computed from DOCUMENTS (I12); a finalized one is a frozen snapshot. The seed finalizes 2026-07 and 2026-08, leaves 2026-09 finalizable and 2026-10 with blockers.
@@ -47,15 +47,15 @@ describe('the seed', () => {
 });
 
 describe('box identities (money invariants)', () => {
-  it.each(['2026-07', '2026-08', '2026-09', '2026-10'])('%s: box 4 = 1 - 2 - 3; box 5 = Σ output VAT; box 8/9 by sign of 5 - 7 - 10', (p) => {
+  it.each(['2026-07', '2026-08', '2026-09', '2026-10'])('%s: box 4 = 1 - 2 - 3; box 5 = Σ output VAT; boxes 8-12 as the official form', (p) => {
     const m = pp30Model(st, CO, p);
     expect(sat(box(m, '4'))).toBe(sat(box(m, '1')) - sat(box(m, '2')) - sat(box(m, '3')));
     const docs = pp30Docs(st, CO, p);
     expect(sat(box(m, '5'))).toBe(docs.filter((d) => d.kind === 'out').reduce((a, d) => a + sat(d.vat), 0));
     expect(sat(box(m, '7'))).toBe(docs.filter((d) => d.kind === 'in').reduce((a, d) => a + sat(d.vat), 0));
-    const net = sat(box(m, '5')) - sat(box(m, '7')) - sat(box(m, '10'));
-    expect([sat(box(m, '8')), sat(box(m, '9'))]).toEqual(net >= 0 ? [net, 0] : [0, -net]);
-    expect(sat(box(m, '11'))).toBe(Math.abs(net));
+    const own = sat(box(m, '5')) - sat(box(m, '7')), net = own - sat(box(m, '10'));
+    expect([sat(box(m, '8')), sat(box(m, '9'))]).toEqual(own >= 0 ? [own, 0] : [0, -own]); // the month's own tax, BEFORE the carry-in
+    expect([sat(box(m, '11')), sat(box(m, '12'))]).toEqual(net >= 0 ? [net, 0] : [0, -net]);
   });
   it('lists every issued TI / CN / DN of the month exactly once', () => {
     const want = st.docs.filter((d) => d.companyId === CO && ['TI', 'CN', 'DN'].includes(d.type) && d.header.documentDate.startsWith('2026-08') && !['draft', 'pending', 'approved'].includes(d.status)).map((d) => d.id).sort();
@@ -93,6 +93,35 @@ describe('box identities (money invariants)', () => {
   });
 });
 
+// TX4: the boxes as the official ภ.พ.30 numbers them (https://www.rd.go.th/fileadmin/tax_pdf/vat/2568/pp30_010968.pdf): 8 = 5 > 7 (5 - 7), 9 = 5 < 7 (7 - 5), 10 = overpaid brought forward,
+// 11 = net payable (8 - 10 when 8 > 10), 12 = net overpaid (10 - 8, or 9 + 10) = the carry to the next month.
+describe('boxes 8-12 vectors', () => {
+  const dd = (kind: 'out' | 'in', vat: string): Pp30Doc => ({ id: kind, kind, type: kind === 'out' ? 'TI' : 'PB', date: '2026-09-01', description: '', state: 'live', base7: '0.00', base0: '0.00', baseEx: '0.00', vat });
+  const run = (o: string, i: string, carry: string) => { const b = pp30Boxes([dd('out', o), dd('in', i)], sat(carry), 0, '2026-09'); return ['8', '9', '10', '11', '12'].map((c) => b.find((x) => x.code === c)!.amount); };
+  it.each([
+    ['a payable month', '100.00', '30.00', '0.00', ['70.00', '0.00', '0.00', '70.00', '0.00']],
+    ['an overpaid month', '30.00', '100.00', '0.00', ['0.00', '70.00', '0.00', '0.00', '70.00']],
+    ['a carry-in larger than the payable', '100.00', '30.00', '200.00', ['70.00', '0.00', '200.00', '0.00', '130.00']],
+    ['a carry-in smaller than the payable', '100.00', '30.00', '20.00', ['70.00', '0.00', '20.00', '50.00', '0.00']],
+    ['an overpaid month with a carry-in', '30.00', '100.00', '5.00', ['0.00', '70.00', '5.00', '0.00', '75.00']],
+    ['a month whose output is negative (credit notes)', '-10.00', '0.00', '5.00', ['0.00', '10.00', '5.00', '0.00', '15.00']],
+  ])('%s', (_n, o, i, carry, want) => { expect(run(o, i, carry)).toEqual(want); });
+  it('the labels follow the form', () => {
+    const b = pp30Boxes([], 0, 0, '2026-09');
+    expect(b.map((x) => x.code)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']);
+    expect(b.find((x) => x.code === '11')!.labelTh).toBe('ภาษีสุทธิที่ต้องชำระ');
+    expect(b.find((x) => x.code === '12')!.labelTh).toBe('ภาษีสุทธิที่ชำระเกิน');
+  });
+});
+
+describe('the carry to the next month is the net overpaid box (12), never box 9', () => {
+  it('month m + 1 box 10 = box 12 of month m, also when box 9 differs (9 + carry-in)', () => {
+    const aug = st.filings.find((f) => f.companyId === CO && f.form === 'PP30' && f.period === '2026-08')!;
+    aug.boxes = aug.boxes.map((b) => (b.code === '12' ? { ...b, amount: '5.00' } : b.code === '9' ? { ...b, amount: '1.00' } : b));
+    expect(box(pp30Model(st, CO, '2026-09'), '10')).toBe('5.00');
+  });
+});
+
 describe('input VAT', () => {
   it('a bill with a claim period two months on lands in that month, not its own', () => {
     const b = mk('PB', [L('a', 'S7', '1000.00')], { claimPeriod: '2026-11' });
@@ -113,14 +142,14 @@ describe('input VAT', () => {
     expect(pp30Docs(st, CO, '2026-10').find((d) => d.id === 'ex-1')?.vat).toBe('140.00');
     expect(getFiling(st, CO, 'PP30', '2026-10').tieOuts.find((t) => t.labelKey.endsWith('inputGl'))?.diff).toBe('0.00');
   });
-  it('excess input VAT is carried into the next month (box 9 of the filed month is box 10 of the next)', () => {
+  it('excess input VAT is carried into the next month (box 12 of the filed month is box 10 of the next)', () => {
     mk('PB', [L('a', 'S7', '300000.00')], {}); // 21,000.00 input VAT against ~12,873.00 output
     const sep = getFiling(st, CO, 'PP30', '2026-09');
-    expect(sat(box(sep, '9'))).toBeGreaterThan(0);
-    expect(box(sep, '8')).toBe('0.00');
+    expect(sat(box(sep, '12'))).toBeGreaterThan(0);
+    expect([box(sep, '8'), box(sep, '11')]).toEqual(['0.00', '0.00']);
     finalizeFiling(st, CO, 'PP30', '2026-09', sep.version, me);
     const oct = pp30Model(st, CO, '2026-10');
-    expect(box(oct, '10')).toBe(box(sep, '9'));
+    expect(box(oct, '10')).toBe(box(sep, '12'));
     expect(checkInvariants(st)).toEqual([]);
   });
 });

@@ -14,7 +14,8 @@ import { KBANK_ACCOUNT_NO, KBANK_SEP_CLOSING, withBalances } from '../../fixture
 import { pp36Model } from './pp36';
 import { formName } from './pnd-wht';
 import { filingHistory, finalizeFiling, getFiling } from './index';
-import { glMovement, pp30Model, pp30Net, pp30Netting } from './pp30';
+import { glMovement, pp30Boxes, pp30Model, pp30Net, pp30Netting, type Filing } from './pp30';
+import { taxDueOf } from './payment';
 
 // TX2c: a finalized ภ.พ.30 closes its VAT into "VAT payable" / "VAT carried forward" on the finalize day; a return is paid by a bank line (Dr its payable / Cr bank).
 const CO = 'co-vat';
@@ -41,7 +42,14 @@ describe('2.2 the netting entry (money formula)', () => {
   it('nothing to close: no entry', () => expect(pp30Netting(st, CO, '2026-09', boxes('0.00', '0.00', '0.00'), '2026-10-14')).toEqual([]));
   it('the rule names the box and the month', () => {
     const l = pp30Netting(st, CO, '2026-09', boxes('1000.00', '300.00', '0.00'), '2026-10-14')[0].lines;
-    expect(l[2].rule).toContain('ภ.พ.30 เดือน ก.ย. 2569 ช่อง 8');
+    expect(l[2].rule).toContain('ภ.พ.30 เดือน ก.ย. 2569 ช่อง 11');
+  });
+});
+
+describe('TX4 the payment cap is the net payable box (11), not box 8 (the month own tax)', () => {
+  it('a carry brought in lowers what is paid: box 8 = 70.00, box 10 = 20.00, pay 50.00', () => {
+    const f = { form: 'PP30', boxes: pp30Boxes([{ id: 'o', kind: 'out', type: 'TI', date: '2026-09-01', description: '', state: 'live', base7: '0.00', base0: '0.00', baseEx: '0.00', vat: '100.00' }, { id: 'i', kind: 'in', type: 'PB', date: '2026-09-01', description: '', state: 'live', base7: '0.00', base0: '0.00', baseEx: '0.00', vat: '30.00' }], sat('20.00'), 0, '2026-09') } as Filing;
+    expect(taxDueOf(f)).toBe(sat('50.00'));
   });
 });
 
@@ -55,7 +63,7 @@ describe('2.3 finalize posts the netting', () => {
       const b = (c: string) => sat(f.boxes.find((x) => x.code === c)!.amount);
       expect(at('2151').reduce((n, l) => n + sat(l.debit), 0)).toBe(b('5'));
       expect(at('1170').reduce((n, l) => n + sat(l.credit), 0)).toBe(b('7'));
-      expect(at('2154').reduce((n, l) => n + sat(l.credit), 0)).toBe(b('8'));
+      expect(at('2154').reduce((n, l) => n + sat(l.credit), 0)).toBe(b('11'));
     }
     expect(checkInvariants(st)).toEqual([]);
   });

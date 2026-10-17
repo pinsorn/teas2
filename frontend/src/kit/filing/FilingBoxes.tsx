@@ -21,7 +21,7 @@ export function FilingBoxes({ boxes, period }: { boxes: FilingBox[]; period: str
         {boxes.map((b) => {
           const tab = b.source ? TAB[b.source.reportKind as keyof typeof TAB] : undefined;
           return (
-            <TableRow key={b.code} data-testid={`box-${b.code}`} className={cn('h-(--row-h)', b.code === '11' && 'border-t-2 border-(--color-rule) font-semibold')}>
+            <TableRow key={b.code} data-testid={`box-${b.code}`} className={cn('h-(--row-h)', (b.code === '11' || b.code === '12') && 'border-t-2 border-(--color-rule) font-semibold')}>
               {coded ? <TableCell className="tabular-nums">{b.code}</TableCell> : null}
               <TableCell>{b.labelTh}</TableCell>
               <TableCell className="text-end tabular-nums">{b.kind === 'count' ? t('count', { n: b.amount }) : formatMoney(b.amount)}</TableCell>

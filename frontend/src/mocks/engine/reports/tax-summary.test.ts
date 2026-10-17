@@ -74,7 +74,7 @@ describe('tax summary (ruling 1)', () => {
   it('F1: net VAT is the month\'s own output less input; a carry-in (box 10) does not move it', () => {
     const f = st.filings.find((x) => x.form === 'PP30' && x.period === '2026-08')!;
     const set = (code: string, amount: string) => { f.boxes = f.boxes.map((b) => (b.code === code ? { ...b, amount } : b)); };
-    set('5', '100.00'); set('7', '50.00'); set('10', '30.00'); set('8', '20.00'); set('9', '0.00'); // payable after the carry-in is 20, the month's own net 50
+    set('5', '100.00'); set('7', '50.00'); set('10', '30.00'); set('8', '50.00'); set('9', '0.00'); set('11', '20.00'); set('12', '0.00'); // box 8 is the month's own 50; payable after the carry-in (box 11) is 20
     expect(cell('co-vat', '2026', 'ส.ค.', 'netVat')).toBe('50.00');
     set('5', '40.00'); expect(cell('co-vat', '2026', 'ส.ค.', 'netVat')).toBe('-10.00'); // signed
   });
