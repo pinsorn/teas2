@@ -19,3 +19,4 @@
 | 2026-10-17 | SP1c AC7a review (late registration catch-up, fa-car, asset-register report) | opus-reviewer | money diff (depreciation math, invariants, GL tie) — warm reviewer |
 | 2026-10-17 | SP1c AC7b review (recurring schedule template editor, template re-freeze) | opus-reviewer | frozen money data a run turns into a draft — warm reviewer |
 | 2026-10-17 | SP1c TX1 review (PP30 filing kit, registers, frozen finalize, filing lock) | opus-reviewer (fresh) | tax + lock diff — plan marks Opus; warm reviewer context full, new area |
+| 2026-10-17 | SP1c TX2 implement (WHT returns, PP36, WHT receivable, missing 50 ทวิ, pay-to-RD) | sonnet-implementer | default implementer; Opus review after |
