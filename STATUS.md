@@ -5,7 +5,7 @@
 
 ## Now — 2026-10-17 23:30
 - **SP1c groups 00–06** merged (PR #7–#13). Group 06 Tax approved by Ham 2026-10-17 ("โอเคแล้วแหละ"): ภ.พ.30 + registers + filing lock, ภ.ง.ด.2/3/53/54, ภ.พ.36, paying a filed return from a bank line, CIT ภ.ง.ด.50/51, tax summary, VAT threshold watch, form catalogue, 50 ทวิ on the RD layout (2 copies), ภ.พ.30 boxes as the official form. Still [SP-R]: ภ.พ.36 gross-up base, donation base / line 17, OB tax payables, CIT journal.
-- **SP1c group 07 Payroll** in progress (branch `feat/sp1c-07-payroll`, worktree `Y:ClaudePlaygroundT2-sp1ab`): PY1 employees + payroll runs.
+- **SP1c group 07 Payroll** in progress (branch `feat/sp1c-07-payroll`, worktree `Y:\ClaudePlayground\T2-sp1ab`): PY1 employees + payroll runs.
 - **SP1c group 05 Accounting approved by Ham 2026-10-17** (branch `feat/sp1c-05-accounting`, worktree `Y:\ClaudePlayground\T2-sp1ab`): AC1 journal vouchers / reverse / accruals, AC2 chart of accounts, AC3 opening balances wizard, AC4 recurring templates + amortisation schedules, AC5 fixed assets / depreciation runs / disposal by TI, AC6 period close + year-end closing entry, and Ham's pre-merge follow-ups AC7a (late registration catch-up, asset-register report, fa-car), AC7b (template editor), AC7c (real DBD แบบ 2 / P&L format 2.7 and ภ.ง.ด.50 ปี 2568 lines). Every money task Opus-reviewed to APPROVE. Gate at a6b5f95: 1719 unit, 691 e2e (`--workers=1`), build green.
 - Ham rulings 2026-10-17: late asset registration = catch-up in the next run; DBD P&L format 2.7; ภ.ง.ด.50 mapped per `docs/research/tax/dbd-fs-lines-and-pnd50.md` (add-backs computed in group 06).
 - **SP-R** (worktree `Y:\ClaudePlayground\T2-spr`, branch `docs/sp-r`): B1–B4 done; decision list `docs/research/tax/DECISIONS.md` (56 points) with Ham.
