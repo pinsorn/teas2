@@ -167,7 +167,7 @@
     "skipToContent": "ข้ามไปยังเนื้อหา",
     "navLabel": "เมนูหลัก",
     "breadcrumbLabel": "breadcrumb",
-    "crumb": { "draft": "ร่าง", "edit": "แก้ไข", "new": "สร้างใหม่" },
+    "crumb": { "draft": "ร่าง", "edit": "แก้ไข", "template": "แม่แบบ", "new": "สร้างใหม่" },
     "openMenu": "เปิดเมนู",
     "menuTitle": "เมนู",
     "search": "ค้นหาหรือไปที่",

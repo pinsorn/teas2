@@ -615,3 +615,24 @@ describe('AC7b: a recurring schedule template is edited as a whole (rulings 2-4)
     expect(err(() => updateSchedule(st, CO, a.id, body(), ME)).code).toBe('schedule.invalid');
   });
 });
+
+describe('AC7b round 2', () => {
+  const tl = (over: Partial<DocLine> = {}): DocLine => ({ id: `tr-${++n}`, description: 'ดูแลเว็บไซต์', qty: '1', unit: 'เดือน', unitPrice: '5000.00', taxCode: 'S7', ...over });
+  const rec = () => createRecurring(st, CO, { name: 'ดูแลเว็บไซต์', frequency: 'monthly', nextRun: '2026-11-01', template: { type: 'TI', header: { partyId: 'pc-04', documentDate: '2026-01-01' }, lines: [tl()] } }, ME);
+  it('M1: a template a draft create would refuse (bad tax code) is refused at save, nothing written', () => {
+    const s = rec(), before = JSON.stringify(sched(s.id));
+    const e = err(() => updateSchedule(st, CO, s.id, { template: { header: { partyId: 'pc-04' }, lines: [tl({ taxCode: 'BOGUS' as never })] } }, ME));
+    expect(e.code).toBe('doc.invalid_line');
+    expect(JSON.stringify(sched(s.id))).toBe(before);
+  });
+  it('M2: copying from a document goes through the same save: history, audit, frozen party name', () => {
+    const s = rec(), old = structuredClone(s.template!);
+    const src = st.docs.find((d) => d.type === 'TI' && d.status === 'issued' && d.companyId === CO && d.header.partyId)!;
+    const upd = updateSchedule(st, CO, s.id, { templateDocId: src.number }, ME);
+    expect(upd.templateHistory).toHaveLength(1);
+    expect(upd.templateHistory![0]).toMatchObject({ by: ME, template: old });
+    expect(st.audit.some((a) => a.command === 'schedule.template' && a.target === s.id)).toBe(true);
+    expect(upd.template!.partyName).toBe(st.parties.find((p) => p.id === src.header.partyId)!.name);
+    expect(upd.source?.docId).toBe(src.id);
+  });
+});

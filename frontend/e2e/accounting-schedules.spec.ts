@@ -180,6 +180,8 @@ test('AC7b: the template opens in the document editor, an edited line is saved (
   await expect(page).toHaveURL(`${BASE}/${id}/template`);
   await expect(page.getByRole('heading', { level: 1 })).toContainText('แก้ไขแม่แบบ');
   await expect(page.getByRole('combobox', { name: 'ลูกค้า' })).not.toHaveValue(''); // prefilled from the frozen template
+  const crumbs = page.getByRole('navigation', { name: 'breadcrumb' });
+  await expect(crumbs).toContainText('ดูแลเว็บไซต์รายเดือน'); await expect(crumbs).toContainText('แม่แบบ'); await expect(crumbs).not.toContainText('sch-'); // the name, never the id
   await expect(page.getByLabel('วันที่เอกสาร')).toHaveCount(0); // no date, no number, no issue
   await expect(page.getByRole('button', { name: /^ออก/ })).toHaveCount(0);
   const price = page.getByRole('textbox', { name: /^ราคาต่อหน่วย/ }).first();

@@ -1,7 +1,7 @@
 import { LIVE, isTypeAvailable } from '@/domain/doc-types';
 import type { Actor, DocHeader, DocLine, DocType, IsoDate, Lock, Money, ScheduleFrequency, ScheduleRecord, SchedulePlanRow } from '@/domain/types';
 import type { MockState } from '../store';
-import { allocate, createDraft, missingOf, newId, publicDoc, setJournal } from './commands';
+import { allocate, compute, createDraft, missingOf, newId, publicDoc, setJournal } from './commands';
 import { isUsed, jvAccountProblem, jvMissing, jvTotals, userReversalOf } from './journal';
 import { ledgerFor } from './ledger';
 import { MockError, logActivity, logAudit, stamp, today } from './log';
@@ -202,6 +202,7 @@ function checkedTemplate(st: MockState, companyId: string, s: ScheduleRecord, ra
   const { template, missing } = templateBody(st, companyId, s, raw);
   if (missing.length) throw fail(422, 'doc.incomplete', missing.map((x) => x.message).join('; '));
   checkTemplate(st, companyId, template, name, true);
+  compute(st, companyId, template.type, { header: { ...template.header, documentDate: s.nextRun }, lines: template.lines }); // the line check a draft create runs (doc.invalid_line): a template no run could turn into a draft is refused here
   return template;
 }
 function setTemplate(st: MockState, companyId: string, s: ScheduleRecord, template: Template, actor: Actor): void {
@@ -215,18 +216,18 @@ export function updateSchedule(st: MockState, companyId: string, id: string, v: 
   const s = scheduleOf(st, companyId, id);
   const name = typeof v.name === 'string' ? v.name.trim() : s.name;
   if (!name) throw fail(422, 'schedule.invalid', 'ต้องตั้งชื่อ');
-  const nt = v.template !== undefined ? checkedTemplate(st, companyId, s, v.template, name) : undefined; // validated before anything is written
+  // "แก้ไขแม่แบบ" by copy: another document of the same type is the template body; it takes the same checks, freeze and history as an edited body
+  const q = s.kind === 'recurring' && typeof v.templateDocId === 'string' ? v.templateDocId.trim() : '';
+  const copy = q ? st.docs.find((x) => x.companyId === companyId && (x.id === q || x.number === q)) : undefined;
+  if (q && v.template === undefined && (!copy || copy.type !== s.template!.type)) throw fail(422, 'schedule.invalid', `ไม่พบเอกสารประเภท ${s.template!.type} เลขที่ ${q}`);
+  const nt = v.template !== undefined ? checkedTemplate(st, companyId, s, v.template, name) : copy ? checkedTemplate(st, companyId, s, copy, name) : undefined; // validated before anything is written
   s.name = name;
   if (s.kind === 'recurring') {
     if (v.frequency !== undefined) { if (!((v.frequency as string) in STEP)) throw fail(422, 'schedule.invalid', 'ความถี่ไม่ถูกต้อง'); s.frequency = v.frequency as ScheduleFrequency; }
     if (v.nextRun !== undefined && v.nextRun !== s.nextRun) { if (!validDate(v.nextRun)) throw fail(422, 'schedule.invalid', 'วันที่รันครั้งถัดไปไม่ถูกต้อง'); s.nextRun = v.nextRun; s.day = Number(v.nextRun.slice(8, 10)); }
     if ('endAfter' in v) { if (v.endAfter === undefined || v.endAfter === null || v.endAfter === '') delete s.endAfter; else if (Number.isInteger(v.endAfter) && (v.endAfter as number) >= 1) s.endAfter = v.endAfter as number; else throw fail(422, 'schedule.invalid', 'จำนวนครั้งต้องเป็นจำนวนเต็มตั้งแต่ 1'); }
     if (nt) setTemplate(st, companyId, s, nt, actor);
-    if (typeof v.templateDocId === 'string' && v.templateDocId.trim()) { // "แก้ไขแม่แบบ": a fresh frozen copy of another document of the same type
-      const q = v.templateDocId.trim(), d = st.docs.find((x) => x.companyId === companyId && (x.id === q || x.number === q));
-      if (!d || d.type !== s.template!.type) throw fail(422, 'schedule.invalid', `ไม่พบเอกสารประเภท ${s.template!.type} เลขที่ ${q}`);
-      const t = templateOf(d); checkTemplate(st, companyId, t, s.name, true); s.template = t; s.source = { docId: d.id };
-    }
+    if (nt && copy && v.template === undefined) s.source = { docId: copy.id };
     refresh(st, s);
   }
   touch(s);
