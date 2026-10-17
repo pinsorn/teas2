@@ -66,7 +66,7 @@ export function PayrollGrid(p: { lines: DocLine[]; onChange: (l: DocLine[]) => v
 **Permissions:** accountant `employee.read`, `employee.manage`, `doc.PR.*`, `payroll.read` (no `doc.PR.approve`: PR is not in the master approval catalogue of 16 types — PY1 review 2026-10-18); operator /
 admin none (admin `employee.read` only).
 
-- [ ] **Step 1: Failing tests** — `payroll.test.ts`: SSO vectors — salary 1,000.00 → base clamped to 1,650 → 82.50;
+- [x] **Step 1: Failing tests** — `payroll.test.ts`: SSO vectors — salary 1,000.00 → base clamped to 1,650 → 82.50;
   salary 30,000.00 → base clamped to 17,500 → 875.00 (employer equal). PIT vector — single, no children, salary
   30,000.00 / month, January run, no YTD: projected 360,000 − expense 100,000 (cap) − personal 60,000 − SSO 10,500 =
   taxable 189,500 → tax (189,500 − 150,000) × 5 % = 1,975.00 → January PIT = 1,975.00 / 12 = 164.58; the same employee's
@@ -76,9 +76,9 @@ admin none (admin `employee.read` only).
   `PayrollGrid.test.tsx`: server columns never computed client-side (mocked compute values shown verbatim). e2e:
   `screenContract` employees (`both`, forbiddenRole operator), runs list / view (`both`, forbiddenRole operator); flow
   open `prDraft` → change OT of one employee → compute updates PIT / net from the server → issue.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS**; invariants `[]`.
-- [ ] **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(payroll): employees and payroll runs with PIT and SSO`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS**; invariants `[]`.
+- [x] **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(payroll): employees and payroll runs with PIT and SSO`.
 
 ---
 
@@ -99,11 +99,11 @@ net, YTD), printed for all employees of a run or one.
 
 **Money invariants:** after pay `GL(2170)` contribution of the run = 0; unpay restores.
 
-- [ ] **Step 1: Failing tests** — pay requires an account when several exist; pay journal balances; YTD on the slip =
+- [x] **Step 1: Failing tests** — pay requires an account when several exist; pay journal balances; YTD on the slip =
   Σ issued runs of the year up to this one; paper prints every slip's net from the model. e2e: pay `prIssued` → status
   settled; print slips.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(payroll): pay runs and payslips`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(payroll): pay runs and payslips`.
 
 ---
 
@@ -133,16 +133,16 @@ net, YTD), printed for all employees of a run or one.
 **Fixtures:** finalized ภ.ง.ด.1 + สปส for 2026-08; 2026-09 draft; non-VAT company SSO account missing (blocker demo).
 Keys `pnd1Draft`, `ssoBlocked` (non-VAT).
 
-- [ ] **Step 1: Failing tests** — tie-outs zero; 1ก = Σ months; missing SSO account blocker with exit link;
+- [x] **Step 1: Failing tests** — tie-outs zero; 1ก = Σ months; missing SSO account blocker with exit link;
   unencodable name blocker. e2e: `screenContract` for each tab (`both`, forbiddenRole operator).
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(payroll): ภ.ง.ด.1, ภ.ง.ด.1ก, สปส.1-10 and employee 50 ทวิ`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(payroll): ภ.ง.ด.1, ภ.ง.ด.1ก, สปส.1-10 and employee 50 ทวิ`.
 
 ---
 
 ### Task GPY: Ham gate — payroll
 
-- [ ] Consolidated gate green; production build / staging.
+- [x] Consolidated gate green; production build / staging.
 - [ ] Send Ham: employees; the payroll grid (**D-11: a fourth line editor — needs Ham's acknowledgement because SP0
   §7.1 names three**); PIT / SSO figures as `[SP-R]` fixtures; several runs per month; pay; payslips; filings.
 - [ ] AskUserQuestion "Payroll approve?" — approve / approve with changes / rework. Record in `STATUS.md`.
