@@ -32,3 +32,4 @@
 | 2026-10-17 | SP1c TX3a fix1 (PND51 after PND50, loss used once, frozen mapping, tampers) | sonnet-implementer | fix round from Opus REJECT |
 | 2026-10-17 | SP1c TX3b review (tax summary, VAT threshold, forms) | sonnet-reviewer | read models + UI |
 | 2026-10-17 | SP1c GTX consolidated gate | haiku-gate-runner | Tier 3 run-and-report |
+| 2026-10-17 | SP1c TX4 implement (50 ทวิ RD layout, PP30 official boxes 8-12) | sonnet-implementer | Ham gate follow-ups; Opus review after (filing kit) |
