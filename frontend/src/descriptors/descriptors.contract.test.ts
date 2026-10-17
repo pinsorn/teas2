@@ -40,5 +40,5 @@ describe('descriptor registry', () => {
       permissions: { ...DESCRIPTORS.TI!.permissions, cancel: 'doc.TI.void' } } as DocDescriptor;
     expect(checkDescriptor(bad)).toEqual(expect.arrayContaining(['class', 'vat', 'perm:cancel', 'basePath shape']));
   });
-  it('docViewHref is undefined for a type that is not built', () => { expect(docViewHref('PR', 'x')).toBeUndefined(); });
+  it('every document type is built: PR (PY1) was the last, its view is on the payroll runs route', () => { expect(docViewHref('PR', 'x')).toBe('/payroll/runs/x'); });
 });

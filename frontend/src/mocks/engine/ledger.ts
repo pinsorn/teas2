@@ -7,6 +7,7 @@ import { categoryOf, exForfeited, isRecoverable } from './purchase-vat';
 import { jvEntryLines } from './journal';
 import { disposalEntryLines, dpEntryLines } from './assets';
 import { obEntryLines } from './opening';
+import { payrollRows } from './payroll';
 import { cashBankId, freezeWht, frozenFigures } from './settlement';
 import { computeDoc, vatBasisOf, vatOf } from './vat';
 
@@ -50,6 +51,7 @@ const mirror = (r: Rows): Rows => (t, d, st, co) => r(t, d, st, co).map(([role, 
 export const POST: Partial<Record<DocType, Rows>> = {
   TI: sales('Revenue'), IV: sales('Revenue'), DN: sales('Revenue'), CN: mirror(sales('SalesReturn')),
   PB: purchase, PDN: purchase, PCN: mirror(purchase), EX: expenseClaim,
+  PR: (_t, d) => payrollRows(d), // PY1: exactly the frozen slips
   // RC: cash received + WHT withheld by the customer = what it clears from AR + the deposit remainder + a non-VAT cash bill (net + output VAT)
   RC: (t, d, st, co) => [['Cash', t.cash, 0, { bankAccountId: cashBankId(st, co, d.header) }], ['WhtReceivable', t.wht, 0], ...perTarget(d, st, 'AR', ['TI', 'IV', 'OB'], 'Cr', 'AR'),
     ['CustomerDeposit', 0, toSatang(d.header.depositAmount ?? '0.00')], ...netRows(d, 'Revenue', 'Cr', vatOf(st, co)), ['OutputVat', 0, t.vat]],

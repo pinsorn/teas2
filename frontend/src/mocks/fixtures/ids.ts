@@ -17,10 +17,10 @@ type DocFixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssuedUnpa
   | 'pvMultiWt' | 'pvGrossUp' | 'pvForeign' | 'pvCancelled' | 'wtIssued' | 'wtCancelled'
   | 'exDraft' | 'exPending' | 'exApproved' | 'exUnpaid' | 'exPaid' | 'exForfeit' | 'nexIssued'
   | 'tiDeposit' | 'rcDepositApplied' | 'pvPrepayment'
-  | 'jvDraftUnbalanced' | 'jvAccrual' | 'jvIssued' | 'jvReversal' | 'njvIssued' | 'obIssued' | 'obDraft' | 'faActive' | 'faDisposed' | 'dpRun' | 'nfaActive' | 'faCar'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
+  | 'prDraft' | 'prIssued' | 'prPaid' | 'nprIssued' | 'jvDraftUnbalanced' | 'jvAccrual' | 'jvIssued' | 'jvReversal' | 'njvIssued' | 'obIssued' | 'obDraft' | 'faActive' | 'faDisposed' | 'dpRun' | 'nfaActive' | 'faCar'; // later tasks extend this union and FIXTURE_PREDICATES (one line each)
 
 /** FN1 bank accounts: not documents, so no predicate - a fixed record id that must exist in the seed. `bankEmpty` is the VAT company's account with no imports. */
-export const BANK_FIXTURES = { bankKbank: 'ba-kbank', bankEmpty: 'ba-scb', nbankKbank: 'nba-kbank' } as const;
+export const BANK_FIXTURES = { bankKbank: 'ba-kbank', bankEmpty: 'ba-scb', nbankKbank: 'nba-kbank', /** PY1: an employee record (a party, not a bank account) - joins on 15 Oct 2026, so October is prorated */ empJoiner: 'emp-04' } as const;
 /** AC4 schedules: not documents either, a fixed record id that must exist in the seed. */
 export const SCHEDULE_FIXTURES = { schedRecurringTi: 'sch-rec-ti', schedAmortisation: 'sch-amort', nschedRecurring: 'nsch-rec-iv' } as const;
 /** TX1 filing periods (YYYY-MM): not documents. 2026-08 is finalized, 2026-09 is a draft that can be finalized (the gate demo), 2026-10 is a draft with blockers (drafts, and September still open). */
@@ -137,6 +137,12 @@ export const FIXTURE_PREDICATES: Record<DocFixtureKey, (d: D, st: MockState) => 
   faCar: byId('nfa-car', (d) => d.status === 'issued' && d.companyId === 'co-nonvat'),
   faDisposed: byId('fa-sold', (d) => d.status === 'issued' && d.asset?.disposed?.kind === 'sale'),
   dpRun: byId('dp-2026-08', (d) => d.status === 'issued'),
+  // PY1 payroll: pr-2026-10 is the October draft; pr-bonus-09 (the second September run) is the latest issued run, so it can still be revised / cancelled; pr-2026-08 is the run PY2 pays first - it is issued, not paid yet, and
+  // locked by the later runs (the lock demo); npr-2026-09 is the non-VAT company's September run
+  prDraft: byId('pr-2026-10', (d) => d.status === 'draft'),
+  prIssued: byId('pr-bonus-09', (d) => d.status === 'issued'),
+  prPaid: byId('pr-2026-08', (d) => d.status === 'issued'),
+  nprIssued: byId('npr-2026-09', (d) => d.status === 'issued' && d.companyId === 'co-nonvat'),
 };
 
 /** Lowest id (string order) matching each predicate in the active seed; throws listing every unresolved key. */
@@ -148,7 +154,7 @@ export function fixtureIds(st: MockState): Record<FixtureKey, string> {
     if (hit) out[k] = hit; else missing.push(k);
   }
   for (const [k, id] of Object.entries(BANK_FIXTURES) as [keyof typeof BANK_FIXTURES, string][]) {
-    if (st.bankAccounts.some((b) => b.id === id)) out[k] = id; else missing.push(k);
+    if (st.bankAccounts.some((b) => b.id === id) || st.parties.some((p) => p.id === id && p.kind === 'employee')) out[k] = id; else missing.push(k);
   }
   for (const [k, id] of Object.entries(SCHEDULE_FIXTURES) as [keyof typeof SCHEDULE_FIXTURES, string][]) {
     if (st.schedules.some((s) => s.id === id)) out[k] = id; else missing.push(k);

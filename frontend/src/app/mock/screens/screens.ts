@@ -31,6 +31,8 @@ export const OB_BASE = '/accounting/opening-balances';
 export const SCHEDULE_BASE = '/accounting/schedules';
 export const FA_BASE = '/accounting/fixed-assets';
 export const DP_BASE = '/accounting/depreciation-runs';
+export const PR_BASE = '/payroll/runs';
+export const EMP_BASE = '/payroll/employees';
 // names are keys of messages `screens.name.*`; fixture keys live in src/mocks/fixtures/ids.ts (later tasks append their screens here)
 export const SCREENS: Screen[] = [
   { name: 'home', route: '/', company: 'both', states: true },
@@ -176,6 +178,14 @@ export const SCREENS: Screen[] = [
   { name: 'dpList', route: DP_BASE, company: 'both', states: true },
   { name: 'dpNew', route: `${DP_BASE}/new`, company: 'both', states: true },
   { name: 'dpRun', route: { fixture: 'dpRun', base: DP_BASE }, company: 'vat', states: true },
+  { name: 'employeesList', route: EMP_BASE, company: 'both', states: true },
+  { name: 'employeeJoiner', route: { fixture: 'empJoiner', base: EMP_BASE }, company: 'vat', states: true },
+  { name: 'prList', route: PR_BASE, company: 'both', states: true },
+  { name: 'prNew', route: `${PR_BASE}/new`, company: 'both', states: true },
+  { name: 'prDraft', route: { fixture: 'prDraft', base: PR_BASE }, company: 'vat', states: true },
+  { name: 'prIssued', route: { fixture: 'prIssued', base: PR_BASE }, company: 'vat', states: true },
+  { name: 'prPaid', route: { fixture: 'prPaid', base: PR_BASE }, company: 'vat', states: true },
+  { name: 'nprIssued', route: { fixture: 'nprIssued', base: PR_BASE }, company: 'nonvat', states: true },
   { name: 'periodClose', route: '/accounting/period-close', company: 'both', states: true },
   { name: 'vat', route: '/tax/vat', company: 'vat', states: true }, // TX1: the month after the last one filed
   { name: 'vatFiled', route: '/tax/vat?period=2026-08', company: 'vat', states: true }, // finalized: the frozen snapshot

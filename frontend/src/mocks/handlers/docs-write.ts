@@ -7,6 +7,8 @@ import { buildChain } from '../engine/chain';
 import { approve, sendBack } from '../engine/approval';
 import { type Body, keepOmitted, unavailableTh, approveAndIssue, cancel, compute, convert, createDraft, deleteDraft, issue, publicDoc, submitForApproval, updateDraft } from '../engine/commands';
 import { refuseJvRevise, reverseJv } from '../engine/journal';
+import { refuseLaterRun } from '../engine/payroll';
+import { employeeImpl } from '../records/employees';
 import { controlExit } from '../engine/reconcile';
 import { resolvedBankId } from '../engine/settlement';
 import { buildPlan, correctionPlan, executePlan, planStale } from '../engine/corrections';
@@ -29,6 +31,7 @@ export const stripOverrides = <T extends Body>(b0: T): T => {
   if (b?.header && ('reversalOf' in b.header || 'autoReversal' in b.header)) { const { reversalOf, autoReversal, ...h } = b.header; void reversalOf; void autoReversal; b = { ...b, header: h }; } // JV: a reversal's link is engine-set (reverse / auto-reverse), never accepted from a caller
   if (b?.header && ('obBatchId' in b.header || 'obSide' in b.header || 'obKind' in b.header)) { const { obBatchId, obSide, obKind, ...h } = b.header; void obBatchId; void obSide; void obKind; b = { ...b, header: h }; } // OB: the frozen items are engine-made, never accepted from a caller
   if (b?.opening) { const { codes, ...o } = b.opening; void codes; b = { ...b, opening: { ...o, openItems: Array.isArray(o.openItems) ? o.openItems.map((i) => { const { partyName, ...r } = i; void partyName; return r; }) : o.openItems } }; } // OB: the frozen account codes and party names are engine-set at issue / revise, never accepted (an item id is kept: the engine checks it against the stored batch)
+  if (b && 'payroll' in b) { const { payroll, ...r } = b as T & { payroll?: unknown }; void payroll; b = r as T; } // PR: the frozen slips are engine-made at issue / revise, never accepted from a caller
   if (b?.header && 'disposal' in b.header) { const { disposal, ...h } = b.header; void disposal; b = { ...b, header: h }; } // AC5: a disposal invoice is made by the asset's dispose command only; its frozen figures are never accepted from a caller
   if (b?.header && 'bankSnapshot' in b.header) { const { bankSnapshot, ...h } = b.header; void bankSnapshot; b = { ...b, header: h }; } // engine-set at issue (I3): never accepted from a caller
   if (!Array.isArray(b?.lines)) return b;
@@ -182,10 +185,31 @@ export const docsWriteHandlers = [
   http.get('*/bff/v1/accounting/journal-accounts', ({ request }) => guarded(new URL(request.url).searchParams.get('for') === 'OB' ? 'OB' : 'JV', P('create'), (c) => HttpResponse.json(
     c.st.accounts.filter((a) => a.companyId === c.company.id && a.postable && a.active !== false && (new URL(request.url).searchParams.get('for') === 'OB' ? a.subClass !== 'opening' && a.subClass !== 'current-year' : !controlExit(c.st, c.company.id, a.code, 'jv'))).map((a) => ({ code: a.code, nameTh: a.nameTh, class: a.class }))))),
 
+  // PY1: an employee on any payroll run is deactivated, never deleted (the exit says so); an unused one can go
+  http.delete('*/bff/v1/records/employee/:id', async ({ request, params }) => {
+    const gate = await screenGate('item');
+    if (gate) return gate;
+    try {
+      const c = ctx();
+      if (!c.perms.includes('employee.manage')) return forbidden('employee.manage');
+      const p = c.st.parties.find((x) => x.id === params.id && x.companyId === c.company.id && x.kind === 'employee');
+      if (!p) return problem(404, 'record.not_found', 'ไม่พบข้อมูลนี้');
+      const v = new URL(request.url).searchParams.get('version');
+      if (v !== null && Number(v) !== (p.version ?? 1)) return problem(409, 'record.version_conflict', 'ข้อมูลนี้ถูกแก้ไขโดยผู้อื่นแล้ว โหลดข้อมูลใหม่ก่อนบันทึก');
+      employeeImpl.remove(c.st, c.company.id, p.id);
+      persist(c.st);
+      return new HttpResponse(null, { status: 204 });
+    } catch (e) {
+      if (e instanceof MockError) return problem(e.status, e.code, e.title);
+      throw e;
+    }
+  }),
+
   http.post('*/bff/v1/docs/:type/:id/correction-plan', ({ request, params }) => generic(String(params.type), P('create'), async (c, t) => {
     const orig = own(c, t, params.id);
     const proposal = stripOverrides((await request.json()) as Body);
     if (t === 'JV') refuseJvRevise(c.st, orig, proposal); // a reversed JV and a reversal are final: refused before a plan is shown
+    if (t === 'PR') refuseLaterRun(c.st, orig); // PY1: a run a later run builds on cannot be revised: refused before a plan is shown (exit: the next run's adjustment lines)
     refuseInactive(c, t, proposal?.header && keepOmitted(orig, proposal.header), orig.header); // I2: a correction cannot re-point the document to a closed account
     const plan = correctionPlan(c.st, String(params.id), proposal, c.s.role);
     done(c);

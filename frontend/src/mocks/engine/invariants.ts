@@ -12,6 +12,7 @@ import { inForceTax } from './filings/payment';
 import { boxOf, pp30Net } from './filings/pp30';
 import type { FilingBox } from '@/domain/filings';
 import { obInvariants } from './opening';
+import { payrollInvariants } from './payroll';
 import { appliedOf, docCash, toleranceOf } from './locks';
 import { payoutOf, resolvedBankId } from './settlement';
 import { consumed, q4 } from './chain';
@@ -151,8 +152,11 @@ export function checkInvariants(st: MockState): string[] {
     sub.set(sk, (sub.get(sk) ?? 0) + sat(d.outstanding ?? '0.00', d.id));
   }
 
+  // PY1: what a payroll run withheld from an employee as an other deduction is kept on 2180 under their name, with the expense claims they are owed
+  const prDeductions = st.docs.flatMap((d) => (d.type === 'PR' && LIVE.includes(d.status) && d.payroll ? d.payroll.slips.map((s) => ({ co: d.companyId, name: s.name, n: sat(s.otherDeduction, d.id) })) : []));
+  for (const x of prDeductions) sub.set(`${x.co}|PR`, (sub.get(`${x.co}|PR`) ?? 0) + x.n);
   // 4. subledger = GL, per company
-  const SUBLEDGERS: [string, number, string[]][] = [['1130', 1, ['TI', 'IV', 'OB:AR']], ['2110', -1, ['PB', 'OB:AP']], ['2180', -1, ['EX', 'OB:EMP']]];
+  const SUBLEDGERS: [string, number, string[]][] = [['1130', 1, ['TI', 'IV', 'OB:AR']], ['2110', -1, ['PB', 'OB:AP']], ['2180', -1, ['EX', 'OB:EMP', 'PR']]];
   for (const c of st.companies) {
     for (const [code, sign, types] of SUBLEDGERS) {
       const glBal = sign * (gl.get(`${c.id}|${code}`) ?? 0);
@@ -196,6 +200,7 @@ export function checkInvariants(st: MockState): string[] {
     const k = `${d.companyId}|${d.party?.name ?? ''}`;
     empSub.set(k, (empSub.get(k) ?? 0) + sat(d.outstanding ?? '0.00', d.id));
   }
+  for (const x of prDeductions) empSub.set(`${x.co}|${x.name}`, (empSub.get(`${x.co}|${x.name}`) ?? 0) + x.n);
   for (const k of new Set([...empByParty.keys(), ...empSub.keys()])) {
     if ((empByParty.get(k) ?? 0) !== (empSub.get(k) ?? 0)) {
       const [company, name] = k.split('|');
@@ -613,6 +618,7 @@ export function checkInvariants(st: MockState): string[] {
   out.push(...closeInvariants(st)); // 19. year-end closing entries (AC6): per-account sweep, 3300 nets to nothing, 3200 = net profit, every revenue / expense account 0 after
   out.push(...filingInvariants(st)); // 20. finalized ภ.พ.30 (TX1): the boxes are what the stored documents give, every listed document still carries what the filing took, none of the month is missing
   out.push(...scheduleInvariants(st)); // 17. schedules (AC4): plan = total, each run JV = its plan row, the prepaid account moved by the live runs
+  out.push(...payrollInvariants(st)); // 21. payroll runs (PY1): every slip recomputes from what it stored, net = gross - PIT - SSO - deduction, totals = slips, the journal = totals per role, the year to date is a chain
   out.push(...jvInvariants(st)); // 15. journal vouchers (AC1): no controlled account, the journal is the lines, reversals mirror, accruals net to zero
 
   // numbering: gap-free per company x type x month, and the series counter agrees

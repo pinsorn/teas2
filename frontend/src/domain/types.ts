@@ -23,7 +23,10 @@ export interface PartySummary { id: string; kind: 'customer' | 'vendor' | 'emplo
   nameEn?: string; notes?: string; partyGroup?: string; contact?: { phone?: string; email?: string };
   /** Vendor remittance details. */ bankAccount?: { bankName?: string; accountNo?: string; accountName?: string };
   /** Foreign vendor registered under VAT-D (PP.36 not filed). */ vatDRegistered?: boolean;
-  /** FN3: the other side of a customer that is also a vendor (and back): netting (หักกลบ) is offered between the two. */ linkedPartyId?: string }
+  /** FN3: the other side of a customer that is also a vendor (and back): netting (หักกลบ) is offered between the two. */ linkedPartyId?: string;
+  /** Employee parties (PY1): the payroll master. The national ID is `taxId`, the bank details `bankAccount`; `name` is title + first + last name. */
+  payroll?: { titleName?: string; firstName: string; lastName: string; startDate: IsoDate; endDate?: IsoDate; salary: Money; ssoRegistered: boolean;
+    maritalStatus: 'single' | 'married'; spouseHasIncome: boolean; children: number; otherAllowances: Money } }
 export interface ItemSummary { id: string; code: string; name: string; kind: 'good' | 'service'; unit: string;
   unitPrice: Money; taxCode: TaxCode; whtTypeCode?: string;
   /** Where the item is offered: sales documents, purchase documents, or both. */ usage: { sales: boolean; purchase: boolean };
@@ -40,7 +43,26 @@ export interface DocLine { id: string; itemId?: string; description: string; qty
   /** EX line with VAT: the vendor's tax invoice behind it (ม.82/3, ม.86/4). Without all four details the line's VAT is cost (InputVatUnclaimed), never input VAT; with them the claim window of the invoice date applies, per line. */
   vendorInvoice?: VendorInvoice;
   /** JV line (AC1): the account, and ONE of debit / credit (the other '0.00'). The journal posts these verbatim. `partyId` only for an account that needs one (none today). */
-  accountCode?: string; debit?: Money; credit?: Money; partyId?: string }
+  accountCode?: string; debit?: Money; credit?: Money; partyId?: string;
+  /** PR line (PY1): the employee (a party of kind 'employee') and what is paid / withheld this run. Pay, PIT, SSO, net, YTD are the server's (`compute.payroll`), never typed. */
+  employeeId?: string; pay?: PayItems }
+/** What a payroll run pays one employee, typed by the accountant. `salary` is the full monthly salary (the server prorates a joiner / leaver); blank money = 0.00. */
+export interface PayItems { salary: Money; overtime?: Money; allowance?: Money; bonus?: Money; otherIncome?: Money; otherDeduction?: Money }
+/** One employee's payslip figures as the server computed them. */
+export interface PayslipLine { employeeId: string; name: string; gross: Money; pit: Money; sso: Money; ssoEmployer: Money;
+  otherDeduction: Money; net: Money; proratedDays?: number; ytdIncome: Money; ytdPit: Money }
+export interface PayrollTotals { gross: Money; pit: Money; sso: Money; ssoEmployer: Money; net: Money }
+/** [SP-R] the tax and social-security tables a slip was computed with (A.7). Frozen on every slip, so a later table change never touches an issued slip. */
+export interface PayrollTables { version: string; expenseRateBp: number; expenseCap: Money; personal: Money; spouse: Money; child: Money; ssoAllowanceCap: Money;
+  bands: { upTo?: Money; rateBp: number }[]; ssoRateBp: number; ssoFloor: Money; ssoCeiling: Money }
+/** The employee as the slip saw them (frozen at issue). */
+export interface EmployeeSnapshot { name: string; nationalId?: string; maritalStatus: 'single' | 'married'; spouseHasIncome: boolean; children: number; otherAllowances: Money;
+  ssoRegistered: boolean; salary: Money; startDate: IsoDate; endDate?: IsoDate }
+/** A frozen slip (CLAUDE.md freeze rule): everything it was computed from (`items`, `employee`, `tables`, the year-to-date `prior` it took, the SSO already withheld in the month, whether an earlier run of the month exists) and what came out. */
+export interface PayrollSlip extends PayslipLine { items: PayItems; employee: EmployeeSnapshot; tables: PayrollTables; month: string;
+  prior: { income: Money; pit: Money; sso: Money }; monthSso: Money; sameMonthPrior: boolean; salaryPaid: Money; daysInMonth: number; ytdSso: Money }
+/** PR, server-owned (never accepted from a caller): the run's frozen slips. */
+export interface PayrollData { month: string; slips: PayrollSlip[] }
 /** The vendor's tax invoice an expense-claim line carries: who issued it (name, TIN), its number and its date. */
 export interface VendorInvoice { vendorName: string; vendorTin: string; number: string; date: IsoDate;
   /** The employee confirms it is a FULL tax invoice made out to the company (ม.86/4): only then is its VAT claimable; false or absent = cost. */ fullTaxInvoice?: boolean }
@@ -96,7 +118,7 @@ export interface ObCheck { debit: Money; credit: Money; plug: Money; plugSide: '
 export interface DocTotals { gross: Money; discount: Money; net: Money; vat: Money; total: Money; wht?: Money; cash?: Money;
   amountInWords: string }
 /** `href`: where an exit button goes when the exit is a page elsewhere (the reconciliation lock: the bank line). */
-export interface Lock { kind: 'period' | 'filing' | 'settlement' | 'reconciliation' | 'reversal' | 'schedule' | 'asset'; reason: string; exits: string[]; href?: string }
+export interface Lock { kind: 'period' | 'filing' | 'settlement' | 'reconciliation' | 'reversal' | 'schedule' | 'asset' | 'payroll'; reason: string; exits: string[]; href?: string }
 /** Document marks: facts about the document that are not status (customer accepted / rejected a QT, DO delivered, PO sent, SO closed). Never a revision. */
 export type MarkKey = 'accepted' | 'rejected' | 'delivered' | 'sent';
 export interface DocMarks { accepted?: { at: string; by: string }; rejected?: { at: string; by: string; reason: string };
@@ -108,7 +130,7 @@ export interface RemainingLine { lineId: string; description: string; unit: stri
 export interface WhtFrozen { bases: { targetId: string; whtTypeCode: string; base: Money; clamped?: true; full?: true; billBase?: Money }[]; lines: WhtLine[]; expense: Money; cashDelta: Money }
 export interface Doc { id: string; type: DocType; number?: string; status: DocStatus; correctionClass: CorrectionClass;
   revision: number; version: number; header: DocHeader; party?: PartySummary; lines: DocLine[]; totals: DocTotals;
-  outstanding?: Money; locks: Lock[]; createdBy: Actor; issuedAt?: string; allocations?: Allocation[]; whtFrozen?: WhtFrozen; /** OB batch (AC3): the steps behind the trial balance. */ opening?: DocOpening; /** FA (AC5): the registered asset. */ asset?: AssetData; /** DP (AC5): the depreciation run's frozen rows. */ dp?: DpData;
+  outstanding?: Money; locks: Lock[]; createdBy: Actor; issuedAt?: string; allocations?: Allocation[]; whtFrozen?: WhtFrozen; /** OB batch (AC3): the steps behind the trial balance. */ opening?: DocOpening; /** FA (AC5): the registered asset. */ asset?: AssetData; /** DP (AC5): the depreciation run's frozen rows. */ dp?: DpData; /** PR (PY1): the payroll run's frozen slips. */ payroll?: PayrollData;
   /** CN / DN (ม.86/10): the invoice's net, the correct value after this note, the difference and its VAT, taken when the note is issued; the paper prints these. Server-written. */
   adjustSnapshot?: { originalNet: Money; correctNet: Money; diffNet: Money; vat: Money };
   cancel?: { reasonCode: string; reasonText: string; at: string }; replacedById?: string; replacesId?: string; marks?: DocMarks;
@@ -203,7 +225,8 @@ export interface ComputeResult { lines: { id: string; net: Money; vat: Money; to
   missing: MissingItem[]; /** Omitted without ledger.read (D-09). */ journal?: JournalPreview; whtLines?: WhtLine[];
   /** JV: the server's Σ debit, Σ credit and their difference (the grid shows these, it never sums). */ balance?: { debit: Money; credit: Money; diff: Money }; /** OB: the sub-ledger ties and the 3900 plug. */ opening?: ObCheck;
   /** The approval policy needs this document approved before it can be issued (server-decided on the computed total, §7.6). */ approvalRequired?: boolean;
-  allocation?: { allocated: Money; unallocated: Money; suggestedWht: { targetId: string; wht: Money; whtTypeCode?: string }[] } }
+  allocation?: { allocated: Money; unallocated: Money; suggestedWht: { targetId: string; wht: Money; whtTypeCode?: string }[] };
+  /** PR: one slip per employee row and the run totals, as the server computed them (the grid shows these, it never computes). */ payroll?: { slips: PayslipLine[]; totals: PayrollTotals } }
 
 export interface CorrectionNote { type: 'CN' | 'DN'; fullCredit: boolean; priceIncludesVat: boolean;
   lines: DocLine[]; total: Money;

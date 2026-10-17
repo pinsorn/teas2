@@ -461,6 +461,7 @@
       "dpNew": "Run depreciation",
       "periodClose": "Period and year close",
       "dpRun": "A posted depreciation run",
+      "employeesList": "Employees list", "employeeJoiner": "Employee (joins 15 Oct)", "prList": "Payroll runs list", "prNew": "New payroll run", "prDraft": "A draft payroll run", "prIssued": "An issued payroll run (the latest)", "prPaid": "A payroll run a later run builds on", "nprIssued": "A payroll run (non-VAT)",
       "styleGuide": "Style guide"
     },
     "state": { "normal": "Normal", "empty": "Empty", "loading": "Loading", "error": "Error", "forbidden": "Forbidden", "locked": "Locked" },
@@ -621,6 +622,17 @@
     "autoReverse": "Reverse automatically (accrual)",
     "autoReverseHint": "The system posts the reversing entry on {date}, together with this voucher. Revising or cancelling this voucher takes the reversal with it.",
     "autoReverseHintNoDate": "The system posts the reversing entry on day 1 of the next month, together with this voucher.",
+    "payrollGrid": {
+      "title": "Employees in this run", "employee": "Employee", "employeeN": "Employee row {n}", "pick": "— Choose an employee —", "remove": "Remove employee row {n}", "add": "Add employee",
+      "empty": "No employees in this run yet. Press “Add employee”.", "prorated": "{days} days worked",
+      "hint": "Enter or Tab moves to the next cell  ·  salary starts from the employee record (the system prorates a joiner or leaver by calendar days)",
+      "pay": { "salary": "Salary", "overtime": "Overtime", "allowance": "Allowance", "bonus": "Bonus", "otherIncome": "Other income", "otherDeduction": "Other deduction" },
+      "server": { "gross": "Gross", "pit": "Tax withheld", "sso": "Social security", "net": "Net pay", "ytdIncome": "Income YTD", "ytdPit": "Tax YTD" },
+      "totals": { "title": "Run totals", "gross": "Gross pay", "pit": "Tax withheld (PND.1)", "sso": "Social security withheld", "ssoEmployer": "Social security (employer)", "net": "Net pay" },
+      "computing": "Computing…", "serverNote": "Every figure is computed by the system (sample tax and social-security tables). Type only income and deductions.",
+      "confirmBody": "Posts the salary cost, the tax and social security payable and the net pay payable for these totals. Each employee's figures are recorded as computed today and do not change if the employee record is edited later.",
+      "frozenNote": "These figures were computed when the run was issued, with the employee record and tax table {version} of that day. Later edits to either do not change them."
+    },
     "accountGrid": {
       "colAccount": "Account", "colDescription": "Description", "colDebit": "Debit", "colCredit": "Credit",
       "account": "Account of line {n}", "description": "Description of line {n}", "debit": "Debit of line {n}", "credit": "Credit of line {n}",
@@ -785,6 +797,7 @@
     "EX": {"title": "Expense claim", "issue": "Save and issue expense claim", "create": "Create expense claim", "empty": "No expense claims yet"},
     "PV": {"title": "Payment voucher", "issue": "Save and issue payment voucher", "create": "Create payment voucher", "empty": "No payment vouchers yet"},
     "JV": {"title": "Journal voucher", "issue": "Save and issue the journal voucher", "create": "Create journal voucher", "empty": "No journal vouchers yet"},
+    "PR": {"title": "Payroll runs", "issue": "Issue the payroll run", "create": "Create a payroll run", "empty": "No payroll runs yet"},
     "OB": {"title": "Opening balances", "issue": "Save and issue the opening balances", "create": "Set opening balances", "empty": "No opening balances yet"},
     "FA": {"title": "Fixed assets", "issue": "Register asset", "create": "Register an asset", "empty": "No assets registered yet"},
     "DP": {"title": "Depreciation runs", "issue": "Post depreciation", "create": "Run depreciation", "empty": "No depreciation run yet"},
@@ -1091,6 +1104,7 @@
     "vendor": { "title": "Vendors", "search": "Search code, name or tax ID", "empty": "No vendors yet" },
     "item": { "title": "Items and services", "search": "Search code or name", "empty": "No items or services yet" },
     "bank-account": { "title": "Bank and cash accounts", "search": "Search account name or GL code", "empty": "No bank or cash accounts yet" },
+    "employee": { "title": "Employees", "search": "Search by code, name or national ID", "empty": "No employees yet" },
     "schedule": { "title": "Recurring and amortisation", "search": "Search by name", "empty": "No recurring templates or amortisation schedules yet. Make one with “Make recurring” or “Amortise” on a document." },
     "account": { "title": "Chart of accounts", "search": "Search account code or name", "empty": "No accounts in the chart yet", "collapse": "Collapse {code}", "expand": "Expand {code}", "actions": "Actions" },
     "fields": {
@@ -1103,9 +1117,12 @@
       "usage": "Used for", "usageSales": "Use on sales documents", "usagePurchase": "Use on purchase documents", "expenseCategory": "Expense category",
       "accountNo": "Account number", "accountName": "Account name", "accountCode": "GL account", "bankKind": "Account type",
       "nameTh": "Account name (Thai)", "parent": "Parent header account", "postable": "Postable (not a header)", "accountClass": "Class", "subClass": "Sub-class", "dbdLine": "DBD statement line", "pnd50Box": "ภ.ง.ด.50 box", "dimensionRules": "Dimension rules",
+      "titleName": "Title", "firstName": "First name", "lastName": "Last name", "nationalId": "National ID", "startDate": "Start date", "endDate": "Leaving date", "salary": "Salary (THB / month)",
+      "ssoRegistered": "Registered with social security", "maritalStatus": "Marital status", "spouseHasIncome": "Spouse has income", "children": "Children", "otherAllowances": "Other yearly allowances (THB)",
       "scheduleName": "Name", "scheduleKind": "Kind", "scheduleFrequency": "Frequency", "nextRun": "Next run", "scheduleTotal": "Amount"
     },
     "options": {
+      "maritalStatus": { "single": "Single", "married": "Married" },
       "entityKind": { "individual": "Individual", "juristic": "Company", "foreign": "Foreign" },
       "partyGroup": { "general": "General", "major": "Key account", "government": "Government", "foreign": "Foreign" },
       "itemKind": { "good": "Goods", "service": "Service" },
@@ -1482,6 +1499,8 @@
     "ledger_period_close": "Close accounting periods and the fiscal year",
     "ledger_period_reopen": "Reopen accounting periods and the fiscal year",
     "payroll_read": "Read payroll data",
+    "employee_read": "Read employees",
+    "employee_manage": "Manage employees",
     "audit_read": "Read audit trail",
     "settings_manage": "Manage settings",
     "users_manage": "Manage users",
