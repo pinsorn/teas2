@@ -1,6 +1,7 @@
 import { bankHandlers } from './bank';
 import { docsReadHandlers } from './docs-read';
 import { docsWriteHandlers } from './docs-write';
+import { filingHandlers } from './filings';
 import { financeRefsHandlers } from './finance-refs';
 import { homeHandlers } from './home';
 import { itemsHandlers } from './items';
@@ -15,4 +16,4 @@ import { searchHandlers } from './search';
 import { settlementHandlers } from './settlements';
 
 export * from './common';
-export const handlers = [...meHandlers, ...homeHandlers, ...partiesHandlers, ...recordsHandlers, ...itemsHandlers, ...docsReadHandlers, ...docsWriteHandlers, ...financeRefsHandlers, ...bankHandlers, ...settlementHandlers, ...scheduleHandlers, ...periodHandlers, ...reportsHandlers, ...searchHandlers, ...mockFixturesHandlers];
+export const handlers = [...meHandlers, ...homeHandlers, ...partiesHandlers, ...recordsHandlers, ...itemsHandlers, ...docsReadHandlers, ...docsWriteHandlers, ...financeRefsHandlers, ...bankHandlers, ...settlementHandlers, ...scheduleHandlers, ...periodHandlers, ...filingHandlers, ...reportsHandlers, ...searchHandlers, ...mockFixturesHandlers];

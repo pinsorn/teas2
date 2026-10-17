@@ -9,6 +9,8 @@ import { fromSatang, toSatang } from './money';
 import { buildOb, liveBatches } from './opening';
 import { type Period, monthLabelTh, yearClosed } from './periods';
 import { liveRuns } from './schedules';
+import { chainStart } from './filings';
+import { vatOf } from './vat';
 
 // AC6: closing a month (a checklist the server computes; blocking items refuse, warnings need an acknowledgement that is frozen on the period) and the year-end closing entry. The month rules: closed months are a prefix
 // (close in order, reopen only the latest closed month of an open year). The year rules: the closing entry sweeps every revenue / expense account of the year into 3300, then 3300 into 3200; the invariant
@@ -39,6 +41,8 @@ export function checklistOf(st: MockState, companyId: string, month: string): Ch
     const ran = new Set(liveRuns(st, s).map((r) => r.month));
     return n + (s.plan ?? []).filter((r) => r.month <= month && !ran.has(r.month)).length;
   }, 0);
+  const start = chainStart(st, companyId); // TX1: from the company's first finalized ภ.พ.30 on, every month's is owed (months before it are before TEAS took over filing)
+  const filing = vatOf(st, companyId) && start !== undefined && month >= start && !st.filings.some((f) => f.companyId === companyId && f.form === 'PP30' && f.period === month) ? 1 : 0;
   const ob = liveBatches(st, companyId).filter((d) => buildOb(st, companyId, d).check.plug !== '0.00').length;
   const item = (code: ChecklistItem['code'], severity: ChecklistItem['severity'], count: number, href: string, note?: string): ChecklistItem => ({ code, severity, count, labelTh: LABEL[code], href, ...(note ? { note } : {}) });
   return [
@@ -46,7 +50,7 @@ export function checklistOf(st: MockState, companyId: string, month: string): Ch
     item('unreconciled_bank_lines', 'warning', bank, '/finance/bank-accounts'),
     item('depreciation_not_run', 'blocking', dep, '/accounting/depreciation-runs/new'),
     item('schedules_not_run', 'warning', sched, '/accounting/schedules'),
-    item('filings_not_finalized', 'warning', 0, '/tax/summary', 'ยังไม่มีแบบยื่นภาษีในระบบ (มากับกลุ่มภาษี) จึงนับเป็น 0'), // [TX1]: filings arrive with group 06; nothing is invented here
+    item('filings_not_finalized', 'warning', filing, `/tax/vat?period=${month}`),
     item('ob_difference_open', 'warning', ob, '/accounting/opening-balances'),
   ];
 }

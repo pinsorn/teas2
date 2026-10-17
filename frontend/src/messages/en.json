@@ -319,6 +319,7 @@
       "tiNew": "Tax invoices: new",
       "tiIssued": "Tax invoice: issued",
       "tiLocked": "Tax invoice: settled and locked by a filing",
+      "vat": "VAT return (PP.30) and registers", "vatFiled": "PP.30 already filed (Jul-Aug)", "vatBlocked": "PP.30 with blockers before filing", "vatOutputRegister": "Output VAT register", "vatInputRegister": "Input VAT register",
       "tiReplaced": "Tax invoice: replaced",
       "tiDraft": "Tax invoice: draft",
       "tiEdit": "Tax invoice: edit",
@@ -1064,6 +1065,8 @@
       "sources": { "JV": "Journal voucher", "OB": "Opening balances", "TI": "Tax invoice", "IV": "Invoice", "RC": "Receipt", "CN": "Credit note", "DN": "Debit note", "PB": "Purchase bill", "PCN": "Vendor credit note", "PDN": "Vendor debit note", "PV": "Payment voucher", "EX": "Expense claim", "STL": "Netting and settlements", "BANK": "Bank reconciliation" }
     },
     "assetRegister": {"tieCost":"Register cost plus lines not yet registered {left} baht against the ledger asset accounts {right} baht","title":"Fixed asset register","number":"Number","name":"Item","start":"In service","cost":"Cost","accumulated":"Accumulated","nbv":"Net book value","status":"Status","tie":"Register accumulated depreciation {left} baht against the ledger {right} baht"},
+    "vatOutput": { "title": "Output VAT register" },
+    "vatInput": { "title": "Input VAT register" },
     "bankRec": { "title": "Bank reconciliation", "item": "Item", "date": "Date", "amount": "Amount", "tie": "Adjusted statement balance {left} baht against adjusted book balance {right} baht" }
   },
   "records": {
@@ -1118,6 +1121,25 @@
       "docsEmpty": "No documents for this party yet", "openEmpty": "Nothing outstanding", "openTotal": "Total outstanding", "number": "Number", "type": "Type",
       "date": "Date", "status": "Status", "total": "Total", "outstanding": "Outstanding", "due": "Due"
     }
+  },
+  "filing": {
+    "title": "VAT return (PP.30) for {month}",
+    "period": "Tax month",
+    "due": "Due {date}",
+    "tabs": { "label": "VAT return and registers", "pp30": "PP.30", "output": "Output VAT register", "input": "Input VAT register" },
+    "filed": { "title": "Filed", "body": "Confirmed by {by} on {at}. The documents in this return can no longer have their figures edited; use a credit or debit note in a later month." },
+    "empty": { "title": "No tax entries in this period", "body": "There are no documents to show in this month's PP.30." },
+    "boxes": { "title": "PP.30 boxes", "code": "Box", "label": "Item", "amount": "Amount (baht)", "source": "Source", "open": "Open register" },
+    "blockers": { "title": "Cannot be confirmed yet", "open": "Fix it" },
+    "finalize": { "button": "Confirm filing (close the tax period)", "working": "Confirming", "back": "Back", "title": "Confirm the PP.30 for {month}",
+      "body": "Once confirmed, the documents in this return can no longer have their figures edited. Use a credit or debit note in a later month.", "taxOut": "Output VAT (box 5)", "taxIn": "Input VAT (box 7)",
+      "disabledBy": "Cannot confirm: {why}", "needPermission": "You need the right to finalize tax filings" },
+    "export": { "txt": "File for RD Prep (.txt)", "print": "Print the form", "failed": "Could not create the file. Try again." },
+    "history": { "title": "Filed returns", "empty": "Nothing has been confirmed in the system yet", "period": "Tax month", "at": "Confirmed on", "by": "By", "net": "Net tax", "payable": "payable", "overpaid": "overpaid" },
+    "tie": { "outputGl": "Output VAT (box 5) {left} baht against ledger 2151 {right} baht", "inputGl": "Input VAT (box 7) {left} baht against ledger 1170 {right} baht",
+      "outputRegister": "Output VAT (box 5) {left} baht against the output register total {right} baht", "inputRegister": "Input VAT (box 7) {left} baht against the input register total {right} baht" },
+    "reg": { "date": "Date", "number": "Number", "party": "Buyer / seller", "tin": "Tax ID", "branch": "Branch", "description": "Description",
+      "base7": "Taxable value", "base0": "Zero-rated value", "baseEx": "Exempt value", "claimedBase": "Purchases with the right to claim", "vat": "VAT" }
   },
   "periodClose": {
     "title": "Period and year close",
@@ -1430,6 +1452,9 @@
     "audit_read": "Read audit trail",
     "settings_manage": "Manage settings",
     "users_manage": "Manage users",
-    "report_read": "Read reports"
+    "report_read": "Read reports",
+    "tax_read": "View tax filings and VAT registers",
+    "tax_filing_preview": "Preview tax filings",
+    "tax_filing_finalize": "Finalize tax filings"
   }
 }

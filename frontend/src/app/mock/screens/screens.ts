@@ -177,5 +177,10 @@ export const SCREENS: Screen[] = [
   { name: 'dpNew', route: `${DP_BASE}/new`, company: 'both', states: true },
   { name: 'dpRun', route: { fixture: 'dpRun', base: DP_BASE }, company: 'vat', states: true },
   { name: 'periodClose', route: '/accounting/period-close', company: 'both', states: true },
+  { name: 'vat', route: '/tax/vat', company: 'vat', states: true }, // TX1: the month after the last one filed
+  { name: 'vatFiled', route: '/tax/vat?period=2026-08', company: 'vat', states: true }, // finalized: the frozen snapshot
+  { name: 'vatBlocked', route: '/tax/vat?period=2026-10', company: 'vat', states: true }, // drafts and September still open
+  { name: 'vatOutputRegister', route: '/tax/vat?tab=output&period=2026-09', company: 'vat', states: true },
+  { name: 'vatInputRegister', route: '/tax/vat?tab=input&period=2026-10', company: 'vat', states: true },
   { name: 'styleGuide', route: '/style-guide', company: 'both', states: false },
 ];

@@ -1,6 +1,7 @@
 import type { MockState } from '../store';
 import { LIVE } from '@/domain/doc-types';
 import { derivedLocks } from '../engine/locks';
+import { getFiling } from '../engine/filings';
 
 type D = MockState['docs'][number];
 const isTi = (d: D) => d.type === 'TI';
@@ -22,7 +23,9 @@ type DocFixtureKey = 'tiDraft' | 'tiAgentDraft' | 'tiDraftNoTin' | 'tiIssuedUnpa
 export const BANK_FIXTURES = { bankKbank: 'ba-kbank', bankEmpty: 'ba-scb', nbankKbank: 'nba-kbank' } as const;
 /** AC4 schedules: not documents either, a fixed record id that must exist in the seed. */
 export const SCHEDULE_FIXTURES = { schedRecurringTi: 'sch-rec-ti', schedAmortisation: 'sch-amort', nschedRecurring: 'nsch-rec-iv' } as const;
-export type FixtureKey = DocFixtureKey | keyof typeof BANK_FIXTURES | keyof typeof SCHEDULE_FIXTURES;
+/** TX1 filing periods (YYYY-MM): not documents. 2026-08 is finalized, 2026-09 is a draft that can be finalized (the gate demo), 2026-10 is a draft with blockers (drafts, and September still open). */
+export const FILING_FIXTURES = { pp30Finalized: '2026-08', pp30Due: '2026-09', pp30Draft: '2026-10' } as const;
+export type FixtureKey = DocFixtureKey | keyof typeof BANK_FIXTURES | keyof typeof SCHEDULE_FIXTURES | keyof typeof FILING_FIXTURES;
 
 /** An issued, untouched TI of pc-01 (the multi-target receipt vector settles two of them). */
 const rcTarget = (d: D, st: MockState) => isTi(d) && d.status === 'issued' && d.party?.id === 'pc-01' && d.outstanding === d.totals.total
@@ -41,7 +44,7 @@ export const FIXTURE_PREDICATES: Record<DocFixtureKey, (d: D, st: MockState) => 
     && d.outstanding === d.totals.total && d.header.documentDate >= '2026-10-01',
   tiPartly: (d) => isTi(d) && d.status === 'partly_settled',
   tiSettled: (d, st) => isTi(d) && d.status === 'settled' && !derivedLocks(st, d).some((l) => l.kind === 'filing'),
-  tiFilingLocked: (d, st) => isTi(d) && derivedLocks(st, d).some((l) => l.kind === 'filing'),
+  tiFilingLocked: (d, st) => isTi(d) && d.header.documentDate.startsWith('2026-08') && derivedLocks(st, d).some((l) => l.kind === 'filing'), // TX1: an August invoice the finalized ภ.พ.30 took (derived lock)
   tiReplaced: (d) => isTi(d) && d.status === 'replaced',
   tiLong: (d) => isTi(d) && d.id === 'spike-60',
   rcTargetsA: (d, st) => rcTarget(d, st) && d.id === firstRcTarget(st),
@@ -146,6 +149,11 @@ export function fixtureIds(st: MockState): Record<FixtureKey, string> {
   }
   for (const [k, id] of Object.entries(SCHEDULE_FIXTURES) as [keyof typeof SCHEDULE_FIXTURES, string][]) {
     if (st.schedules.some((s) => s.id === id)) out[k] = id; else missing.push(k);
+  }
+  const co = st.companies.find((c) => c.vatRegistered)!.id;
+  for (const [k, period] of Object.entries(FILING_FIXTURES) as [keyof typeof FILING_FIXTURES, string][]) {
+    const m = getFiling(st, co, 'PP30', period);
+    if (m.status === (k === 'pp30Finalized' ? 'finalized' : 'draft') && (k !== 'pp30Due' || !m.blockers.length) && (k !== 'pp30Draft' || m.blockers.length)) out[k] = period; else missing.push(k);
   }
   if (missing.length) throw new Error(`fixture ids unresolved: ${missing.join(', ')}`);
   return out as Record<FixtureKey, string>;

@@ -50,9 +50,19 @@ const plBalances = (year: number, close = true): Record<string, number> => {
 const bal = (code: string, year: number, close = true) => { let s = 0; for (const e of companyEntries(st, CO, close)) if (e.date.startsWith(`${year}-`)) for (const l of e.lines) if (l.accountCode === code) s += toSatang(l.debit) - toSatang(l.credit); return s; };
 
 describe('checklist (ruling 2)', () => {
-  it('states the six codes; filings_not_finalized waits for TX1 and is 0', () => {
+  it('states the six codes; filings_not_finalized counts the ภ.พ.30 of a VAT company from its first finalized month on (TX1, ruling 6)', () => {
     expect(checklistOf(st, CO, '2026-07').map((i) => i.code)).toEqual(['drafts_in_month', 'unreconciled_bank_lines', 'depreciation_not_run', 'schedules_not_run', 'filings_not_finalized', 'ob_difference_open']);
-    expect(item('2026-07', 'filings_not_finalized')).toMatchObject({ count: 0, severity: 'warning' });
+    expect(item('2026-07', 'filings_not_finalized')).toMatchObject({ count: 0, severity: 'warning' }); // filed in the seed
+    expect(item('2026-09', 'filings_not_finalized')).toMatchObject({ count: 1, severity: 'warning', href: '/tax/vat?period=2026-09' });
+    expect(item('2026-06', 'filings_not_finalized').count).toBe(0); // before the chain (2026-07): before TEAS took over filing
+    expect(item('2026-09', 'filings_not_finalized', 'co-nonvat').count).toBe(0); // no ภ.พ.30 outside VAT
+    st.companies.find((c) => c.id === CO)!.vatRegistered = false;
+    expect(item('2026-09', 'filings_not_finalized').count).toBe(0); // a company that left VAT owes none
+    st.companies.find((c) => c.id === CO)!.vatRegistered = true;
+    st.filings = st.filings.filter((f) => f.period !== '2026-08');
+    expect(item('2026-08', 'filings_not_finalized').count).toBe(1); // a gap after the chain start counts
+    st.filings = [];
+    expect(item('2026-09', 'filings_not_finalized').count).toBe(0); // no chain, nothing owed
     expect(checklistOf(st, CO, '2026-07').find((i) => i.severity === 'blocking')?.code).toBe('depreciation_not_run');
   });
   it('drafts_in_month counts every unissued document dated in the month (warning, list link)', () => {

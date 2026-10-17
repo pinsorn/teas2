@@ -3,6 +3,7 @@ import type {
   DocType, HomeInbox, MarkKey, Money, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, RemainingLine, Revision, SearchHit,
   DepositRow, DocOpening, SettlementDifferenceRole, SettlementKind, SettlementRecord, DpRow, FaSource, IsoDate, ChecklistItem, PeriodsView,
 } from '@/domain/types';
+import type { FilingForm, FilingHistoryItem, FilingModel } from '@/domain/filings';
 import type { RecordKind, RecordRow } from '@/domain/records';
 import type { ReportKind, ReportModel } from '@/domain/reports';
 import { api, ApiError, normalizeProblem } from './client';
@@ -136,6 +137,15 @@ export const endpoints = {
   reopenPeriod: (month: string, reason: string) => api<PeriodsView>('POST', `/periods/${encodeURIComponent(month)}/reopen`, { reason }),
   closeYear: (year: number) => api<PeriodsView>('POST', `/periods/year/${year}/close`, {}),
   reopenYear: (year: number, reason: string) => api<PeriodsView>('POST', `/periods/year/${year}/reopen`, { reason }),
+  /** TX1 tax filings: the finalized ones with the month to look at next (tax.read), one period (draft: tax.filing.preview too), finalize (tax.filing.finalize; `version` is the preview's), and the RD Prep text of a finalized one. */
+  listFilings: (form: FilingForm) => api<{ items: FilingHistoryItem[]; next: string }>('GET', `/filings/${form}`),
+  getFiling: (form: FilingForm, period: string) => api<FilingModel>('GET', `/filings/${form}/${encodeURIComponent(period)}`),
+  finalizeFiling: (form: FilingForm, period: string, version: number) => api<FilingModel>('POST', `/filings/${form}/${encodeURIComponent(period)}/finalize`, { version }),
+  exportFiling: async (form: FilingForm, period: string, kind: 'rdprep-txt'): Promise<string> => {
+    const res = await fetch(new URL(`/bff/v1/filings/${form}/${encodeURIComponent(period)}/export${qs({ kind })}`, window.location.origin));
+    if (!res.ok) throw new ApiError(normalizeProblem(res.status, await res.json().catch(() => undefined)));
+    return res.text();
+  },
   getReport: (kind: ReportKind, params: Record<string, string>) => api<ReportModel>('GET', `/reports/${kind}${qs(params)}`),
   /** The CSV the server builds for the same parameters (text/csv, BOM, CRLF). */
   exportReport: async (kind: ReportKind, params: Record<string, string>): Promise<Blob> => {

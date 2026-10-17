@@ -20,6 +20,7 @@ import { buildOb, cancelObItems, EMPTY_OPENING, freezeOpening, obCalc, obMissing
 import { firstOpenDate, isClosed, monthLabelTh, refuseClosedYearEntry, refuseYearClosed } from './periods';
 import { balanceOf, certError, cleanAllocations, fiscalAllocations, freezeWht, groupTotals, payDefaults, payLines, payoutOf, resolvedBankId, settleExtras, settleProblem, settleTotals, withBankSnapshot } from './settlement';
 import { syncWts } from './wht-certificates';
+import { refuseFiled } from './filings';
 import { cleanInvoices, isVendorBill, issueVendorStatus, purchaseProblem, snapshotCategories, snapshotWhtTypes, withClaimPeriod, withForfeit, withVendorStatus } from './purchase-vat';
 import { computeDoc, vatBasisOf, vatOf } from './vat';
 
@@ -484,6 +485,7 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
   // SP0 §7.5: a period lock does not block cancel (blockingLocks leaves it out); the other locks do.
   if (blockingLocks(d).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ยกเลิกไม่ได้');
   refuseClosedYearEntry(st, d); // AC6: an entry of a closed year is final (exit: reopen the year)
+  refuseFiled(st, d); // TX1: a document a finalized ภ.พ.30 took is not cancelled (exit: the CN / DN of the next open month)
   refuseReconciled(st, d); // FN2: matched to a bank line - the exit is to unmatch it first
   refuseSettled(st, d); // FN3: a leg of a posted settlement - the exit is to reverse the settlement
   refuseScheduleSource(st, d); // AC4: a schedule that is not stopped holds the line (exit: stop it); after the stop the runs stay
@@ -643,6 +645,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   const totals = totalsOf(st, d.companyId, d.type, fin, d.id);
   refuseReconciled(st, d, { header: fin.header, totals }); // FN2: a matched document keeps its cash, bank account and date; anything else stays editable
   refuseSettled(st, d, { header: fin.header, totals }); // FN3: a leg of a posted settlement keeps its amount, deposit, party and date
+  refuseFiled(st, d, { header: fin.header, lines: fin.lines }); // TX1: a filed document keeps everything the ภ.พ.30 took (notes and paper-only fields stay free)
   refuseScheduleSource(st, d, { header: fin.header, lines: fin.lines }); // AC4: a line a schedule holds keeps its money, account and date
   refuseAssetSource(st, d, { header: fin.header, lines: fin.lines }); // AC5: likewise a line a live fixed asset was made from
   refuseScheduleNote(st, d, 'revise', { header: fin.header, lines: fin.lines });
@@ -698,6 +701,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   if (!LIVE.includes(old.status)) throw new MockError(409, 'doc.not_correctable', 'ออกใหม่ได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   if (blockingLocks(old).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ออกใหม่ไม่ได้');
   refuseClosedYearEntry(st, old); // AC6 backstop: a reissue reverses the old entry and posts a new one, both into the first open date
+  refuseFiled(st, old); // TX1: likewise not reissued
   refuseReconciled(st, old);
   refuseSettled(st, old);
   if (st.links.some((l) => l.to === id && l.active)) throw new MockError(409, 'doc.has_dependents', 'มีเอกสารอ้างอิงอยู่ ต้องยกเลิกเอกสารนั้นก่อน');

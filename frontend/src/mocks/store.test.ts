@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { derivedLocks } from './engine/locks';
 import { isValidTin } from '@/domain/tin';
 import { toSatang } from './engine/money';
 import { loadState, resetState, saveState, seed } from './store';
@@ -45,7 +46,7 @@ describe('mock store', () => {
     const old = { ...seed(), version: 5, items: [] as unknown[] };
     localStorage.setItem('teas2.mock.state.v5', JSON.stringify(old));
     const s = loadState();
-    expect(s.version).toBe(36);
+    expect(s.version).toBe(37);
     expect(s.items.some((i) => i.id === 'EXP-01')).toBe(true);
     expect(s.parties.some((p) => p.id === 'pv-12')).toBe(true);
   });
@@ -82,7 +83,8 @@ describe('mock store', () => {
     const qt = kinds('QT').find((d) => d.revision === 1)!;
     expect(qt.status).toBe('issued');
     expect(s.revisions.filter((r) => r.docId === qt.id).map((r) => r.revision)).toEqual([0, 1]);
-    expect(tis.filter((d) => d.locks.some((l) => l.kind === 'filing'))).toHaveLength(1);
+    expect(tis.filter((d) => d.locks.some((l) => l.kind === 'filing'))).toHaveLength(0); // TX1: the filing lock is derived from the finalized ภ.พ.30 (July and August), never stored
+    expect(tis.filter((d) => derivedLocks(s, d).some((l) => l.kind === 'filing')).length).toBeGreaterThan(0);
     for (const d of s.docs.filter((x) => x.status !== 'draft' && x.status !== 'pending' && x.status !== 'approved' && !x.header.obBatchId)) { // an opening item is numbered with the old document's number
       expect(d.number).toMatch(/^[A-Z]+-\d{6}-\d{4}$/);
       expect(s.revisions.some((r) => r.docId === d.id && r.revision === 0)).toBe(true);

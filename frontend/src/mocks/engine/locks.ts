@@ -11,9 +11,10 @@ import { assetLock, refuseObAssets } from './assets';
 import { itemsOf, plainOpening } from './opening';
 import { scheduleLock } from './schedules';
 import { resolvedBankId } from './settlement';
+import { filingLock } from './filings';
 
 /** The locks a document READS with (single derivation: the doc GET handler and the fixture predicates both call this).
- *  Stored locks (filing, settlement) plus the period lock and the reconciliation lock, derived here and never stored. TX1 adds the filing lock. */
+ *  Stored locks (filing, settlement) plus the period lock and the reconciliation lock, derived here and never stored. */
 export function derivedLocks(st: MockState, d: { id?: string; type?: DocType; locks: Lock[]; companyId: string; status: DocStatus; header: DocHeader }): Lock[] {
   const live = LIVE.includes(d.status);
   const p = live && d.type !== 'OB' ? periodLock(st, d.companyId, d.header.documentDate) : undefined; // an opening balance DEFINES the opening: its month being closed is the normal case (D-10 exemption)
@@ -23,7 +24,8 @@ export function derivedLocks(st: MockState, d: { id?: string; type?: DocType; lo
   const sc = live ? scheduleLock(st, d) : undefined; // AC4: a live amortisation run on one of its lines
   const o = live && d.id && d.type === 'OB' && !d.header.obBatchId ? obLock(st, d.id) : undefined; // AC3: an opening item already settled or matched
   const fa = live ? assetLock(st, d) : undefined; // AC5: a live fixed asset made from this bill / voucher / opening batch
-  return [...(s ? d.locks.filter((l) => l.kind !== 'settlement') : d.locks), ...(r ? [r] : []), ...(s ? [s] : []), ...(v ? [v] : []), ...(sc ? [sc] : []), ...(fa ? [fa] : []), ...(o ? [o] : []), ...(p && !v ? [p] : [])];
+  const fl = live ? filingLock(st, d) : undefined; // TX1: a document a finalized ภ.พ.30 took (derived from the snapshot's list)
+  return [...(s ? d.locks.filter((l) => l.kind !== 'settlement') : d.locks), ...(r ? [r] : []), ...(s ? [s] : []), ...(v ? [v] : []), ...(sc ? [sc] : []), ...(fa ? [fa] : []), ...(fl ? [fl] : []), ...(o ? [o] : []), ...(p && !v ? [p] : [])];
 }
 
 /** The cash an RC / PV moves (satang): `totals.cash`, or total - WHT for a document stored without it. */

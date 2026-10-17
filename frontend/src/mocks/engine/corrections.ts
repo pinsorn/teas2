@@ -5,6 +5,8 @@ import {
   type Body, LIVE, approvalOnRevise, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, keepNoteLines, keepOmitted, markReplaced, refuseBelowSettled, refuseNonPositive, refusePartyChange, refuseUnissuableReceipt, refuseUnrevisablePurchase, reissue, revise, reviseNeedsApprover, stableJson, totalsOf,
 } from './commands';
 import { refuseObLocked, refuseReconciled, refuseSettled } from './locks';
+import { filingLock, refuseFiled } from './filings';
+import { withClaimPeriod } from './purchase-vat';
 import { refuseAssetSource, refuseDisposalCorrection } from './assets';
 import { refuseScheduleNote, refuseScheduleSource } from './schedules';
 import { MockError, today } from './log';
@@ -108,6 +110,7 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
     if (reviseNeedsApprover(st, d, proposed) && !PERMISSIONS_BY_ROLE[role].includes(`doc.${d.type}.approve`)) throw approvalOnRevise(); // C1: more money than was approved - a plan nobody here may run is never shown
     refuseReconciled(st, d, { header: proposed.header, totals: totalsOf(st, d.companyId, d.type, proposed, d.id) }); // FN2: a plan that would move a matched document's cash, account or date is never shown
     refuseSettled(st, d, { header: proposed.header, totals: totalsOf(st, d.companyId, d.type, proposed, d.id) }); // FN3: the same for a leg of a posted settlement
+    refuseFiled(st, d, { header: withClaimPeriod(st, d.companyId, d.type, proposed.header), lines: proposed.lines }); // TX1: a plan that moves what a finalized ภ.พ.30 took is never shown (the header carries the derived claim period and forfeit, as revise judges it)
     refuseScheduleSource(st, d, { header: proposed.header, lines: proposed.lines }); // AC4: and for a line with a live amortisation run
     refuseAssetSource(st, d, { header: proposed.header, lines: proposed.lines }); // AC5: and a line a live fixed asset was made from
     refuseScheduleNote(st, d, 'revise', { header: proposed.header, lines: proposed.lines }); // AC4: and a note on one
@@ -115,6 +118,8 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
     add('revise', d, `แก้ไข ${label} (เลขที่เดิม เพิ่มรุ่นแก้ไข)`, `doc.${d.type}.correct`);
     explanation = 'การแก้ไขนี้ไม่กระทบภาษี แก้ไขในเอกสารเดิมและเก็บประวัติการแก้ไข';
   } else {
+    const filed = !!filingLock(st, d); // TX1: a filed TI is corrected by the credit note of the next open month, never cancelled or reissued; any other filed document has no such correction
+    if (filed && d.type !== 'TI') refuseFiled(st, d);
     refuseScheduleSource(st, d); // AC4: a cancel / reissue under a live amortisation run
     refuseScheduleNote(st, d, 'cancel');
     refuseSettled(st, d); // FN3: a fiscal correction cancels / reissues: a leg of a posted settlement is refused up front (its links come from a settlement, not a document)
@@ -150,7 +155,7 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
       explanation = 'ยอดรวมเปลี่ยน ออกใบลดหนี้/ใบเพิ่มหนี้เฉพาะส่วนต่าง เอกสารเดิมไม่ถูกยกเลิก';
     } else if (d.type === 'TI' && !needsReissue) {
       explanation = 'วันที่ของเอกสารแก้ไขไม่ได้ (ออกใหม่ต้องใช้วันที่เดิม) จึงไม่มีขั้นตอนที่ต้องทำ';
-    } else if (blockingLocks(d).length) {
+    } else if (blockingLocks(d).length || filed) {
       if (d.type === 'TI') { note(true); explanation = 'เอกสารถูกล็อก ออกใบลดหนี้เต็มจำนวน แล้วออกใบกำกับภาษีฉบับใหม่แยกต่างหาก'; }
       else explanation = 'เอกสารถูกล็อก ทำไม่ได้';
     } else if (d.type === 'TI' && deps.some((l) => l.kind !== 'settles')) {

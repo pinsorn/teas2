@@ -7,6 +7,8 @@ import { generalJournal } from '../journal';
 import { assetRegister } from './asset-register';
 import { bankReconciliation } from './bank-reconciliation';
 import { trialBalance } from './trial-balance';
+import { vatInputRegister } from './vat-input-register';
+import { vatOutputRegister } from './vat-output-register';
 
 /** Report kinds the mock engine can compute so far (the rest answer 404 report.not_built until their RP task). */
 const BUILDERS: Partial<Record<ReportKind, (st: MockState, companyId: string, p: Record<string, string>) => ReportModel>> = {
@@ -14,6 +16,8 @@ const BUILDERS: Partial<Record<ReportKind, (st: MockState, companyId: string, p:
   'general-journal': (st, c, p) => generalJournal(st, c, { from: p.from, to: p.to, account: p.account?.trim(), source: p.source }),
   'asset-register': (st, c, p) => assetRegister(st, c, { ...p, asOf: p.asOf || today() }),
   'bank-reconciliation': (st, c, p) => bankReconciliation(st, c, { account: p.account ?? '', to: p.to || today() }),
+  'vat-output-register': vatOutputRegister,
+  'vat-input-register': vatInputRegister,
 };
 export const isBuilt = (k: string): k is ReportKind => Object.hasOwn(BUILDERS, k);
 export const buildReport = (st: MockState, companyId: string, kind: ReportKind, p: Record<string, string>) => BUILDERS[kind]!(st, companyId, p);

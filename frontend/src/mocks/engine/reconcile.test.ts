@@ -230,8 +230,8 @@ describe('the reconciliation lock on documents', () => {
     expect(cancel(st, 'rc-013', v, 'X', 'ทดสอบ', ME).status).toBe('cancelled');
   });
   it('a correction plan that would cancel the matched receipt is refused up front', () => {
-    matched();
-    const ti = st.docs.find((x) => x.id === doc('rc-013').allocations![0].targetId)!;
+    match(st, CO, 'bi-001-006', { docIds: ['rc-012'] }, ME); // rc-012 settles a September invoice; rc-013's ti-013 is August, which the ภ.พ.30 now holds (its plan is the credit note, TX1)
+    const ti = st.docs.find((x) => x.id === doc('rc-012').allocations![0].targetId)!;
     const proposed = { header: ti.header, lines: ti.lines.map((l) => ({ ...l, description: `${l.description} (แก้)` })) }; // same total, new content: the invoice is reissued and its receipts cancelled
     expect(err(() => buildPlan(st, ti.id, proposed, 'accountant')).code).toBe('doc.reconciled');
   });
