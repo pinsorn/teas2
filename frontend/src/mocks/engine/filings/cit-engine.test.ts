@@ -323,3 +323,33 @@ describe('L3 (ruling 7): the loss input refuses the fiscal year or later, and du
     updateCitYear(st, CO, '2025', { losses: [{ year: 2021, amount: '10.00' }, { year: 2022, amount: '5.00' }] }, ME);
   });
 });
+
+describe('fix2: a loss amount a filed return froze is kept (R2-M1), the way out is named, line 2.9 is the shared P&L profit', () => {
+  it('2025 filed with 2021 = 120,000: 2026 entering 500,000 is refused (422, names the year and amount); the same amount, or none (prefilled), is accepted', () => {
+    closeYear(st, CO, 2025, ME); fin('PND50', '2025');
+    const e = err(() => updateCitYear(st, CO, '2026', { losses: [{ year: 2021, amount: '500000.00' }, { year: 2023, amount: '80000.00' }] }, ME));
+    expect([e.status, e.code]).toEqual([422, 'cit.loss_amount_filed']);
+    expect(e.title).toContain('2564'); expect(e.title).toContain('120000.00');
+    updateCitYear(st, CO, '2026', { losses: [{ year: 2021, amount: '120000.00' }, { year: 2023 } as never] }, ME); // 2023 prefilled from the filed return
+    expect(citYearView(st, CO, '2026').losses).toEqual([{ year: 2021, amount: '120000.00' }, { year: 2023, amount: '80000.00' }]);
+    expect(err(() => updateCitYear(st, CO, '2026', { losses: [{ year: 2030 } as never] }, ME)).code).toBe('validation.failed'); // nothing filed to prefill from
+  });
+  it('a draft whose typed amount differs (typed before the earlier year was filed) is blocked', () => {
+    st.citYears.find((y) => y.companyId === CO && y.year === 2026)!.losses = [{ year: 2021, amount: '500000.00' }];
+    closeYear(st, CO, 2025, ME); fin('PND50', '2025');
+    expect(codes('PND50', '2026')).toContain('loss_amount_filed');
+  });
+  it('invariant: every finalized return lists a loss year with the amount the earliest one froze', () => {
+    closeYear(st, CO, 2025, ME); fin('PND50', '2025'); close2026(); fin('PND50', '2026');
+    expect(checkInvariants(st)).toEqual([]);
+    f50('2026').cit!.losses[1].amount = '500000.00'; // a stored amount, behind the engine's back
+    caught(/loss of 2021 .*amount .* earlier/);
+  });
+  it('the way out of earlier_year_unfiled is named', () => {
+    updateCitYear(st, CO, '2026', { losses: [{ year: 2021, amount: '120000.00' }] }, ME);
+    expect(getFiling(st, CO, 'PND50', '2026').blockers.find((b) => b.code === 'earlier_year_unfiled')!.labelTh).toContain('ลบขาดทุนนั้นออกจากข้อมูลของปีนั้น');
+  });
+  it('line 2.9 of the CIT return is the shared P&L netProfit for 2025 and 2026 on the seed', () => {
+    for (const y of [2025, 2026]) expect(box('PND50', String(y), '2.9')).toBe(baht(netProfit(st, CO, y)));
+  });
+});

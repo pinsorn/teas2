@@ -248,6 +248,9 @@ export function updateCitYear(st: MockState, companyId: string, period: string, 
       if (!Number.isInteger(l.year) || l.year >= year) throw fail(422, 'validation.failed', 'ปีของขาดทุนสะสมต้องเป็นปีก่อนปีบัญชีนี้');
       if (seen.has(l.year)) throw fail(422, 'validation.failed', `ขาดทุนสะสมปี ${l.year + 543} ซ้ำ`);
       seen.add(l.year);
+      const kept = filedLoss(st, companyId, year, l.year); // R2-M1: a loss year an earlier filed return froze keeps that amount (omitted = prefilled from it)
+      if (kept && l.amount === undefined) return { year: l.year, amount: kept.amount };
+      if (kept && sat(money(l.amount, 'จำนวนขาดทุนสะสม', { positive: true, nonZero: true })) !== sat(kept.amount)) throw fail(422, 'cit.loss_amount_filed', `ขาดทุนปี ${l.year + 543} ถูกบันทึกใน ภ.ง.ด.50 ปีบัญชี ${kept.filedYear + 543} ที่ยื่นแล้วเป็น ${kept.amount} บาท แก้จำนวนไม่ได้`);
       return { year: l.year, amount: money(l.amount, 'จำนวนขาดทุนสะสม', { positive: true, nonZero: true }) };
     });
   }
@@ -300,6 +303,11 @@ export const pnd50Due = (year: number): IsoDate => addDays(`${year}-12-31`, R.pn
 export const pnd51Due = (year: number): IsoDate => `${year}-08-31`;
 export const citDue = (form: 'PND50' | 'PND51', period: string): IsoDate => (form === 'PND50' ? pnd50Due(Number(period)) : pnd51Due(Number(period)));
 
+/** R2-M1: the amount of a loss year as the EARLIEST finalized ภ.ง.ด.50 (of a year before `beforeYear`) froze it. */
+function filedLoss(st: MockState, companyId: string, beforeYear: number, lossYear: number): { amount: Money; filedYear: number } | undefined {
+  const fs = st.filings.filter((f) => f.companyId === companyId && f.form === 'PND50' && f.cit && f.cit.year < beforeYear && f.cit.losses.some((l) => l.year === lossYear)).sort((a, b) => a.cit!.year - b.cit!.year);
+  return fs[0] ? { amount: fs[0].cit!.losses.find((l) => l.year === lossYear)!.amount, filedYear: fs[0].cit!.year } : undefined;
+}
 const userLines = (adjustments: CitYearData['adjustments']): CitLine[] => adjustments.map((a) => ({ code: a.id, line: a.line, kind: 'user', labelTh: `รายการปรับปรุง (ผู้ใช้)`, amount: a.amount, basis: a.reason, id: a.id, by: a.by, at: a.at }));
 /** Ruling 2: what the finalized ภ.ง.ด.50 of the earlier years used of each loss year (read from their frozen snapshots). */
 function lossUsedBefore(st: MockState, companyId: string, year: number): CitLoss[] {
@@ -335,7 +343,8 @@ export function citBuild(st: MockState, companyId: string, form: 'PND50' | 'PND5
     if (!yearClosed(st, companyId, `${year}-12-31`)) blockers.push({ code: 'year_not_closed', labelTh: `ปีบัญชี ${year + 543} ยังไม่ได้ปิดบัญชีสิ้นปี ปิดบัญชีสิ้นปีก่อนจึงจะยืนยัน ภ.ง.ด.50 ได้`, href: `/accounting/period-close?year=${year}` });
     // ruling 2: a loss is set off year by year, so the years are filed in order (an earlier year not filed yet while this year holds a loss it could have used; a later year already filed)
     const open = st.citYears.filter((r) => r.companyId === companyId && r.year < year && !filingOf(st, companyId, 'PND50', r.year));
-    if (open.length && d.losses.some((l) => open.some((e) => l.year < e.year))) blockers.push({ code: 'earlier_year_unfiled', labelTh: `ปีบัญชี ${open[0].year + 543} ยังไม่ได้ยื่น ภ.ง.ด.50 — ขาดทุนสะสมใช้หักตามลำดับปี ยื่นปีก่อนหน้าก่อน`, href: `/tax/cit?year=${open[0].year}` });
+    if (open.length && d.losses.some((l) => open.some((e) => l.year < e.year))) blockers.push({ code: 'earlier_year_unfiled', labelTh: `ปีบัญชี ${open[0].year + 543} ยังไม่ได้ยื่น ภ.ง.ด.50 — ขาดทุนสะสมใช้หักตามลำดับปี ยื่นปีบัญชีนั้นในระบบก่อน หรือถ้ายื่นนอกระบบแล้วให้ลบขาดทุนนั้นออกจากข้อมูลของปีนั้น`, href: `/tax/cit?year=${open[0].year}` });
+    for (const l of d.losses) { const k = filedLoss(st, companyId, year, l.year); if (k && sat(k.amount) !== sat(l.amount)) blockers.push({ code: 'loss_amount_filed', labelTh: `ขาดทุนปี ${l.year + 543} ถูกบันทึกใน ภ.ง.ด.50 ปีบัญชี ${k.filedYear + 543} ที่ยื่นแล้วเป็น ${k.amount} บาท แต่ข้อมูลปีนี้เป็น ${l.amount} บาท แก้ให้ตรงกันก่อนยืนยัน`, href: `/tax/cit?year=${year}` }); }
     if (st.filings.some((f) => f.companyId === companyId && f.form === 'PND50' && Number(f.period) > year)) blockers.push({ code: 'later_year_filed', labelTh: `ภ.ง.ด.50 ของปีบัญชีที่ใหม่กว่ายื่นแล้ว — ยื่นปีบัญชี ${year + 543} ย้อนหลังไม่ได้ (ขาดทุนสะสมใช้หักตามลำดับปี)` });
     for (const u of unmapped) blockers.push({ code: 'unmapped_account', labelTh: `บัญชี ${u.code} ${u.nameTh} (ยอด ${u.amount} บาท) ยังไม่ได้ระบุช่อง ภ.ง.ด.50 กำไรสุทธิในแบบจึงไม่ตรงกับงบกำไรขาดทุน`, href: '/accounting/chart-of-accounts' });
     const model: FilingModel = { ...base, boxes: x.boxes, blockers, warnings: citWarnings(snap), attachment: citAttachment(snap), version: fnv(JSON.stringify(snap)),
@@ -398,6 +407,7 @@ export function citInvariants(st: MockState, f: Filing, w: string, out: string[]
   const row = rowOf(st, f.companyId, year);
   if (!row || JSON.stringify(s.user) !== JSON.stringify(userLines(row.adjustments))) out.push(`${w}: the adjustments are not the locked year data`);
   if (!row || JSON.stringify(s.losses) !== JSON.stringify(row.losses)) out.push(`${w}: the losses are not the locked year data`);
+  for (const l of s.losses) { const k = filedLoss(st, f.companyId, year, l.year); if (k && sat(k.amount) !== sat(l.amount)) out.push(`${w}: the loss of ${l.year} carries the amount ${l.amount}, not the ${k.amount} an earlier finalized return froze`); }
   const before = lossUsedBefore(st, f.companyId, year);
   if (JSON.stringify(s.lossUsedBefore) !== JSON.stringify(before)) out.push(`${w}: the losses used before ${year} are not what the earlier finalized returns used`);
   for (const l of citDerive(s).loss.rows) if (sat(l.used) + sat(s.lossUsedBefore.find((b) => b.year === l.year)?.amount) > sat(l.amount)) out.push(`${w}: the loss of ${l.year} is used more than its amount (I11)`);
