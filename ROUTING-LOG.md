@@ -29,3 +29,5 @@
 | 2026-10-17 | SP1c TX3a implement (CIT PND50/51 engine, adjustments, loss carry, credits) | sonnet-implementer | default implementer; Opus review after |
 | 2026-10-17 | SP1c TX3a review (CIT PND50/51, profit-loss refactor of close.ts) | opus-reviewer (fresh) | tax + money; touches AC6 closing entry |
 | 2026-10-17 | SP1c TX3b implement (tax summary, VAT threshold watch, forms catalogue + history) | sonnet-implementer | UI + read models |
+| 2026-10-17 | SP1c TX3a fix1 (PND51 after PND50, loss used once, frozen mapping, tampers) | sonnet-implementer | fix round from Opus REJECT |
+| 2026-10-17 | SP1c TX3b review (tax summary, VAT threshold, forms) | sonnet-reviewer | read models + UI |
