@@ -41,7 +41,7 @@ export function deriveRows(runs: Stored[], kind: PayrollKind): PayrollRow[] {
     if (kind === 'sso' && !slips.some((s) => s.employee.ssoRegistered || sat(s.sso) > 0)) continue; // PY3a m-two-slips: any slip of the month under SSO puts the employee on the return
     const base = { employeeId, name: last.name, nationalId: last.employee.nationalId ?? '', income: fromSatang(total('gross')), sso: fromSatang(total('sso')), ssoEmployer: fromSatang(total('ssoEmployer')) };
     if (kind === 'pnd1') rows.push({ ...base, pit: fromSatang(total('pit')) });
-    else rows.push({ ...base, wageBase: fromSatang(slips.reduce((n, s) => n + (sat(s.sso) > 0 ? Math.min(Math.max(sat(s.salaryPaid), sat(s.tables.ssoFloor)), sat(s.tables.ssoCeiling)) : 0), 0)) }); // PY3a m-floor: the base each slip used (its own floor / ceiling, as the engine applies them per slip), so base x rate = what was contributed
+    else rows.push({ ...base, wageBase: fromSatang(Math.min(slips.reduce((n, s) => n + (sat(s.sso) > 0 ? Math.min(Math.max(sat(s.salaryPaid), sat(s.tables.ssoFloor)), sat(s.tables.ssoCeiling)) : 0), 0), sat(last.tables.ssoCeiling))) }); // PY3b R2-M1: and never above the month's ceiling (the engine caps the 2nd slip's contribution by monthSso). PY3a m-floor: the base each slip used (its own floor / ceiling, as the engine applies them per slip), so base x rate = what was contributed
   }
   return rows;
 }

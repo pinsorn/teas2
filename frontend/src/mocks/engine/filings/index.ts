@@ -92,10 +92,10 @@ export function finalizeFiling(st: MockState, companyId: string, form: FilingFor
     : isPayroll(form) ? (form === 'PND1' ? pnd1Snapshot : form === 'PND1A' ? pnd1aSnapshot : ssoSnapshot)(st, companyId, period)
     : form === 'PP36' ? pp36Snapshot(st, companyId, period) : pndSnapshot(st, companyId, form as PndForm, period);
   const tieOuts = built ? m.tieOuts : form === 'PP36' ? [tie('filing.tie.pp36Gl', boxOf(m.boxes, 'vat'), pp36Gl(st, companyId, period, (snap as ReturnType<typeof pp36Snapshot>).journal ?? []))] : m.tieOuts;
-  st.filings.push({ companyId, form, period, status: 'finalized', company: { taxId: co.taxId, branchCode: co.branchCode, legalNameTh: co.legalNameTh, ...(isPayroll(form) && co.ssoEmployerAccountNo ? { ssoEmployerAccountNo: co.ssoEmployerAccountNo } : {}) }, boxes: m.boxes, tieOuts, ...snap,
+  st.filings.push({ fp: 0, companyId, form, period, status: 'finalized', company: { taxId: co.taxId, branchCode: co.branchCode, legalNameTh: co.legalNameTh, ...(isPayroll(form) && co.ssoEmployerAccountNo ? { ssoEmployerAccountNo: co.ssoEmployerAccountNo } : {}) }, boxes: m.boxes, tieOuts, ...snap,
     finalizedAt: stamp(), finalizedBy: actor.name, dueDate: m.dueDate });
   const added = st.filings[st.filings.length - 1];
-  added.fp = fpOf(added); // PY3a M1
+  added.fp = fpOf(added); // PY3a M1 (fp: 0 is only the placeholder of the object literal)
   logAudit(st, actor, companyId, 'filing.finalize', `${form} ${period}`, { status: 'draft' }, { status: 'finalized', net: boxOf(m.boxes, form === 'PP30' && boxOf(m.boxes, '12') > 0 ? '12' : NET_BOX[form]!) });
   return getFiling(st, companyId, form, period);
 }
@@ -234,7 +234,7 @@ export function filingInvariants(st: MockState): string[] {
     if (seen.has(`${f.companyId}|${f.form}|${f.period}`)) out.push(`${w}: finalized twice`);
     seen.add(`${f.companyId}|${f.form}|${f.period}`);
     for (const t of f.tieOuts) if (sat(t.left) - sat(t.right) + (t.reconciling ?? []).reduce((n, r) => n + sat(r.amount), 0) !== sat(t.diff)) out.push(`${w}: tie-out ${t.labelKey} diff ${t.diff} is not left - right + reconciling`);
-    if (f.fp !== undefined && f.fp !== fpOf(f)) out.push(`${w}: its fingerprint does not match the company as filed, the due date, the period or who filed it (the frozen snapshot was edited)`);
+    if (f.fp === undefined || f.fp !== fpOf(f)) out.push(`${w}: its fingerprint does not match the company as filed, the due date, the period or who filed it (the frozen snapshot was edited)`);
     if (f.form === 'PP30') ppInvariants(st, f, w, out);
     else if (isCit(f.form)) citInvariants(st, f, w, out);
     else if (f.wht) pndInvariants(st, f, w, out);

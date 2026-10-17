@@ -45,3 +45,4 @@
 | 2026-10-18 | SP1c PY3 implement (ภ.ง.ด.1, 1ก, สปส.1-10, employee 50 ทวิ, pay PND1 / SSO; PY2 minors) | sonnet-implementer (fresh) | default implementer; Opus review after (tax) |
 | 2026-10-18 | SP1c PY3 review (PND1 / PND1A / SSO 1-10 filings, filing lock, payTax PND1 / SSO, employee 50 tawi, PY2 minors) | opus-reviewer | tax + money diff (frozen returns, payable clearing) — plan marks Opus; fresh reviewer |
 | 2026-10-18 | SP1c PY3a fix round (1ก year-end blocker, filing fingerprint, OB lock by filed 1ก, SSO minors) | sonnet-implementer (warm, PY3 worker) | same-area follow-up after Opus REJECT; warm re-review after |
+| 2026-10-18 | SP1c PY3b fix (SSO wage base ceiling, v49, fp required) | sonnet-implementer (warm, PY3 worker) | Opus round 2 REJECT on one major; warm re-review after |

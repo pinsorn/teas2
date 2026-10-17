@@ -159,3 +159,19 @@ describe('PY3a minors m-rate / m-two-slips / m-floor', () => {
     expect(r.employee).toBe('165.00');
   });
 });
+
+describe('PY3b R2-M1 / fp required', () => {
+  it('two salary runs of 10,000.00 in a month: wage base is capped at the ceiling 17,500.00 and base x rate = the 875.00 contributed', () => {
+    const a = doc('pr-2026-09').payroll!.slips.find((x) => x.employeeId === 'emp-01')!, b = doc('pr-bonus-09').payroll!.slips.find((x) => x.employeeId === 'emp-01')!;
+    Object.assign(a, { salaryPaid: '10000.00', sso: '500.00', ssoEmployer: '500.00' });
+    Object.assign(b, { salaryPaid: '10000.00', sso: '375.00', ssoEmployer: '375.00' });
+    const r = sso().attachment!.rows.find((x) => x.name.includes('สมศรี'))!;
+    expect(r.wage).toBe('17500.00');
+    expect(r.employee).toBe('875.00');
+    expect(Number(r.wage) * 0.05).toBe(Number(r.employee));
+  });
+  it('a filing without its fingerprint is caught', () => {
+    delete (st.filings.find((f) => f.form === 'PND3' && f.period === '2026-08') as { fp?: number }).fp;
+    expect(found(/fingerprint/)).toBe(true);
+  });
+});
