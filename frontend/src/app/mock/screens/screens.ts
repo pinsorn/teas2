@@ -193,5 +193,8 @@ export const SCREENS: Screen[] = [
   { name: 'cit', route: '/tax/cit', company: 'both', states: true }, // TX3a: the ภ.ง.ด.50 of the last year that ended (2025: the year-end close is not done in the seed)
   { name: 'citPnd51', route: '/tax/cit?tab=pnd51&period=2026', company: 'both', states: true },
   { name: 'citYear2026', route: '/tax/cit?period=2026', company: 'both', states: true },
+  { name: 'taxSummary', route: '/tax/summary', company: 'both', states: true }, // TX3b: twelve months of 2026; the non-VAT company also shows the threshold card at 85 %
+  { name: 'taxForms', route: '/tax/forms', company: 'both', states: true },
+  { name: 'taxFormPp01', route: '/tax/forms?print=PP01', company: 'both', states: false },
   { name: 'styleGuide', route: '/style-guide', company: 'both', states: false },
 ];

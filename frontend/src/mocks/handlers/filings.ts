@@ -4,6 +4,8 @@ import type { Actor } from '@/domain/types';
 import { citYearView, isCit, removeCitAdjustment, saveCitAdjustment, updateCitYear } from '../engine/filings/cit';
 import { exportFilingText, filingHistory, finalizeFiling, getFiling } from '../engine/filings';
 import { nextMonth, prevMonth } from '../engine/filings/pp30';
+import { formCatalogue } from '../engine/reports/tax-summary';
+import { vatThresholdWatch } from '../engine/vat-threshold';
 import { taxPaymentLines } from '../engine/reconcile';
 import { openClaimMonth } from '../engine/purchase-vat';
 import { MockError, today } from '../engine/log';
@@ -35,6 +37,9 @@ export const filingHandlers = [
     const q = new URL(request.url).searchParams, dd = q.get('documentDate') ?? '';
     return { claimPeriod: openClaimMonth(c.st, c.company.id, dd, q.get('vendorDocDate') || undefined) ?? dd.slice(0, 7) };
   })),
+  // TX3b: the form catalogue with the filing history across forms (tax.read), and the VAT threshold watch (null for a VAT company; any signed-in role that may read tax)
+  http.get('*/bff/v1/form-catalogue', () => act(READ, (c) => { const m = formCatalogue(c.st, c.company.id); return c.s.screenState === 'empty' ? { ...m, forms: [], history: [] } : m; })),
+  http.get('*/bff/v1/vat-threshold', () => act(READ, (c) => vatThresholdWatch(c.st, c.company.id))),
   http.get('*/bff/v1/filings/:form/:period/export', ({ params }) => act(READ, (c) => new HttpResponse(exportFilingText(c.st, c.company.id, form(params.form), String(params.period)), { headers: { 'content-type': 'text/plain; charset=utf-8', 'content-disposition': `attachment; filename="${params.form}-${params.period}.txt"` } }))),
   // TX2c: the statement lines a finalized return can be paid from (bank.reconcile: choosing one posts a bank line)
   http.get('*/bff/v1/filings/:form/:period/payment-lines', ({ params }) => act(RECONCILE, (c) => taxPaymentLines(c.st, c.company.id, form(params.form), String(params.period)))),

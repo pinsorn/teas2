@@ -112,4 +112,7 @@ export const SALES_SPECS: SeedSpec[] = [
       { ...line('cn-full', 2, 'ลดหนี้เต็มจำนวน รายการที่ 2', '10', 'หน่วย', '48.00'), discountPct: '10', sourceLineId: 'ti-046-l2' }] },
   { id: 'nrc-cash', type: 'RC', companyId: NV, date: '2026-10-13', partyId: 'nc-04', status: 'issued', header: { paymentMethod: 'transfer', bankAccountId: BANK.NV },
     lines: [line('nrc-cash', 1, 'ค่าเช่าแผงชั่วคราวรายวัน', '2', 'วัน', '350.00', 'EX'), line('nrc-cash', 2, 'ค่าไฟฟ้าแผง', '1', 'งาน', '150.00', 'EX')] },
+  // TX3b G1: five wholesale cash bills (Mar-Jul 2026) take the non-VAT company's last 12 months of sales to 1,530,000.00 = 85.00 % of the 1,800,000.00 threshold
+  ...[['03', 'nc-01'], ['04', 'nc-02'], ['05', 'nc-03'], ['06', 'nc-05'], ['07', 'nc-06']].map(([m, party]): SeedSpec =>
+    ({ id: `nrc-w${m}`, type: 'RC', companyId: NV, date: `2026-${m}-10`, partyId: party, status: 'issued', header: { paymentMethod: 'transfer', bankAccountId: BANK.NV }, lines: [line(`nrc-w${m}`, 1, 'ขายส่งสินค้าเงินสด', '1', 'งาน', '299028.00', 'EX')] })),
 ];

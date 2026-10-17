@@ -5,7 +5,7 @@ import type {
 } from '@/domain/types';
 import type { CitYearPatch, CitYearView, FilingForm, FilingHistoryItem, FilingModel, TaxPaymentLines } from '@/domain/filings';
 import type { RecordKind, RecordRow } from '@/domain/records';
-import type { ReportKind, ReportModel } from '@/domain/reports';
+import type { FormCatalogue, ReportKind, ReportModel, VatThresholdWatch } from '@/domain/reports';
 import { api, ApiError, normalizeProblem } from './client';
 
 export type DocInput = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[]; /** OB (AC3): the steps behind the trial balance */ opening?: DocOpening };
@@ -142,6 +142,8 @@ export const endpoints = {
   /** TX1 tax filings: the finalized ones with the month to look at next (tax.read), one period (draft: tax.filing.preview too), finalize (tax.filing.finalize; `version` is the preview's), and the RD Prep text of a finalized one. */
   listFilings: (form: FilingForm) => api<{ items: FilingHistoryItem[]; next: string }>('GET', `/filings/${form}`),
   getFiling: (form: FilingForm, period: string) => api<FilingModel>('GET', `/filings/${form}/${encodeURIComponent(period)}`),
+  getFormCatalogue: () => api<FormCatalogue>('GET', '/form-catalogue'),
+  getVatThreshold: () => api<VatThresholdWatch | null>('GET', '/vat-threshold'),
   finalizeFiling: (form: FilingForm, period: string, version: number, ack?: boolean) => api<FilingModel>('POST', `/filings/${form}/${encodeURIComponent(period)}/finalize`, { version, ...(ack ? { ack } : {}) }),
   /** TX2c: the statement lines a finalized return can be paid from (bank.reconcile), pay it from one, and undo a payment (same URL as reverseBankTransfer). */
   /** TX3a: the CIT year data (capital, prior losses, the ภ.ง.ด.51 estimate) and the user adjustments of a fiscal year (period = YYYY). */

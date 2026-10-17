@@ -245,6 +245,7 @@
       "wht": "Withholding tax",
       "whtCertificates": "Withholding certificates (50 tawi)",
       "cit": "Corporate income tax",
+      "taxForms": "Forms and filing history",
       "employees": "Employees",
       "payrollRuns": "Payroll runs",
       "payrollFilings": "Payroll filings",
@@ -1068,6 +1069,8 @@
     "assetRegister": {"tieCost":"Register cost plus lines not yet registered {left} baht against the ledger asset accounts {right} baht","title":"Fixed asset register","number":"Number","name":"Item","start":"In service","cost":"Cost","accumulated":"Accumulated","nbv":"Net book value","status":"Status","tie":"Register accumulated depreciation {left} baht against the ledger {right} baht"},
     "whtRec": { "title": "Tax withheld by customers", "receipt": "Receipt", "date": "Date", "customer": "Customer", "cert": "Certificate number", "wht": "Tax withheld", "d0": "0-30 days", "d31": "31-60 days", "d61": "61-90 days", "d90": "Over 90 days", "tie": "Tax withheld {left} baht against ledger 1180 {right} baht" },
     "missingCert": { "title": "Withholding certificates not yet received", "receipt": "Receipt", "date": "Received on", "customer": "Customer", "target": "Invoice paid", "wht": "Tax withheld", "age": "Days outstanding" },
+    "taxSummary": { "title": "Monthly tax summary", "year": "Year", "month": "Month", "sales": "Sales", "outVat": "Output VAT", "inVat": "Input VAT", "netVat": "Net VAT", "pnd2": "PND.2", "pnd3": "PND.3", "pnd53": "PND.53", "pnd54": "PND.54", "whtIn": "Tax withheld from us", "status": "Filing status",
+      "states": { "finalized": "filed", "paid": "paid", "draft": "draft", "owed": "overdue", "na": "nothing to file" } },
     "vatOutput": { "title": "Output VAT register" },
     "vatInput": { "title": "Input VAT register" },
     "bankRec": { "title": "Bank reconciliation", "item": "Item", "date": "Date", "amount": "Amount", "tie": "Adjusted statement balance {left} baht against adjusted book balance {right} baht" }
@@ -1123,6 +1126,14 @@
       "notFoundTitle": "Record not found", "notFoundBody": "It may have been deleted, or it belongs to another company",
       "docsEmpty": "No documents for this party yet", "openEmpty": "Nothing outstanding", "openTotal": "Total outstanding", "number": "Number", "type": "Type",
       "date": "Date", "status": "Status", "total": "Total", "outstanding": "Outstanding", "due": "Due"
+    }
+  },
+  "taxPage": {
+    "threshold": { "title": "VAT registration threshold", "revenue": "Sales in the last 12 months", "of": "of the {threshold} baht threshold", "window": "{from} to {to}", "ok": "Still below the registration threshold", "bar": "Sales as a share of the threshold" },
+    "forms": { "title": "Forms and filing history", "catalogue": "Forms", "form": "Form", "periodKind": "Period", "due": "Due", "last": "Last period filed", "none": "Never filed", "open": "Open", "print": "Print form with company data",
+      "kinds": { "month": "Monthly", "year": "Yearly", "half-year": "Half-year", "event": "On an event" },
+      "history": { "title": "Filing history", "empty": "Nothing filed yet", "period": "Period", "at": "Confirmed", "by": "By", "files": "Files", "rdprep": "RD Prep", "pdf": "PDF" },
+      "paper": { "back": "Back to the forms", "printNow": "Print", "note": "Pre-filled from the company record. Not the Revenue Department's official form; use it to fill the real one.", "name": "Business name", "tin": "Tax ID", "branch": "Branch", "address": "Address", "date": "Date", "sign": "Signature of the owner / authorised signatory", "pp01": "VAT registration application (PP.01)", "pp09": "Application to change VAT registration details (PP.09)", "changes": "Changes requested", "reason": "Reason for registering: sales exceed the threshold" }
     }
   },
   "cit": {

@@ -424,6 +424,7 @@ export function payTax(st: MockState, companyId: string, lineId: string, req: Pa
   const bank = bankOf(st, companyId, l.accountId);
   if (req.extras !== undefined && !Array.isArray(req.extras)) throw fail(422, 'tax_payment.extra_amount', 'รายการอื่นในยอดชำระไม่ถูกต้อง');
   const extras = (req.extras ?? []).map((x) => {
+    if (typeof x !== 'object' || x === null) throw fail(422, 'tax_payment.extra_amount', 'รายการอื่นในยอดชำระไม่ถูกต้อง');
     const acc = st.accounts.find((a) => a.companyId === companyId && a.code === x.accountCode);
     if (!acc || !acc.postable || acc.active === false) throw fail(422, 'ledger.account_invalid', 'เลือกบัญชีที่ลงรายการได้');
     if (acc.code === bank.accountCode) throw fail(422, 'bank.post_same_account', 'บัญชีที่เลือกต้องไม่ใช่บัญชีธนาคารของรายการนี้');

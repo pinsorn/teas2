@@ -66,7 +66,7 @@ test('home has no serious accessibility violations', async ({ page }) => {
 
 test('home title and a not-built route', async ({ page }) => {
   await expect(page).toHaveTitle('งานของฉัน · TEAS 2');
-  await page.goto('/tax/cit');
+  await page.goto('/reports/sales-purchases');
   await expect(page.getByText('ส่วนนี้ยังไม่เปิดใช้งาน')).toBeVisible();
   expect(await serious(page)).toEqual([]);
   await page.goto('/nope/nothing');

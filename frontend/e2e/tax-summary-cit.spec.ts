@@ -85,3 +85,73 @@ test('the payment dialog names each line\'s bank account and refuses a half-fill
   await expect(dialog.getByTestId('extra-half')).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'ชำระภาษี' })).toBeDisabled();
 });
+
+// ---- TX3b: tax summary, VAT threshold watch, form catalogue and filing history
+screenContract({ name: 'tax summary', path: '/tax/summary', heading: 'สรุปภาษีรายเดือน', company: 'both', states: ['empty', 'loading', 'error', 'forbidden'], forbiddenRole: 'operator' });
+screenContract({ name: 'tax forms and history', path: '/tax/forms', heading: 'แบบฟอร์มและประวัติการยื่น', company: 'both', states: ['empty', 'loading', 'error', 'forbidden'], forbiddenRole: 'operator' });
+
+test('VAT company: July is filed, September is overdue, each chip opens its return; no threshold card; 390 px never scrolls sideways', async ({ page }) => {
+  await page.goto('/tax/summary?year=2026');
+  const jul = page.getByRole('row').filter({ hasText: 'ก.ค. 2569' });
+  await expect(jul.locator('[data-state="finalized"]', { hasText: 'ภ.พ.30' })).toBeVisible();
+  await expect(page.getByRole('row').filter({ hasText: 'ก.ย. 2569' }).locator('[data-state="owed"]', { hasText: 'ภ.พ.30' })).toBeVisible();
+  await expect(page.getByTestId('vat-threshold')).toHaveCount(0);
+  await expect(page.getByRole('columnheader', { name: 'ภาษีขาย' })).toBeVisible();
+  await shot(page, 'summary-vat');
+  await jul.getByRole('link', { name: /ภ.พ.30/ }).click();
+  await expect(page).toHaveURL(/\/tax\/vat\?period=2026-07/);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/tax/summary?year=2026');
+  await expect(page.getByRole('row').filter({ hasText: 'ก.ค. 2569' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await shot(page, 'summary-vat-mobile');
+});
+
+test('non-VAT company: no VAT columns, the threshold card warns at 85 % on the summary and on Home; the VAT company has none on Home', async ({ page }) => {
+  await page.goto('/tax/summary?year=2026&company=nonvat');
+  const card = page.getByTestId('vat-threshold');
+  await expect(card).toHaveAttribute('data-level', 'warning');
+  await expect(card).toContainText('85.00%');
+  await expect(page.getByTestId('vat-threshold-message')).toHaveText('ใกล้เกณฑ์ต้องจดทะเบียนภาษีมูลค่าเพิ่ม');
+  await expect(page.getByRole('columnheader', { name: 'ภาษีขาย' })).toHaveCount(0);
+  await expect(page.getByRole('columnheader', { name: 'ยอดขาย' })).toBeVisible();
+  await shot(page, 'summary-nonvat');
+  await axeClean(page);
+  await page.goto('/?company=nonvat');
+  await expect(page.getByTestId('vat-threshold')).toBeVisible();
+  await page.goto('/?company=vat');
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  await expect(page.getByTestId('vat-threshold')).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/tax/summary?year=2026&company=nonvat');
+  await expect(page.getByTestId('vat-threshold')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await shot(page, 'summary-nonvat-mobile');
+});
+
+test('form catalogue lists every form; the history spans forms; ภ.พ.01 prints with the company data', async ({ page }) => {
+  await page.goto('/tax/forms');
+  for (const f of ['PP30', 'PP36', 'PND2', 'PND3', 'PND53', 'PND54', 'PND50', 'PND51', 'PP01', 'PP09']) await expect(page.getByTestId(`form-${f}`)).toBeVisible();
+  await expect(page.getByTestId('form-PP30')).toContainText('ส.ค. 2569');
+  await expect(page.getByTestId('form-PND50')).toContainText('ยังไม่เคยยื่น');
+  const hist = page.getByTestId('all-filing-history');
+  await expect(hist.getByRole('row')).not.toHaveCount(1);
+  await expect(hist).toContainText('ภ.พ.30');
+  await expect(hist).toContainText('ภ.ง.ด.53');
+  await shot(page, 'forms');
+  await page.getByTestId('form-PP01').getByRole('link').click();
+  await expect(page.getByTestId('paper-PP01')).toContainText('บริษัท มะลิวัลย์ ดีไซน์ เวิร์คส์ จำกัด');
+  await expect(page.getByTestId('paper-PP01')).toContainText('0105569012345');
+  await shot(page, 'forms-pp01');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/tax/forms');
+  await expect(page.getByTestId('form-PP30')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await shot(page, 'forms-mobile');
+});
+
+test('non-VAT company: the catalogue has no ภ.พ.30', async ({ page }) => {
+  await page.goto('/tax/forms?company=nonvat');
+  await expect(page.getByTestId('form-PND3')).toBeVisible();
+  await expect(page.getByTestId('form-PP30')).toHaveCount(0);
+});

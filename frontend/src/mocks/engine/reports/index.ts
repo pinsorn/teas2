@@ -7,24 +7,26 @@ import { generalJournal } from '../journal';
 import { assetRegister } from './asset-register';
 import { bankReconciliation } from './bank-reconciliation';
 import { missingWhtCert } from './missing-wht-cert';
+import { taxSummary } from './tax-summary';
 import { trialBalance } from './trial-balance';
 import { vatInputRegister } from './vat-input-register';
 import { vatOutputRegister } from './vat-output-register';
 import { whtReceivable } from './wht-receivable';
 
 /** Report kinds the mock engine can compute so far (the rest answer 404 report.not_built until their RP task). */
-const BUILDERS: Partial<Record<ReportKind, (st: MockState, companyId: string, p: Record<string, string>) => ReportModel>> = {
+const BUILDERS: Partial<Record<ReportKind, (st: MockState, companyId: string, p: Record<string, string>, perms: string[]) => ReportModel>> = {
   'trial-balance': (st, c, p) => trialBalance(st, c, { ...p, asOf: p.asOf || today() }),
   'general-journal': (st, c, p) => generalJournal(st, c, { from: p.from, to: p.to, account: p.account?.trim(), source: p.source }),
   'asset-register': (st, c, p) => assetRegister(st, c, { ...p, asOf: p.asOf || today() }),
   'bank-reconciliation': (st, c, p) => bankReconciliation(st, c, { account: p.account ?? '', to: p.to || today() }),
   'wht-receivable': (st, c, p) => whtReceivable(st, c, { asOf: p.asOf || today() }),
   'missing-wht-cert': (st, c) => missingWhtCert(st, c),
+  'tax-summary': (st, c, p, perms) => taxSummary(st, c, p, perms.includes('tax.filing.preview')), // an unfiled month is the filing's preview, with the same right
   'vat-output-register': vatOutputRegister,
   'vat-input-register': vatInputRegister,
 };
 export const isBuilt = (k: string): k is ReportKind => Object.hasOwn(BUILDERS, k);
-export const buildReport = (st: MockState, companyId: string, kind: ReportKind, p: Record<string, string>) => BUILDERS[kind]!(st, companyId, p);
+export const buildReport = (st: MockState, companyId: string, kind: ReportKind, p: Record<string, string>, perms: string[] = []) => BUILDERS[kind]!(st, companyId, p, perms);
 
 export type Locale = 'th' | 'en';
 const msg = (locale: Locale, key: string) =>
@@ -38,11 +40,14 @@ const cell = (v: string, money = false) => {
   return /[",\r\n]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
 };
 
+/** A status column (`<form>:<state>:<href>;...`) as words: "ภ.พ.30 ยื่นแล้ว; ภ.ง.ด.3 ค้างยื่น". */
+const statusText = (v: string, locale: Locale) => v.split(';').filter(Boolean).map((x) => { const [form, state] = x.split(':'); return `${form} ${msg(locale, `reports.taxSummary.states.${state}`)}`.trim(); }).join('; ');
+
 /** text/csv body: UTF-8 BOM (Excel reads Thai), CRLF line ends, headers in the caller's locale. Money stays the server's plain decimal string;
  *  a total row is named in the first text column. */
 export function reportCsv(m: ReportModel, locale: Locale = 'th'): string {
   const label = m.columns.findIndex((c) => !c.kind || c.kind === 'text');
   const body = m.rows.map((r) => m.columns.map((c, i) => (!r.cells[c.key] && i === label && (r.kind === 'total' || r.kind === 'subtotal')
-    ? cell(msg(locale, 'reports.total')) : cell(r.cells[c.key] ?? '', c.kind === 'money'))));
+    ? cell(msg(locale, 'reports.total')) : cell(c.kind === 'status' ? statusText(r.cells[c.key] ?? '', locale) : r.cells[c.key] ?? '', c.kind === 'money'))));
   return `${BOM}${[m.columns.map((c) => cell(msg(locale, c.labelKey))), ...body].map((l) => l.join(',')).join('\r\n')}\r\n`;
 }

@@ -13,7 +13,7 @@ async function run(kind: string, url: URL) {
   const gate = await screenGate('item');
   if (gate) return gate;
   const { st, company, perms, s } = ctx();
-  const need = kind === 'general-journal' ? 'ledger.read' : kind.startsWith('vat-') || kind === 'wht-receivable' || kind === 'missing-wht-cert' ? 'tax.read' : PERM; // the general journal is the ledger itself; the VAT registers and the withholding lists are the tax area's
+  const need = kind === 'general-journal' ? 'ledger.read' : kind.startsWith('vat-') || kind === 'tax-summary' || kind === 'wht-receivable' || kind === 'missing-wht-cert' ? 'tax.read' : PERM; // the general journal is the ledger itself; the VAT registers and the withholding lists are the tax area's
   if (!perms.includes(need)) return forbidden(need);
   if (!isBuilt(kind)) return problem(404, 'report.not_built', 'รายงานนี้ยังไม่เปิดให้ใช้งาน');
   const p = Object.fromEntries(url.searchParams);
@@ -24,7 +24,7 @@ async function run(kind: string, url: URL) {
     if (!p.account) return problem(422, 'report.bad_param', 'ต้องระบุบัญชีธนาคาร');
   }
   let model;
-  try { model = buildReport(st, company.id, kind, p); } catch (e) { if (e instanceof MockError) return problem(e.status, e.code, e.title); throw e; }
+  try { model = buildReport(st, company.id, kind, p, perms); } catch (e) { if (e instanceof MockError) return problem(e.status, e.code, e.title); throw e; }
   // the toolbar's "empty" state: a successful report with no rows (never an error)
   return { model: s.screenState === 'empty' ? { ...model, rows: [] } : model };
 }
