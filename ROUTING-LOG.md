@@ -34,3 +34,4 @@
 | 2026-10-17 | SP1c GTX consolidated gate | haiku-gate-runner | Tier 3 run-and-report |
 | 2026-10-17 | SP1c TX4 implement (50 ทวิ RD layout, PP30 official boxes 8-12) | sonnet-implementer | Ham gate follow-ups; Opus review after (filing kit) |
 | 2026-10-17 | SP1c TX4 review (PP30 official boxes, 50 ทวิ layout) | opus-reviewer (fresh) | filing kit money: carry / cap / netting consumers |
+| 2026-10-17 | SP1c PY1 implement (employees, payroll runs, PIT / SSO, posting) | sonnet-implementer | default implementer; Opus review after (money) |
