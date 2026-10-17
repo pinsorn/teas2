@@ -27,3 +27,5 @@
 | 2026-10-17 | SP1c TX2c implement (PP30 netting at finalize, pay tax from a bank line) | sonnet-implementer | airtight Opus design spec; Opus review after |
 | 2026-10-17 | SP1c TX2c review (PP30 netting, payTax / reverse, payable invariants) | opus-reviewer (fresh) | money + ledger diff; warm reviewer context ~320k |
 | 2026-10-17 | SP1c TX3a implement (CIT PND50/51 engine, adjustments, loss carry, credits) | sonnet-implementer | default implementer; Opus review after |
+| 2026-10-17 | SP1c TX3a review (CIT PND50/51, profit-loss refactor of close.ts) | opus-reviewer (fresh) | tax + money; touches AC6 closing entry |
+| 2026-10-17 | SP1c TX3b implement (tax summary, VAT threshold watch, forms catalogue + history) | sonnet-implementer | UI + read models |
