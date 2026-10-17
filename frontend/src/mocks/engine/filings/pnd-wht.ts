@@ -67,14 +67,15 @@ export function pndBoxes(rows: WhtRow[]): FilingBox[] {
   return [{ code: 'payees', labelTh: 'จำนวนผู้มีเงินได้ (ราย)', amount: String(payees), kind: 'count' }, { code: 'income', labelTh: 'เงินได้ที่จ่ายทั้งสิ้น', amount: fromSatang(sum((r) => r.income)) }, { code: 'tax', labelTh: 'ภาษีที่หักและนำส่งทั้งสิ้น', amount: fromSatang(sum((r) => r.tax)) }];
 }
 
-/** GL credit movement (credit - debit) of the form's WHT payable account over the month, from voucher journals. 2131 / 2132 / 2135 / 2134 by the posting profile. */
+/** GL credit movement (credit - debit) of the form's WHT payable account for the vouchers of the month (by the voucher's document month), from voucher journals. 2131 / 2132 / 2135 / 2134 by the posting profile. */
 export function whtGl(st: MockState, companyId: string, form: PndForm, period: string): number {
   const code = resolveRole(st, 'WhtPayable', { companyId, docType: 'PV', whtForm: form }).code;
   let n = 0;
   for (const j of st.journals) {
     const d = st.docs.find((x) => x.id === j.docId);
     if (!d || d.companyId !== companyId || d.type !== 'PV') continue;
-    for (const e of j.preview.entries) if (e.date.startsWith(period)) for (const l of e.lines) if (l.accountCode === code) n += sat(l.credit) - sat(l.debit);
+    if (!d.header.documentDate.startsWith(period)) continue; // M1: a voucher's entries (a later cancel's reversal included) belong to its own month, like TX1's glMovement
+    for (const e of j.preview.entries) for (const l of e.lines) if (l.accountCode === code) n += sat(l.credit) - sat(l.debit);
   }
   return n;
 }

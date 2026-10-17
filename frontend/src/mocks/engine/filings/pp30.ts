@@ -11,6 +11,7 @@ import { fromSatang, toSatang } from '../money';
 import { monthLabelTh } from '../periods';
 import { claimPeriodOf, exForfeited, isRecoverable } from '../purchase-vat';
 import { computeDoc, vatOf } from '../vat';
+import { pp36Rows } from './pp36';
 
 /** A document as the ภ.พ.30 took it: the figures the filing froze, per document (ruling 1). `out` rows come from TI / CN / DN (a CN / DN is signed), `in` rows from the vendor documents (PB / PCN / PDN, and an EX line with its vendor tax invoice).
  *  For an `in` row `base7` is the claimed base and `vat` the RECOVERABLE VAT only. A cancelled document keeps a row of zeros (ยกเลิก 0.00, A.9). */
@@ -203,6 +204,9 @@ export function blockersOf(st: MockState, companyId: string, period: string): Fi
   if (!co || !isValidTin(co.taxId)) out.push({ code: 'company_tin', labelTh: 'เลขประจำตัวผู้เสียภาษีของบริษัทไม่ถูกต้องหรือเป็นเลขสมมติ แก้ที่ตั้งค่าบริษัทก่อนยื่น', href: '/settings/company' });
   for (const d of st.docs.filter((x) => x.companyId === companyId && OUT.includes(x.type) && DRAFTISH.includes(x.status) && x.header.documentDate.startsWith(period)).sort((a, b) => a.header.documentDate.localeCompare(b.header.documentDate) || a.id.localeCompare(b.id))) {
     out.push({ code: 'draft_document', labelTh: `${d.type} ฉบับร่างลงวันที่ ${formatDateBE(d.header.documentDate)} ยังไม่ได้ออก`, href: docEditHref(d.type, d.id) });
+  }
+  if (pp36Rows(st, companyId, period).length && !filedIn(st, companyId, period, 'PP36')) { // H1: the ภ.พ.36 is due the 7th, the ภ.พ.30 the 15th; filed the other way round its VAT could never be claimed
+    out.push({ code: 'pp36_open', labelTh: `ยังไม่ได้ยืนยันแบบ ภ.พ.36 เดือน ${monthLabelTh(period)}`, href: `/tax/wht?tab=pp36&period=${period}` });
   }
   out.push(...chainBlockers(st, companyId, 'PP30', period, 'ภ.พ.30', (p) => `/tax/vat?period=${p}`));
   return out;

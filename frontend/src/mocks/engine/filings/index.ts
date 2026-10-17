@@ -1,8 +1,9 @@
 import { LIVE } from '@/domain/doc-types';
 import type { FilingForm, FilingHistoryItem, FilingModel } from '@/domain/filings';
-import type { Actor, Lock } from '@/domain/types';
+import type { Actor, JournalEntryPreview, Lock } from '@/domain/types';
 import { USER } from '../../fixtures/documents';
 import type { MockState } from '../../store';
+import { companyEntries } from '../ledger';
 import { MockError, logAudit, stamp, withFixedClock } from '../log';
 import { fromSatang, toSatang } from '../money';
 import { monthLabelTh } from '../periods';
@@ -56,11 +57,19 @@ export function finalizeFiling(st: MockState, companyId: string, form: FilingFor
   const snap = form === 'PP30'
     ? { docs: pp30Docs(st, companyId, period), carryIn: prev ? prev.boxes.find((b) => b.code === '9')!.amount : '0.00', pp36: fromSatang(pp36VatOf(st, companyId, period)) }
     : form === 'PP36' ? pp36Snapshot(st, companyId, period) : pndSnapshot(st, companyId, form as PndForm, period);
-  const tieOuts = form === 'PP36' ? [tie('filing.tie.pp36Gl', boxOf(m.boxes, 'vat'), ((snap as ReturnType<typeof pp36Snapshot>).journal ?? []).flatMap((e) => e.lines).reduce((n, l) => n + sat(l.credit), 0))] : m.tieOuts; // the ledger side: what the entry credits to ภ.พ.36 payable
+  const tieOuts = form === 'PP36' ? [tie('filing.tie.pp36Gl', boxOf(m.boxes, 'vat'), pp36Gl(st, companyId, period, (snap as ReturnType<typeof pp36Snapshot>).journal ?? []))] : m.tieOuts;
   st.filings.push({ companyId, form, period, status: 'finalized', company: { taxId: co.taxId, branchCode: co.branchCode, legalNameTh: co.legalNameTh }, boxes: m.boxes, tieOuts, ...snap,
     finalizedAt: stamp(), finalizedBy: actor.name, dueDate: m.dueDate });
   logAudit(st, actor, companyId, 'filing.finalize', `${form} ${period}`, { status: 'draft' }, { status: 'finalized', net: boxOf(m.boxes, NET_BOX[form]!) });
   return getFiling(st, companyId, form, period);
+}
+
+/** m3: the ledger side of the ภ.พ.36 tie-out: the credit movement (credit - debit) of the ภ.พ.36 payable account in the payment month, over the whole ledger plus the entry this finalize is about to post. */
+function pp36Gl(st: MockState, companyId: string, period: string, entry: JournalEntryPreview[]): number {
+  const code = resolveRole(st, 'Pnd36VatPayable', { companyId, docType: 'PV' }).code;
+  let n = 0;
+  for (const e of [...companyEntries(st, companyId, false), ...entry]) if (e.date.startsWith(period)) for (const l of e.lines) if (l.accountCode === code) n += sat(l.credit) - sat(l.debit);
+  return n;
 }
 
 /** The company's finalized filings of a form, newest first. */
@@ -120,6 +129,7 @@ export function refuseFiled(st: MockState, d: DocLike, next?: Next): void {
     }
   }
   if (!next) return;
+  if (d.type === 'PV' && !fs.some((f) => f.form === 'PP36')) refuseIntoPp36(st, { ...d, ...next }); // a voucher only a ภ.ง.ด. took must not gain a ภ.พ.36 entry in a filed month either
   const pnds = fs.filter((f) => f.wht);
   if (pnds.length) { // the vouchers' certificates in filed returns: the rows the revision would give must be exactly the rows the returns took
     if (d.type !== 'PV' || next.header.partyId !== d.header.partyId) throw locked(pnds[0], next);
@@ -136,8 +146,7 @@ export function refuseFiled(st: MockState, d: DocLike, next?: Next): void {
 export function refuseIntoFiled(st: MockState, d: DocLike): void {
   if (d.type === 'PV') {
     for (const r of wantedWhtRows(st, d, d)) if (isFiledPeriod(st, d.companyId, r.date.slice(0, 7), r.form as FilingForm)) throw filedMonth(r.form as FilingForm, r.date.slice(0, 7));
-    const p = pp36RowOf(st, d);
-    if (p && isFiledPeriod(st, d.companyId, p.date.slice(0, 7), 'PP36')) throw filedMonth('PP36', p.date.slice(0, 7));
+    refuseIntoPp36(st, d);
     return;
   }
   const r = pp30RowOf(st, d);
@@ -148,6 +157,14 @@ export function refuseIntoFiled(st: MockState, d: DocLike): void {
   const open = bill ? openClaimMonth(st, d.companyId, r.date, r.vendorDocDate) : undefined;
   const how = !bill ? '' : open ? `เลือกงวดที่ขอคืนภาษีซื้อเป็น ${monthLabelTh(open)} หรือ` : 'ไม่เหลืองวดที่ยังไม่ยื่นในกรอบ 6 เดือน (ม.82/3) ภาษีซื้อขอคืนไม่ได้ ให้';
   throw fail(409, 'filing.period_filed', `ภ.พ.30 เดือน ${monthLabelTh(period)} ยื่นแล้ว — ${how}ลงวันที่ในงวดที่ยังไม่ยื่น`);
+}
+/** A voucher with a `pnd36` line lands its ภ.พ.36 entry in its payment month: refused when that month's ภ.พ.36 or ภ.พ.30 is finalized (the entry would post into a filed month, H1). */
+function refuseIntoPp36(st: MockState, d: DocLike): void {
+  const p = pp36RowOf(st, d);
+  if (!p) return;
+  const m = p.date.slice(0, 7);
+  if (isFiledPeriod(st, d.companyId, m, 'PP36')) throw filedMonth('PP36', m);
+  if (isFiledPeriod(st, d.companyId, m)) throw filedMonth('PP30', m);
 }
 const filedMonth = (form: FilingForm, period: string) => fail(409, 'filing.period_filed', `${formName(form)} เดือน ${monthLabelTh(period)} ยื่นแล้ว — ลงวันที่จ่ายในงวดที่ยังไม่ยื่น`);
 
@@ -190,6 +207,7 @@ function pndInvariants(st: MockState, f: Filing, w: string, out: string[]): void
     const now = LIVE.includes(wt.status) ? whtRowOfWt(st, wt) : undefined;
     if (!now) out.push(`${w}: ${r.id} is listed live but is ${wt.status}`);
     else if (whtKey(now) !== whtKey(r) || now.number !== r.number || now.pvId !== r.pvId) out.push(`${w}: ${r.id} no longer carries the figures the filing took`);
+    else for (const k of ['partyName', 'rate', 'nameTh', 'entityKind'] as const) if (now[k] !== r[k]) out.push(`${w}: ${r.id} ${k} "${r[k]}" differs from the document "${now[k]}"`); // m1: printed in the attachment / file; the WT keeps its own party snapshot and the voucher its frozen WHT
   }
   for (const wt of st.docs) if (wt.companyId === f.companyId && wt.type === 'WT' && wt.header.whtForm === form && wt.header.documentDate.startsWith(f.period) && LIVE.includes(wt.status) && !listed.has(wt.id)) out.push(`${w}: ${wt.id} is missing from the snapshot`);
 }
@@ -209,6 +227,7 @@ function pp36Invariants(st: MockState, f: Filing, w: string, out: string[]): voi
     if (!d || !LIVE.includes(d.status)) { out.push(`${w}: voucher ${r.id} is gone or no longer live`); continue; }
     const now = pp36RowOf(st, d);
     if (!now || pp36Key(now) !== pp36Key(r) || now.number !== r.number) out.push(`${w}: ${r.id} no longer carries the figures the filing took`);
+    else if (now.partyName !== r.partyName) out.push(`${w}: ${r.id} partyName "${r.partyName}" differs from the document "${now.partyName}"`); // m1
   }
   for (const d of st.docs) if (d.companyId === f.companyId && d.type === 'PV' && d.header.documentDate.startsWith(f.period) && pp36RowOf(st, d) && !listed.has(d.id)) out.push(`${w}: ${d.id} is missing from the snapshot`);
 }
@@ -247,13 +266,13 @@ export function seedFilings(st: MockState): void {
   }
 }
 
-/** Ruling 5 (TX2): the returns of a month that are owed and not finalized, for the period-close checklist. The ภ.พ.30 from the company's first finalized one on (TX1); a ภ.ง.ด. or the ภ.พ.36 when the month has certificates / vouchers for it, not finalized,
- *  and the month is not before that form's own chain (a form never filed in the system has no chain: it counts). */
+/** Ruling 5 (TX2) / m2: the returns of a month that are owed and not finalized, for the period-close checklist. One rule for every form: a month is owed from that form's chain start (its first finalized period); a form never finalized counts from the
+ *  company's earliest finalized filing of ANY form; a company with no finalized filing owes nothing. The ภ.พ.30 is owed in every such month (TX1); a ภ.ง.ด. or the ภ.พ.36 only when the month has certificates / vouchers for it. */
 export function unfiledForms(st: MockState, companyId: string, month: string): FilingForm[] {
   const out: FilingForm[] = [];
-  const start = chainStart(st, companyId);
-  if (st.companies.find((c) => c.id === companyId)?.vatRegistered && start !== undefined && month >= start && !filingOf(st, companyId, month)) out.push('PP30');
-  const owed = (f: FilingForm, has: boolean) => { const s = chainStart(st, companyId, f); if (has && !filingOf(st, companyId, month, f) && (s === undefined || month >= s)) out.push(f); };
+  const mine = st.filings.filter((f) => f.companyId === companyId).map((f) => f.period).sort();
+  const owed = (f: FilingForm, has: boolean) => { const s = chainStart(st, companyId, f) ?? mine[0]; if (has && s !== undefined && month >= s && !filingOf(st, companyId, month, f)) out.push(f); };
+  owed('PP30', !!st.companies.find((c) => c.id === companyId)?.vatRegistered);
   for (const f of PND_FORMS) owed(f, pndRows(st, companyId, f, month).length > 0);
   owed('PP36', pp36Rows(st, companyId, month).length > 0);
   return out;

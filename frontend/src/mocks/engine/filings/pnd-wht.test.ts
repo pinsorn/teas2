@@ -121,6 +121,30 @@ describe('frozen at finalize (ruling 1)', () => {
     st = seed();
     expect(tamper(() => { st.filings.push(structuredClone(f())); }).join()).toContain('finalized twice');
   });
+  it.each(['partyName', 'rate', 'nameTh', 'entityKind'] as const)('a tampered %s on a stored row fails the invariant (m1)', (k) => {
+    expect(checkInvariants(st)).toEqual([]);
+    (st.filings.find((x) => x.form === 'PND53' && x.period === '2026-08')!.wht![0] as unknown as Record<string, string>)[k] = 'TAMPER';
+    // single fault: only this field differs from the source
+    expect(checkInvariants(st).join()).toContain(k);
+  });
+});
+
+describe('the GL tie-out is by the voucher month (M1)', () => {
+  const ties = (p: string) => getFiling(st, CO, 'PND54', p).tieOuts.map((t) => [t.left, t.right, t.diff]);
+  it('a September ภ.ง.ด.54 voucher cancelled in October ties 0.00 in both months', () => {
+    const v = pv('pv-12', '2026-09-20', [L('a', '10000.00', { whtTypeCode: 'FOR-SVC' })]);
+    expect(ties('2026-09')[0][2]).toBe('0.00');
+    cancel(st, v.id, get(v.id).version, 'OTHER', 'x', me);
+    expect(ties('2026-09')).toEqual([['0.00', '0.00', '0.00']]);
+    expect(ties('2026-10')[0][2]).toBe('0.00');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('a September voucher revised in October still ties 0.00 in both months', () => {
+    const v = pv('pv-12', '2026-09-20', [L('a', '10000.00', { whtTypeCode: 'FOR-SVC' })]);
+    revisePv(v.id, { lines: [{ ...v.lines[0], unitPrice: '12000.00' }] });
+    expect(ties('2026-09')[0][2]).toBe('0.00');
+    expect(ties('2026-10')[0][2]).toBe('0.00');
+  });
 });
 
 describe('the filing lock on a voucher (ruling 2)', () => {
@@ -197,6 +221,14 @@ describe('the period close checklist (ruling 5)', () => {
   });
   it('the non-VAT company counts its ภ.ง.ด. but never a ภ.พ.30', () => {
     expect(unfiledForms(st, 'co-nonvat', '2026-10')).not.toContain('PP30');
+  });
+  it('m2: a form counts from its own chain start; a never-filed form from the earliest filing of ANY form; a company with none counts nothing', () => {
+    st.filings = st.filings.filter((f) => f.form === 'PND53' && f.period === '2026-09');
+    expect(unfiledForms(st, CO, '2026-09')).toEqual(['PP30', 'PND3']); // PP30 / PND3 never filed: owed from 2026-09 on (the PND53 itself is filed)
+    expect(unfiledForms(st, CO, '2026-08')).toEqual([]); // before the earliest filing of any form: PND3 / PND53 have documents but are not owed
+    st.filings = [];
+    expect(unfiledForms(st, CO, '2026-09')).toEqual([]);
+    expect(unfiledForms(st, CO, '2026-10')).toEqual([]);
   });
   it('a month with the whole set filed counts 0 (a ภ.ง.ด.3 / 53 chain month closes clean)', () => {
     expect(unfiledForms(st, CO, '2026-08')).toEqual([]);

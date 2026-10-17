@@ -3,6 +3,7 @@ import type { Doc, DocLine } from '@/domain/types';
 import { USER as me } from '../../fixtures/documents';
 import { seed, type MockState } from '../../store';
 import { cancel, createDraft, issue, revise } from '../commands';
+import { withFixedClock } from '../log';
 import { checkInvariants } from '../invariants';
 import { derivedLocks } from '../locks';
 import { toSatang } from '../money';
@@ -91,6 +92,11 @@ describe('finalize: the entry, the claim month, the tie-outs', () => {
     expect(getFiling(st, CO, 'PP30', '2026-09').tieOuts.find((t) => t.labelKey === 'filing.tie.inputGl')!.reconciling).toHaveLength(1);
     expect(checkInvariants(st)).toEqual([]);
   });
+  it('m3: the tie-out compares the VAT box with the 2152 credit movement of the payment month, not with its own entry', () => {
+    st.bankJournals.push({ companyId: CO, entries: [{ date: '2026-09-15', kind: 'original', postedAt: '', lines: [{ accountCode: '2152', accountName: 'x', debit: '0.00', credit: '5.00', rule: 'x' }] }] } as never);
+    const t = fin('PP36', '2026-09').tieOuts[0];
+    expect([t.left, t.right, t.diff]).toEqual(['700.00', '705.00', '-5.00']);
+  });
   it('a ภ.พ.36 whose claim month is already filed is blocked (the VAT would never be claimed)', () => {
     st.filings.push({ ...structuredClone(st.filings.find((x) => x.form === 'PP30')!), period: '2026-10' });
     expect(pp36Model(st, CO, '2026-09').blockers.map((b) => b.code)).toContain('claim_month_filed');
@@ -141,8 +147,33 @@ describe('finalize: the entry, the claim month, the tie-outs', () => {
     fresh(); f().p36!.pop(); expect(checkInvariants(st).join()).toContain('missing from the snapshot');
     fresh(); f().p36![0].base = '9999.00'; expect(checkInvariants(st).join()).toContain('no longer carries the figures');
     fresh(); get(f().p36![0].id).status = 'cancelled'; expect(checkInvariants(st).join()).toContain('gone or no longer live');
+    fresh(); f().p36![0].partyName = 'TAMPER'; expect(checkInvariants(st).join()).toContain('partyName');
     fresh(); f().tieOuts = []; expect(checkInvariants(st).join()).toContain('tie-out filing.tie.pp36Gl is missing');
     fresh(); st.filings.push(structuredClone(f())); expect(checkInvariants(st).join()).toContain('finalized twice');
+  });
+});
+
+describe('fix1 H1: the ภ.พ.36 of a month is filed before its ภ.พ.30', () => {
+  beforeEach(() => { pv('2026-09-10', [L('a', '10000.00')]); });
+  const gl = (p: string) => getFiling(st, CO, 'PP30', p).tieOuts.find((t) => t.labelKey === 'filing.tie.inputGl')!;
+  it('the ภ.พ.30 is blocked while the ภ.พ.36 of the same month has vouchers and is not finalized', () => {
+    expect(pp30Model(st, CO, '2026-09').blockers.find((b) => b.code === 'pp36_open')).toMatchObject({ labelTh: 'ยังไม่ได้ยืนยันแบบ ภ.พ.36 เดือน ก.ย. 2569', href: '/tax/wht?tab=pp36&period=2026-09' });
+    expect(err(() => fin('PP30', '2026-09')).code).toBe('filing.blocked');
+    expect(pp30Model(st, CO, '2026-08').blockers.map((b) => b.code)).not.toContain('pp36_open'); // no vouchers: nothing to wait for
+  });
+  it('in the statutory order both file; both months tie 0.00 and the payment month carries the named line; invariants hold', () => {
+    fin('PP36', '2026-09');
+    expect(pp30Model(st, CO, '2026-09').blockers.map((b) => b.code)).not.toContain('pp36_open');
+    fin('PP30', '2026-09');
+    expect(gl('2026-09')).toMatchObject({ diff: '0.00', reconciling: [{ labelTh: expect.stringContaining('ภ.พ.36 เดือน ก.ย. 2569'), amount: '700.00' }] });
+    for (const p of ['2026-09', '2026-10']) for (const t of getFiling(st, CO, 'PP30', p).tieOuts) expect({ p, k: t.labelKey, diff: t.diff }).toEqual({ p, k: t.labelKey, diff: '0.00' });
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('a voucher with a pnd36 line cannot be issued, or revised, into a month whose ภ.พ.30 is finalized', () => {
+    expect(err(() => withFixedClock('2026-08-25T10:00:00+07:00', () => pv('2026-08-25', [L('b', '1000.00')]))).code).toBe('filing.period_filed'); // the seed filed ภ.พ.30 of August
+    const id = pv('2026-09-12', [L('c', '1000.00')]).id, d = get(id);
+    expect(err(() => revise(st, id, { header: { ...d.header, documentDate: '2026-08-20' }, lines: d.lines, allocations: d.allocations }, d.version, 'x', me)).code).toBe('filing.period_filed');
+    expect(checkInvariants(st)).toEqual([]);
   });
 });
 

@@ -490,7 +490,7 @@ describe('B1a: a month that has not ended cannot be finalized', () => {
     finalizeFiling(st, CO, 'PP30', '2026-09', getFiling(st, CO, 'PP30', '2026-09').version, me);
     st.docs = st.docs.filter((d) => !(['TI', 'CN', 'DN'].includes(d.type) && ['draft', 'pending', 'approved'].includes(d.status)));
     const m = getFiling(st, CO, 'PP30', '2026-10');
-    expect(m.blockers.map((b) => b.code)).toEqual(['period_not_ended']);
+    expect(m.blockers.map((b) => b.code)).toEqual(['pp36_open', 'period_not_ended']); // pp36_open: the seed's foreign voucher (pv-foreign) is in October's ภ.พ.36, which the ภ.พ.30 now waits for (TX2a fix1 H1)
     expect(err(() => finalizeFiling(st, CO, 'PP30', '2026-10', m.version, me)).code).toBe('filing.blocked');
   });
 });
