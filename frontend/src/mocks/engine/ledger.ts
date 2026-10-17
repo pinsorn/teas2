@@ -5,6 +5,7 @@ import { MockError } from './log';
 import { type AccountingRole, type PostingContext, resolveRole } from './posting';
 import { categoryOf, exForfeited, isRecoverable } from './purchase-vat';
 import { jvEntryLines } from './journal';
+import { disposalEntryLines, dpEntryLines } from './assets';
 import { obEntryLines } from './opening';
 import { cashBankId, freezeWht, frozenFigures } from './settlement';
 import { computeDoc, vatBasisOf, vatOf } from './vat';
@@ -87,12 +88,14 @@ function withReversal(doc: Doc, lines: JournalLinePreview[]): JournalPreview {
  *  Types without a ledger effect (N-class, ...) return no entries. A JV (AC1) posts its account lines verbatim. */
 export function ledgerFor(st: MockState, doc: Doc & { companyId?: string }): JournalPreview {
   const post = POST[doc.type];
-  if (!post && doc.type !== 'JV' && doc.type !== 'OB') return { entries: [] };
+  if (!post && doc.type !== 'JV' && doc.type !== 'OB' && doc.type !== 'DP') return { entries: [] };
   const companyId = doc.companyId ?? st.docs.find((d) => d.id === doc.id)?.companyId;
   if (!companyId) throw new MockError(500, 'engine.invariant', 'ledgerFor: document has no company');
   if (!post && doc.type === 'OB') return withReversal(doc, obEntryLines(st, companyId, doc)); // AC3: the steps, per party, plus the 3900 plug
+  if (!post && doc.type === 'DP') return withReversal(doc, dpEntryLines(st, companyId, doc)); // AC5: exactly the run's stored rows
   if (!post) return withReversal(doc, jvEntryLines(st, companyId, doc.lines));
   const partyName = doc.party?.name ?? st.parties.find((p) => p.id === doc.header.partyId)?.name;
+  if ((doc.type === 'TI' || doc.type === 'IV') && doc.header.disposal) return withReversal(doc, disposalEntryLines(st, companyId, doc.header.disposal, partyName)); // AC5: the sale of a fixed asset posts its frozen disposal entry, not revenue
   const t: Totals = { net: toSatang(doc.totals.net), vat: toSatang(doc.totals.vat), total: toSatang(doc.totals.total), wht: toSatang(doc.totals.wht ?? '0.00'),
     cash: toSatang(doc.totals.cash ?? fromSatang(toSatang(doc.totals.total) - toSatang(doc.totals.wht ?? '0.00'))) };
   const acc = new Map<string, { code: string; name: string; rule: string; net: number; party?: string; dims?: Record<string, string> }>();

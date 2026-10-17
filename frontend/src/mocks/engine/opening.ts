@@ -196,13 +196,13 @@ export function obProblem(st: MockState, companyId: string, body: Part, selfId?:
 // ---------------------------------------------------------------- freeze at issue / revise
 
 /** The opening without its server-owned fields (ids, frozen names, frozen codes): what a caller means, to compare a request with the stored batch. */
-export const plainOpening = (op: DocOpening | undefined): unknown => op && ({ openItems: op.openItems.map(({ id: _i, partyName: _n, ...r }) => (void _i, void _n, r)), assets: op.assets, payrollYtd: op.payrollYtd,
+export const plainOpening = (op: DocOpening | undefined): unknown => op && ({ openItems: op.openItems.map(({ id: _i, partyName: _n, ...r }) => (void _i, void _n, r)), assets: op.assets.map(({ id: _a, ...r }) => (void _a, r)), payrollYtd: op.payrollYtd,
   bank: op.bank.map((b) => ({ ...b, inTransit: b.inTransit.map(({ id: _i, ...r }) => (void _i, r)) })) });
 /** F1 / F3: stamps what the journal derives from editable data onto the opening AS OF this write - each item's party name, the account of every role / asset class / bank account - and gives every item a server-owned id.
  *  An id the caller echoes is kept only if `prev` (the batch as stored) holds it; anything else gets a fresh id that no item of the batch ever had. A caller's names and codes are replaced. */
 export function freezeOpening(st: MockState, companyId: string, batchId: string, op: DocOpening, prev?: DocOpening): DocOpening {
-  const own = new Set([...(prev?.openItems ?? []).map((i) => i.id), ...(prev?.bank ?? []).flatMap((b) => b.inTransit.map((t) => t.id))].filter((x): x is string => !!x));
-  const taken = new Set(st.docs.filter((d) => d.header.obBatchId === batchId).map((d) => d.id)); // dropped items keep their (cancelled) rows: their ids are never reused
+  const own = new Set([...(prev?.openItems ?? []).map((i) => i.id), ...(prev?.assets ?? []).map((a) => a.id), ...(prev?.bank ?? []).flatMap((b) => b.inTransit.map((t) => t.id))].filter((x): x is string => !!x));
+  const taken = new Set([...st.docs.filter((d) => d.header.obBatchId === batchId).map((d) => d.id), ...st.docs.flatMap((d) => (d.type === 'FA' && d.asset?.source.kind === 'ob' && d.asset.source.docId === batchId ? [d.asset.source.rowId] : []))]); // dropped items keep their (cancelled) rows, an asset row its asset: their ids are never reused
   const fresh = (prefix: string): string => { let k = 1; while (taken.has(`${prefix}${k}`)) k++; taken.add(`${prefix}${k}`); return `${prefix}${k}`; };
   const pick = (id: string | undefined, prefix: string): string => { if (id && own.has(id) && !seen.has(id)) { seen.add(id); return id; } return fresh(prefix); };
   const seen = new Set<string>();
@@ -215,6 +215,7 @@ export function freezeOpening(st: MockState, companyId: string, batchId: string,
   const name = (id: string) => st.parties.find((p) => p.id === id && p.companyId === companyId)?.name ?? id;
   return { ...op, codes,
     openItems: op.openItems.map((i) => ({ ...i, id: pick(i.id, `${batchId}-i`), partyName: name(i.partyId) })),
+    assets: op.assets.map((a) => ({ ...a, id: pick(a.id, `${batchId}-a`) })), // AC5: an asset row keeps its id through a revise; the asset registered from it points at it
     bank: op.bank.map((b) => ({ ...b, inTransit: b.inTransit.map((t) => ({ ...t, id: pick(t.id, `${batchId}-t${b.accountId}-`) })) })) };
 }
 

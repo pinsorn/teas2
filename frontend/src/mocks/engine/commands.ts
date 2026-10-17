@@ -15,6 +15,7 @@ import { adjustSnapshot, hasSnapshot, isNote, noteHeader, noteMissing, noteProbl
 import { SeriesAllocator } from './numbering';
 import { refuseObLocked, refuseReconciled, refuseSettled } from './locks';
 import { refuseScheduleNote, refuseScheduleSource } from './schedules';
+import { afterAssetCancel, beforeAssetCancel, beforeDisposalTiCancel, onDisposalTiCancelled, refuseAssetNote, refuseAssetSource, refuseDisposalNote } from './assets';
 import { buildOb, cancelObItems, EMPTY_OPENING, freezeOpening, obCalc, obMissing, obProblem, obTotals, plainOpening, syncObItems } from './opening';
 import { firstOpenDate, isClosed, monthLabelTh } from './periods';
 import { balanceOf, certError, cleanAllocations, fiscalAllocations, freezeWht, groupTotals, payDefaults, payLines, payoutOf, resolvedBankId, settleExtras, settleProblem, settleTotals, withBankSnapshot } from './settlement';
@@ -129,7 +130,7 @@ export function missingOf(st: MockState, companyId: string, type: DocType, body:
   if (!isTypeAvailable(type, !!company?.vatRegistered)) out.push({ field: 'type', message: unavailableTh(type) });
   if (!body.header.documentDate) out.push({ field: 'header.documentDate', message: 'ต้องระบุวันที่เอกสาร' });
   if (isNote(type)) out.push(...noteMissing(type, body.header)); // a note's customer is its invoice's: the server fills it (stored)
-  if (!body.header.partyId) { if (!isNote(type) && type !== 'JV' && type !== 'OB') out.push({ field: 'header.partyId', message: 'ต้องเลือกคู่ค้า' }); }
+  if (!body.header.partyId) { if (!isNote(type) && type !== 'JV' && type !== 'OB' && type !== 'FA' && type !== 'DP') out.push({ field: 'header.partyId', message: 'ต้องเลือกคู่ค้า' }); }
   else {
     const p = partyOf(st, companyId, body.header.partyId);
     if (!p) out.push({ field: 'header.partyId', message: 'ไม่พบคู่ค้า' });
@@ -148,7 +149,7 @@ export function missingOf(st: MockState, companyId: string, type: DocType, body:
     if (!body.allocations?.length) out.push({ field: 'allocations', message: 'ต้องเลือกใบแจ้งหนี้หรือใบกำกับภาษีที่ต้องการวางบิล' });
   } else if (type === 'JV') out.push(...jvMissing(body.lines));
   else if (type === 'OB') out.push(...obMissing(st, companyId, body));
-  else if (!body.lines.length) out.push({ field: 'lines', message: 'ต้องมีรายการอย่างน้อย 1 รายการ' });
+  else if (type !== 'FA' && type !== 'DP' && !body.lines.length) out.push({ field: 'lines', message: 'ต้องมีรายการอย่างน้อย 1 รายการ' }); // an asset / a depreciation run is engine-made: its content is the frozen asset / rows, not lines
   return out;
 }
 
@@ -300,6 +301,7 @@ export function compute(st: MockState, companyId: string, type: DocType, raw: Bo
   const own = opts?.docId ? st.docs.find((x) => x.id === opts.docId) : undefined;
   const bad = settleProblem(st, companyId, type, body, ownBack(st, outstandingNow(st), opts?.docId), { prior: own?.allocations, priorParty: own?.header.partyId });
   if (bad) missing.push(bad.code === 'pv.input_vat_needs_bill' ? { field: 'lines', message: bad.title, code: bad.code } : { field: 'allocations', message: bad.title });
+  refuseDisposalNote(st, type, body.header);
   const np = noteProblem(st, companyId, type, body, opts?.docId);
   if (np) missing.push({ field: 'lines', message: np.title }); // the cap, the invoice's lines: shown before issue
   const jp = type === 'OB' ? obProblem(st, companyId, body, opts?.docId) : journalProblem(st, companyId, type, body); // JV: the account and auto-reverse rules; OB: cut-off, steps and sub-ledger ties - shown before issue too
@@ -410,9 +412,11 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
     if (live && d.header.documentDate < live) throw new MockError(422, 'bank.before_go_live', `บัญชีธนาคารนี้เริ่มกระทบยอดกับ statement ตั้งแต่ ${live} ออกเอกสารลงวันที่ก่อนนั้นไม่ได้ ให้เปลี่ยนวันที่เป็น ${live} เป็นต้นไป`);
   }
   refuseNonPositive(st, d.companyId, d.type, body);
+  refuseDisposalNote(st, d.type, body.header); // AC5: no note on the invoice of a disposal
   const np = noteProblem(st, d.companyId, d.type, body); // the invoice, its lines and the per-line cap, judged before anything is written
   if (np) throw np;
   refuseScheduleNote(st, { ...d, header: body.header, lines: body.lines }, 'issue'); // AC4: a PCN / PDN on a line a schedule holds
+  refuseAssetNote(st, { type: d.type, header: body.header, lines: body.lines }); // AC5: and on a line a live fixed asset stands on
   const pp = purchaseProblem(st, d.companyId, d.type, body); // a vendor's invoice: the registered-vendor, category and claim-window rules
   if (pp) throw pp;
   const jp = journalProblem(st, d.companyId, d.type, body); // a journal voucher: postable own accounts, none a document owns, the auto-reversal month open
@@ -480,8 +484,11 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
   refuseReconciled(st, d); // FN2: matched to a bank line - the exit is to unmatch it first
   refuseSettled(st, d); // FN3: a leg of a posted settlement - the exit is to reverse the settlement
   refuseScheduleSource(st, d); // AC4: a schedule that is not stopped holds the line (exit: stop it); after the stop the runs stay
+  refuseAssetSource(st, d); // AC5: a live fixed asset made from a line of this bill / voucher (exit: cancel the asset)
   refuseScheduleNote(st, d, 'cancel'); // AC4: a PCN / PDN on a scheduled line moves what it holds
   if (d.type === 'OB') refuseObLocked(st, d); // AC3: an item settled or matched - the exit is to cancel the RC / PV or unmatch
+  beforeDisposalTiCancel(st, d); // AC5: cancelling the invoice of a disposal brings the asset back - not while a run for that month or later stands
+  beforeAssetCancel(st, d); // AC5: a run only while it is the latest; an asset only while it has no run row and no disposal
   if (d.type === 'JV') beforeJvCancel(st, d, actor, !!opts?.system); // AC1: a reversed JV and a reversal are final; a pending auto-reversal goes with its accrual
   // SP0 §7.4: an applied receipt (TI) or settlements (IV) block a cancel; N-class documents and a CN / DN being cancelled do not. S5 adds: a TI with a live CN / DN against it (below).
   if (st.links.some((l) => l.to === id && l.active && l.kind === 'settles')) throw new MockError(409, 'doc.has_dependents', 'มีใบเสร็จ/การชำระที่ผูกอยู่ ต้องยกเลิกหรือถอนการชำระก่อน');
@@ -490,6 +497,8 @@ export function cancel(st: MockState, id: string, version: number, reasonCode: s
   const { outstanding: _o, ...rest } = d; void _o;
   const next: Stored = { ...rest, status: 'cancelled', version: d.version + 1, cancel: { reasonCode, reasonText, at: stamp() } };
   put(st, next);
+  afterAssetCancel(st, d); // AC5: a cancelled run gives its rows back to the assets
+  onDisposalTiCancelled(st, d, actor); // AC5: the asset of a cancelled disposal invoice is live again
   if (d.type === 'OB') cancelObItems(st, id);
   if (d.type === 'PV') syncWts(st, id, actor); // a cancelled voucher withholds nothing: its certificates are cancelled with it
   const released = st.links.filter((l) => l.from === id && l.active);
@@ -630,6 +639,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   refuseReconciled(st, d, { header: fin.header, totals }); // FN2: a matched document keeps its cash, bank account and date; anything else stays editable
   refuseSettled(st, d, { header: fin.header, totals }); // FN3: a leg of a posted settlement keeps its amount, deposit, party and date
   refuseScheduleSource(st, d, { header: fin.header, lines: fin.lines }); // AC4: a line a schedule holds keeps its money, account and date
+  refuseAssetSource(st, d, { header: fin.header, lines: fin.lines }); // AC5: likewise a line a live fixed asset was made from
   refuseScheduleNote(st, d, 'revise', { header: fin.header, lines: fin.lines });
   const payout = payoutOf(st, d.companyId, { id: d.id, type: d.type, ...fin, totals });
   const reapprove = reviseNeedsApproval(st, d, payout, fin.allocations); // C1: more money than was approved needs an approver in the same command

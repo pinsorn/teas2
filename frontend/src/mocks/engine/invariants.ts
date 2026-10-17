@@ -4,6 +4,7 @@ import type { Doc, JournalEntryPreview } from '@/domain/types';
 import type { MockState } from '../store';
 import { approvalRequired } from './approval';
 import { jvInvariants } from './journal';
+import { assetInvariants } from './assets';
 import { scheduleInvariants } from './schedules';
 import { obInvariants } from './opening';
 import { appliedOf, docCash, toleranceOf } from './locks';
@@ -241,7 +242,7 @@ export function checkInvariants(st: MockState): string[] {
     else if (a.companyId !== b.companyId || (l.companyId !== undefined && l.companyId !== a.companyId)) out.push(`link ${l.from} → ${l.to} joins different companies`);
   }
   for (const d of st.docs) {
-    if (d.status === 'draft' || d.status === 'pending' || d.status === 'approved' || !DOC_TYPES[d.type].ledger || d.totals.total === '0.00' || d.header.obBatchId) continue; // an opening item posts nothing itself (its batch does)
+    if (d.status === 'draft' || d.status === 'pending' || d.status === 'approved' || !DOC_TYPES[d.type].ledger || d.totals.total === '0.00' || d.header.obBatchId || d.type === 'FA') continue; // an opening item posts nothing itself (its batch does); an asset posts nothing when registered (AC5: its source did; a write-off writes its own entry, judged by assetInvariants)
     const entries = st.journals.find((j) => j.docId === d.id)?.preview.entries;
     if (!entries?.length) { out.push(`${d.id}: ${d.status} ${d.type} has no journal`); continue; }
     if ((d.status === 'cancelled' || d.status === 'replaced') && entries[entries.length - 1].kind !== 'reversal') out.push(`${d.id}: ${d.status} but its journal ends without a reversal`);
@@ -586,6 +587,7 @@ export function checkInvariants(st: MockState): string[] {
   }
 
   out.push(...obInvariants(st)); // 16. opening balances (AC3): the journal is what its steps say, the ties hold, the frozen items are the steps' items, go-live follows the batch
+  out.push(...assetInvariants(st)); // 18. fixed assets and depreciation runs (AC5): accumulated = opening + live run rows, GL per class, each run journal is its rows, a disposal entry removes exactly the frozen cost and accumulated
   out.push(...scheduleInvariants(st)); // 17. schedules (AC4): plan = total, each run JV = its plan row, the prepaid account moved by the live runs
   out.push(...jvInvariants(st)); // 15. journal vouchers (AC1): no controlled account, the journal is the lines, reversals mirror, accruals net to zero
 

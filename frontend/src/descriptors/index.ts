@@ -6,7 +6,9 @@ import { billingStatement } from './billing-statement';
 import { creditNote } from './credit-note';
 import { debitNote } from './debit-note';
 import { deliveryOrder } from './delivery-order';
+import { depreciationRun } from './depreciation-run';
 import { expenseClaim } from './expense-claim';
+import { fixedAsset } from './fixed-asset';
 import { invoice } from './invoice';
 import { journalVoucher } from './journal-voucher';
 import { openingBalance } from './opening-balance';
@@ -21,7 +23,7 @@ import { salesOrder } from './sales-order';
 import { taxInvoice } from './tax-invoice';
 import { whtCertificate } from './wht-certificate';
 
-export const DESCRIPTORS: Partial<Record<DocType, DocDescriptor>> = { TI: taxInvoice, QT: quotation, SO: salesOrder, DO: deliveryOrder, IV: invoice, BL: billingStatement, RC: receipt, CN: creditNote, DN: debitNote, PO: purchaseOrder, PB: purchaseBill, PCN: purchaseCreditNote, PDN: purchaseDebitNote, PV: paymentVoucher, EX: expenseClaim, JV: journalVoucher, OB: openingBalance, WT: whtCertificate };
+export const DESCRIPTORS: Partial<Record<DocType, DocDescriptor>> = { TI: taxInvoice, QT: quotation, SO: salesOrder, DO: deliveryOrder, IV: invoice, BL: billingStatement, RC: receipt, CN: creditNote, DN: debitNote, PO: purchaseOrder, PB: purchaseBill, PCN: purchaseCreditNote, PDN: purchaseDebitNote, PV: paymentVoucher, EX: expenseClaim, JV: journalVoucher, FA: fixedAsset, DP: depreciationRun, OB: openingBalance, WT: whtCertificate };
 export function descriptorByPath(path: string): DocDescriptor | undefined {
   return Object.values(DESCRIPTORS).find((d) => d.basePath === path);
 }

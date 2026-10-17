@@ -37,7 +37,7 @@ export function controlExit(st: MockState, companyId: string, code: string, scop
   if (has('AR', 'CustomerDeposit') || sub === 'receivable') return 'บัญชีลูกหนี้/เงินรับล่วงหน้า ใช้ใบเสร็จรับเงิน (RC)';
   if (has('AP', 'EmployeePayable', 'VendorPrepayment') || sub === 'payable') return 'บัญชีเจ้าหนี้/เงินจ่ายล่วงหน้า ใช้ใบสำคัญจ่าย (PV)';
   if (!jv && (has('Revenue', 'SalesReturn', 'SalesDiscount') || sub === 'sales' || sub === 'contra-sales')) return 'บัญชีรายได้จากการขาย ลงจากใบกำกับภาษี/ใบลดหนี้เท่านั้น (ต้องมีภาษีขาย)';
-  if (has('FixedAsset', 'AccumulatedDepreciation') || sub === 'fixed-asset' || sub === 'accumulated-depreciation') return 'บัญชีสินทรัพย์ถาวร/ค่าเสื่อมราคาสะสม ลงจากทะเบียนสินทรัพย์และใบสำคัญจ่ายเท่านั้น';
+  if (has('FixedAsset', 'AccumulatedDepreciation') || sub === 'fixed-asset' || sub === 'accumulated-depreciation') return 'บัญชีสินทรัพย์ถาวร/ค่าเสื่อมราคาสะสม ลงจากทะเบียนสินทรัพย์ (/accounting/fixed-assets) และรายการค่าเสื่อมราคา (/accounting/depreciation-runs) เท่านั้น';
   if ((jv ? has('OutputVat', 'InputVat', 'Pnd36VatPayable', 'WhtReceivable', 'WhtPayable') : has(...TAX_ROLES)) || sub === 'tax-asset' || sub === 'tax-liability') return 'บัญชีควบคุมภาษี ภาษีลงจากเอกสารเท่านั้น';
   if ((has('SalaryPayable', 'PitPayable', 'SsoPayable') || sub === 'payroll-liability')) return jv ? 'บัญชีเจ้าหนี้เงินเดือน/ภาษี-ประกันสังคมหัก ณ ที่จ่าย ลงจากรอบเงินเดือนเท่านั้น (ตั้งค้างจ่ายเงินเดือนที่ 2120 ไปก่อน)' : 'บัญชีเจ้าหนี้เงินเดือน ลงจากเอกสารเงินเดือนเท่านั้น';
   return undefined;

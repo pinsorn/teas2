@@ -29,6 +29,8 @@ export const SETTLEMENT_BASE = '/finance/settlements';
 export const JV_BASE = '/accounting/journal-vouchers';
 export const OB_BASE = '/accounting/opening-balances';
 export const SCHEDULE_BASE = '/accounting/schedules';
+export const FA_BASE = '/accounting/fixed-assets';
+export const DP_BASE = '/accounting/depreciation-runs';
 // names are keys of messages `screens.name.*`; fixture keys live in src/mocks/fixtures/ids.ts (later tasks append their screens here)
 export const SCREENS: Screen[] = [
   { name: 'home', route: '/', company: 'both', states: true },
@@ -164,5 +166,13 @@ export const SCREENS: Screen[] = [
   { name: 'scheduleAmortisation', route: { fixture: 'schedAmortisation', base: SCHEDULE_BASE }, company: 'vat', states: true },
   { name: 'scheduleRecurringTi', route: { fixture: 'schedRecurringTi', base: SCHEDULE_BASE }, company: 'vat', states: true },
   { name: 'nscheduleRecurring', route: { fixture: 'nschedRecurring', base: SCHEDULE_BASE }, company: 'nonvat', states: true },
+  { name: 'faList', route: FA_BASE, company: 'both', states: true },
+  { name: 'faNew', route: `${FA_BASE}/new`, company: 'both', states: true },
+  { name: 'faActive', route: { fixture: 'faActive', base: FA_BASE }, company: 'vat', states: true },
+  { name: 'faDisposed', route: { fixture: 'faDisposed', base: FA_BASE }, company: 'vat', states: true },
+  { name: 'nfaActive', route: { fixture: 'nfaActive', base: FA_BASE }, company: 'nonvat', states: true },
+  { name: 'dpList', route: DP_BASE, company: 'both', states: true },
+  { name: 'dpNew', route: `${DP_BASE}/new`, company: 'both', states: true },
+  { name: 'dpRun', route: { fixture: 'dpRun', base: DP_BASE }, company: 'vat', states: true },
   { name: 'styleGuide', route: '/style-guide', company: 'both', states: false },
 ];

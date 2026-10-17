@@ -45,7 +45,9 @@ describe('docListHref / matchNavItem', () => {
     expect(docListHref('BL', true)).toBe('/sales/billing-statements');
   });
   it('has no route (so no link) for types without a nav page', () => {
-    for (const t of ['DP', 'FA', 'PR'] as const) expect(docListHref(t, true)).toBeUndefined();
+    expect(docListHref('PR', true)).toBeUndefined();
+    expect(docListHref('FA', true)).toBe('/accounting/fixed-assets'); // AC5
+    expect(docListHref('DP', false)).toBe('/accounting/depreciation-runs');
     expect(docListHref('JV', true)).toBe('/accounting/journal-vouchers'); // AC1
     expect(docListHref('WT', true)).toBe('/tax/wht-certificates'); // P3
   });

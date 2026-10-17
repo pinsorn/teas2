@@ -45,7 +45,7 @@ describe('mock store', () => {
     const old = { ...seed(), version: 5, items: [] as unknown[] };
     localStorage.setItem('teas2.mock.state.v5', JSON.stringify(old));
     const s = loadState();
-    expect(s.version).toBe(33);
+    expect(s.version).toBe(34);
     expect(s.items.some((i) => i.id === 'EXP-01')).toBe(true);
     expect(s.parties.some((p) => p.id === 'pv-12')).toBe(true);
   });
@@ -69,7 +69,7 @@ describe('mock store', () => {
     const tis = kinds('TI').filter((d) => !d.id.startsWith('spike-')); // rendering-spike TIs (ADR-0001) are extra issued docs
     const n = (st: string) => tis.filter((d) => d.status === st).length;
     expect([n('draft'), n('settled'), n('partly_settled'), n('replaced')]).toEqual([6, 31, 8, 3]); // 6 partly paid in the history + ti-057 (rc-multi) and ti-037 (rc-nocert), S4; ti-dep2 is paid up from a deposit (FN3)
-    expect(n('issued')).toBe(12); // 12 before S4 settled ti-057 and ti-037 in part; FN3 adds ti-dep and ti-net (open) and ti-dep2 (paid up)
+    expect(n('issued')).toBe(13); // 12 before S4 settled ti-057 and ti-037 in part; FN3 adds ti-dep and ti-net (open) and ti-dep2 (paid up); AC5 adds the invoice of fa-sold's sale (open)
     expect(tis.filter((d) => d.createdBy.kind === 'agent')).toHaveLength(2);
     const rcTargets = s.links.filter((l) => l.kind === 'settles' && s.docs.find((d) => d.id === l.to)?.type === 'TI').map((l) => l.to).filter((id) => !id.startsWith('spike-')).sort(); // (S3's receipts settle IVs; rc-multi also pays spike-60, outside this count)
     expect(rcTargets).toEqual(tis.filter((d) => d.status === 'settled' || d.status === 'partly_settled').map((d) => d.id).sort());

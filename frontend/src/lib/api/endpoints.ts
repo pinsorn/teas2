@@ -1,7 +1,7 @@
 import type {
   ActivityEntry, Allocation, Attachment, AttachmentCategory, BankImport, BankLine, ChainGraph, ComputeResult, CorrectionPlan, CorrectionResult, Doc, DocHeader, DocLine, DocSummary,
   DocType, HomeInbox, MarkKey, Money, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, RemainingLine, Revision, SearchHit,
-  DepositRow, DocOpening, SettlementDifferenceRole, SettlementKind, SettlementRecord,
+  DepositRow, DocOpening, SettlementDifferenceRole, SettlementKind, SettlementRecord, DpRow, FaSource, IsoDate,
 } from '@/domain/types';
 import type { RecordKind, RecordRow } from '@/domain/records';
 import type { ReportKind, ReportModel } from '@/domain/reports';
@@ -12,6 +12,10 @@ export type DocInput = { header: DocHeader; lines: DocLine[]; allocations?: Allo
 export interface BankGlAccount { code: string; nameTh: string; subClass: 'cash' | 'bank'; taken: boolean }
 /** FN2: a receipt / voucher the line could match (`exact` = the suggestion: same cash, within 7 days). */
 export interface BankCandidate { docId: string; type: 'RC' | 'PV' | 'TR'; number: string; documentDate: string; partyName: string; cash: Money; remaining: Money; exact: boolean }
+/** AC5: a capex line (or opening-balance asset row) no live asset has been registered from; `accumulated` / `lifeMonths` only for an opening row. */
+export interface UnregisteredAsset { source: FaSource; docNumber: string; docType: 'PB' | 'PV' | 'OB'; description: string; assetClass: string; cost: Money; date: IsoDate; partyName?: string; accumulated?: Money; lifeMonths?: number }
+/** AC5: a depreciation run as it would be written now; `problem` = the first reason it would be refused. */
+export interface DpPreview { month: string; date: IsoDate; rows: DpRow[]; total: Money; suggested: string; problem?: { status: number; code: string; title: string } }
 export interface PostableAccount { code: string; nameTh: string; class: string }
 export interface Reconciliation { reconciledTo: string | null; counts: Record<BankLine['status'], number> }
 /** FN3: what `/finance/deposits` returns: the unapplied customer deposits / vendor prepayments, the company's tolerance for a difference and the customer / vendor pairs that can be netted. */
@@ -116,6 +120,15 @@ export const endpoints = {
   /** AC4 schedules: "รันตอนนี้" (a plan month for an amortisation, a draft for a recurring one) and "หยุด"; both need ledger.schedule.manage, `version` is the record kit's concurrency check. */
   runSchedule: (id: string, version: number, month?: string) => api<RecordRow>('POST', `/schedules/${encodeURIComponent(id)}/run`, { version, ...(month ? { month } : {}) }),
   stopSchedule: (id: string, version: number, reason?: string) => api<RecordRow>('POST', `/schedules/${encodeURIComponent(id)}/stop`, { version, ...(reason ? { reason } : {}) }),
+  /** AC5 fixed assets and depreciation runs (their own commands; the generic document routes refuse FA / DP). */
+  unregisteredAssets: () => api<{ items: UnregisteredAsset[] }>('GET', '/assets/unregistered'),
+  registerAsset: (body: { source: FaSource; name?: string; salvage?: Money; lifeMonths?: number; startDate?: IsoDate }) => api<Doc>('POST', '/assets', body),
+  disposeAsset: (id: string, body: { date: IsoDate; kind: 'sale' | 'write_off'; proceeds?: Money; buyerId?: string }) => api<Doc>('POST', `/docs/FA/${id}/dispose`, body),
+  undisposeAsset: (id: string) => api<Doc>('POST', `/docs/FA/${id}/undispose`, {}),
+  reviseAssetTerms: (id: string, body: { name?: string; salvage?: Money; lifeMonths?: number; startDate?: IsoDate }) => api<Doc>('POST', `/docs/FA/${id}/terms`, body),
+  previewDepreciation: (month?: string) => api<DpPreview>('GET', `/depreciation/preview${qs({ month })}`),
+  runDepreciation: (month: string) => api<Doc>('POST', '/depreciation/runs', { month }),
+  recomputeDepreciation: (id: string, version: number) => api<Doc>('POST', `/docs/DP/${id}/recompute`, { version }),
   getReport: (kind: ReportKind, params: Record<string, string>) => api<ReportModel>('GET', `/reports/${kind}${qs(params)}`),
   /** The CSV the server builds for the same parameters (text/csv, BOM, CRLF). */
   exportReport: async (kind: ReportKind, params: Record<string, string>): Promise<Blob> => {

@@ -32,7 +32,8 @@
     "actions": {
       "submit": "Submit for approval", "approve": "Approve", "approveAndIssue": "Approve and issue", "sendBack": "Send back for changes", "whyPaid": "Paid in full, nothing left to pay",
       "label": "Actions", "issueDraft": "Save and issue…", "edit": "Edit", "print": "Print", "copy": "Copy as new",
-      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "lockedReconciliation": "Cannot cancel ({reason}); use “Cancel match” in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyFinal": "This voucher is final (reversed, or itself a reversal), so it cannot be edited", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "receive": "Receive payment", "whyInclusiveNote": "This invoice is priced VAT-inclusive, so a credit / debit note cannot be issued directly. Use Edit (a correction plan) instead.", "issueCn": "Issue credit note", "issueDn": "Issue debit note", "issuePcn": "Record vendor credit note", "issuePdn": "Record vendor debit note", "markDelivered": "Delivered", "markSent": "Mark as sent to vendor", "whyNothingRemaining": "Every line is already converted in full; there is nothing to close", "whyClosed": "The remainder is closed, so it cannot be converted; revise the document to reopen it", "makeRecurring": "Make recurring", "makeAmortisation": "Amortise", "needSchedulePermission": "Needs the {permission} permission"
+      "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "lockedReconciliation": "Cannot cancel ({reason}); use “Cancel match” in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyFinal": "This voucher is final (reversed, or itself a reversal), so it cannot be edited", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "receive": "Receive payment", "whyDisposalInvoice": "This invoice is the sale of a fixed asset: it cannot be edited and takes no credit / debit note. Exit: cancel it (the disposal is cancelled with it) and dispose of the asset again.",
+      "whyInclusiveNote": "This invoice is priced VAT-inclusive, so a credit / debit note cannot be issued directly. Use Edit (a correction plan) instead.", "issueCn": "Issue credit note", "issueDn": "Issue debit note", "issuePcn": "Record vendor credit note", "issuePdn": "Record vendor debit note", "markDelivered": "Delivered", "markSent": "Mark as sent to vendor", "whyNothingRemaining": "Every line is already converted in full; there is nothing to close", "whyClosed": "The remainder is closed, so it cannot be converted; revise the document to reopen it", "makeRecurring": "Make recurring", "makeAmortisation": "Amortise", "needSchedulePermission": "Needs the {permission} permission"
     },
     "print": { "reprintTitle": "Reprint {doc}", "reprintBody": "A reprint is printed as a 'COPY'. The original has already been printed.", "reprintConfirm": "Print a copy", "back": "Back", "logFailed": "The print could not be logged, so nothing was printed. Try again." },
     "agent": { "draftBy": "Drafted by {name} for {owner}", "draftByNoOwner": "Drafted by {name}", "createdBy": "Created by {name} for {owner}", "createdByNoOwner": "Created by {name}", "report": "View the check report" },
@@ -235,7 +236,8 @@
       "chartOfAccounts": "Chart of accounts",
       "openingBalances": "Opening balances",
       "schedules": "Recurring and amortisation",
-      "fixedAssets": "Fixed assets and depreciation",
+      "fixedAssets": "Fixed assets",
+      "depreciation": "Depreciation",
       "periodClose": "Period and year close",
       "taxSummary": "Monthly tax summary",
       "vat": "VAT return and registers",
@@ -444,6 +446,14 @@
       "scheduleAmortisation": "Amortisation schedule (insurance, 3 months done)",
       "scheduleRecurringTi": "Recurring tax invoice",
       "nscheduleRecurring": "Recurring invoice (non-VAT)",
+      "faList": "Fixed assets list",
+      "faNew": "Register an asset",
+      "faActive": "Asset in use (2 runs done)",
+      "faDisposed": "Asset sold (tax invoice issued)",
+      "nfaActive": "Asset from the opening balance (non-VAT)",
+      "dpList": "Depreciation runs list",
+      "dpNew": "Run depreciation",
+      "dpRun": "A posted depreciation run",
       "styleGuide": "Style guide"
     },
     "state": { "normal": "Normal", "empty": "Empty", "loading": "Loading", "error": "Error", "forbidden": "Forbidden", "locked": "Locked" },
@@ -768,6 +778,8 @@
     "PV": {"title": "Payment voucher", "issue": "Save and issue payment voucher", "create": "Create payment voucher", "empty": "No payment vouchers yet"},
     "JV": {"title": "Journal voucher", "issue": "Save and issue the journal voucher", "create": "Create journal voucher", "empty": "No journal vouchers yet"},
     "OB": {"title": "Opening balances", "issue": "Save and issue the opening balances", "create": "Set opening balances", "empty": "No opening balances yet"},
+    "FA": {"title": "Fixed assets", "issue": "Register asset", "create": "Register an asset", "empty": "No assets registered yet"},
+    "DP": {"title": "Depreciation runs", "issue": "Post depreciation", "create": "Run depreciation", "empty": "No depreciation run yet"},
     "WT": {"title": "Withholding tax certificate", "issue": "Issue withholding certificate", "create": "Create withholding certificate", "empty": "No withholding certificates yet"}
   },
   "opening": {
@@ -925,6 +937,105 @@
       "goLive": "Reconciling from {date}"
     }
   },
+  "assets": {
+    "fa": {
+      "name": "Asset",
+      "class": "Class",
+      "source": "Source",
+      "cost": "Cost",
+      "salvage": "Salvage value",
+      "life": "Useful life",
+      "months": "{n} months",
+      "start": "In service",
+      "opening": "Opening accumulated depreciation",
+      "accumulated": "Accumulated depreciation",
+      "nbv": "Net book value",
+      "disposed": "Disposed",
+      "sale": "Sale",
+      "writeOff": "Write-off",
+      "proceeds": "Sale price",
+      "vat": "VAT",
+      "outcome": {
+        "gain": "Gain on disposal",
+        "loss": "Loss on disposal",
+        "none": "No gain or loss"
+      },
+      "invoice": "Sales invoice",
+      "openInvoice": "Open document",
+      "actions": "Asset actions",
+      "dispose": "Dispose",
+      "editTerms": "Edit terms",
+      "undoWriteOff": "Undo write-off",
+      "undoSale": "To undo the sale, cancel its tax invoice / invoice.",
+      "needPermission": "Needs {permission}"
+    },
+    "terms": {
+      "title": "Edit terms of {asset}",
+      "name": "Asset name",
+      "salvage": "Salvage value",
+      "life": "Useful life (months)",
+      "start": "In service from",
+      "back": "Close",
+      "submit": "Save",
+      "saving": "Saving"
+    },
+    "register": {
+      "title": "Register an asset",
+      "lead": "An asset comes from a capex line of a bill or payment voucher, or from the opening balance. Registering posts nothing (the source already posted the cost) and the registered cost never follows the source again.",
+      "noneTitle": "Nothing waiting to be registered",
+      "noneBody": "An asset cannot be registered without a source document. Exit: record the purchase as a bill or payment voucher in an asset category, then come back.",
+      "exitPb": "Record a purchase",
+      "colSource": "Source",
+      "colDesc": "Item",
+      "colClass": "Class",
+      "colCost": "Cost",
+      "register": "Register",
+      "needPermission": "Needs {permission}",
+      "dialogTitle": "Register an asset from {doc}",
+      "frozen": "Cost {cost} baht (as the source posted it) is frozen on registering.",
+      "openingNote": "Opening accumulated depreciation {accumulated} baht.",
+      "name": "Asset name",
+      "salvage": "Salvage value",
+      "life": "Useful life (months)",
+      "start": "In service from",
+      "back": "Close",
+      "submit": "Register",
+      "saving": "Saving"
+    },
+    "dp": {
+      "noRows": "No asset depreciates in this month.",
+      "rowsLabel": "Depreciation per asset",
+      "asset": "Asset",
+      "class": "Class",
+      "accounts": "Accounts (expense / accumulated)",
+      "amount": "Depreciation",
+      "total": "Total",
+      "month": "Month",
+      "recompute": "Recompute",
+      "recomputeHint": "Only the latest run can be recomputed or cancelled.",
+      "needPermission": "Needs {permission}",
+      "runTitle": "Run depreciation",
+      "runLead": "A month can be run once it has ended, one month after another, and posts exactly the table shown.",
+      "monthLabel": "Month",
+      "issue": "Post depreciation",
+      "issuing": "Posting"
+    },
+    "dispose": {
+      "title": "Dispose of {asset}",
+      "kind": "How",
+      "sale": "Sale (issues a tax invoice / invoice)",
+      "writeOff": "Write-off (no proceeds)",
+      "date": "Disposal date",
+      "buyer": "Buyer",
+      "proceeds": "Sale price (before VAT)",
+      "saleBodyVat": "A tax invoice is issued to the buyer with the disposal, and depreciation runs up to the disposal date. Every month before the disposal month must be run first.",
+      "saleBody": "An invoice is issued to the buyer with the disposal, and depreciation runs up to the disposal date. Every month before the disposal month must be run first.",
+      "writeOffBody": "The remaining book value is written off as a loss, and depreciation runs up to the disposal date.",
+      "back": "Close",
+      "submit": "Dispose",
+      "saving": "Saving"
+    }
+  },
   "reports": {
     "total": "Total",
     "asOf": "As of",
@@ -944,6 +1055,7 @@
       "from": "From", "to": "To", "accountFilter": "Account (code)", "source": "Source",
       "sources": { "JV": "Journal voucher", "OB": "Opening balances", "TI": "Tax invoice", "IV": "Invoice", "RC": "Receipt", "CN": "Credit note", "DN": "Debit note", "PB": "Purchase bill", "PCN": "Vendor credit note", "PDN": "Vendor debit note", "PV": "Payment voucher", "EX": "Expense claim", "STL": "Netting and settlements", "BANK": "Bank reconciliation" }
     },
+    "assetRegister": {"title":"Fixed asset register","number":"Number","name":"Item","start":"In service","cost":"Cost","accumulated":"Accumulated","nbv":"Net book value","status":"Status","tie":"Register accumulated depreciation {left} baht against the ledger {right} baht"},
     "bankRec": { "title": "Bank reconciliation", "item": "Item", "date": "Date", "amount": "Amount", "tie": "Adjusted statement balance {left} baht against adjusted book balance {right} baht" }
   },
   "records": {

@@ -40,7 +40,8 @@ export const NAV: NavGroup[] = [
     item('chartOfAccounts', '/accounting/chart-of-accounts', LEDGER),
     doc('openingBalances', '/accounting/opening-balances', 'OB'),
     item('schedules', '/accounting/schedules', LEDGER),
-    item('fixedAssets', '/accounting/fixed-assets', LEDGER),
+    doc('fixedAssets', '/accounting/fixed-assets', 'FA'),
+    doc('depreciation', '/accounting/depreciation-runs', 'DP'),
     item('periodClose', '/accounting/period-close', LEDGER),
   ]),
   group('tax', [

@@ -7,6 +7,7 @@ import { periodLock } from './periods';
 import { fromSatang, toSatang } from './money';
 import { jvLock } from './journal';
 import { docEditHref, docViewHref } from '@/descriptors';
+import { assetLock, refuseObAssets } from './assets';
 import { itemsOf, plainOpening } from './opening';
 import { scheduleLock } from './schedules';
 import { resolvedBankId } from './settlement';
@@ -21,7 +22,8 @@ export function derivedLocks(st: MockState, d: { id?: string; type?: DocType; lo
   const v = live ? jvLock(st, d) : undefined; // AC1: a reversed JV, and a reversal, are final
   const sc = live ? scheduleLock(st, d) : undefined; // AC4: a live amortisation run on one of its lines
   const o = live && d.id && d.type === 'OB' && !d.header.obBatchId ? obLock(st, d.id) : undefined; // AC3: an opening item already settled or matched
-  return [...(s ? d.locks.filter((l) => l.kind !== 'settlement') : d.locks), ...(r ? [r] : []), ...(s ? [s] : []), ...(v ? [v] : []), ...(sc ? [sc] : []), ...(o ? [o] : []), ...(p && !v ? [p] : [])];
+  const fa = live ? assetLock(st, d) : undefined; // AC5: a live fixed asset made from this bill / voucher / opening batch
+  return [...(s ? d.locks.filter((l) => l.kind !== 'settlement') : d.locks), ...(r ? [r] : []), ...(s ? [s] : []), ...(v ? [v] : []), ...(sc ? [sc] : []), ...(fa ? [fa] : []), ...(o ? [o] : []), ...(p && !v ? [p] : [])];
 }
 
 /** The cash an RC / PV moves (satang): `totals.cash`, or total - WHT for a document stored without it. */
@@ -82,6 +84,7 @@ export const obLock = (st: MockState, batchId: string): Lock | undefined => item
  *  F2: an imported statement on an account it opened locks only that account's bank step and the cut-off (and cancel); everything else stays revisable. */
 export function refuseObLocked(st: MockState, d: { id: string; header: DocHeader; lines: DocLine[]; opening?: DocOpening },
   next?: { header: DocHeader; lines: DocLine[]; opening?: DocOpening }): void {
+  refuseObAssets(st, d, next); // AC5: a row a live fixed asset stands on, and the cut-off, stay as they are
   const lock = itemLock(st, d.id);
   if (!lock) {
     const il = importLock(st, d);

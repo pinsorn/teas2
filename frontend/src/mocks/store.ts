@@ -12,6 +12,7 @@ import type { BankAccount } from './fixtures/bank-accounts';
 import type { CompanyAccount } from './fixtures/coa';
 import type { CompanyWhtType } from './fixtures/wht-types';
 import { SEED_SPECS } from './fixtures';
+import { seedAssets } from './fixtures/specs/assets';
 import { seedSchedules } from './fixtures/specs/schedules';
 import { runSeed } from './fixtures/seed-runner';
 import { buildSeed } from './fixtures';
@@ -20,7 +21,7 @@ import { getSettings } from './settings';
 import { seedBankStatements } from './fixtures/statements';
 
 export interface MockState {
-  version: 33;
+  version: 34;
   companies: Company[];
   memberships: (Membership & { userId: string })[];
   /** `active` (default true) and `version` (default 1) are the master record's; documents keep their own party snapshot. */
@@ -80,6 +81,7 @@ export function buildSeedState(role: Role = 'accountant'): MockState {
   }
   runSeed(s, SEED_SPECS); // later groups' documents, produced through the engine (D-23)
   seedSchedules(s); // AC4: recurring templates and the insurance amortisation (3 runs), after the bill they come from
+  seedAssets(s); // AC5: fixed assets, depreciation runs and the sale of one asset, after every bill / opening balance they come from
   for (const d of s.docs) if (d.issuedAt && !d.header.bankSnapshot) d.header = withBankSnapshot(s, d.companyId, d.type, d.header); // seeded receipts / vouchers entered directly: freeze the account they print, like an issued one (I3)
   seedBankStatements(s); // FN1: the September statements, imported through the same engine the upload uses
   return s;
@@ -90,7 +92,7 @@ export const seed = (): MockState => buildSeedState(getSettings().role);
 export function loadState(): MockState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 33) return s; }
+    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 34) return s; }
   } catch { /* fall through to a fresh seed */ }
   return seed();
 }

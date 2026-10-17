@@ -66,12 +66,23 @@ export interface DocHeader { partyId?: string; documentDate: IsoDate; dueDate?: 
   /** OB, server-owned (never accepted from a caller): a frozen open item (`obSide`) or in-transit bank item (`obKind`) of the opening-balance batch `obBatchId`. */ obBatchId?: string; obSide?: ObSide; obKind?: 'DIT' | 'OP';
   /** JV (accrual): on issue the system posts the reversing entry on day 1 of the next month. */ autoReverse?: boolean;
   /** JV, server-owned (never accepted from a caller): the JV this one reverses; `autoReversal` = the system's own reversal of an `autoReverse` accrual. */ reversalOf?: string; autoReversal?: true;
-  /** JV, server-owned (AC4): this JV is the run of an amortisation schedule for the plan month `scheduleMonth`. */ scheduleId?: string; scheduleMonth?: string }
+  /** JV, server-owned (AC4): this JV is the run of an amortisation schedule for the plan month `scheduleMonth`. */ scheduleId?: string; scheduleMonth?: string;
+  /** TI / IV, server-owned (AC5): this invoice IS the sale of a fixed asset; its journal is the frozen disposal entry, not revenue. Never accepted from a caller. */ disposal?: Disposal & { faId: string; faNumber?: string } }
+/** AC5 fixed assets. Everything here is FROZEN when the asset is registered / disposed (CLAUDE.md freeze rule): cost, salvage, life, start, class, opening accumulated and the account codes. `accumulated` / `nbv` are the server's running figures (opening + live depreciation rows + disposal partial). */
+export type FaSource = { kind: 'bill'; docId: string; lineId: string } | { kind: 'ob'; docId: string; rowId: string };
+export interface FaCodes { cost: string; accumulated: string; expense: string; gain: string; loss: string }
+/** The disposal entry's figures, frozen: `accumulated` includes the disposal-month `partial`; `gainLoss` is absolute (`outcome` says which side). `codes.ar` / `codes.vat` only for a sale. */
+export interface Disposal { date: IsoDate; kind: 'sale' | 'write_off'; name: string; cost: Money; accumulated: Money; partial: Money; nbv: Money; proceeds?: Money; vat?: Money;
+  outcome: 'gain' | 'loss' | 'none'; gainLoss: Money; codes: FaCodes & { ar?: string; vat?: string }; tiId?: string; buyerId?: string }
+export interface AssetData { name: string; assetClass: string; cost: Money; salvage: Money; lifeMonths: number; method: 'straight_line'; startDate: IsoDate; /** the first month a depreciation run may cover (start month; an opening-balance asset: the month after the cut-off) */ depFrom: string;
+  opening: Money; source: FaSource; codes: FaCodes; accumulated: Money; nbv: Money; disposed?: Disposal }
+export interface DpRow { assetId: string; assetNumber?: string; name: string; assetClass: string; amount: Money; expenseCode: string; accumulatedCode: string }
+export interface DpData { month: string; rows: DpRow[] }
 /** AC3 opening balances. `side`: AR / AP = customer / vendor invoices, EMP = owed to an employee (2180), DEP = customer deposit (2140), PRE = vendor prepayment (1140). */
 export type ObSide = 'AR' | 'AP' | 'EMP' | 'DEP' | 'PRE';
 /** `id` and `partyName` are server-owned (set at issue / revise: the id survives a revise that echoes it, the name is the party's AS OF that write and never re-read). */
 export interface ObOpenItem { id?: string; partyName?: string; side: ObSide; partyId: string; docNumber: string; docDate: IsoDate; dueDate?: IsoDate; amount: Money }
-export interface ObAsset { name: string; assetClass: string; cost: Money; accumulated: Money; acquired: IsoDate; lifeMonths: number }
+export interface ObAsset { /** server-owned (AC5): survives a revise that echoes it; the fixed asset registered from this row points at it */ id?: string; name: string; assetClass: string; cost: Money; accumulated: Money; acquired: IsoDate; lifeMonths: number }
 export interface ObPayrollYtd { employeeId: string; income: Money; pit: Money; sso: Money }
 /** One bank / cash account: the statement balance at the cut-off (signed) and its in-transit items (deposits in transit / outstanding payments). GL line = statement + deposits - payments. */
 export interface ObBank { accountId: string; statement: Money; inTransit: { id?: string; kind: 'deposit' | 'payment'; date: IsoDate; description: string; amount: Money }[] }
@@ -83,7 +94,7 @@ export interface ObCheck { debit: Money; credit: Money; plug: Money; plugSide: '
 export interface DocTotals { gross: Money; discount: Money; net: Money; vat: Money; total: Money; wht?: Money; cash?: Money;
   amountInWords: string }
 /** `href`: where an exit button goes when the exit is a page elsewhere (the reconciliation lock: the bank line). */
-export interface Lock { kind: 'period' | 'filing' | 'settlement' | 'reconciliation' | 'reversal' | 'schedule'; reason: string; exits: string[]; href?: string }
+export interface Lock { kind: 'period' | 'filing' | 'settlement' | 'reconciliation' | 'reversal' | 'schedule' | 'asset'; reason: string; exits: string[]; href?: string }
 /** Document marks: facts about the document that are not status (customer accepted / rejected a QT, DO delivered, PO sent, SO closed). Never a revision. */
 export type MarkKey = 'accepted' | 'rejected' | 'delivered' | 'sent';
 export interface DocMarks { accepted?: { at: string; by: string }; rejected?: { at: string; by: string; reason: string };
@@ -95,7 +106,7 @@ export interface RemainingLine { lineId: string; description: string; unit: stri
 export interface WhtFrozen { bases: { targetId: string; whtTypeCode: string; base: Money; clamped?: true; full?: true; billBase?: Money }[]; lines: WhtLine[]; expense: Money; cashDelta: Money }
 export interface Doc { id: string; type: DocType; number?: string; status: DocStatus; correctionClass: CorrectionClass;
   revision: number; version: number; header: DocHeader; party?: PartySummary; lines: DocLine[]; totals: DocTotals;
-  outstanding?: Money; locks: Lock[]; createdBy: Actor; issuedAt?: string; allocations?: Allocation[]; whtFrozen?: WhtFrozen; /** OB batch (AC3): the steps behind the trial balance. */ opening?: DocOpening;
+  outstanding?: Money; locks: Lock[]; createdBy: Actor; issuedAt?: string; allocations?: Allocation[]; whtFrozen?: WhtFrozen; /** OB batch (AC3): the steps behind the trial balance. */ opening?: DocOpening; /** FA (AC5): the registered asset. */ asset?: AssetData; /** DP (AC5): the depreciation run's frozen rows. */ dp?: DpData;
   /** CN / DN (ม.86/10): the invoice's net, the correct value after this note, the difference and its VAT, taken when the note is issued; the paper prints these. Server-written. */
   adjustSnapshot?: { originalNet: Money; correctNet: Money; diffNet: Money; vat: Money };
   cancel?: { reasonCode: string; reasonText: string; at: string }; replacedById?: string; replacesId?: string; marks?: DocMarks;

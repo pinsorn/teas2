@@ -45,7 +45,7 @@ function Edit({ id, d }: { id: string; d: DocDescriptor }) {
   });
   const doc = q.data;
   const landing = useRef(false); // a correction plan just ran: its flow navigates to the result, this page must not also redirect to the (now replaced) document
-  const editable = !!doc && (DRAFTABLE.includes(doc.status) || LIVE.includes(doc.status));
+  const editable = !!doc && (DRAFTABLE.includes(doc.status) || LIVE.includes(doc.status)) && d.type !== 'FA' && d.type !== 'DP'; // AC5: an asset / a depreciation run has no editor - the view says how to change it
   // Cancelled / replaced / pending documents cannot be edited: send the reader to the view, which says why.
   useEffect(() => { if (doc && !editable && !landing.current) router.replace(routesOf(d).view(id)); }, [doc, editable, id, router, d]);
 
