@@ -9,10 +9,16 @@ import { resolveRole } from '../posting';
 
 export interface WhtAlloc { rcId: string; number: string; date: string; customer: string; target: string; cert: string; wht: number }
 /** Every allocation of a live receipt that withheld tax, oldest first (the customer is the party of the receipt; the target is the invoice the tax was withheld from).
- *  With `asOf` it follows the ledger's ENTRY DATES like the GL side: a receipt counts from its document date, and a cancelled / replaced one until the date of its reversal entry. */
+ *  With `asOf` it follows the ledger exactly: a receipt counts when its STORED journal says so - original entry date <= asOf and no reversal entry, or one dated after asOf (a receipt with no stored journal counts from its document date, never
+ *  reversed). Never `cancel.at` (wall clock) or `withReversal`: the stored reversal is dated today() / the first open date (troubles-wiki). */
 export function whtAllocations(st: MockState, companyId: string, asOf?: string): WhtAlloc[] {
-  const reversedBy = (d: MockState['docs'][number]) => d.cancel?.at.slice(0, 10) ?? d.header.documentDate;
-  return st.docs.filter((d) => d.companyId === companyId && d.type === 'RC' && (!asOf || d.header.documentDate <= asOf) && (LIVE.includes(d.status) || (!!asOf && (d.status === 'cancelled' || d.status === 'replaced') && reversedBy(d) > asOf)))
+  const counts = (d: MockState['docs'][number]) => {
+    if (!asOf) return LIVE.includes(d.status);
+    const es = st.journals.find((x) => x.docId === d.id)?.preview.entries ?? [];
+    const from = es.find((e) => e.kind === 'original')?.date ?? d.header.documentDate, rev = es.find((e) => e.kind === 'reversal')?.date;
+    return from <= asOf && (!rev || rev > asOf);
+  };
+  return st.docs.filter((d) => d.companyId === companyId && d.type === 'RC' && counts(d))
     .flatMap((d) => (d.allocations ?? []).filter((a) => toSatang(a.wht ?? '0.00') > 0).map((a) => ({
       rcId: d.id, number: d.number ?? d.id, date: d.header.documentDate, customer: d.party?.name ?? '', target: a.targetNumber ?? a.targetId, cert: (a.certNumber ?? '').trim(), wht: toSatang(a.wht!),
     })))

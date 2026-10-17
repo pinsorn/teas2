@@ -31,6 +31,7 @@ export function TaxPaymentDialog({ form, period, onClose }: { form: FilingForm; 
   const [amount, setAmount] = useState('');
   const lines = useQuery({ queryKey: [company, 'filings', form, period, 'payment-lines'], queryFn: () => endpoints.taxPaymentLines(form, period), enabled: !!me });
   const accounts = useQuery({ queryKey: qk.postableAccounts(company), queryFn: () => endpoints.postableAccounts(), enabled: !!me });
+  const half = (!!account) !== (!!amount.trim()); // R2: an extra row with only one of its two fields is refused here, not silently dropped
   const run = useMutation({
     mutationFn: () => endpoints.payTax(lineId, { form, period, ...(account && amount.trim() ? { extras: [{ accountCode: account, amount: amount.trim() }] } : {}) }),
     onSuccess: async () => { await qc.invalidateQueries({ queryKey: [company] }); onClose(); },
@@ -57,6 +58,7 @@ export function TaxPaymentDialog({ form, period, onClose }: { form: FilingForm; 
                     <label key={l.id} className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border bg-card p-2 has-checked:border-primary">
                       <input type="radio" name={`${id}-line`} value={l.id} checked={lineId === l.id} onChange={() => setLineId(l.id)} />
                       <span className="tabular-nums">{formatDateBE(l.date)}</span>
+                      <span className="text-small text-muted-foreground" data-testid="line-account">{l.accountName}</span>
                       <span className="min-w-0 flex-1 truncate">{l.description}</span>
                       <strong className="tabular-nums">−{formatMoney(l.amount.replace('-', ''))}</strong>
                       {exact ? <span className="text-small text-primary">{t('exact')}</span> : null}
@@ -84,6 +86,7 @@ export function TaxPaymentDialog({ form, period, onClose }: { form: FilingForm; 
             </fieldset>
           </>
         ) : null}
+        {half ? <p role="alert" className="text-small text-destructive" data-testid="extra-half">{t('extraHalf')}</p> : null}
         {problem ? (
           <Alert variant="destructive" role="alert">
             <AlertTitle>{problem.title}</AlertTitle>
@@ -92,7 +95,7 @@ export function TaxPaymentDialog({ form, period, onClose }: { form: FilingForm; 
         ) : null}
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>{t('back')}</Button>
-          <Button disabled={!lineId || run.isPending} onClick={() => run.mutate()}>{run.isPending ? t('working') : t('submit')}</Button>
+          <Button disabled={!lineId || half || run.isPending} onClick={() => run.mutate()}>{run.isPending ? t('working') : t('submit')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

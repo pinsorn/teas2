@@ -7,7 +7,7 @@ import { finalizeFiling } from '../filings';
 import { pp36Model } from '../filings/pp36';
 import { checkInvariants } from '../invariants';
 import { generalJournal } from '../journal';
-import { withFixedClock } from '../log';
+import { today, withFixedClock } from '../log';
 import { buildReport } from './index';
 
 // TX2b: the WHT receivable (RC allocations that withheld tax, aged, tied to GL 1180), the missing-50-tawi chase list, and the general journal carrying the ภ.พ.36 entry.
@@ -46,6 +46,19 @@ describe('wht-receivable', () => {
     expect(detail(on)).toHaveLength(1);
     expect(on.tieOuts![0]).toMatchObject({ left: '30.00', right: '30.00', diff: '0.00' });
     expect(recv('2027-01-31').tieOuts![0]).toMatchObject({ left: '30.00', right: '30.00', diff: '0.00' });
+  });
+  it('R1: an UNPINNED cancel (wall-clock cancel.at, reversal stored on today()) still ties at asOf = today()', () => {
+    cancel(st, 'rc-nocert', rc('rc-nocert').version, 'OTHER', 'x', me);
+    expect(recv(today()).tieOuts![0]).toMatchObject({ left: '30.00', right: '30.00', diff: '0.00' });
+  });
+  it('R1: a late reversal (receipt in a closed month) is dated on the first open date; the report follows the stored entry the day before and the day of it', () => {
+    const month = rc('rc-nocert').header.documentDate.slice(0, 7);
+    st.periods.find((p) => p.companyId === CO && p.month === month)!.status = 'closed';
+    cancel(st, 'rc-nocert', rc('rc-nocert').version, 'OTHER', 'x', me);
+    const rev = st.journals.find((j) => j.docId === 'rc-nocert')!.preview.entries.find((e) => e.kind === 'reversal')!.date;
+    const before = new Date(Date.parse(`${rev}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+    expect(recv(before).tieOuts![0]).toMatchObject({ left: '330.00', right: '330.00', diff: '0.00' });
+    expect(recv(rev).tieOuts![0]).toMatchObject({ left: '30.00', right: '30.00', diff: '0.00' });
   });
 });
 

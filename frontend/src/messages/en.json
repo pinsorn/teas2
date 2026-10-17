@@ -646,7 +646,7 @@
       "base": "Base",
       "payee": "Payee receives",
       "form": "Form",
-      "forms": { "PND2": "PND.2", "PND3": "PND.3", "PND53": "PND.53", "PND54": "PND.54" }
+      "forms": { "PND2": "PND.2", "PND3": "PND.3", "PND53": "PND.53", "PND54": "PND.54", "PND50": "PND.50", "PND51": "PND.51" }
     },
     "group": {
       "title": "Documents billed",
@@ -1125,6 +1125,16 @@
       "date": "Date", "status": "Status", "total": "Total", "outstanding": "Outstanding", "due": "Due"
     }
   },
+  "cit": {
+    "title": "Corporate income tax (PND.50 and 51)",
+    "tabs": { "label": "Corporate income tax returns", "pnd50": "PND.50 (annual)", "pnd51": "PND.51 (half year)" },
+    "data": { "title": "Year data", "paidUp": "Paid-up capital (baht)", "revenue": "Revenue per books (baht)", "netProfit": "Net profit per books (baht)", "sme": "SME status", "smeYes": "Meets the SME test", "smeNo": "Not an SME",
+      "yearOpen": "The fiscal year is not closed yet", "yearClosed": "Fiscal year closed", "save": "Save year data", "locked": "Already filed: this year's data can no longer be edited (exit: file an additional return outside the system)", "estimateLocked": "PND.51 filed: paid-up capital and the estimate can no longer be edited" },
+    "losses": { "title": "Losses brought forward", "hint": "Usable within 5 accounting periods of the loss year, oldest first; older ones expire", "year": "Loss year (CE)", "amount": "Amount (baht)", "add": "Add a loss year", "remove": "Remove" },
+    "estimate": { "title": "Profit estimate for PND.51", "mode": "Method", "h1x2": "Actual profit of months 1-6 x 2", "input": "Type the estimate", "amount": "Estimated net profit for the year (baht)" },
+    "adj": { "title": "Tax adjustments (sections 65 bis / ter)", "hint": "Pick the line of item 2, an amount (may be negative) and a reason. Editable until PND.50 is confirmed", "line": "Line", "line10": "10 Add: income treated as income by the Revenue Code", "line11": "11 Add: expenses not deductible", "line13": "13 Deduct: exempt income / extra deductible expenses",
+      "amount": "Amount (baht)", "reason": "Reason", "by": "Entered by", "add": "Add adjustment", "save": "Save adjustment", "edit": "Edit", "delete": "Delete", "cancel": "Cancel", "empty": "No user adjustments yet" }
+  },
   "wht": {
     "title": "Withholding returns and PP.36",
     "tabs": { "label": "Withholding returns and PP.36", "pnd3": "PND.3", "pnd53": "PND.53", "pnd2": "PND.2", "pnd54": "PND.54", "pp36": "PP.36", "withheld": "Tax withheld from us", "missing": "Missing certificates" },
@@ -1134,20 +1144,21 @@
     "title": "Form {form} for {month}",
     "forms": { "PP30": "PP.30", "PP36": "PP.36", "PND2": "PND.2", "PND3": "PND.3", "PND53": "PND.53", "PND54": "PND.54" },
     "period": "Tax month",
+    "periodYear": "Fiscal year (CE)", "yearLabel": "Fiscal year {year}", "titleYear": "Form {form} for fiscal year {year}",
     "due": "Due {date}",
     "tabs": { "label": "VAT return and registers", "pp30": "PP.30", "output": "Output VAT register", "input": "Input VAT register" },
-    "filed": { "bodyOther": "Confirmed by {by} on {at}. The documents in this return can no longer be edited; issue a new payment voucher in a later month.", "title": "Filed", "body": "Confirmed by {by} on {at}. The documents in this return can no longer have their figures edited; use a credit or debit note in a later month." },
+    "filed": { "bodyCit": "Confirmed by {by} on {at}. The year data and reopening the fiscal year are now locked; to correct, file an additional return outside the system.", "bodyOther": "Confirmed by {by} on {at}. The documents in this return can no longer be edited; issue a new payment voucher in a later month.", "title": "Filed", "body": "Confirmed by {by} on {at}. The documents in this return can no longer have their figures edited; use a credit or debit note in a later month." },
     "empty": { "title": "No tax entries in this period", "body": "There are no documents to show in this form for this month." },
     "boxes": { "title": "Boxes of the form", "count": "{n}", "code": "Box", "label": "Item", "amount": "Amount (baht)", "source": "Source", "open": "Open register" },
     "blockers": { "title": "Cannot be confirmed yet", "open": "Fix it" },
-    "finalize": { "button": "Confirm filing (close the tax period)", "working": "Confirming", "back": "Back", "title": "Confirm form {form} for {month}", "bodyOther": "Once confirmed, the certificates and vouchers in this return can no longer be edited. Issue a new payment voucher in a later month.", "ack": "I understand that confirming books the VAT of this form on the last day of the month and that the vouchers in it can no longer be edited.",
+    "finalize": { "titleYear": "Confirm form {form} for fiscal year {year}", "bodyCit": "Once confirmed the figures are stored; the year data cannot be edited and the fiscal year cannot be reopened. To correct, file an additional return outside the system.", "button": "Confirm filing (close the tax period)", "working": "Confirming", "back": "Back", "title": "Confirm form {form} for {month}", "bodyOther": "Once confirmed, the certificates and vouchers in this return can no longer be edited. Issue a new payment voucher in a later month.", "ack": "I understand that confirming books the VAT of this form on the last day of the month and that the vouchers in it can no longer be edited.",
       "body": "Once confirmed, the documents in this return can no longer have their figures edited. Use a credit or debit note in a later month.", "taxOut": "Output VAT (box 5)", "taxIn": "Input VAT (box 7)",
       "disabledBy": "Cannot confirm: {why}", "needPermission": "You need the right to finalize tax filings" },
     "attachment": { "title": "Attachment" },
     "export": { "txt": "File for RD Prep (.txt)", "print": "Print the form", "failed": "Could not create the file. Try again." },
     "history": { "title": "Filed returns", "empty": "Nothing has been confirmed in the system yet", "period": "Tax month", "at": "Confirmed on", "by": "By", "net": "Net tax", "payable": "payable", "overpaid": "overpaid", "payment": "Payment", "paidOn": "Paid {date}", "unpaid": "Not paid" },
-    "payment": { "title": "Paying the Revenue Department", "nothingDue": "No tax to pay", "due": "Tax to pay {amount} baht", "pay": "Pay tax", "needPermission": "Paying tax needs the bank reconciliation permission", "paid": "Paid on {date}", "extras": "Including other items (fees, surcharge) {amount} baht", "openLine": "Open the statement line", "reverse": "Cancel the payment", "reverseDesc": "Reverses the payment journal and puts the statement line back to unmatched.", "reason": "Reason", "back": "Back", "confirm": "Confirm", "working": "Saving…", "pickLine": "Pick the statement line that paid this tax", "exact": "Same amount as the tax", "noLines": "No outgoing statement line can pay this tax", "importFirst": "Import the bank statement first", "extraTitle": "Other items in the same amount (optional)", "extraHint": "A bank fee, or the surcharge / penalty on the Revenue Department receipt, booked as expense to the account you pick.", "extraAccount": "Account", "extraAmount": "Amount (baht)", "extraNone": "None", "submit": "Pay tax", "failed": "Could not pay the tax. Try again." },
-    "tie": { "pndGl": "Tax withheld (all payees) {left} baht against the withholding tax payable account of this form {right} baht", "pp36Gl": "VAT to remit {left} baht against ledger 2152 VAT payable {right} baht", "reconciling": "Including the reconciling item", "outputGl": "Output VAT (box 5) {left} baht against ledger 2151 {right} baht", "inputGl": "Input VAT (box 7) {left} baht against ledger 1170 {right} baht",
+    "payment": { "title": "Paying the Revenue Department", "nothingDue": "No tax to pay", "due": "Tax to pay {amount} baht", "pay": "Pay tax", "needPermission": "Paying tax needs the bank reconciliation permission", "paid": "Paid on {date}", "extras": "Including other items (fees, surcharge) {amount} baht", "openLine": "Open the statement line", "reverse": "Cancel the payment", "reverseDesc": "Reverses the payment journal and puts the statement line back to unmatched.", "reason": "Reason", "back": "Back", "confirm": "Confirm", "working": "Saving…", "pickLine": "Pick the statement line that paid this tax", "exact": "Same amount as the tax", "noLines": "No outgoing statement line can pay this tax", "importFirst": "Import the bank statement first", "extraHalf": "Fill both the account and the amount of the extra row, or leave both empty", "extraTitle": "Other items in the same amount (optional)", "extraHint": "A bank fee, or the surcharge / penalty on the Revenue Department receipt, booked as expense to the account you pick.", "extraAccount": "Account", "extraAmount": "Amount (baht)", "extraNone": "None", "submit": "Pay tax", "failed": "Could not pay the tax. Try again." },
+    "tie": { "citGl": "Corporate income tax computed on the return {left} baht against the income tax booked {right} baht (book the tax with a journal voucher before closing the year)", "pndGl": "Tax withheld (all payees) {left} baht against the withholding tax payable account of this form {right} baht", "pp36Gl": "VAT to remit {left} baht against ledger 2152 VAT payable {right} baht", "reconciling": "Including the reconciling item", "outputGl": "Output VAT (box 5) {left} baht against ledger 2151 {right} baht", "inputGl": "Input VAT (box 7) {left} baht against ledger 1170 {right} baht",
       "outputRegister": "Output VAT (box 5) {left} baht against the output register total {right} baht", "inputRegister": "Input VAT (box 7) {left} baht against the input register total {right} baht" },
     "reg": { "date": "Date", "number": "Number", "party": "Buyer / seller", "tin": "Tax ID", "branch": "Branch", "description": "Description",
       "base7": "Taxable value", "base0": "Zero-rated value", "baseEx": "Exempt value", "claimedBase": "Purchases with the right to claim", "vat": "VAT" }

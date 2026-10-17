@@ -16,7 +16,7 @@ import { type DocLike, type Filing, PERIOD, type WhtRow, boxOf, chainBlockers, f
 export const PND_FORMS = ['PND2', 'PND3', 'PND53', 'PND54'] as const;
 export type PndForm = (typeof PND_FORMS)[number];
 export const isPnd = (f: string): f is PndForm => (PND_FORMS as readonly string[]).includes(f);
-const NAME: Record<string, string> = { PND2: 'ภ.ง.ด.2', PND3: 'ภ.ง.ด.3', PND53: 'ภ.ง.ด.53', PND54: 'ภ.ง.ด.54', PP36: 'ภ.พ.36', PP30: 'ภ.พ.30' };
+const NAME: Record<string, string> = { PND2: 'ภ.ง.ด.2', PND3: 'ภ.ง.ด.3', PND53: 'ภ.ง.ด.53', PND54: 'ภ.ง.ด.54', PP36: 'ภ.พ.36', PP30: 'ภ.พ.30', PND50: 'ภ.ง.ด.50', PND51: 'ภ.ง.ด.51' };
 export const formName = (f: string): string => NAME[f] ?? f;
 /** [SP-R] a ภ.ง.ด. is due on the 7th of the following month (e-filing is extended to the 15th; the mock keeps the paper date). */
 export const pndDue = (p: string): IsoDate => { const y = Number(p.slice(0, 4)), m = Number(p.slice(5, 7)); return m === 12 ? `${y + 1}-01-07` : `${y}-${String(m + 1).padStart(2, '0')}-07`; };

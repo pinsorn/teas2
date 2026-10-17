@@ -14,6 +14,7 @@ import { monthLabelTh } from './periods';
 import { resolveRole } from './posting';
 import { formName } from './filings/pnd-wht';
 import { inForceTax, livePaymentOf, payableAccountOf, filingHref, taxDueOf } from './filings/payment';
+import { isCit } from './filings/cit';
 import { type Filing, nextMonth } from './filings/pp30';
 import { lastDayOf } from './filings/pp36';
 import { resolvedBankId } from './settlement';
@@ -400,6 +401,7 @@ export interface PayTaxRequest { form: FilingForm; period: string; extras?: { ac
 const taxWhat = (form: FilingForm, period: string) => `${formName(form)} เดือน ${monthLabelTh(period)}`;
 /** The filing a payment is for, with its tax (satang): P3 not finalized, P4 nothing due, P5 already paid - the refusals the dialog's list shares with the command. */
 function payableFiling(st: MockState, companyId: string, form: FilingForm, period: string): { f: Filing; due: number } {
+  if (isCit(form)) throw fail(422, 'tax_payment.not_supported', 'ภาษีเงินได้นิติบุคคลชำระผ่านระบบนี้ไม่ได้ (ไม่มีการลงบัญชีภาษีเงินได้ค้างจ่ายในระบบ) บันทึกการชำระด้วยใบสำคัญสมุดรายวัน');
   const f = st.filings.find((x) => x.companyId === companyId && x.form === form && x.period === period);
   if (!f) throw fail(409, 'tax_payment.not_finalized', `แบบ ${taxWhat(form, period)} ยังไม่ได้ยืนยัน ทางออก: ยืนยันแบบก่อนชำระภาษี`);
   const due = taxDueOf(f);
@@ -420,14 +422,16 @@ export function payTax(st: MockState, companyId: string, lineId: string, req: Pa
   const { f, due } = payableFiling(st, companyId, req.form, req.period);
   if (l.date <= lastDayOf(req.period)) throw fail(422, 'tax_payment.before_period_end', `ชำระภาษีเดือน ${monthLabelTh(req.period)} ด้วยรายการก่อนสิ้นเดือนไม่ได้ เลือกรายการตั้งแต่ ${formatDateBE(`${nextMonth(req.period)}-01`)}`);
   const bank = bankOf(st, companyId, l.accountId);
+  if (req.extras !== undefined && !Array.isArray(req.extras)) throw fail(422, 'tax_payment.extra_amount', 'รายการอื่นในยอดชำระไม่ถูกต้อง');
   const extras = (req.extras ?? []).map((x) => {
     const acc = st.accounts.find((a) => a.companyId === companyId && a.code === x.accountCode);
     if (!acc || !acc.postable || acc.active === false) throw fail(422, 'ledger.account_invalid', 'เลือกบัญชีที่ลงรายการได้');
     if (acc.code === bank.accountCode) throw fail(422, 'bank.post_same_account', 'บัญชีที่เลือกต้องไม่ใช่บัญชีธนาคารของรายการนี้');
     const exit = controlExit(st, companyId, acc.code);
     if (exit) throw fail(422, 'ledger.control_account', `${acc.code} ${acc.nameTh} ลงรายการเองไม่ได้: ${exit}`);
-    if (toSatang(x.amount) <= 0) throw fail(422, 'tax_payment.extra_amount', `ยอดรายการอื่น (${acc.code}) ต้องมากกว่า 0.00 บาท`);
-    return { code: acc.code, debit: toSatang(x.amount), credit: 0 };
+    if (typeof x.amount !== 'string' || !/^\d+(\.\d{1,2})?$/.test(x.amount.trim())) throw fail(422, 'tax_payment.extra_amount', `ยอดรายการอื่น (${acc.code}) ต้องเป็นจำนวนเงิน เช่น 1234.50 (ไม่ใส่เครื่องหมายจุลภาค)`);
+    if (toSatang(x.amount.trim()) <= 0) throw fail(422, 'tax_payment.extra_amount', `ยอดรายการอื่น (${acc.code}) ต้องมากกว่า 0.00 บาท`);
+    return { code: acc.code, debit: toSatang(x.amount.trim()), credit: 0 };
   });
   const extra = extras.reduce((n, x) => n + x.debit, 0);
   if (due + extra !== abs(amount)) {
@@ -467,5 +471,5 @@ export function taxPaymentLines(st: MockState, companyId: string, form: FilingFo
   const { due } = payableFiling(st, companyId, form, period);
   const lines = st.bankLines.filter((l) => l.companyId === companyId && l.status === 'unmatched' && toSatang(l.amount) < 0 && l.date > lastDayOf(period) && abs(toSatang(l.amount)) >= due && !pendingTransfer(st, companyId, l.id))
     .sort((a, b) => Number(abs(toSatang(b.amount)) === due) - Number(abs(toSatang(a.amount)) === due) || a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
-  return { due: fromSatang(due), lines: lines.map((l) => publicLine(st, l)) };
+  return { due: fromSatang(due), lines: lines.map((l) => ({ ...publicLine(st, l), accountName: st.bankAccounts.find((b) => b.id === l.accountId)?.nameTh ?? l.accountId })) };
 }

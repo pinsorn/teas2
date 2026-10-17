@@ -21,7 +21,7 @@ export function payableAccountOf(st: MockState, f: Filing): string {
   return resolveRole(st, 'WhtPayable', { ...ctx, whtForm: f.form as 'PND2' | 'PND3' | 'PND53' | 'PND54' }).code;
 }
 /** Where a form's page lives (the same two-branch href the filing lock uses). */
-export const filingHref = (form: FilingForm, period: string) => (form === 'PP30' ? `/tax/vat?period=${period}` : `/tax/wht?tab=${form.toLowerCase()}&period=${period}`);
+export const filingHref = (form: FilingForm, period: string) => (form === 'PP30' ? `/tax/vat?period=${period}` : form === 'PND50' || form === 'PND51' ? `/tax/cit?tab=${form.toLowerCase()}&period=${period}` : `/tax/wht?tab=${form.toLowerCase()}&period=${period}`);
 export const inForceTax = (j: BankJournal) => j.kind === 'tax' && j.entries[j.entries.length - 1]?.kind !== 'reversal';
 /** The in-force payment of a return (at most one, invariant T3). */
 export const livePaymentOf = (st: MockState, f: Filing): BankJournal | undefined =>

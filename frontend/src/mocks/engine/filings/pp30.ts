@@ -13,6 +13,7 @@ import { type AccountingRole, resolveRole } from '../posting';
 import { claimPeriodOf, exForfeited, isRecoverable } from '../purchase-vat';
 import { computeDoc, vatOf } from '../vat';
 import { pp36Rows } from './pp36';
+import type { CitSnapshot, Pnd51Snapshot } from './cit';
 
 /** A document as the ภ.พ.30 took it: the figures the filing froze, per document (ruling 1). `out` rows come from TI / CN / DN (a CN / DN is signed), `in` rows from the vendor documents (PB / PCN / PDN, and an EX line with its vendor tax invoice).
  *  For an `in` row `base7` is the claimed base and `vat` the RECOVERABLE VAT only. A cancelled document keeps a row of zeros (ยกเลิก 0.00, A.9). */
@@ -35,6 +36,8 @@ export interface Filing {
   companyId: string; form: FilingForm; period: string; status: 'finalized'; boxes: FilingBox[]; tieOuts: TieOut[]; docs: Pp30Doc[]; carryIn: Money; pp36: Money; finalizedAt: string; finalizedBy: string; dueDate: IsoDate;
   /** TX2: ภ.ง.ด. rows / ภ.พ.36 rows / the ภ.พ.36 journal entry (dated the payment month's last day, G3) / whether its VAT is claimable input VAT (a VAT company) - all frozen at finalize; `docs` is the ภ.พ.30 list and is [] for these */
   wht?: WhtRow[]; p36?: Pp36Row[]; journal?: JournalEntryPreview[]; claims?: boolean;
+  /** TX3a: a ภ.ง.ด.50 / 51 is its frozen snapshot (the books' figures, the adjustments with their basis, the credits, the SME flag, the rules used); `docs` is [] for these */
+  cit?: CitSnapshot; pnd51?: Pnd51Snapshot;
   /** M2: who filed, as the company was at finalize (the file and the page read this, never the master now) */ company: { taxId: string; branchCode: string; legalNameTh: string };
 }
 

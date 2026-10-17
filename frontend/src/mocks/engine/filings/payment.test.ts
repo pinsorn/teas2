@@ -139,6 +139,8 @@ describe('pay a ภ.พ.30', () => {
     expect(err(() => payTax(st, CO, line.id, { ...PP30_AUG, extras: [{ accountCode: '2131', amount: '25.00' }] }, me)).code).toBe('ledger.control_account');
     expect(err(() => payTax(st, CO, line.id, { ...PP30_AUG, extras: [{ accountCode: '5200', amount: '0.00' }] }, me)).code).toBe('tax_payment.extra_amount');
     expect(err(() => payTax(st, CO, line.id, { ...PP30_AUG, extras: [{ accountCode: '1121', amount: '25.00' }] }, me)).code).toBeTruthy(); // the bank's own account
+    for (const bad of ['abc', '12.345', '1,234.50', '', ' ']) expect(err(() => payTax(st, CO, line.id, { ...PP30_AUG, extras: [{ accountCode: '5200', amount: bad }] }, me)).code, bad).toBe('tax_payment.extra_amount'); // R2: never a 500
+    expect(err(() => payTax(st, CO, line.id, { ...PP30_AUG, extras: {} as never }, me)).code).toBe('tax_payment.extra_amount');
     expect(st.bankJournals.filter((j) => j.kind === 'tax')).toHaveLength(0);
     const out = payTax(st, CO, line.id, { ...PP30_AUG, extras: [{ accountCode: '5200', amount: '25.00' }] }, me);
     expect(jnl(out.journalId!).entries[0].lines.map((l) => [l.accountCode, l.debit, l.credit])).toEqual([['2154', '7875.00', '0.00'], ['5200', '25.00', '0.00'], ['1121', '0.00', '7900.00']]);

@@ -36,7 +36,7 @@ export function FilingView(p: { form: FilingForm; periodKind: 'month' | 'year' }
   return <Inner key={useCompanyEpoch()} {...p} />;
 }
 
-function Inner({ form }: { form: FilingForm; periodKind: 'month' | 'year' }) {
+function Inner({ form, periodKind }: { form: FilingForm; periodKind: 'month' | 'year' }) {
   const t = useTranslations('filing');
   const tr = useTranslations('reports');
   const tx = useTranslations();
@@ -52,6 +52,8 @@ function Inner({ form }: { form: FilingForm; periodKind: 'month' | 'year' }) {
   const hist = useQuery({ queryKey: qk.filings(companyId, form), queryFn: () => endpoints.listFilings(form), enabled: !!companyId && applies });
   const period = search.get('period') || hist.data?.next || '';
   const q = useQuery({ queryKey: qk.filing(companyId, form, period), queryFn: () => endpoints.getFiling(form, period), enabled: !!companyId && applies && !!period });
+  const year = periodKind === 'year'; // TX3a: ภ.ง.ด.50 / 51 name a fiscal year (YYYY, Christian era in the URL)
+  const periodLabel = year ? t('yearLabel', { year: String(Number(period) + 543) }) : monthBE(period);
   const [confirming, setConfirming] = useState(false);
   const finalize = useMutation({
     mutationFn: (ack: boolean) => endpoints.finalizeFiling(form, period, q.data!.version, ack),
@@ -90,17 +92,17 @@ function Inner({ form }: { form: FilingForm; periodKind: 'month' | 'year' }) {
     <div className="grid gap-4" data-testid="filing-view">
       <div className="flex flex-wrap items-end gap-4 print:hidden">
         <div className="grid gap-1.5">
-          <Label htmlFor="filing-period">{t('period')}</Label>
-          <Input id="filing-period" type="month" value={period} onChange={(e) => pick(e.target.value)} className="w-44" />
+          <Label htmlFor="filing-period">{year ? t('periodYear') : t('period')}</Label>
+          <Input id="filing-period" type={year ? 'number' : 'month'} {...(year ? { min: 2000, max: 2100, step: 1 } : {})} value={period} onChange={(e) => pick(e.target.value)} className="w-44" />
         </div>
         <p className="text-body text-muted-foreground">{t('due', { date: formatDateBE(m.dueDate) })}</p>
       </div>
-      <h2 className="text-section font-semibold">{t('title', { form: t(`forms.${form}`), month: monthBE(period) })}</h2>
+      <h2 className="text-section font-semibold">{year ? t('titleYear', { form: t(`forms.${form}`), year: String(Number(period) + 543) }) : t('title', { form: t(`forms.${form}`), month: monthBE(period) })}</h2>
       {filed ? (
         <Alert role="status" data-testid="filed-banner">
           <LockIcon aria-hidden />
           <AlertTitle>{t('filed.title')}</AlertTitle>
-          <AlertDescription>{t(form === 'PP30' ? 'filed.body' : 'filed.bodyOther', { by: m.finalizedBy ?? '', at: formatDateBE((m.finalizedAt ?? '').slice(0, 10)) })}</AlertDescription>
+          <AlertDescription>{t(form === 'PP30' ? 'filed.body' : year ? 'filed.bodyCit' : 'filed.bodyOther', { by: m.finalizedBy ?? '', at: formatDateBE((m.finalizedAt ?? '').slice(0, 10)) })}</AlertDescription>
         </Alert>
       ) : null}
       {filed && m.payment ? (
@@ -159,7 +161,7 @@ function Inner({ form }: { form: FilingForm; periodKind: 'month' | 'year' }) {
         )}
         <Button variant="outline" onClick={() => window.print()}><PrinterIcon aria-hidden />{t('export.print')}</Button>
       </div>
-      <FinalizeDialog open={confirming} form={form} month={monthBE(period)} boxes={m.boxes} pending={finalize.isPending} error={finalize.error} onConfirm={(ack) => finalize.mutate(ack)} onCancel={() => setConfirming(false)} />
+      <FinalizeDialog open={confirming} form={form} month={periodLabel} boxes={m.boxes} pending={finalize.isPending} error={finalize.error} onConfirm={(ack) => finalize.mutate(ack)} onCancel={() => setConfirming(false)} />
       {paying ? <TaxPaymentDialog form={form} period={period} onClose={() => setPaying(false)} /> : null}
       {undoing && m.payment?.journalId ? (
         <AlertDialog open onOpenChange={(o) => { if (!o) setUndoing(false); }}>

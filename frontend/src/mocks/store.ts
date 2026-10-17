@@ -6,6 +6,7 @@ import { recomputeSettlement } from './engine/commands';
 import { ledgerFor } from './engine/ledger';
 import { withBankSnapshot } from './engine/settlement';
 import { adjustSnapshot, hasSnapshot } from './engine/notes';
+import type { CitYearData } from '@/domain/filings';
 import type { YearClose } from './engine/close';
 import { type Filing, seedFilings } from './engine/filings';
 import type { Period } from './engine/periods';
@@ -23,7 +24,7 @@ import { getSettings } from './settings';
 import { seedBankStatements } from './fixtures/statements';
 
 export interface MockState {
-  version: 40;
+  version: 41;
   companies: Company[];
   memberships: (Membership & { userId: string })[];
   /** `active` (default true) and `version` (default 1) are the master record's; documents keep their own party snapshot. */
@@ -52,6 +53,8 @@ export interface MockState {
   yearCloses: YearClose[];
   /** TX1: finalized tax filings (ภ.พ.30): the boxes, tie-outs and the exact documents, frozen at finalize. A draft is never stored: it is computed from the documents. */
   filings: Filing[];
+  /** TX3a: the corporate income tax year data per company and fiscal year (paid-up capital, prior losses, user adjustments, the ภ.ง.ด.51 estimate). */
+  citYears: (CitYearData & { companyId: string })[];
   /** FN3: per company, the largest difference a settlement may absorb: satang rounding, and a small write-off (also the bank fee) [SP-R]. */
   settlementTolerance: { companyId: string; rounding: Money; smallWriteOff: Money }[];
   /** [SP-R] mock WHT types per company (fixtures/wht-types.ts). */
@@ -99,7 +102,7 @@ export const seed = (): MockState => buildSeedState(getSettings().role);
 export function loadState(): MockState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 40) return s; }
+    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 41) return s; }
   } catch { /* fall through to a fresh seed */ }
   return seed();
 }

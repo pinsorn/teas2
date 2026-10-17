@@ -10,7 +10,8 @@ import { isClosed, monthLabelTh, refuseYearClosed } from '../periods';
 import { resolveRole } from '../posting';
 import { isFiledPeriod, openClaimMonth } from '../purchase-vat';
 import { type DocLike, type Filing, type Pp30Doc, PERIOD, boxOf, chainStart, getPp30, pp30Boxes, pp30Docs, pp30Model, pp30Netting, pp30RowOf, pp36VatOf, prevMonth, requireVat, tie } from './pp30';
-import { paymentInvariants, paymentStateOf } from './payment';
+import { CIT_FORMS, YEAR, citBuild, citInvariants, citSnapshotModel, isCit } from './cit';
+import { filingHref as filingHref0, paymentInvariants, paymentStateOf } from './payment';
 import { PND_FORMS, type PndForm, formName, isPnd, pndAttachment, pndModel, pndRows, pndSnapshot, wantedWhtRows, whtKey, whtRowOfWt } from './pnd-wht';
 import { lastDayOf, pp36Attachment, pp36Key, pp36Model, pp36RowOf, pp36Rows, pp36Snapshot, pp36Vat } from './pp36';
 
@@ -24,18 +25,21 @@ const EXIT = 'ออกใบลดหนี้ / ใบเพิ่มหนี
 /** Ruling 2 (TX2): a voucher a ภ.ง.ด. / ภ.พ.36 took cannot be cancelled (so "cancel and reissue" is not a path); what works is a NEW voucher in the next open month for the part that was wrong. */
 const WHT_EXIT = 'ออกใบสำคัญจ่ายใหม่ในงวดถัดไปสำหรับส่วนที่ต้องแก้ (ใบสำคัญจ่ายนี้ยกเลิกหรือออกใหม่ไม่ได้ เพราะยื่นแบบแล้ว)';
 const isAnnex = (f: FilingForm) => f === 'PP36' || isPnd(f);
-const hrefOf = (form: FilingForm, period: string) => (form === 'PP30' ? `/tax/vat?period=${period}` : `/tax/wht?tab=${form.toLowerCase()}&period=${period}`);
+const hrefOf = filingHref0;
+/** TX3a: the year forms name a fiscal year, the others a month. */
+const periodTh = (form: FilingForm, period: string) => (isCit(form) ? `ปีบัญชี ${Number(period) + 543}` : `เดือน ${monthLabelTh(period)}`);
 /** Which box states the tax of a form (the history's `net`). */
-const NET_BOX: Partial<Record<FilingForm, string>> = { PP30: '11', PND2: 'tax', PND3: 'tax', PND53: 'tax', PND54: 'tax', PP36: 'vat' };
+const NET_BOX: Partial<Record<FilingForm, string>> = { PP30: '11', PND2: 'tax', PND3: 'tax', PND53: 'tax', PND54: 'tax', PP36: 'vat', PND50: 'net', PND51: 'tax' };
 
 const NOT_BUILT = () => fail(404, 'filing.not_available', 'ยังไม่มีแบบนี้ในระบบ');
 /** The frozen snapshot of a finalized ภ.ง.ด. / ภ.พ.36 as the model reads it (ruling 1: never recomputed). */
-const snapshotModel = (f: Filing): FilingModel => ({ form: f.form, period: f.period, status: 'finalized', boxes: f.boxes, tieOuts: f.tieOuts, blockers: [], warnings: [],
+const snapshotModel = (f: Filing): FilingModel => f.cit || f.pnd51 ? citSnapshotModel(f) : ({ form: f.form, period: f.period, status: 'finalized', boxes: f.boxes, tieOuts: f.tieOuts, blockers: [], warnings: [],
   attachment: f.wht ? pndAttachment(f.wht) : pp36Attachment(f.p36 ?? []), finalizedAt: f.finalizedAt, finalizedBy: f.finalizedBy, company: f.company, version: 1, dueDate: f.dueDate, exports: f.form === 'PP36' || f.form === 'PND54' ? ['pdf'] : ['rdprep-txt', 'pdf'] });
 
 /** A form's filing for a period: the frozen snapshot once finalized (ruling 1: never recomputed), else the draft computed from the documents. */
 export function getFiling(st: MockState, companyId: string, form: FilingForm, period: string): FilingModel {
   if (form === 'PP30') { requireVat(st, companyId); const m = getPp30(st, companyId, period), f = filingOf(st, companyId, period); return f ? { ...m, payment: paymentStateOf(st, f) } : m; }
+  if (isCit(form)) { const f = filingOf(st, companyId, period, form); return f ? snapshotModel(f) : citBuild(st, companyId, form, period).model; } // TX3a: ภ.ง.ด.50 / 51, period = the fiscal year, no payment (ruling 8: no CIT journal)
   if (!isAnnex(form)) throw NOT_BUILT();
   if (!PERIOD.test(period)) throw fail(422, 'filing.bad_period', 'งวดต้องอยู่ในรูปแบบ ปปปป-ดด');
   const f = filingOf(st, companyId, period, form);
@@ -45,14 +49,15 @@ export function getFiling(st: MockState, companyId: string, form: FilingForm, pe
 
 /** Finalize (ยืนยันยื่นแบบ): one per company x form x period (I10); refused while a blocker stands and on a preview that went stale. Stores the boxes, the tie-outs and the exact list of documents with the figures each gave. */
 export function finalizeFiling(st: MockState, companyId: string, form: FilingForm, period: string, version: number, actor: Actor, ack = false): FilingModel {
-  if (form !== 'PP30' && !isAnnex(form)) throw NOT_BUILT();
+  if (form !== 'PP30' && !isAnnex(form) && !isCit(form)) throw NOT_BUILT();
   if (form === 'PP30') requireVat(st, companyId);
-  if (!PERIOD.test(period)) throw fail(422, 'filing.bad_period', 'งวดต้องอยู่ในรูปแบบ ปปปป-ดด');
+  if (!isCit(form) && !PERIOD.test(period)) throw fail(422, 'filing.bad_period', 'งวดต้องอยู่ในรูปแบบ ปปปป-ดด');
   const name = formName(form);
-  if (filingOf(st, companyId, period, form)) throw fail(409, 'filing.already_finalized', `แบบ ${name} เดือน ${monthLabelTh(period)} ยืนยันแล้ว`);
-  const m = form === 'PP30' ? pp30Model(st, companyId, period) : form === 'PP36' ? pp36Model(st, companyId, period) : pndModel(st, companyId, form as PndForm, period);
+  if (filingOf(st, companyId, period, form)) throw fail(409, 'filing.already_finalized', `แบบ ${name} ${periodTh(form, period)} ยืนยันแล้ว`);
+  const built = isCit(form) ? citBuild(st, companyId, form, period) : undefined;
+  const m = built ? built.model : form === 'PP30' ? pp30Model(st, companyId, period) : form === 'PP36' ? pp36Model(st, companyId, period) : pndModel(st, companyId, form as PndForm, period);
   if (m.version !== version) throw fail(409, 'filing.stale', 'เอกสารในงวดนี้เปลี่ยนไปตั้งแต่ที่ดูตัวอย่าง โหลดใหม่แล้วตรวจอีกครั้ง');
-  if (m.blockers.length) throw fail(422, 'filing.blocked', `ยืนยันแบบ ${name} เดือน ${monthLabelTh(period)} ไม่ได้: ${m.blockers[0].labelTh}`);
+  if (m.blockers.length) throw fail(422, 'filing.blocked', `ยืนยันแบบ ${name} ${periodTh(form, period)} ไม่ได้: ${m.blockers[0].labelTh}`);
   if (form === 'PP36' && !ack) throw fail(422, 'filing.ack_required', 'ต้องติ๊กรับทราบก่อนยืนยันยื่นแบบ ภ.พ.36'); // parity: the acknowledgement is mandatory
   const co = st.companies.find((c) => c.id === companyId)!;
   const prev = filingOf(st, companyId, prevMonth(period));
@@ -65,10 +70,11 @@ export function finalizeFiling(st: MockState, companyId: string, form: FilingFor
       if (isClosed(st, companyId, date)) throw fail(422, 'period.closed', `งวดบัญชี ${monthLabelTh(date.slice(0, 7))} ปิดแล้ว ยืนยันแบบ ภ.พ.30 ไม่ได้ (ระบบปิดภาษีขาย-ภาษีซื้อเข้าบัญชีภาษีค้างจ่ายวันที่ยืนยัน) ทางออก: เปิดงวดบัญชีอีกครั้ง`);
     }
   }
-  const snap = form === 'PP30'
+  const snap = built ? { docs: [], carryIn: '0.00', pp36: '0.00', ...(built.cit ? { cit: built.cit } : { pnd51: built.pnd51 }) }
+    : form === 'PP30'
     ? { docs: pp30Docs(st, companyId, period), carryIn: prev ? prev.boxes.find((b) => b.code === '9')!.amount : '0.00', pp36: fromSatang(pp36VatOf(st, companyId, period)), journal: netting }
     : form === 'PP36' ? pp36Snapshot(st, companyId, period) : pndSnapshot(st, companyId, form as PndForm, period);
-  const tieOuts = form === 'PP36' ? [tie('filing.tie.pp36Gl', boxOf(m.boxes, 'vat'), pp36Gl(st, companyId, period, (snap as ReturnType<typeof pp36Snapshot>).journal ?? []))] : m.tieOuts;
+  const tieOuts = built ? m.tieOuts : form === 'PP36' ? [tie('filing.tie.pp36Gl', boxOf(m.boxes, 'vat'), pp36Gl(st, companyId, period, (snap as ReturnType<typeof pp36Snapshot>).journal ?? []))] : m.tieOuts;
   st.filings.push({ companyId, form, period, status: 'finalized', company: { taxId: co.taxId, branchCode: co.branchCode, legalNameTh: co.legalNameTh }, boxes: m.boxes, tieOuts, ...snap,
     finalizedAt: stamp(), finalizedBy: actor.name, dueDate: m.dueDate });
   logAudit(st, actor, companyId, 'filing.finalize', `${form} ${period}`, { status: 'draft' }, { status: 'finalized', net: boxOf(m.boxes, NET_BOX[form]!) });
@@ -87,7 +93,8 @@ function pp36Gl(st: MockState, companyId: string, period: string, entry: Journal
 /** The company's finalized filings of a form, newest first. */
 export function filingHistory(st: MockState, companyId: string, form: FilingForm): FilingHistoryItem[] {
   return st.filings.filter((f) => f.companyId === companyId && f.form === form).sort((a, b) => b.period.localeCompare(a.period))
-    .map((f) => ({ form: f.form, period: f.period, finalizedAt: f.finalizedAt, finalizedBy: f.finalizedBy, net: f.boxes.find((b) => b.code === NET_BOX[f.form])!.amount, overpaid: f.form === 'PP30' && boxOf(f.boxes, '9') > 0, ...paymentItem(st, f) }));
+    .map((f) => { const net = boxOf(f.boxes, NET_BOX[f.form]!), cit = isCit(f.form); // a ภ.ง.ด.50 'net' is signed (negative = overpaid)
+      return { form: f.form, period: f.period, finalizedAt: f.finalizedAt, finalizedBy: f.finalizedBy, net: cit ? fromSatang(Math.abs(net)) : f.boxes.find((b) => b.code === NET_BOX[f.form])!.amount, overpaid: cit ? net < 0 : f.form === 'PP30' && boxOf(f.boxes, '9') > 0, ...(cit ? {} : paymentItem(st, f)) }; });
 }
 
 const paymentItem = (st: MockState, f: Filing) => { const p = paymentStateOf(st, f); return { payment: p.status, ...(p.paidOn ? { paidOn: p.paidOn } : {}) }; };
@@ -199,6 +206,7 @@ export function filingInvariants(st: MockState): string[] {
     seen.add(`${f.companyId}|${f.form}|${f.period}`);
     for (const t of f.tieOuts) if (sat(t.left) - sat(t.right) + (t.reconciling ?? []).reduce((n, r) => n + sat(r.amount), 0) !== sat(t.diff)) out.push(`${w}: tie-out ${t.labelKey} diff ${t.diff} is not left - right + reconciling`);
     if (f.form === 'PP30') ppInvariants(st, f, w, out);
+    else if (isCit(f.form)) citInvariants(st, f, w, out);
     else if (f.wht) pndInvariants(st, f, w, out);
     else pp36Invariants(st, f, w, out);
   }
@@ -299,3 +307,4 @@ export function unfiledForms(st: MockState, companyId: string, month: string): F
   return out;
 }
 export const filingHref = hrefOf;
+export { CIT_FORMS, YEAR };

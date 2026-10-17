@@ -181,3 +181,8 @@ Entry format — terse, greppable by symptom:
 - **Symptom:** a unit test issuing a PV in 2026-08 (to build a ภ.พ.36 month) throws `bank.before_go_live` (ba-kbank starts reconciling 2026-09-01).
 - **Root cause:** a PV resolves to the default bank account, whose go-live date refuses earlier document dates.
 - **Fix:** give the PV `header.bankAccountId: 'ba-cash'` (the cash box has no go-live).
+
+## A report tie-out is red after cancelling a document on the real clock, green under `withFixedClock` (TX2c review)
+- **Symptom:** `wht-receivable` (or any report that decides whether a cancelled document counts at an as-of date) ties in a pinned-clock test but shows a false diff in the running app / an unpinned test after a cancel.
+- **Root cause:** `ledger.ts withReversal` (the computed preview) dates a reversal at `doc.cancel.at` (wall clock), while the entry actually STORED in `st.journals` (`commands.ts reverseEntry` / `correctionReversal`) is dated `today()` (the mock anchor), the first open date (closed month) or the original date. `companyEntries` (the GL side of every tie-out) reads the stored entry. They coincide only under `withFixedClock`.
+- **Fix:** anything that needs "when did this document's reversal hit the GL" reads the stored entry (`st.journals.find(j => j.docId === id)?.preview.entries`, kind `reversal` -> `date`), never `cancel.at` or `withReversal` (`whtAllocations` does this). Test it with an UNPINNED cancel and a closed-month (late) reversal.

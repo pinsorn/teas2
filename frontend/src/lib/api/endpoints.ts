@@ -3,7 +3,7 @@ import type {
   DocType, HomeInbox, MarkKey, Money, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, RemainingLine, Revision, SearchHit,
   DepositRow, DocOpening, SettlementDifferenceRole, SettlementKind, SettlementRecord, DpRow, FaSource, IsoDate, ChecklistItem, PeriodsView,
 } from '@/domain/types';
-import type { FilingForm, FilingHistoryItem, FilingModel, TaxPaymentLines } from '@/domain/filings';
+import type { CitYearPatch, CitYearView, FilingForm, FilingHistoryItem, FilingModel, TaxPaymentLines } from '@/domain/filings';
 import type { RecordKind, RecordRow } from '@/domain/records';
 import type { ReportKind, ReportModel } from '@/domain/reports';
 import { api, ApiError, normalizeProblem } from './client';
@@ -144,6 +144,12 @@ export const endpoints = {
   getFiling: (form: FilingForm, period: string) => api<FilingModel>('GET', `/filings/${form}/${encodeURIComponent(period)}`),
   finalizeFiling: (form: FilingForm, period: string, version: number, ack?: boolean) => api<FilingModel>('POST', `/filings/${form}/${encodeURIComponent(period)}/finalize`, { version, ...(ack ? { ack } : {}) }),
   /** TX2c: the statement lines a finalized return can be paid from (bank.reconcile), pay it from one, and undo a payment (same URL as reverseBankTransfer). */
+  /** TX3a: the CIT year data (capital, prior losses, the ภ.ง.ด.51 estimate) and the user adjustments of a fiscal year (period = YYYY). */
+  getCitYear: (year: string) => api<CitYearView>('GET', `/cit-years/${encodeURIComponent(year)}`),
+  putCitYear: (year: string, patch: CitYearPatch) => api<CitYearView>('PUT', `/cit-years/${encodeURIComponent(year)}`, patch),
+  addCitAdjustment: (year: string, b: { line: number; amount: string; reason: string }) => api<CitYearView>('POST', `/cit-years/${encodeURIComponent(year)}/adjustments`, b),
+  updateCitAdjustment: (year: string, id: string, b: { line: number; amount: string; reason: string }) => api<CitYearView>('PUT', `/cit-years/${encodeURIComponent(year)}/adjustments/${encodeURIComponent(id)}`, b),
+  deleteCitAdjustment: (year: string, id: string) => api<CitYearView>('DELETE', `/cit-years/${encodeURIComponent(year)}/adjustments/${encodeURIComponent(id)}`),
   taxPaymentLines: (form: FilingForm, period: string) => api<TaxPaymentLines>('GET', `/filings/${form}/${encodeURIComponent(period)}/payment-lines`),
   payTax: (lineId: string, req: { form: FilingForm; period: string; extras?: { accountCode: string; amount: string; description?: string }[] }) => api<BankLine>('POST', `/finance/bank-lines/${encodeURIComponent(lineId)}/pay-tax`, req),
   reverseTaxPayment: (journalId: string, reason: string) => api<{ id: string; reversed: boolean }>('POST', `/finance/bank-journals/${encodeURIComponent(journalId)}/reverse`, { reason }),

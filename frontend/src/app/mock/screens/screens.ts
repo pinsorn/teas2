@@ -190,5 +190,8 @@ export const SCREENS: Screen[] = [
   { name: 'whtPp36', route: '/tax/wht?tab=pp36&period=2026-10', company: 'both', states: true },
   { name: 'whtWithheld', route: '/tax/wht?tab=withheld', company: 'both', states: true },
   { name: 'whtMissingCert', route: '/tax/wht?tab=missing', company: 'both', states: true },
+  { name: 'cit', route: '/tax/cit', company: 'both', states: true }, // TX3a: the ภ.ง.ด.50 of the last year that ended (2025: the year-end close is not done in the seed)
+  { name: 'citPnd51', route: '/tax/cit?tab=pnd51&period=2026', company: 'both', states: true },
+  { name: 'citYear2026', route: '/tax/cit?period=2026', company: 'both', states: true },
   { name: 'styleGuide', route: '/style-guide', company: 'both', states: false },
 ];

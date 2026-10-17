@@ -21,7 +21,7 @@ export function FinalizeDialog({ open, form, month, boxes, pending, error, onCon
   const [ack, setAck] = useState(false);
   const [wasOpen, setWasOpen] = useState(open);
   if (wasOpen !== open) { setWasOpen(open); if (!open) setAck(false); } // F2: the tick never survives a finalize (the parent closes the dialog) or a close
-  const vat = form === 'PP30', needAck = form === 'PP36';
+  const vat = form === 'PP30', cit = form === 'PND50' || form === 'PND51', needAck = form === 'PP36';
   const confirmRef = useRef<HTMLButtonElement>(null);
   const box = (code: string) => boxes.find((b) => b.code === code);
   const net = box('11');
@@ -29,8 +29,8 @@ export function FinalizeDialog({ open, form, month, boxes, pending, error, onCon
     <AlertDialog open={open} onOpenChange={(o) => { if (!o) { setAck(false); onCancel(); } }}>
       <AlertDialogContent onOpenAutoFocus={(e) => { e.preventDefault(); confirmRef.current?.focus(); }}>
         <AlertDialogHeader>
-          <AlertDialogTitle>{t('title', { form: tf(form), month })}</AlertDialogTitle>
-          <AlertDialogDescription>{vat ? t('body') : t('bodyOther')}</AlertDialogDescription>
+          <AlertDialogTitle>{cit ? t('titleYear', { form: tf(form), year: month }) : t('title', { form: tf(form), month })}</AlertDialogTitle>
+          <AlertDialogDescription>{vat ? t('body') : cit ? t('bodyCit') : t('bodyOther')}</AlertDialogDescription>
         </AlertDialogHeader>
         {vat ? (
           <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-body">

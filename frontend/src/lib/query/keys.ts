@@ -25,6 +25,7 @@ export const qk = {
   deposits: (c: string) => [c, 'deposits'] as const,
   settlements: (c: string, params: object) => [c, 'settlements', params] as const,
   settlement: (c: string, id: string) => [c, 'settlement', id] as const,
+  citYear: (c: string, year: string) => [c, 'filings', 'cit-year', year] as const,
   filings: (c: string, form: string) => [c, 'filings', form] as const,
   filing: (c: string, form: string, period: string) => [c, 'filings', form, period] as const,
   report: (c: string, kind: ReportKind, params: Record<string, string>) => [c, 'report', kind, params] as const,
