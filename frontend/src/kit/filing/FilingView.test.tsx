@@ -107,6 +107,18 @@ it('TX2b: the ภ.พ.36 confirm needs the acknowledgement ticked, and sends it'
   expect(onConfirm).toHaveBeenCalledWith(true);
 });
 
+it('TX4: the ภ.พ.30 dialog shows the net payable (box 11), or the net overpaid (box 12) when the month overpays', async () => {
+  const boxes = (b11: string, b12: string) => [{ code: '5', labelTh: 'ภาษีขาย', amount: '100.00' }, { code: '7', labelTh: 'ภาษีซื้อ', amount: '300.00' }, { code: '11', labelTh: 'ภาษีสุทธิที่ต้องชำระ', amount: b11 }, { code: '12', labelTh: 'ภาษีสุทธิที่ชำระเกิน', amount: b12 }];
+  const props = { open: true, form: 'PP30' as const, month: 'ก.ย. 2569', pending: false, error: undefined, onConfirm: () => undefined, onCancel: () => undefined };
+  const a = render(<FinalizeDialog {...props} boxes={boxes('0.00', '200.00')} />);
+  let dialog = await screen.findByRole('alertdialog');
+  expect(dialog).toHaveTextContent('ภาษีสุทธิที่ชำระเกิน'); expect(dialog).toHaveTextContent('200.00'); expect(dialog).not.toHaveTextContent('ภาษีสุทธิที่ต้องชำระ');
+  a.unmount();
+  render(<FinalizeDialog {...props} boxes={boxes('70.00', '0.00')} />);
+  dialog = await screen.findByRole('alertdialog');
+  expect(dialog).toHaveTextContent('ภาษีสุทธิที่ต้องชำระ'); expect(dialog).toHaveTextContent('70.00');
+});
+
 it('F2: the acknowledgement does not survive a close (a reopened dialog starts unticked)', async () => {
   const props = { form: 'PP36' as const, month: 'ก.ย. 2569', boxes: [], pending: false, error: undefined, onConfirm: () => undefined, onCancel: () => undefined };
   const { rerender } = render(<FinalizeDialog open {...props} />);

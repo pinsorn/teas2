@@ -15,7 +15,7 @@ const FORMS: { key: Cert['form'] | 'x'; label: string }[] = [
 const CONDITIONS: { key: Cert['condition'] | 'x'; label: string }[] = [
   { key: 'withhold', label: '(1) หัก ณ ที่จ่าย' }, { key: 'forever', label: '(2) ออกให้ตลอดไป' }, { key: 'once', label: '(3) ออกให้ครั้งเดียว' }, { key: 'x', label: '(4) อื่น ๆ (ระบุ)' },
 ];
-/** The income rows of the form. `fill` marks the row a WT can fill: the certificate carries one income type; 40(1)-(3) and 40(4)(ก) have their own rows, everything else (40(5)-(8)) goes on the "อื่น ๆ (ระบุ)" row with its label. */
+/** The income rows of the form. A certificate carries one income type: see `rowOfIncome` for the row it fills. */
 const ROWS: { key: string; label: string; ind?: number }[] = [
   { key: '1', label: '1. เงินเดือน ค่าจ้าง เบี้ยเลี้ยง โบนัส ฯลฯ ตามมาตรา 40 (1)' }, { key: '2', label: '2. ค่าธรรมเนียม ค่านายหน้า ฯลฯ ตามมาตรา 40 (2)' }, { key: '3', label: '3. ค่าแห่งลิขสิทธิ์ ฯลฯ ตามมาตรา 40 (3)' },
   { key: '4a', label: '4. (ก) ดอกเบี้ย ฯลฯ ตามมาตรา 40 (4) (ก)' }, { key: '4b', label: '(ข) เงินปันผล เงินส่วนแบ่งกำไร ฯลฯ ตามมาตรา 40 (4) (ข)', ind: 1 },
@@ -27,7 +27,9 @@ const ROWS: { key: string; label: string; ind?: number }[] = [
   { key: '5', label: '5. การจ่ายเงินได้ที่ต้องหักภาษี ณ ที่จ่าย ตามคำสั่งกรมสรรพากรที่ออกตามมาตรา 3 เตรส เช่น รางวัล ส่วนลดหรือประโยชน์ใด ๆ เนื่องจากการส่งเสริมการขาย รางวัลในการประกวด การแข่งขัน การชิงโชค ค่าแสดงของนักแสดงสาธารณะ ค่าจ้างทำของ ค่าโฆษณา ค่าเช่า ค่าขนส่ง ค่าบริการ ค่าเบี้ยประกันวินาศภัย ฯลฯ' },
   { key: '6', label: '6. อื่น ๆ (ระบุ)' },
 ];
-export const rowOfIncome = (incomeType: string): string => (incomeType.startsWith('40(1)') ? '1' : incomeType.startsWith('40(2)') ? '2' : incomeType.startsWith('40(3)') ? '3' : incomeType.startsWith('40(4)') ? '4a' : '6');
+export const rowOfIncome = (incomeType: string, form: Cert['form']): string =>
+  incomeType.startsWith('40(1)') ? '1' : incomeType.startsWith('40(2)') ? '2' : incomeType.startsWith('40(3)') ? '3' : incomeType.startsWith('40(4)ก') ? '4a' : incomeType.startsWith('40(4)ข') ? '4b'
+    : form !== 'PND54' && /^40\([5-8]\)/.test(incomeType) ? '5' : '6'; // a domestic 40(5)-(8) payment is withheld under the ม.3 เตรส orders (row 5); a foreign one (ภ.ง.ด.54, ม.70) and anything else is row 6
 const TIN_GROUPS = [1, 4, 5, 2, 1];
 
 function Check({ on }: { on: boolean }) {
@@ -51,7 +53,7 @@ function Party({ title, name, taxId, address, kind }: { title: string; name: str
 }
 
 function Sheet({ m, copy }: { m: PaperModel; copy: number }) {
-  const c = m.certificate!, row = rowOfIncome(c.incomeType);
+  const c = m.certificate!, row = rowOfIncome(c.incomeType, c.form);
   return (
     <PaperPage stamp={m.voidMark}>
       <div className="paper-rd-copy">{COPIES[copy]}</div>
@@ -73,7 +75,7 @@ function Sheet({ m, copy }: { m: PaperModel; copy: number }) {
             const on = r.key === row;
             return (
               <tr key={r.key} data-row={r.key} {...(on ? { 'data-field': 'income-row' } : {})} className={r.ind ? `paper-rd-ind${r.ind}` : undefined}>
-                <td>{r.label}{on && r.key === '6' ? ` ${c.incomeLabel}` : ''}</td>
+                <td>{r.label}{on && (r.key === '5' || r.key === '6') ? ` ${c.incomeLabel}` : ''}</td>
                 <td className="c">{on ? formatDateBE(c.paidOn) : ''}</td><td className="r">{on ? formatMoney(c.income) : ''}</td><td className="r">{on ? formatMoney(c.tax) : ''}</td>
               </tr>
             );
@@ -96,7 +98,7 @@ function Sheet({ m, copy }: { m: PaperModel; copy: number }) {
   );
 }
 
-/** WT (50 ทวิ, D-21): payer = our company as issued, payee = the voucher's stored party, the return ticked, the income row with date / amount / tax, the total in words from the server, the payer's condition, the date of issue,
+/** WT (50 ทวิ, D-21): payer = the company (the paper freezes at the first print, I7), payee = the voucher's stored party, the return ticked, the income row with date / amount / tax, the total in words from the server, the payer's condition, the date of issue,
  *  and TWO copies (ฉบับที่ 1 / 2) on one print. The "ลำดับที่" box is `[SP-R]` (the line number in the return is not known when the certificate is issued) and stays empty; the book number (เล่มที่) has no counterpart in TEAS numbering (WT-YYYYMM-NNNN) and stays blank.
  *  The paper is the server's frozen snapshot (I7). */
 export function WhtCertificatePaper({ model }: { model: PaperModel; /** Tests only; the certificate is one fixed sheet, nothing is measured. */ measure?: (rowIndex: number) => number }) {

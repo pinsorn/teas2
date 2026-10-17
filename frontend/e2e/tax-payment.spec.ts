@@ -15,7 +15,7 @@ test('finalize a ภ.พ.30, pay it from a statement line, see it paid everywher
   await expect(page.getByTestId('filed-banner')).toBeVisible();
   const f = await page.evaluate(async () => (await (await fetch('/bff/v1/filings/PP30/2026-09')).json()) as { boxes: { code: string; amount: string }[]; payment: { status: string; due: string } });
   const due = f.payment.due;
-  expect(Number(due)).toBeGreaterThan(0); // the September box 8; the seeded July / August returns also owe tax if a future seed changes this
+  expect(Number(due)).toBeGreaterThan(0); // the September net payable (box 11); the seeded July / August returns also owe tax if a future seed changes this
   expect(f.payment.status).toBe('unpaid');
   const csv = kbizCsv({ accountNo: KBANK_ACCOUNT_NO, accountName: 'บริษัท ตัวอย่าง จำกัด', from: '2026-10-01', opening: KBANK_SEP_CLOSING, lines: withBalances(KBANK_SEP_CLOSING, [['2026-10-14', 'ชำระภาษี กรมสรรพากร', `-${due}`]]) });
   const status = await page.evaluate(async ([content, name]) => (await fetch('/bff/v1/finance/bank-accounts/ba-kbank/imports', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fileName: name, format: 'kbiz-csv', content }) })).status, [Buffer.from(csv, 'utf8').toString('base64'), KBIZ_OCT_NAME]);

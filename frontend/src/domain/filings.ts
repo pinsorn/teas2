@@ -16,7 +16,7 @@ export interface FilingModel {
 export interface TaxPaymentState { due: Money; status: 'unpaid' | 'paid' | 'nothing_due'; paidOn?: IsoDate; journalId?: string; lineId?: string; accountId?: string; extras?: Money }
 /** TX2c: the statement lines a return can be paid from (money out, after the period, at least the tax; the exact ones first). */
 export interface TaxPaymentLines { due: Money; lines: (BankLine & { accountName: string })[] }
-/** One finalized filing in the history list. `net` = box 11 (the tax to pay, or the excess). */
+/** One finalized filing in the history list. `net` = box 11 (the net tax to pay), or box 12 (the net excess) when the month overpays. */
 export interface FilingHistoryItem { form: FilingForm; period: string; finalizedAt: string; finalizedBy: string; net: Money; overpaid: boolean; payment?: TaxPaymentState['status']; paidOn?: IsoDate }
 
 /** TX3a: the year data of the corporate income tax (ภ.ง.ด.50 / 51): what the books cannot say. Signed adjustments are per ภ.ง.ด.50 line 10 / 11 (added to the profit) and 13 (deducted); prior-year losses are listed by the year they arose. */

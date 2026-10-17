@@ -30,7 +30,8 @@ describe('WhtCertificatePaper (50 ทวิ)', () => {
       expect(p.textContent).toContain('7/8 ถนนมิตรภาพ');
       expect(p.querySelector('[data-field="number"]')!.textContent).toBe('WT-202610-0001');
       expect(checked(p)).toEqual(['(4) ภ.ง.ด.3', '(1) หัก ณ ที่จ่าย']); // the return and the payer's condition
-      expect(p.querySelector('[data-field="income-row"]')!.textContent).toContain('อื่น ๆ (ระบุ) 40(8) ค่าบริการ'); // 40(8) has no row of its own on the form: row 6
+      expect(p.querySelector('[data-field="income-row"]')!.textContent).toContain('40(8) ค่าบริการ'); // a domestic 40(8) service is a ม.3 เตรส payment: row 5, with its type label
+      expect(p.querySelector('[data-field="income-row"]')!.getAttribute('data-row')).toBe('5');
       expect(p.querySelector('[data-field="income-row"]')!.textContent).toContain('5,000.00');
       expect(p.querySelector('[data-field="tax-total"]')!.textContent).toBe('150.00');
       expect(p.textContent).toContain('(หนึ่งร้อยห้าสิบบาทถ้วน)');
@@ -43,6 +44,10 @@ describe('WhtCertificatePaper (50 ทวิ)', () => {
     expect(p.querySelector('[data-field="income-row"]')!.getAttribute('data-row')).toBe('2');
     expect(p.querySelector('[data-field="income-row"]')!.textContent).toContain('5,000.00');
     expect(p.querySelectorAll('[data-field="income-row"]')).toHaveLength(1);
+  });
+  it('rent 40(5) is row 5 too; a PND54 foreign payment (ม.70) and an unknown type stay on row 6; a 40(4)ข dividend is not the interest row', () => {
+    const row = (form: 'PND3' | 'PND54', incomeType: string) => render(<WhtCertificatePaper model={{ ...base, certificate: { ...base.certificate!, form, incomeType, incomeLabel: `${incomeType} x` } }} />).container.querySelector('[data-paper-page] [data-field="income-row"]')!.getAttribute('data-row');
+    expect([row('PND3', '40(5)'), row('PND3', '40(6)'), row('PND3', '40(7)'), row('PND54', '40(8)'), row('PND54', '40(3)'), row('PND3', '40(4)ก'), row('PND3', '40(4)ข'), row('PND3', '')]).toEqual(['5', '5', '5', '6', '3', '4a', '4b', '6']);
   });
   it('the return and the condition follow the model: PND53 / gross-up forever; PND54 / once', () => {
     const a = render(<WhtCertificatePaper model={{ ...base, certificate: { ...base.certificate!, form: 'PND53', condition: 'forever' } }} />);

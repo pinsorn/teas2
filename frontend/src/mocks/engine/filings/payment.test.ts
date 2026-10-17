@@ -53,6 +53,19 @@ describe('TX4 the payment cap is the net payable box (11), not box 8 (the month 
   });
 });
 
+describe('TX4 the finalize audit records the net', () => {
+  it('an overpaid month logs its excess (box 12), not 0', () => {
+    const d = createDraft(st, CO, 'PB', { header: { partyId: st.parties.find((p) => p.companyId === CO && p.kind === 'vendor' && p.vatRegistered)!.id, documentDate: '2026-09-15' }, lines: [{ id: 'a', description: 'x', qty: '1', unit: 'งาน', unitPrice: '300000.00', taxCode: 'S7' }] }, me, 'k-audit');
+    issue(st, d.id, d.version, me);
+    const m = pp30Model(st, CO, '2026-09');
+    const excess = m.boxes.find((b) => b.code === '12')!.amount;
+    expect(sat(excess)).toBeGreaterThan(0);
+    finalizeFiling(st, CO, 'PP30', '2026-09', m.version, me);
+    const e = st.audit.filter((a) => a.command === 'filing.finalize').pop()!;
+    expect(JSON.stringify(e.after)).toContain(`"net":${sat(excess)}`);
+  });
+});
+
 describe('2.3 finalize posts the netting', () => {
   it('the two seeded ภ.พ.30 carry their entry, dated the day each was filed; the invariants hold', () => {
     for (const [period, date] of [['2026-07', '2026-08-14'], ['2026-08', '2026-09-14']]) {
@@ -106,7 +119,7 @@ function statement(lines: [date: string, description: string, amount: string][])
 }
 const jnl = (id: string) => st.bankJournals.find((j) => j.id === id)!;
 const bal = (code: string) => glBalance(st, CO, code, '2099-12-31'); // debit - credit, satang
-const PP30_AUG = { form: 'PP30' as const, period: '2026-08' }; // seeded, finalized, tax 7,875.00 (box 8)
+const PP30_AUG = { form: 'PP30' as const, period: '2026-08' }; // seeded, finalized, tax 7,875.00 (box 11)
 const title = (f: { form: string; period: string }) => `ชำระภาษี ${formName(f.form)} เดือน ${monthLabelTh(f.period)}`;
 const lineOf = (id: string) => st.bankLines.find((l) => l.id === id)!;
 /** The seeded ภ.พ.30 of 2026-08 paid from a fresh 7,875.00 line. */

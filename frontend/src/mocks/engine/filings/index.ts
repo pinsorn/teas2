@@ -77,7 +77,7 @@ export function finalizeFiling(st: MockState, companyId: string, form: FilingFor
   const tieOuts = built ? m.tieOuts : form === 'PP36' ? [tie('filing.tie.pp36Gl', boxOf(m.boxes, 'vat'), pp36Gl(st, companyId, period, (snap as ReturnType<typeof pp36Snapshot>).journal ?? []))] : m.tieOuts;
   st.filings.push({ companyId, form, period, status: 'finalized', company: { taxId: co.taxId, branchCode: co.branchCode, legalNameTh: co.legalNameTh }, boxes: m.boxes, tieOuts, ...snap,
     finalizedAt: stamp(), finalizedBy: actor.name, dueDate: m.dueDate });
-  logAudit(st, actor, companyId, 'filing.finalize', `${form} ${period}`, { status: 'draft' }, { status: 'finalized', net: boxOf(m.boxes, NET_BOX[form]!) });
+  logAudit(st, actor, companyId, 'filing.finalize', `${form} ${period}`, { status: 'draft' }, { status: 'finalized', net: boxOf(m.boxes, form === 'PP30' && boxOf(m.boxes, '12') > 0 ? '12' : NET_BOX[form]!) });
   return getFiling(st, companyId, form, period);
 }
 
