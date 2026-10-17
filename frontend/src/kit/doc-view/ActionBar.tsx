@@ -11,6 +11,7 @@ import type { Doc, DocType, MarkKey } from '@/domain/types';
 import { settleable } from '../doc-editor/SettlementPanel';
 import { ApprovalActions } from './ApprovalActions';
 import { ScheduleActions } from './ScheduleActions';
+import { PayrollActions } from '../payroll/PayRunDialog';
 
 /** A descriptor may list the conversions it allows; the "convert to…" button (and its dialog) exists only for those. */
 export type ConvertibleDescriptor = DocDescriptor & { convertsTo?: DocType[] };
@@ -58,7 +59,7 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, comp
             {(p) => <Button {...p} asChild={!p.disabled}>{p.disabled ? <span>{t('issueDraft')}</span> : <Link href={routes.edit(doc.id)}>{t('issueDraft')}</Link>}</Button>}
           </Guarded>
         ) : (
-          <Guarded why={live ? (doc.locks.some((l) => l.kind === 'reversal') ? t('whyFinal') : doc.header.disposal ? t('whyDisposalInvoice') : missing(d.permissions.create)) : doc.status === 'replaced' ? t('whyReplaced') : t('whyCancelled')}>
+          <Guarded why={live ? (doc.locks.some((l) => l.kind === 'reversal') ? t('whyFinal') : doc.header.disposal ? t('whyDisposalInvoice') : d.type === 'PR' && doc.status === 'settled' ? t('whyPayrollPaid') : missing(d.permissions.create)) : doc.status === 'replaced' ? t('whyReplaced') : t('whyCancelled')}>
             {(p) => <Button {...p} asChild={!p.disabled}>{p.disabled ? <span>{t('edit')}</span> : <Link href={routes.edit(doc.id)}>{t('edit')}</Link>}</Button>}
           </Guarded>
         )}
@@ -98,6 +99,7 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, comp
             {(p) => <Button {...p} variant="outline" onClick={() => onMark?.(m)}>{t(MARK_LABEL[m])}</Button>}
           </Guarded>
         )) : null}
+        {d.type === 'PR' && live ? <PayrollActions doc={doc} permissions={permissions} needPermission={(permission) => ts('needPermission', { permission })} /> : null}
         {live && !engineMade ? <ScheduleActions doc={doc} permissions={permissions} /> : null}
         {live && !system ? (
           <Guarded why={missing(d.permissions.cancel) ?? locked}>

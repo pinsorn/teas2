@@ -1,4 +1,4 @@
-import type { Company, Doc, DocType, PaperModel } from '@/domain/types';
+import type { Company, Doc, DocType, Money, PaperModel, PayslipPaperModel } from '@/domain/types';
 import { formatDateBE, formatMoney } from '@/lib/format';
 import type { ctx } from '../handlers/common';
 import { reasonTh } from '../fixtures/reason-codes';
@@ -7,6 +7,7 @@ import { compute } from './commands';
 import { jvBalance, jvEntryLines, nextMonthStart } from './journal';
 import { fromSatang, toSatang } from './money';
 import { notesUpTo } from './notes';
+import { monthLabelTh } from './periods';
 import { cashBankId, freezeWht } from './settlement';
 type Ctx = ReturnType<typeof ctx>;
 
@@ -164,4 +165,34 @@ function adjustmentPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
   return { ...m, adjusts: { number: ti.number ?? '-', date: ti.header.documentDate, originalNet: ti.totals.net, correctNet: fromSatang(correct), diffNet: d.totals.net, reason: reasonTh(d.header) } };
 }
 
-export const PAPER_BUILDERS: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf, QT: paperOf, SO: paperOf, DO: paperOf, IV: paperOf, BL: billingPaper, RC: receiptPaper, CN: adjustmentPaper, DN: adjustmentPaper, PO: paperOf, PV: voucherPaper, EX: claimPaper, JV: journalPaper, WT: certificatePaper };
+/** The 13-digit national id with only its last four digits shown (X-XXXX-XXXXd-dd-d); anything not 13 digits keeps just its last four. */
+const maskNationalId = (id: string | undefined): string | undefined => {
+  const d = (id ?? '').replace(/\D/g, '');
+  if (!d) return undefined;
+  return d.length === 13 ? `X-XXXX-XXXX${d[9]}-${d.slice(10, 12)}-${d[12]}` : `${'X'.repeat(Math.max(0, d.length - 4))}${d.slice(-4)}`;
+};
+const NOTE_50_TAWI = 'หนังสือรับรองตามมาตรา 50 ทวิ ออกให้ปีละครั้ง (ภ.ง.ด.1ก)';
+
+/** PR (PY2): one payslip per employee, every figure the frozen slip's (nothing is recomputed, the master data is never read): the income items, the deductions (PIT ม.50(1), SSO, รายการหักอื่น), the net and its words, the employer's SSO, the year to date.
+ *  The employee is the one the slip froze (name, national id); the company is printed as it is now, like every other paper. A payslip is an internal record, not a tax document. */
+function payslipPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
+  const co: Company = c.company, slips = d.payroll?.slips ?? [];
+  const payslips: PayslipPaperModel[] = slips.map((s) => {
+    const it = s.items, nz = (label: string, amount: Money) => (toSatang(amount) > 0 ? [{ label, amount }] : []);
+    const salaryLabel = s.proratedDays !== undefined ? `เงินเดือน (${s.proratedDays}/${s.daysInMonth} วัน)` : 'เงินเดือน';
+    const ded = [{ label: 'ภาษีเงินได้หัก ณ ที่จ่าย (มาตรา 50(1))', amount: s.pit }, { label: 'ประกันสังคม', amount: s.sso }, ...nz('รายการหักอื่น', s.otherDeduction)];
+    return { employeeId: s.employeeId, name: s.name, ...(maskNationalId(s.employee.nationalId) ? { nationalId: maskNationalId(s.employee.nationalId) } : {}), period: monthLabelTh(s.month), payDate: d.header.documentDate,
+      ...(s.proratedDays !== undefined ? { proratedDays: s.proratedDays } : {}), daysInMonth: s.daysInMonth,
+      income: [{ label: salaryLabel, amount: s.salaryPaid }, ...nz('ค่าล่วงเวลา', it.overtime ?? '0.00'), ...nz('เบี้ยเลี้ยง / ค่าตอบแทน', it.allowance ?? '0.00'), ...nz('โบนัส', it.bonus ?? '0.00'), ...nz('รายได้อื่น', it.otherIncome ?? '0.00')],
+      deductions: ded, gross: s.gross, totalDeductions: fromSatang(ded.reduce((n, x) => n + toSatang(x.amount), 0)), net: s.net, netInWords: bahtText(s.net), ssoEmployer: s.ssoEmployer,
+      ytd: { income: s.ytdIncome, pit: s.ytdPit, sso: s.ytdSso }, note: NOTE_50_TAWI };
+  });
+  return {
+    titleTh: 'ใบจ่ายเงินเดือน', titleEn: 'PAYSLIP', copyLabel: copy ? 'สำเนา' : 'ต้นฉบับ', number: d.number ?? '-', documentDate: d.header.documentDate, ...(d.header.reference ? { reference: d.header.reference } : {}),
+    seller: { name: co.legalNameTh, nameEn: co.legalNameEn, address: co.address, phone: co.phone, taxId: co.taxId, branchLabel: branchLabel(co.branchCode) }, buyer: { name: '-', address: '' },
+    lines: [], totals: d.totals, signatures: ['ผู้จ่ายเงิน', 'ผู้รับเงิน'], payslips,
+    ...(d.status === 'cancelled' ? { voidMark: { label: 'ยกเลิก', note: d.cancel?.reasonText } } : {}),
+  };
+}
+
+export const PAPER_BUILDERS: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf, QT: paperOf, SO: paperOf, DO: paperOf, IV: paperOf, BL: billingPaper, RC: receiptPaper, CN: adjustmentPaper, DN: adjustmentPaper, PO: paperOf, PV: voucherPaper, EX: claimPaper, JV: journalPaper, WT: certificatePaper, PR: payslipPaper };

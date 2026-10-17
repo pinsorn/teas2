@@ -9,7 +9,7 @@ const PV_ALL = [...PV, 'doc.PV.cancel', 'doc.PV.correct', 'doc.PV.approve']; // 
 const EX = ['doc.EX.read', 'doc.EX.create', 'doc.EX.issue']; // operator: files and (once approved) issues an expense claim; the accountant approves it and adds cancel / correct
 const EX_ALL = [...EX, 'doc.EX.cancel', 'doc.EX.correct', 'doc.EX.approve'];
 const JV_ALL = ['read', 'create', 'issue', 'cancel', 'correct', 'approve'].map((v) => `doc.JV.${v}`); // JV is accountant-only (§3.1)
-const PR_ALL = ['read', 'create', 'issue', 'cancel', 'correct'].map((v) => `doc.PR.${v}`); // payroll runs (PY1) are the accountant's; the admin sees employees only
+const PR_ALL = ['read', 'create', 'issue', 'cancel', 'correct', 'pay'].map((v) => `doc.PR.${v}`); // payroll runs (PY1) are the accountant's; the admin sees employees only
 const OB_ALL = ['read', 'create', 'issue', 'cancel', 'correct'].map((v) => `doc.OB.${v}`); // opening balances (AC3) are the accountant's
 const FA_ALL = ['FA', 'DP'].flatMap((t) => ['read', 'create', 'issue', 'cancel', 'correct'].map((v) => `doc.${t}.${v}`)); // fixed assets and depreciation runs (AC5) are the accountant's
 const READ = ['doc.SO.read', 'doc.DO.read', 'doc.CN.read', 'doc.DN.read'];

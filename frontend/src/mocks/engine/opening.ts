@@ -217,7 +217,7 @@ export function freezeOpening(st: MockState, companyId: string, batchId: string,
   for (const a of op.assets) for (const r of ['FixedAsset', 'AccumulatedDepreciation'] as const) codes[`${r}:${a.assetClass}`] = codeOf(st, companyId, r, a.assetClass);
   for (const b of op.bank) { const ba = bankOf(st, companyId, b.accountId); if (ba) codes[`BANK:${b.accountId}`] = ba.accountCode; }
   const name = (id: string) => st.parties.find((p) => p.id === id && p.companyId === companyId)?.name ?? id;
-  return { ...op, codes,
+  return { ...op, codes, payrollYtd: (op.payrollYtd ?? []).map((y) => ({ ...y })), // N3 (PY2): a copy, never the caller's array - the seeded batch must not share rows with the seed spec
     openItems: op.openItems.map((i) => ({ ...i, id: pick(i.id, `${batchId}-i`), partyName: name(i.partyId) })),
     assets: op.assets.map((a) => ({ ...a, id: pick(a.id, `${batchId}-a`) })), // AC5: an asset row keeps its id through a revise; the asset registered from it points at it
     bank: op.bank.map((b) => ({ ...b, inTransit: b.inTransit.map((t) => ({ ...t, id: pick(t.id, `${batchId}-t${b.accountId}-`) })) })) };

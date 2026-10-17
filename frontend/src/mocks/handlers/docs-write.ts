@@ -7,7 +7,7 @@ import { buildChain } from '../engine/chain';
 import { approve, sendBack } from '../engine/approval';
 import { type Body, keepOmitted, unavailableTh, approveAndIssue, cancel, compute, convert, createDraft, deleteDraft, issue, publicDoc, submitForApproval, updateDraft } from '../engine/commands';
 import { refuseJvRevise, reverseJv } from '../engine/journal';
-import { refuseLaterRun } from '../engine/payroll';
+import { payRun, refuseLaterRun, unpayRun } from '../engine/payroll';
 import { employeeImpl } from '../records/employees';
 import { controlExit } from '../engine/reconcile';
 import { resolvedBankId } from '../engine/settlement';
@@ -179,6 +179,21 @@ export const docsWriteHandlers = [
     const r = reverseJv(c.st, String(params.id), ACTOR, { ...(body.date ? { date: body.date } : {}), ...(typeof body.reason === 'string' && body.reason.trim() ? { reason: body.reason.trim() } : {}) });
     done(c);
     return HttpResponse.json(publicDoc(r), { status: 201 });
+  })),
+  // PY2: pay a payroll run (the whole run, from one own account) and the way out of it. Both are PR-only commands of their own right (`doc.PR.pay`); the engine judges everything before it writes.
+  http.post('*/bff/v1/docs/PR/:id/pay', ({ request, params }) => guarded('PR', 'doc.PR.pay', async (c) => {
+    own(c, 'PR', params.id);
+    const b = ((await request.json().catch(() => ({}))) ?? {}) as { accountId?: string; date?: string; version?: number };
+    const doc = payRun(c.st, c.company.id, String(params.id), { ...(typeof b.accountId === 'string' && b.accountId ? { accountId: b.accountId } : {}), date: b.date as string, version: versionOf(request, b) }, ACTOR);
+    done(c);
+    return HttpResponse.json(doc);
+  })),
+  http.post('*/bff/v1/docs/PR/:id/unpay', ({ request, params }) => guarded('PR', 'doc.PR.pay', async (c) => {
+    own(c, 'PR', params.id);
+    const b = ((await request.json().catch(() => ({}))) ?? {}) as { reason?: string; version?: number };
+    const doc = unpayRun(c.st, c.company.id, String(params.id), { reason: typeof b.reason === 'string' ? b.reason : '', version: versionOf(request, b) }, ACTOR);
+    done(c);
+    return HttpResponse.json(doc);
   })),
   // the accounts a journal voucher may post to: postable, none a document owns (the server refuses the others at issue)
   // AC3 (?for=OB): the opening balance posts to controlled accounts too (it ties them to their steps); only 3900, the system's plug, is left out

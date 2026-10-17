@@ -2,7 +2,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { PlusIcon, Trash2Icon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useEffect, useRef, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useMe } from '@/app-shell/useMe';
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import type { RecordRow } from '@/domain/records';
 import type { Doc, DocLine, Page, PayItems, PayrollTotals, PayslipLine } from '@/domain/types';
 import { endpoints } from '@/lib/api/endpoints';
 import { formatMoney } from '@/lib/format';
+import { PayslipDrawer } from '../payroll/PayslipDrawer';
 import { cleanDecimal, isComposing, moneyText } from './useLineGridKeys';
 
 // PY1: the fourth line editor (a payroll run). One card per employee: the accountant types the pay items; gross, PIT, SSO, net and the year to date are the SERVER's (`compute.payroll`) and are only shown here, never computed.
@@ -157,6 +158,8 @@ export function PayrollGrid({ lines, onChange, slips, totals, employees = [], co
 /** The issued (or saved) run on a document page: the frozen slips, read-only. */
 export function PayrollSummary({ doc }: { doc: Doc }) {
   const t = useTranslations('docEditor.payrollGrid');
+  const tp = useTranslations('payrollPay.drawer');
+  const [openSlip, setOpenSlip] = useState<string>(); // PY2: the payslip drawer of one row
   const names = useEmployees(!doc.payroll, 'all'); // a draft has no slips yet: names come from the master
   const slips = doc.payroll?.slips ?? [];
   const nameOf = (id: string) => slips.find((s) => s.employeeId === id)?.name ?? String(names.data?.items.find((e) => e.id === id)?.name ?? id);
@@ -165,7 +168,7 @@ export function PayrollSummary({ doc }: { doc: Doc }) {
     <section aria-label={t('title')} className="overflow-x-auto rounded-lg border bg-card" data-testid="payroll-summary">
       <Table>
         <TableHeader><TableRow>
-          <TableHead>{t('employee')}</TableHead>{cols.map((k) => <TableHead key={k} className="text-right">{t(k === 'otherDeduction' ? 'pay.otherDeduction' : `server.${k}`)}</TableHead>)}
+          <TableHead>{t('employee')}</TableHead>{cols.map((k) => <TableHead key={k} className="text-right">{t(k === 'otherDeduction' ? 'pay.otherDeduction' : `server.${k}`)}</TableHead>)}<TableHead><span className="sr-only">{tp('open')}</span></TableHead>
         </TableRow></TableHeader>
         <TableBody>
           {(slips.length ? slips.map((s) => s.employeeId) : doc.lines.map((l) => l.employeeId ?? '')).map((id) => {
@@ -174,12 +177,14 @@ export function PayrollSummary({ doc }: { doc: Doc }) {
               <TableRow key={id} data-testid="payroll-summary-row">
                 <TableCell className="whitespace-normal">{nameOf(id)}{s?.proratedDays !== undefined ? <span className="ml-2 text-small text-muted-foreground">{t('prorated', { days: s.proratedDays })}</span> : null}</TableCell>
                 {cols.map((k) => <TableCell key={k} className="text-right tabular-nums">{s ? formatMoney(s[k]) : ''}</TableCell>)}
+                <TableCell>{s ? <Button variant="ghost" size="sm" aria-label={tp('openFor', { name: s.name })} onClick={() => setOpenSlip(s.employeeId)}>{tp('open')}</Button> : null}</TableCell>
               </TableRow>
             );
           })}
         </TableBody>
       </Table>
       {slips.length ? <p className="p-3 text-small text-muted-foreground">{t('frozenNote', { version: slips[0].tables.version })}</p> : null}
+      {openSlip && slips.find((x) => x.employeeId === openSlip) ? <PayslipDrawer doc={doc} slip={slips.find((x) => x.employeeId === openSlip)!} onClose={() => setOpenSlip(undefined)} /> : null}
     </section>
   );
 }

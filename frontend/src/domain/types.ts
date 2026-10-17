@@ -63,6 +63,10 @@ export interface PayrollSlip extends PayslipLine { items: PayItems; employee: Em
   prior: { income: Money; pit: Money; sso: Money }; monthSso: Money; sameMonthPrior: boolean; salaryPaid: Money; daysInMonth: number; ytdSso: Money }
 /** PR, server-owned (never accepted from a caller): the run's frozen slips. */
 export interface PayrollData { month: string; slips: PayrollSlip[] }
+/** PY2: a payroll run paid out (whole run only). Frozen at pay: the run's stored net, the date, the account and its snapshot (the payment never re-reads the live account), who and when. A reversed (unpaid) payment stays as history; `journalId` is its bank journal (kind 'payroll'). */
+export interface PayrollPayment { id: string; companyId: string; runId: string; amount: Money; date: IsoDate; accountId: string;
+  account: { kind: 'bank' | 'cash'; bankName?: string; accountNo?: string; accountName: string; accountCode: string };
+  journalId: string; actor: Actor; at: string; reversed?: { at: string; by: Actor; reason: string; date: IsoDate } }
 /** The vendor's tax invoice an expense-claim line carries: who issued it (name, TIN), its number and its date. */
 export interface VendorInvoice { vendorName: string; vendorTin: string; number: string; date: IsoDate;
   /** The employee confirms it is a FULL tax invoice made out to the company (ม.86/4): only then is its VAT claimable; false or absent = cost. */ fullTaxInvoice?: boolean }
@@ -161,7 +165,7 @@ export interface BankLine { id: string; accountId: string; importId: string; dat
   /** Matched to a transfer journal between two own accounts (instead of documents): `side` is this line's own side of it. */ transfer?: { journalId: string; side: 'out' | 'in' };
   /** TX2c: posted by a tax payment (derived at read) */ taxPayment?: { form: FilingForm; period: string; journalId: string; href: string } }
 /** A journal the reconciliation wrote (no document behind it): the fee / rounding difference of a match, an inline journal of a statement line, or the seeded opening balance. A reversal is appended, an entry is never edited. */
-export interface BankJournal { id: string; companyId: string; accountId: string; lineId?: string; kind: 'fee' | 'inline' | 'opening' | 'transfer' | 'tax'; label: string; entries: JournalEntryPreview[];
+export interface BankJournal { id: string; companyId: string; accountId: string; lineId?: string; kind: 'fee' | 'inline' | 'opening' | 'transfer' | 'tax' | 'payroll'; label: string; entries: JournalEntryPreview[];
   /** TX2c: a tax payment - the finalized return it pays and the tax it paid, frozen at payment */ filing?: { form: FilingForm; period: string; amount: Money };
   /** A transfer: the account on the other side (the journal is Dr receiving / Cr paying, `accountId` is the one whose line made it). */ otherAccountId?: string; /** every statement line ever matched to a transfer (for the history of a reversal) */ lineIds?: string[] }
 export interface BankImport { id: string; accountId: string; fileName: string; format: 'kbiz-csv' | 'kplus-pdf'; from: IsoDate; to: IsoDate;
@@ -245,6 +249,10 @@ export interface SearchHit { kind: 'doc' | 'party' | 'page'; id: string; label: 
 export interface ApiProblem { type?: string; title: string; status: number; code: string; detail?: string;
   traceId?: string; fieldErrors?: Record<string, string[]> }
 
+/** One payslip as printed (PY2): income items, deductions, net and its words, year to date - ready-made by the server from the frozen slip. `nationalId` is masked (last four digits only). */
+export interface PayslipPaperModel { employeeId: string; name: string; nationalId?: string; period: string; payDate: IsoDate; proratedDays?: number; daysInMonth: number;
+  income: { label: string; amount: Money }[]; deductions: { label: string; amount: Money }[]; gross: Money; totalDeductions: Money; net: Money; netInWords: string; ssoEmployer: Money;
+  ytd: { income: Money; pit: Money; sso: Money }; note: string }
 /** Printed party block. phone / nameEn are optional extras for the seller header. */
 export interface PaperParty { name: string; nameEn?: string; address: string; phone?: string; taxId?: string; branchLabel?: string }
 /** Everything the printed document shows, ready-made by the server: the paper never computes tax or totals. */
@@ -271,6 +279,7 @@ export interface PaperModel {
   /** JV (ใบสำคัญทั่วไป): the account lines as posted, with the server's totals. */
   journal?: { lines: { no: number; accountCode: string; accountName: string; description: string; debit: Money; credit: Money }[]; debit: Money; credit: Money };
   replacementNote?: string;                    // 'ยกเลิกและออกแทนฉบับเดิม เลขที่ … ลงวันที่ …' (on the NEW document)
+  /** PR (PY2): one payslip per employee, all read from the run's frozen slips (the paper computes nothing). */ payslips?: PayslipPaperModel[];
   voidMark?: { label: string; note?: string }; // cancelled / replaced originals: diagonal stamp on every page
   signatures: string[];                        // ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม']
 }

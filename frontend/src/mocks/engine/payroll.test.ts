@@ -11,7 +11,10 @@ import { checkInvariants } from './invariants';
 import { buildPlan } from './corrections';
 import { derivedLocks } from './locks';
 import type { MockError } from './log';
-import { computeSlip, inputOf, refuseLaterRun, ssoOf, type SlipInput } from './payroll';
+import { companyEntries } from './ledger';
+import { match, suggest, unmatch } from './reconcile';
+import { bankReconciliation } from './reports/bank-reconciliation';
+import { computeSlip, inputOf, payRun, refuseLaterRun, ssoOf, unpayRun, type PayRunRequest, type SlipInput } from './payroll';
 
 const EMP: EmployeeSnapshot = { name: 'ทดสอบ เงินเดือน', maritalStatus: 'single', spouseHasIncome: false, children: 0, otherAllowances: '0.00', ssoRegistered: true, salary: '30000.00', startDate: '2025-01-01' };
 const ZERO = { income: '0.00', pit: '0.00', sso: '0.00' };
@@ -134,7 +137,8 @@ const stored = (s: MockState, id: string) => s.docs.find((d) => d.id === id)!;
 describe('the seeded payroll (D-23): five runs through the engine', () => {
   it('every ledger invariant holds, including the payroll ones', () => {
     expect(checkInvariants(st)).toEqual([]);
-    for (const id of ['pr-2026-08', 'pr-2026-09', 'pr-bonus-09', 'npr-2026-09']) expect(doc(id).status, id).toBe('issued');
+    for (const id of ['pr-2026-09', 'pr-bonus-09', 'npr-2026-09']) expect(doc(id).status, id).toBe('issued');
+    expect(doc('pr-2026-08').status).toBe('settled'); // PY2: paid through the pay command
     expect(doc('pr-2026-10').status).toBe('draft');
     expect(doc('pr-2026-09').number).toBe('PR-202609-0001');
     expect(doc('pr-bonus-09').number).toBe('PR-202609-0002'); // a second run in the same month
@@ -629,6 +633,17 @@ describe('PY1b N2: a correction plan for a run or an opening balance that would 
   });
 });
 
+describe('PY2 N3: a seeded opening balance shares nothing with the seed spec', () => {
+  it('mutating the stored payrollYtd of nob-1 (array and row) leaves the next buildSeedState intact', () => {
+    const ytd = doc('nob-1').opening!.payrollYtd, n0 = ytd.length, income0 = ytd[0].income;
+    ytd.push({ employeeId: 'nemp-01', income: '1.00', pit: '0.00', sso: '0.00' });
+    ytd[0].income = '999.00';
+    const next = buildSeedState().docs.find((d) => d.id === 'nob-1')!.opening!.payrollYtd; // used to throw: seed spec nob-1: ob.payroll_invalid
+    expect(next).toHaveLength(n0);
+    expect(next[0].income).toBe(income0);
+  });
+});
+
 describe('PY1a ruling 7: an employee on an opening balance\'s payroll year to date is in use', () => {
   it('delete is refused (employee.in_use) while the opening balance names them; the exit says deactivate', () => {
     const e = employeeImpl.create(st, 'co-nonvat', { code: 'N88', firstName: 'ยกมา', lastName: 'เท่านั้น', nationalId: '1100700009903', startDate: '2025-01-01', salary: '10000.00', maritalStatus: 'single', children: 0 });
@@ -638,5 +653,377 @@ describe('PY1a ruling 7: an employee on an opening balance\'s payroll year to da
     const x = err(() => employeeImpl.remove!(st, 'co-nonvat', String(f.id)));
     expect(x).toMatchObject({ status: 409, code: 'employee.in_use' });
     expect(x.title).toContain('ปิดใช้งาน');
+  });
+});
+
+// ================================================================ PY2: pay the run, unpay, the books around it
+
+const bj = (id: string) => st.bankJournals.find((j) => j.id === id)!;
+const paymentOf = (run: string) => st.payrollPayments.filter((p) => p.runId === run && !p.reversed);
+const gl = (code: string) => [...companyEntries(st, 'co-vat')].reduce((a, e) => a + e.lines.filter((l) => l.accountCode === code).reduce((x, l) => x + sat(l.debit) - sat(l.credit), 0), 0);
+const NET_BONUS = () => doc('pr-bonus-09').totals.net;
+const pay = (id = 'pr-bonus-09', over: Partial<PayRunRequest> = {}) => payRun(st, 'co-vat', id, { accountId: 'ba-kbank', date: '2026-10-14', version: doc(id).version, ...over }, ME);
+const unpay = (id = 'pr-bonus-09', over: Partial<{ reason: string; version: number }> = {}) => unpayRun(st, 'co-vat', id, { reason: 'จ่ายผิดบัญชี', version: doc(id).version, ...over }, ME);
+const closeMonth = (m: string) => { const p = st.periods.find((x) => x.companyId === 'co-vat' && x.month === m); if (p) { p.status = 'closed'; p.closedAt = '2099-01-01T00:00:00Z'; } else st.periods.push({ companyId: 'co-vat', month: m, status: 'closed', closedAt: '2099-01-01T00:00:00Z' }); };
+
+describe('PY2 ruling 1: the pay command', () => {
+  it('needs an account when more than one is active (422 naming the field); defaults it when exactly one is', () => {
+    const x = err(() => pay('pr-bonus-09', { accountId: undefined }));
+    expect(x).toMatchObject({ status: 422, code: 'payroll.account_required' });
+    expect(x.title).toContain('accountId');
+    for (const b of st.bankAccounts.filter((b) => b.companyId === 'co-vat' && b.id !== 'ba-scb')) b.active = false;
+    pay('pr-bonus-09', { accountId: undefined });
+    expect(paymentOf('pr-bonus-09')[0].accountId).toBe('ba-scb');
+  });
+
+  it('refuses an account of another company and an inactive one', () => {
+    expect(err(() => pay('pr-bonus-09', { accountId: 'nba-kbank' }))).toMatchObject({ status: 422, code: 'pay.invalid_bank_account' });
+    st.bankAccounts.find((b) => b.id === 'ba-scb')!.active = false;
+    expect(err(() => pay('pr-bonus-09', { accountId: 'ba-scb' })).status).toBe(422);
+  });
+
+  it('only an issued run: a draft, a cancelled run and an already paid run are refused', () => {
+    expect(err(() => pay('pr-2026-10', { version: 1 }))).toMatchObject({ status: 409, code: 'payroll.not_issued' });
+    expect(err(() => pay('pr-2026-08'))).toMatchObject({ status: 409, code: 'payroll.already_paid' });
+    const fresh = post([row('emp-02')], '2026-10-13');
+    cancel(st, fresh.id, fresh.version, 'OTHER', 'ทดสอบ', ME);
+    expect(err(() => pay(fresh.id)).code).toBe('payroll.not_issued');
+  });
+
+  it('a stale version is a 409; nothing is written', () => {
+    const before = JSON.stringify([st.payrollPayments, st.bankJournals.length, doc('pr-bonus-09')]);
+    expect(err(() => pay('pr-bonus-09', { version: doc('pr-bonus-09').version - 1 }))).toMatchObject({ status: 409, code: 'doc.version_conflict' });
+    expect(JSON.stringify([st.payrollPayments, st.bankJournals.length, doc('pr-bonus-09')])).toBe(before);
+  });
+
+  it('the pay date: not before the run date, not in the future, not in a closed month, not in a closed year', () => {
+    expect(err(() => pay('pr-bonus-09', { date: '2026-09-29' })).code).toBe('payroll.pay_date');
+    expect(err(() => pay('pr-bonus-09', { date: '2026-10-15' })).code).toBe('doc.future_date');
+    expect(err(() => pay('pr-bonus-09', { date: 'ไม่ใช่วันที่' })).code).toBe('payroll.pay_date');
+    closeMonth('2026-10');
+    expect(err(() => pay('pr-bonus-09', { date: '2026-10-10' })).code).toBe('period.closed');
+    st.yearCloses.push({ companyId: 'co-vat', year: 2026 } as never);
+    expect(err(() => pay('pr-bonus-09', { date: '2026-10-10' })).status).toBe(422);
+  });
+
+  it('the whole run only: an amount in the request is not believed', () => {
+    payRun(st, 'co-vat', 'pr-bonus-09', { accountId: 'ba-kbank', date: '2026-10-14', version: doc('pr-bonus-09').version, amount: '1.00' } as PayRunRequest, ME);
+    expect(paymentOf('pr-bonus-09')[0].amount).toBe(NET_BONUS());
+  });
+});
+
+describe('PY2 rulings 2-4: what is frozen, what is posted, what the run becomes', () => {
+  it('the payment stores the run, the stored net, the date, the account and its snapshot, the actor and a stamp', () => {
+    const net = NET_BONUS();
+    pay();
+    const [p] = paymentOf('pr-bonus-09');
+    expect(p).toMatchObject({ runId: 'pr-bonus-09', companyId: 'co-vat', amount: net, date: '2026-10-14', accountId: 'ba-kbank', actor: ME,
+      account: { kind: 'bank', bankName: 'kbank', accountNo: '012-3-45678-9', accountName: 'กสิกรไทย กระแสรายวัน', accountCode: '1121' } });
+    expect(p.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    st.bankAccounts.find((b) => b.id === 'ba-kbank')!.nameTh = 'เปลี่ยนชื่อภายหลัง'; // a later rename never changes what was paid from
+    expect(paymentOf('pr-bonus-09')[0].account.accountName).toBe('กสิกรไทย กระแสรายวัน');
+  });
+
+  it('one entry dated the pay date: the payable first, the bank last, Dr = Cr; the run is settled through a settles link from the payment', () => {
+    const net = NET_BONUS(), before = doc('pr-bonus-09');
+    const out = pay();
+    expect(out.status).toBe('settled');
+    expect(doc('pr-bonus-09')).toMatchObject({ status: 'settled', version: before.version + 1 });
+    const [p] = paymentOf('pr-bonus-09');
+    expect(bj(p.journalId).entries).toHaveLength(1);
+    const e = bj(p.journalId).entries[0];
+    expect(e.date).toBe('2026-10-14');
+    expect(e.lines.map((l) => [l.accountCode, l.debit, l.credit])).toEqual([['2170', net, '0.00'], ['1121', '0.00', net]]);
+    expect(st.links.filter((l) => l.active && l.kind === 'settles' && l.from === p.id)).toEqual([expect.objectContaining({ to: 'pr-bonus-09', amount: net, companyId: 'co-vat' })]);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+
+  it('GL 2170: the run owes Σ net before, nothing after paying, Σ net again after unpay; the bank GL moves by the net', () => {
+    const net = sat(NET_BONUS()), g0 = gl('2170'), b0 = gl('1121');
+    pay();
+    expect(gl('2170')).toBe(g0 + net); // gl() is debit - credit: the run's credit is gone
+    expect(gl('1121')).toBe(b0 - net);
+    unpay();
+    expect(gl('2170')).toBe(g0);
+    expect(gl('1121')).toBe(b0);
+  });
+
+  it('paying and unpaying never touch the slips', () => {
+    const slips = JSON.stringify(doc('pr-bonus-09').payroll);
+    pay();
+    expect(JSON.stringify(doc('pr-bonus-09').payroll)).toBe(slips);
+    unpay();
+    expect(JSON.stringify(doc('pr-bonus-09').payroll)).toBe(slips);
+  });
+
+  it('a PAID run still counts: the year-to-date chain of the next run takes it, and it still blocks revising an earlier paid run', () => {
+    expect(doc('pr-2026-08').status).toBe('settled'); // paid through the command by the seed
+    expect(slip('pr-2026-09', 'emp-01').prior.income).toBe(slip('pr-2026-08', 'emp-01').gross); // the chain runs through a paid run
+    const d = draft([row('emp-02')], '2026-10-15');
+    expect(compute(st, 'co-vat', 'PR', { header: d.header, lines: d.lines }).payroll!.slips[0].ytdIncome).toBe('100000.00'); // Aug 30,000 + Sep 30,000 + bonus 10,000 + this month 30,000, paid or not
+    expect(err(() => refuseLaterRun(st, doc('pr-2026-08'))).code).toBe('payroll.later_run'); // pr-2026-09 is issued after it
+    expect(checkInvariants(st)).toEqual([]);
+  });
+
+  it('a paid run does not stop the NEXT run being paid, each with its own payment', () => {
+    pay('pr-2026-09', { date: '2026-10-01' });
+    pay();
+    expect(st.payrollPayments.filter((p) => !p.reversed).map((p) => p.runId).sort()).toEqual(['pr-2026-08', 'pr-2026-09', 'pr-bonus-09']);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+
+  it('the audit and the activity log both say who paid and from which account', () => {
+    pay();
+    expect(st.activity.some((a) => a.docId === 'pr-bonus-09' && a.action === 'pay')).toBe(true);
+    expect(st.audit.some((a) => a.command === 'doc.pay' && a.target === 'pr-bonus-09')).toBe(true);
+  });
+});
+
+describe('PY2 ruling 5: unpay', () => {
+  it('needs a reason (422 when blank), a paid run, and the current version', () => {
+    pay();
+    expect(err(() => unpay('pr-bonus-09', { reason: '   ' }))).toMatchObject({ status: 422, code: 'payroll.reason_required' });
+    expect(err(() => unpay('pr-bonus-09', { version: 1 }))).toMatchObject({ status: 409, code: 'doc.version_conflict' });
+    expect(err(() => unpay('pr-2026-09')).code).toBe('payroll.not_paid');
+    expect(doc('pr-bonus-09').status).toBe('settled');
+  });
+
+  it('appends a reversal on the original date (the month is open), deactivates the link, puts the run back to issued; the payment is kept as history', () => {
+    pay('pr-bonus-09', { date: '2026-10-10' });
+    const [p] = paymentOf('pr-bonus-09');
+    unpay();
+    expect(doc('pr-bonus-09').status).toBe('issued');
+    const es = bj(p.journalId).entries;
+    expect(es.map((e) => e.kind)).toEqual(['original', 'reversal']);
+    expect(es[1].date).toBe('2026-10-10');
+    expect(es[1].lines.map((l) => [l.accountCode, l.debit, l.credit])).toEqual([['2170', '0.00', p.amount], ['1121', p.amount, '0.00']]);
+    expect(st.links.some((l) => l.active && l.from === p.id)).toBe(false);
+    expect(paymentOf('pr-bonus-09')).toEqual([]);
+    expect(st.payrollPayments.find((x) => x.id === p.id)).toMatchObject({ reversed: { reason: 'จ่ายผิดบัญชี', by: ME } });
+    expect(st.activity.some((a) => a.docId === 'pr-bonus-09' && a.action === 'unpay' && (a.detail ?? '').includes('จ่ายผิดบัญชี'))).toBe(true);
+    expect(st.audit.some((a) => a.command === 'doc.unpay')).toBe(true);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+
+  it('SP0 5.9: when the payment month has been closed since, the reversal is late on the first open date', () => {
+    pay('pr-bonus-09', { date: '2026-10-10' });
+    closeMonth('2026-10');
+    unpay();
+    const [r] = st.bankJournals.at(-1)!.entries.slice(-1);
+    expect(r).toMatchObject({ kind: 'reversal', late: true });
+    expect(r.date > '2026-10-31').toBe(true);
+  });
+
+  it('a closed year refuses (the payment is final)', () => {
+    pay('pr-bonus-09', { date: '2026-10-10' });
+    st.yearCloses.push({ companyId: 'co-vat', year: 2026 } as never);
+    expect(err(() => unpay()).status).toBe(422);
+    expect(doc('pr-bonus-09').status).toBe('settled');
+  });
+
+  it('after an unpay the run can be paid again; the first payment stays reversed, the second is the one in force', () => {
+    pay(); unpay(); pay('pr-bonus-09', { accountId: 'ba-scb' });
+    expect(st.payrollPayments.filter((p) => p.runId === 'pr-bonus-09').map((p) => !!p.reversed)).toEqual([true, false]);
+    expect(paymentOf('pr-bonus-09')[0].account.accountCode).toBe('1122');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+});
+
+describe('PY2 ruling 6: a paid run cannot be revised or cancelled', () => {
+  const body = () => ({ header: { ...doc('pr-bonus-09').header }, lines: doc('pr-bonus-09').lines });
+  it('revise, cancel and the correction plan refuse with the unpay exit; the lock says the same; unpay opens the door', () => {
+    pay();
+    const v = doc('pr-bonus-09').version;
+    for (const f of [() => revise(st, 'pr-bonus-09', body(), v, 'x', ME), () => cancel(st, 'pr-bonus-09', v, 'OTHER', 'x', ME), () => buildPlan(st, 'pr-bonus-09', { ...body(), header: { ...body().header, notes: 'ต่าง' } }, 'accountant')]) {
+      const x = err(f);
+      expect(x).toMatchObject({ status: 409, code: 'payroll.paid' });
+      expect(x.title).toContain('ยกเลิกการจ่าย');
+    }
+    const lock = derivedLocks(st, doc('pr-bonus-09')).find((l) => l.kind === 'payroll')!;
+    expect(lock.exits.join(' ')).toContain('ยกเลิกการจ่าย');
+    unpay();
+    expect(cancel(st, 'pr-bonus-09', doc('pr-bonus-09').version, 'OTHER', 'x', ME).status).toBe('cancelled');
+  });
+  it('an edit that keeps every figure is refused as well (revise cannot slip past a payment)', () => {
+    pay();
+    expect(err(() => revise(st, 'pr-bonus-09', { ...body(), header: { ...body().header, notes: 'หมายเหตุ' } }, doc('pr-bonus-09').version, 'x', ME)).code).toBe('payroll.paid');
+  });
+});
+
+describe('PY2 ruling 7: the books catch a single fault in a payment (each tamper is red; the untouched seed is clean)', () => {
+  const pid = 'prp-001'; // the seed pays pr-2026-08
+  it('each fault is named', () => {
+    expect(checkInvariants(buildSeedState())).toEqual([]);
+    const P = (s: MockState) => s.payrollPayments.find((p) => p.id === pid)!;
+    const J = (s: MockState) => s.bankJournals.find((j) => j.id === P(s).journalId)!;
+    const cases: [string, (s: MockState) => void, string][] = [
+      ['the payment amount edited', (s) => { P(s).amount = '1.00'; }, 'amount'],
+      ['the run net edited with the payment left', (s) => { stored(s, 'pr-2026-08').totals.net = '1.00'; }, 'amount'],
+      ['the payable leg moved to another account', (s) => { J(s).entries[0].lines[0].accountCode = '2180'; }, 'journal'],
+      ['the bank leg moved to another account', (s) => { J(s).entries[0].lines[1].accountCode = '1122'; }, 'journal'],
+      ['the stored account code edited (the live account is not consulted)', (s) => { P(s).account.accountCode = '1122'; }, 'journal'],
+      ['the journal amount edited on one side', (s) => { J(s).entries[0].lines[1].credit = '1.00'; }, 'unbalanced'],
+      ['the journal lines swapped (bank first)', (s) => { J(s).entries[0].lines.reverse(); }, 'journal'],
+      ['the run left issued while its payment is in force', (s) => { stored(s, 'pr-2026-08').status = 'issued'; }, 'settled'],
+      ['the run settled with no payment in force', (s) => { stored(s, 'pr-2026-09').status = 'settled'; }, 'settled'],
+      ['a second payment in force for the same run', (s) => { s.payrollPayments.push({ ...P(s), id: 'prp-099' }); }, 'in force'],
+      ['the settles link dropped', (s) => { s.links = s.links.filter((l) => l.from !== pid); }, 'link'],
+      ['the payment reversed in the journal but not on the record', (s) => { const e = J(s).entries[0]; J(s).entries.push({ ...e, kind: 'reversal', lines: e.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) }); }, 'reversed'],
+    ];
+    for (const [what, fn, fragment] of cases) {
+      const out = tamper(fn);
+      expect(out.length, what).toBeGreaterThan(0);
+      expect(out.join('\n').toLowerCase(), what).toContain(fragment);
+    }
+  });
+  it('a live account renamed or re-coded after the payment is not a fault (the snapshot is the truth)', () => {
+    const s = buildSeedState();
+    const ba = s.bankAccounts.find((b) => b.id === s.payrollPayments[0].accountId)!;
+    ba.nameTh = 'ชื่อใหม่';
+    expect(checkInvariants(s)).toEqual([]);
+  });
+});
+
+describe('PY2 ruling 9-10: permission, isolation and the seed', () => {
+  const call = (method: string, p: string, body?: unknown) => fetch(`http://localhost/bff/v1${p}`, { method, body: body ? JSON.stringify(body) : undefined, headers: { 'content-type': 'application/json' } });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const json = async (r: Response) => r.json() as Promise<Record<string, any>>;
+  it('doc.PR.pay belongs to the accountant only', () => {
+    expect(PERMISSIONS_BY_ROLE.accountant).toContain('doc.PR.pay');
+    expect(PERMISSIONS_BY_ROLE.admin).not.toContain('doc.PR.pay');
+    expect(PERMISSIONS_BY_ROLE.operator).not.toContain('doc.PR.pay');
+  });
+  it('the seed pays pr-2026-08 through the command: settled, one payment, version 47', () => {
+    expect(doc('pr-2026-08').status).toBe('settled');
+    expect(st.payrollPayments.map((p) => [p.id, p.runId, p.accountId])).toEqual([['prp-001', 'pr-2026-08', 'ba-kbank']]);
+    expect(st.version).toBe(47);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('over the wire: pay then unpay; the operator is forbidden (names doc.PR.pay); another company\'s run is 404', async () => {
+    const v = doc('pr-bonus-09').version;
+    const paid = await call('POST', '/docs/PR/pr-bonus-09/pay', { accountId: 'ba-kbank', date: '2026-10-14', version: v });
+    expect(paid.status).toBe(200);
+    expect((await json(paid)).status).toBe('settled');
+    const undone = await call('POST', '/docs/PR/pr-bonus-09/unpay', { reason: 'ทดสอบ', version: v + 1 });
+    expect(undone.status).toBe(200);
+    expect((await json(undone)).status).toBe('issued');
+    expect((await call('POST', '/docs/PR/pr-bonus-09/unpay', { reason: '', version: v + 2 })).status).toBe(409); // not paid any more
+    setSettings({ companyKey: 'vat', role: 'operator', screenState: 'normal' });
+    const f = await call('POST', '/docs/PR/pr-bonus-09/pay', { accountId: 'ba-kbank', date: '2026-10-14', version: v + 2 });
+    expect(f.status).toBe(403);
+    expect(JSON.stringify(await json(f))).toContain('doc.PR.pay');
+    setSettings({ companyKey: 'nonvat', role: 'accountant', screenState: 'normal' });
+    expect((await call('POST', '/docs/PR/pr-bonus-09/pay', { accountId: 'nba-kbank', date: '2026-10-14', version: v + 2 })).status).toBe(404);
+    expect((await call('POST', '/docs/PR/pr-bonus-09/unpay', { reason: 'x', version: v + 2 })).status).toBe(404);
+  });
+});
+
+describe('PY2 rulings 3 and 5: the existing matcher takes the payment; a matched payment is not unpaid', () => {
+  const addLine = (accountId: string, date: string, amount: string) => { st.bankLines.push({ companyId: 'co-vat', id: 'bl-pay', accountId, importId: 'bi-001', date, description: 'จ่ายเงินเดือน', amount, balance: '0.00', status: 'unmatched' }); return 'bl-pay'; };
+  const lineNow = () => st.bankLines.find((l) => l.id === 'bl-pay')!;
+
+  it('an outflow of exactly the net on the payment account suggests the payment; matching it is clean; unpay waits for the unmatch', () => {
+    pay();
+    const net = NET_BONUS(), id = paymentOf('pr-bonus-09')[0].id;
+    addLine('ba-kbank', '2026-10-14', `-${net}`);
+    expect(suggest(st, 'co-vat', 'bl-pay')).toEqual([expect.objectContaining({ docId: id, type: 'PV', exact: true, cash: net, remaining: net })]);
+    match(st, 'co-vat', 'bl-pay', { docIds: [id] }, ME);
+    expect(lineNow()).toMatchObject({ status: 'matched', matches: [expect.objectContaining({ docId: id, type: 'PV', amount: net })] });
+    expect(checkInvariants(st)).toEqual([]);
+    const x = err(() => unpay());
+    expect(x).toMatchObject({ status: 409, code: 'payroll.pay_reconciled' });
+    expect(x.title).toContain('ยกเลิกการจับคู่');
+    expect(doc('pr-bonus-09').status).toBe('settled');
+    unmatch(st, 'co-vat', 'bl-pay', ME);
+    unpay();
+    expect(doc('pr-bonus-09').status).toBe('issued');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+
+  it('a different amount, another account, or an unpaid (reversed) payment is not offered; the line cannot take it either', () => {
+    pay();
+    const id = paymentOf('pr-bonus-09')[0].id;
+    addLine('ba-scb', '2026-10-14', `-${NET_BONUS()}`);
+    expect(suggest(st, 'co-vat', 'bl-pay').map((c) => c.docId)).not.toContain(id);
+    expect(err(() => match(st, 'co-vat', 'bl-pay', { docIds: [id] }, ME)).code).toBe('bank.match_account');
+    lineNow().accountId = 'ba-kbank';
+    lineNow().amount = '-1.00';
+    expect(suggest(st, 'co-vat', 'bl-pay').map((c) => c.docId)).not.toContain(id);
+    lineNow().amount = `-${NET_BONUS()}`;
+    unpay();
+    expect(suggest(st, 'co-vat', 'bl-pay')).toEqual([]);
+    expect(err(() => match(st, 'co-vat', 'bl-pay', { docIds: [id] }, ME)).code).toBe('bank.match_doc_status');
+  });
+
+  it('a payment after the account\'s go-live is matchable for its net bank effect; a company never matches another company\'s payment', () => {
+    pay('pr-bonus-09', { date: '2026-10-14' });
+    const id = paymentOf('pr-bonus-09')[0].id;
+    expect(st.bankAccounts.find((b) => b.id === 'ba-kbank')!.goLive ?? st.bankImports.some((i) => i.accountId === 'ba-kbank')).toBeTruthy(); // go-live applies to ba-kbank
+    addLine('ba-kbank', '2026-10-14', `-${NET_BONUS()}`);
+    expect(suggest(st, 'co-vat', 'bl-pay')[0]?.docId).toBe(id);
+    expect(err(() => suggest(st, 'co-nonvat', 'bl-pay')).status).toBe(404); // the line is co-vat's
+  });
+
+  it('the bank reconciliation report carries an unmatched payment as an outstanding payment: the tie-out does not move', () => {
+    const rec = () => bankReconciliation(st, 'co-vat', { account: 'ba-kbank', to: '2026-10-31' });
+    const diff0 = rec().tieOuts![0].diff;
+    pay();
+    const r = rec();
+    expect(r.tieOuts![0].diff).toBe(diff0);
+    expect(JSON.stringify(r.rows)).toContain('จ่ายเงินเดือน');
+  });
+});
+
+describe('PY2 ruling 9: the payslip paper model is the frozen slip, nothing recomputed', () => {
+  const call = (p: string) => fetch(`http://localhost/bff/v1${p}`);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const paper = async (id: string) => (await (await call(`/docs/PR/${id}/paper`)).json()) as any;
+
+  it('one payslip per employee of the run, in the run\'s order, each net exactly the slip\'s; the words are the net in baht text', async () => {
+    const m = await paper('pr-2026-09');
+    expect(m.payslips.map((p: { employeeId: string }) => p.employeeId)).toEqual(doc('pr-2026-09').payroll!.slips.map((s) => s.employeeId));
+    for (const [i, s] of doc('pr-2026-09').payroll!.slips.entries()) {
+      const p = m.payslips[i];
+      expect(p).toMatchObject({ name: s.name, gross: s.gross, net: s.net, ssoEmployer: s.ssoEmployer, payDate: '2026-09-30', period: 'ก.ย. 2569', ytd: { income: s.ytdIncome, pit: s.ytdPit, sso: s.ytdSso } });
+      expect(p.deductions.map((x: { amount: string }) => x.amount)).toEqual([s.pit, s.sso, ...(sat(s.otherDeduction) > 0 ? [s.otherDeduction] : [])]);
+      expect(p.income.reduce((n: number, x: { amount: string }) => n + sat(x.amount), 0)).toBe(sat(s.gross));
+      expect(sat(p.gross) - sat(p.totalDeductions)).toBe(sat(p.net));
+    }
+    expect(m.payslips[0].netInWords).toContain('บาท');
+  });
+
+  it('the year to date on a slip is the issued runs of the year up to and including this one (August + September for the September run)', async () => {
+    const p = (await paper('pr-2026-09')).payslips[0];
+    expect(p.ytd.income).toBe(((sat(slip('pr-2026-08', 'emp-01').gross) + sat(slip('pr-2026-09', 'emp-01').gross)) / 100).toFixed(2));
+  });
+
+  it('other deductions are printed as รายการหักอื่น; the national id is masked to its last four digits; the 50 ทวิ note is on every slip', async () => {
+    const m = await paper('pr-2026-09'), s = m.payslips.find((x: { employeeId: string }) => x.employeeId === 'emp-03');
+    expect(s.deductions.map((x: { label: string }) => x.label)).toContain('รายการหักอื่น');
+    for (const x of m.payslips) {
+      expect(x.nationalId).toContain('X');
+      const digits = String(x.nationalId).replace(/\D/g, '');
+      expect(digits.length).toBe(4);
+      expect(x.note).toContain('มาตรา 50 ทวิ');
+    }
+    const id = doc('pr-2026-09').payroll!.slips[0].employee.nationalId!.replace(/\D/g, '');
+    expect(m.payslips[0].nationalId.replace(/\D/g, '')).toBe(id.slice(-4));
+  });
+
+  it('a later change of the employee master (name) never changes a printed slip; a joiner\'s proration is shown', async () => {
+    const before = JSON.stringify((await paper('pr-2026-09')).payslips);
+    const e = st.parties.find((p) => p.id === 'emp-02')!;
+    e.name = 'เปลี่ยนชื่อภายหลัง';
+    expect(JSON.stringify((await paper('pr-2026-09')).payslips)).toBe(before);
+    const leaver = (await paper('pr-2026-09')).payslips.find((x: { employeeId: string }) => x.employeeId === 'emp-05');
+    expect(leaver).toMatchObject({ proratedDays: 20, daysInMonth: 30 });
+    expect(leaver.income[0].label).toContain('20/30');
+  });
+
+  it('a draft run has no paper; a cancelled one is stamped', async () => {
+    expect((await call('/docs/PR/pr-2026-10/paper')).status).toBe(409);
+    const d = doc('pr-bonus-09');
+    await fetch('http://localhost/bff/v1/docs/PR/pr-bonus-09/cancel', { method: 'POST', body: JSON.stringify({ version: d.version, reasonCode: 'OTHER', reasonText: 'ทดสอบ' }), headers: { 'content-type': 'application/json' } });
+    expect((await paper('pr-bonus-09')).voidMark).toMatchObject({ label: 'ยกเลิก' });
   });
 });

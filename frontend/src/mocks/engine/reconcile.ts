@@ -18,6 +18,7 @@ import { isCit } from './filings/cit';
 import { type Filing, nextMonth } from './filings/pp30';
 import { lastDayOf } from './filings/pp36';
 import { resolvedBankId } from './settlement';
+import { payDocs, payEntries } from './payroll';
 
 type Stored = MockState['docs'][number];
 type StoredLine = MockState['bankLines'][number];
@@ -79,7 +80,7 @@ const matchableCash = (st: MockState, d: Stored): number => {
   if (d.type === 'OB') return docCash(d); // AC3: an in-transit item of the opening balance: all of it (no journal behind it; the batch's bank line already carries it)
   const acct = st.bankAccounts.find((b) => b.id === resolvedBankId(st, d.companyId, d.type, d.header) && b.companyId === d.companyId), live = goLiveOf(st, d.companyId, acct?.id);
   if (!acct || !live) return docCash(d);
-  const net = (st.journals.find((j) => j.docId === d.id)?.preview.entries ?? []).filter((e) => e.date >= live)
+  const net = (st.journals.find((j) => j.docId === d.id)?.preview.entries ?? payEntries(st, d.id) ?? []).filter((e) => e.date >= live)
     .reduce((n, e) => n + e.lines.filter((g) => g.accountCode === acct.accountCode).reduce((x, g) => x + toSatang(g.debit) - toSatang(g.credit), 0), 0);
   return Math.min(docCash(d), Math.max(0, d.type === 'RC' ? net : -net));
 };
@@ -114,7 +115,7 @@ function transferCandidates(st: MockState, companyId: string, l: StoredLine, nee
 export function suggest(st: MockState, companyId: string, lineId: string, q?: string): BankCandidate[] {
   const l = lineOf(st, companyId, lineId);
   const want = toSatang(l.amount) > 0 ? 'RC' : 'PV', needle = (q ?? '').trim().toLowerCase();
-  const docs = st.docs
+  const docs = [...st.docs, ...payDocs(st, companyId)] // PY2: a payroll payment is matched like a payment voucher of its account
     .filter((d) => d.companyId === companyId && cashSide(d) === want && LIVE.includes(d.status) && resolvedBankId(st, companyId, d.type, d.header) === l.accountId && remainingOf(st, d) > 0)
     .map((d) => ({ d, exact: matchedPortion(st, d.id) === 0 && matchableCash(st, d) === abs(toSatang(l.amount)) && docCash(d) === abs(toSatang(l.amount)), days: daysBetween(d.header.documentDate, l.date) }))
     .filter((x) => (needle ? `${x.d.number ?? ''} ${x.d.party?.name ?? ''}`.toLowerCase().includes(needle) : x.exact && x.days <= DAYS))
@@ -182,7 +183,7 @@ export function match(st: MockState, companyId: string, lineId: string, req: Mat
   }
   const bank = bankOf(st, companyId, l.accountId);
   const docs = ids.map((id) => {
-    const d = st.docs.find((x) => x.id === id && x.companyId === companyId);
+    const d = st.docs.find((x) => x.id === id && x.companyId === companyId) ?? payDocs(st, companyId).find((x) => x.id === id);
     if (!d) throw fail(422, 'bank.match_doc_not_found', 'ไม่พบเอกสารที่เลือก');
     const no = d.number ?? d.id;
     if (cashSide(d) !== want) throw fail(422, 'bank.match_direction', `${no} เป็น${cashSide(d) === 'RC' ? 'ใบเสร็จรับเงิน (เงินเข้า)' : 'ใบสำคัญจ่าย (เงินออก)'} จับคู่กับรายการ${s > 0 ? 'เงินเข้า' : 'เงินออก'}ไม่ได้`);

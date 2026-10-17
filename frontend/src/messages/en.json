@@ -30,7 +30,7 @@
       "groupBody": "The whole document is added to a new billing statement (draft). Nothing is posted; choose more documents of this customer in the editor."
     },
     "actions": {
-      "submit": "Submit for approval", "approve": "Approve", "approveAndIssue": "Approve and issue", "sendBack": "Send back for changes", "whyPaid": "Paid in full, nothing left to pay",
+      "submit": "Submit for approval", "approve": "Approve", "approveAndIssue": "Approve and issue", "sendBack": "Send back for changes", "whyPaid": "Paid in full, nothing left to pay", "whyPayrollPaid": "Payroll is paid: unpay it before changing the run",
       "label": "Actions", "issueDraft": "Save and issue…", "edit": "Edit", "print": "Print", "copy": "Copy as new",
       "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "lockedReconciliation": "Cannot cancel ({reason}); use “Cancel match” in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyFinal": "This voucher is final (reversed, or itself a reversal), so it cannot be edited", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "receive": "Receive payment", "whyDisposalInvoice": "This invoice is the sale of a fixed asset: it cannot be edited and takes no credit / debit note. Exit: cancel it (the disposal is cancelled with it) and dispose of the asset again.",
       "whyInclusiveNote": "This invoice is priced VAT-inclusive, so a credit / debit note cannot be issued directly. Use Edit (a correction plan) instead.", "issueCn": "Issue credit note", "issueDn": "Issue debit note", "issuePcn": "Record vendor credit note", "issuePdn": "Record vendor debit note", "markDelivered": "Delivered", "markSent": "Mark as sent to vendor", "whyNothingRemaining": "Every line is already converted in full; there is nothing to close", "whyClosed": "The remainder is closed, so it cannot be converted; revise the document to reopen it", "makeRecurring": "Make recurring", "makeAmortisation": "Amortise", "needSchedulePermission": "Needs the {permission} permission"
@@ -70,7 +70,7 @@
     },
     "activity": {
       "empty": "No activity yet",
-      "action": { "submit": "Submitted for approval", "approve": "Approved", "send_back": "Sent back for changes", "create": "Created draft", "issue": "Issued", "settle": "Payment received", "cancel": "Cancelled", "revise": "Revised", "convert": "Converted", "accept": "Customer accepted", "reject": "Customer rejected", "deliver": "Delivered", "close": "Remainder closed", "send": "Sent to vendor", "settlement": "Netting / deposit applied", "settlement_reverse": "Settlement reversed", "reverse": "Reversed" }
+      "action": { "submit": "Submitted for approval", "approve": "Approved", "send_back": "Sent back for changes", "create": "Created draft", "issue": "Issued", "settle": "Payment received", "pay": "Payroll paid", "unpay": "Payroll payment reversed", "cancel": "Cancelled", "revise": "Revised", "convert": "Converted", "accept": "Customer accepted", "reject": "Customer rejected", "deliver": "Delivered", "close": "Remainder closed", "send": "Sent to vendor", "settlement": "Netting / deposit applied", "settlement_reverse": "Settlement reversed", "reverse": "Reversed" }
     },
     "revisions": {
       "empty": "No history yet", "first": "First issued version", "n": "Revision {n}", "view": "View this version", "hide": "Hide this version",
@@ -1368,6 +1368,24 @@
       "statuses": { "unmatched": "Unmatched", "matched": "Matched", "ignored": "Ignored", "posted": "Posted" }
     }
   },
+  "payrollPay": {
+    "action": "Pay payroll", "unpayAction": "Unpay",
+    "pay": {
+      "title": "Pay payroll {run}", "body": "The whole run is paid. The amount is the net total the system stored when the run was issued; a partial payment is not possible. If it is wrong, unpay and pay again.",
+      "amount": "Amount (net pay of the whole run)", "account": "Pay from", "choose": "Choose an account", "date": "Pay date", "dateHint": "Not before the run date ({date}), in an open accounting period",
+      "loading": "Loading accounts…", "noAccounts": "There is no active bank or cash account", "cancel": "Back", "submit": "Pay payroll", "submitting": "Saving…"
+    },
+    "unpay": {
+      "title": "Unpay payroll {run}", "body": "The payment is reversed in the books and the run goes back to “Issued”. The payslips do not change. Not possible while the payment is matched to a bank statement line (unmatch it first).",
+      "reason": "Reason", "cancel": "Back", "submit": "Unpay", "submitting": "Saving…"
+    },
+    "drawer": {
+      "open": "Payslip", "openFor": "Open the payslip of {name}", "title": "Payslip of {name}", "description": "Period {period} · every figure is from the slip stored when the run was issued",
+      "gross": "Total income", "pit": "Withholding tax (s.50(1))", "sso": "Social security (employee)", "otherDeduction": "Other deductions", "ssoEmployer": "Social security (employer)", "net": "Net pay",
+      "ytdTitle": "Year to date", "ytdIncome": "Income", "ytdPit": "Tax", "ytdSso": "Social security", "prorated": "Prorated {days}/{total} days",
+      "note": "The s.50 bis certificate is issued once a year (PND.1 Kor)", "print": "Print payslip", "close": "Close"
+    }
+  },
   "permissions": {
     "doc_QT_read": "Read quotation",
     "doc_QT_create": "Create quotation",
@@ -1481,6 +1499,7 @@
     "doc_PR_issue": "Issue payroll",
     "doc_PR_cancel": "Cancel payroll",
     "doc_PR_correct": "Correct payroll",
+    "doc_PR_pay": "Pay payroll and unpay",
     "doc_OB_read": "Read opening balance",
     "doc_OB_create": "Create opening balance",
     "doc_OB_issue": "Issue opening balance",

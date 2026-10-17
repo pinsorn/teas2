@@ -196,3 +196,8 @@ Entry format — terse, greppable by symptom:
 - **Symptom:** `closeYear(st, co, 2026, ...)` throws `period.year_not_ended`; once forced past that, the seed invariants report "posted after it closed" for every 2026 entry.
 - **Root cause:** the mock world's today is the fixed `ANCHOR` (2026-10-17, `engine/log.ts`), and months set `status: 'closed'` by hand have no `closedAt`.
 - **Fix:** in the test, `vi.mock('../log')` to return a settable `today`, set the months `closed` WITH `closedAt` in the far future, and close FY2025 first (`period.year_order`). See `close2026` in `filings/cit-engine.test.ts`.
+
+## `seed spec nob-1: ob.payroll_invalid` in a later test's `buildSeedState`
+- **Symptom:** after a test pushed a row into a seeded opening balance's `payrollYtd` (e.g. `doc('nob-1').opening!.payrollYtd.push(...)`), the NEXT `buildSeedState()` throws `seed spec nob-1: ob.payroll_invalid`.
+- **Root cause:** `freezeOpening` spread `...op`, so the issued batch shared its `payrollYtd` array (and rows) with the seed spec's literal; a mutation of the state mutated the fixture.
+- **Fix:** `freezeOpening` copies the rows (`payrollYtd: op.payrollYtd.map((y) => ({ ...y }))`). Same shape of bug for any array a seed spec hands to the engine: clone where the engine freezes it. Test: "PY2 N3" in `engine/payroll.test.ts`.

@@ -1,5 +1,5 @@
 import type {
-  ActivityEntry, Allocation, ApprovalPolicy, Attachment, AuditEntry, BankImport, BankJournal, BankLine, ChainEdge, Company, CorrectionPlan, Doc, DocHeader, DocLine, ItemSummary, JournalPreview, Membership, Money, PaperModel, PartySummary, Revision, Role, ScheduleRecord, SettlementRecord,
+  ActivityEntry, Allocation, ApprovalPolicy, Attachment, AuditEntry, BankImport, BankJournal, BankLine, ChainEdge, Company, CorrectionPlan, Doc, DocHeader, DocLine, ItemSummary, JournalPreview, Membership, Money, PaperModel, PartySummary, PayrollPayment, Revision, Role, ScheduleRecord, SettlementRecord,
 } from '@/domain/types';
 import { DOC_TYPES, LIVE } from '@/domain/doc-types';
 import { recomputeSettlement } from './engine/commands';
@@ -24,7 +24,7 @@ import { getSettings } from './settings';
 import { seedBankStatements } from './fixtures/statements';
 
 export interface MockState {
-  version: 46;
+  version: 47;
   companies: Company[];
   memberships: (Membership & { userId: string })[];
   /** `active` (default true) and `version` (default 1) are the master record's; documents keep their own party snapshot. */
@@ -53,6 +53,8 @@ export interface MockState {
   yearCloses: YearClose[];
   /** TX1: finalized tax filings (ภ.พ.30): the boxes, tie-outs and the exact documents, frozen at finalize. A draft is never stored: it is computed from the documents. */
   filings: Filing[];
+  /** PY2: payroll runs paid (and unpaid): the whole run's net, the date and the account as they were at pay, and the journal (a bank journal of kind 'payroll'). A reversed payment stays as history. */
+  payrollPayments: PayrollPayment[];
   /** TX3a: the corporate income tax year data per company and fiscal year (paid-up capital, prior losses, user adjustments, the ภ.ง.ด.51 estimate). */
   citYears: (CitYearData & { companyId: string })[];
   /** FN3: per company, the largest difference a settlement may absorb: satang rounding, and a small write-off (also the bank fee) [SP-R]. */
@@ -102,7 +104,7 @@ export const seed = (): MockState => buildSeedState(getSettings().role);
 export function loadState(): MockState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 46) return s; }
+    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 47) return s; }
   } catch { /* fall through to a fresh seed */ }
   return seed();
 }

@@ -12,7 +12,7 @@ import { inForceTax } from './filings/payment';
 import { boxOf, pp30Net } from './filings/pp30';
 import type { FilingBox } from '@/domain/filings';
 import { obInvariants } from './opening';
-import { payrollInvariants } from './payroll';
+import { payDocs, payrollInvariants } from './payroll';
 import { appliedOf, docCash, toleranceOf } from './locks';
 import { payoutOf, resolvedBankId } from './settlement';
 import { consumed, q4 } from './chain';
@@ -245,7 +245,7 @@ export function checkInvariants(st: MockState): string[] {
 
   // 6. links join documents of one company; every posted ledger document has its journal (cancelled / replaced: original + reversal)
   for (const l of st.links) {
-    const a = doc(l.from) ?? (l.kind === 'settles' ? st.settlements.find((s) => s.id === l.from) : undefined), b = doc(l.to); // FN3: a settlement record is the `from` of its settles links
+    const a = doc(l.from) ?? (l.kind === 'settles' ? st.settlements.find((s) => s.id === l.from) ?? st.payrollPayments.find((p) => p.id === l.from) : undefined), b = doc(l.to); // FN3: a settlement record is the `from` of its settles links; PY2: so is a payroll payment
     if (!a || !b) out.push(`link ${l.from} → ${l.to} points at a missing document`);
     else if (a.companyId !== b.companyId || (l.companyId !== undefined && l.companyId !== a.companyId)) out.push(`link ${l.from} → ${l.to} joins different companies`);
   }
@@ -509,7 +509,7 @@ export function checkInvariants(st: MockState): string[] {
       }
     }
     for (const m of ms) {
-      const d = doc(m.docId);
+      const d = doc(m.docId) ?? payDocs(st, l.companyId).find((x) => x.id === m.docId); // PY2: a payroll payment is matched like a voucher
       shares.set(m.docId, (shares.get(m.docId) ?? 0) + sat(m.amount, where));
       if (sat(m.amount, where) <= 0) out.push(`${where}: share of ${m.docId} is not positive`);
       if (!d || d.companyId !== l.companyId) { out.push(`${where}: matched document ${m.docId} is missing or of another company`); continue; }
@@ -519,7 +519,7 @@ export function checkInvariants(st: MockState): string[] {
       if (d.header.documentDate !== m.docDate) out.push(`${where}: ${d.id} is dated ${d.header.documentDate} but was matched at ${m.docDate}`);
     }
   }
-  for (const [id, n] of shares) { const d = doc(id); if (d && n > docCash(d)) out.push(`${id}: matched for ${fromSatang(n)} but its cash is ${fromSatang(docCash(d))}`); }
+  for (const [id, n] of shares) { const d = doc(id) ?? payDocs(st, st.bankLines.find((l) => (l.matches ?? []).some((m) => m.docId === id))?.companyId ?? '').find((x) => x.id === id); if (d && n > docCash(d)) out.push(`${id}: matched for ${fromSatang(n)} but its cash is ${fromSatang(docCash(d))}`); }
   for (const j of st.bankJournals) {
     const where = `bank journal ${j.id}`, b = st.bankAccounts.find((x) => x.id === j.accountId && x.companyId === j.companyId);
     if (!b) { out.push(`${where}: unknown bank account ${j.accountId}`); continue; }

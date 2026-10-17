@@ -137,11 +137,11 @@ export const FIXTURE_PREDICATES: Record<DocFixtureKey, (d: D, st: MockState) => 
   faCar: byId('nfa-car', (d) => d.status === 'issued' && d.companyId === 'co-nonvat'),
   faDisposed: byId('fa-sold', (d) => d.status === 'issued' && d.asset?.disposed?.kind === 'sale'),
   dpRun: byId('dp-2026-08', (d) => d.status === 'issued'),
-  // PY1 payroll: pr-2026-10 is the October draft; pr-bonus-09 (the second September run) is the latest issued run, so it can still be revised / cancelled; pr-2026-08 is the run PY2 pays first - it is issued, not paid yet, and
+  // PY1 payroll: pr-2026-10 is the October draft; pr-bonus-09 (the second September run) is the latest issued run, so it can still be revised / cancelled; pr-2026-08 is PAID by the seed (PY2) - settled, and
   // locked by the later runs (the lock demo); npr-2026-09 is the non-VAT company's September run
   prDraft: byId('pr-2026-10', (d) => d.status === 'draft'),
   prIssued: byId('pr-bonus-09', (d) => d.status === 'issued'),
-  prPaid: byId('pr-2026-08', (d) => d.status === 'issued'),
+  prPaid: byId('pr-2026-08', (d) => d.status === 'settled'),
   nprIssued: byId('npr-2026-09', (d) => d.status === 'issued' && d.companyId === 'co-nonvat'),
 };
 

@@ -36,7 +36,7 @@ describe('reconciliation over HTTP', () => {
     expect(r.status).toBe(422);
     expect(((await r.json()) as { code: string }).code).toBe('bank.match_amount');
     expect(loadState().bankLines.find((l) => l.id === 'bi-001-003')!.status).toBe('unmatched');
-    expect(loadState().bankJournals.filter((j) => j.kind !== 'opening')).toHaveLength(0);
+    expect(loadState().bankJournals.filter((j) => j.kind !== 'opening' && j.kind !== 'payroll')).toHaveLength(0);
   });
 
   it('every reconciliation command needs bank.reconcile: operator and admin are refused 403, and nothing is written', async () => {
