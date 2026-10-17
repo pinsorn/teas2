@@ -452,6 +452,7 @@ export function payTax(st: MockState, companyId: string, lineId: string, req: Pa
   const tag = `ชำระภาษี ${taxWhat(req.form, req.period)}`;
   const notes = (req.extras ?? []).map((x) => (x.description ?? '').trim()).filter(Boolean);
   const j = addJournal(st, { companyId, accountId: l.accountId, lineId, kind: 'tax', label: tag, filing: { form: req.form, period: req.period, amount: fromSatang(due) }, entries: [entry(st, companyId, l.date, tag, [
+    // [SP-R] PY3a M3: only the finalized return's own tax clears here; an opening balance on 2153 / 2160 (December's PIT / SSO of a go-live company) cannot be cleared by any path - same family as group 06's deferred "OB tax payables"; Ham decides at GPY
     { code: payableAccountOf(st, f), debit: due, credit: 0 }, ...extras, { code: bank.accountCode, debit: 0, credit: abs(amount) },
   ])] });
   l.status = 'posted';

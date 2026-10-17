@@ -14,6 +14,8 @@ import { glBalance, payTax, reverseTaxPayment, taxPaymentLines } from '../reconc
 import { KBIZ_OCT_NAME, kbizCsv } from '../../fixtures/statements/kbiz-2026-10.csv';
 import { KBANK_ACCOUNT_NO, KBANK_SEP_CLOSING, withBalances } from '../../fixtures/statements/kplus-2026-09';
 import { exportFilingText, finalizeFiling, getFiling } from './index';
+import { formCatalogue } from '../reports/tax-summary';
+import { unfiledForms } from './index';
 import { deriveRows, runsOf } from './pnd1';
 
 // PY3 rulings 1 - 4 and 7 for the ภ.ง.ด.1 (and the payment of the สปส.1-10, which shares the path).
@@ -232,8 +234,9 @@ describe('ruling 7: pay a ภ.ง.ด.1 (Dr 2153) and a สปส.1-10 (Dr 2160)
   });
   it('the payable account of the payment is the one the run posted to (2153 / 2160 are PitPayable / SsoPayable)', () => {
     const credit = (code: string) => runsOf(st, CO, '2026-08').flatMap((d) => st.journals.find((x) => x.docId === d.id)!.preview.entries.flatMap((e) => e.lines.filter((l) => l.accountCode === code))).reduce((n, l) => n + sat(l.credit), 0);
-    expect(credit('2153')).toBe(243650);
-    expect(credit('2160')).toBe(700000);
+    const f = (form: string) => filing(form, '2026-08').payroll!.rows;
+    expect(credit('2153')).toBe(f('PND1').reduce((n, r) => n + sat(r.pit!), 0)); // the rule is the equality with Σ PIT / Σ (sso + employer sso), not a seed number
+    expect(credit('2160')).toBe(f('SSO1-10').reduce((n, r) => n + sat(r.sso) + sat(r.ssoEmployer), 0));
   });
 });
 
@@ -258,5 +261,45 @@ describe('the RD Prep text of a ภ.ง.ด.1 and the wire', () => {
     setSettings({ companyKey: 'nonvat', role: 'accountant', screenState: 'normal' });
     const other = (await (await call('/filings/PND1/2026-09')).json()) as { boxes: { code: string; amount: string }[] };
     expect(other.boxes.find((b) => b.code === 'payees')!.amount).toBe('3'); // nemp-01..03, not the VAT company's four
+  });
+});
+
+describe('PY3a M1: the snapshot fingerprint covers what nothing else re-derives (company as filed, due date, who and when)', () => {
+  const cases: [string, (s: MockState) => void][] = [
+    ['the SSO account as filed replaced by another valid number', (s) => { s.filings.find((f) => f.form === 'SSO1-10' && f.period === '2026-08')!.company.ssoEmployerAccountNo = '9999999999'; }],
+    ['the company name as filed edited', (s) => { s.filings.find((f) => f.form === 'PND1' && f.period === '2026-08')!.company.legalNameTh = 'อื่น'; }],
+    ['the branch as filed edited', (s) => { s.filings.find((f) => f.form === 'PND1' && f.period === '2026-08')!.company.branchCode = '00001'; }],
+    ['the due date edited', (s) => { s.filings.find((f) => f.form === 'SSO1-10' && f.period === '2026-08')!.dueDate = '2026-09-30'; }],
+    ['who finalized edited', (s) => { s.filings.find((f) => f.form === 'PND3' && f.period === '2026-08')!.finalizedBy = 'ใครสักคน'; }],
+  ];
+  it('the untouched seed is clean and every filing carries its fingerprint', () => {
+    expect(checkInvariants(st)).toEqual([]);
+    expect(st.filings.every((f) => typeof f.fp === 'number')).toBe(true);
+  });
+  it.each(cases)('single fault: %s', (_n, tamper) => {
+    tamper(st);
+    expect(found(/fingerprint/), checkInvariants(st).join('\n')).toBe(true);
+  });
+  it('m-tie: a stored tie-out is checked for its arithmetic only (diff = left - right); the books moving after filing is not a fault', () => {
+    filing('PND1', '2026-08').tieOuts[1].right = '5.00';
+    expect(found(/tie-out filing.tie.pnd1Other diff .* is not left - right/)).toBe(true);
+    resetState(); st = buildSeedState();
+    st.bankJournals.push({ id: 'bj-x', companyId: CO, accountId: 'ba-kbank', kind: 'fee', label: 'x', entries: [{ date: '2026-08-10', kind: 'original', postedAt: '2026-08-10T00:00:00.000Z', lines: [{ accountCode: '2153', accountName: 'x', debit: '0.00', credit: '9.00', rule: 'm' }, { accountCode: '1121', accountName: 'x', debit: '9.00', credit: '0.00', rule: 'm' }] }] });
+    expect(checkInvariants(st).filter((x) => /tie-out/.test(x))).toEqual([]);
+  });
+});
+
+describe('PY3a m-close / m-forms', () => {
+  it('the period close lists the unfiled ภ.ง.ด.1 and สปส.1-10 of a month that has issued runs, and not once they are filed', () => {
+    expect(unfiledForms(st, CO, '2026-09')).toEqual(expect.arrayContaining(['PND1', 'SSO1-10']));
+    expect(unfiledForms(st, CO, '2026-08')).not.toContain('PND1');
+    fileSep(); fileSep('SSO1-10');
+    expect(unfiledForms(st, CO, '2026-09')).not.toContain('PND1');
+    expect(unfiledForms(st, CO, '2026-10')).not.toContain('PND1'); // October has only a draft run
+  });
+  it('the /tax/forms history names payroll forms in Thai and hides them from a user without payroll.read', () => {
+    const rows = (can: boolean) => formCatalogue(st, CO, can).history.filter((h) => ['PND1', 'SSO1-10'].includes(h.form));
+    expect(rows(true).map((h) => h.nameTh).sort()).toEqual(['ภ.ง.ด.1', 'สปส.1-10']);
+    expect(rows(false)).toEqual([]);
   });
 });

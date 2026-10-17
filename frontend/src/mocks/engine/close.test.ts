@@ -53,14 +53,14 @@ describe('checklist (ruling 2)', () => {
   it('states the six codes; filings_not_finalized counts the ภ.พ.30 of a VAT company from its first finalized month on (TX1, ruling 6)', () => {
     expect(checklistOf(st, CO, '2026-07').map((i) => i.code)).toEqual(['drafts_in_month', 'unreconciled_bank_lines', 'depreciation_not_run', 'schedules_not_run', 'filings_not_finalized', 'ob_difference_open']);
     expect(item('2026-07', 'filings_not_finalized')).toMatchObject({ count: 0, severity: 'warning' }); // filed in the seed
-    expect(item('2026-09', 'filings_not_finalized')).toMatchObject({ count: 1, severity: 'warning', href: '/tax/vat?period=2026-09' });
+    expect(item('2026-09', 'filings_not_finalized')).toMatchObject({ count: 3, severity: 'warning', href: '/tax/vat?period=2026-09' }); // PY3a: the ภ.พ.30 + the unfiled ภ.ง.ด.1 and สปส.1-10 of the month's issued runs
     expect(item('2026-06', 'filings_not_finalized').count).toBe(0); // before the chain (2026-07): before TEAS took over filing
     expect(item('2026-09', 'filings_not_finalized', 'co-nonvat').count).toBe(0); // no ภ.พ.30 outside VAT
     st.companies.find((c) => c.id === CO)!.vatRegistered = false;
-    expect(item('2026-09', 'filings_not_finalized').count).toBe(0); // a company that left VAT owes none
+    expect(item('2026-09', 'filings_not_finalized').count).toBe(2); // a company that left VAT owes no ภ.พ.30 (the payroll returns stay)
     st.companies.find((c) => c.id === CO)!.vatRegistered = true;
     st.filings = st.filings.filter((f) => f.period !== '2026-08');
-    expect(item('2026-08', 'filings_not_finalized').count).toBe(1); // a gap after the chain start counts
+    expect(item('2026-08', 'filings_not_finalized').count).toBe(3); // a gap after the chain start counts (ภ.พ.30 + the payroll returns, PY3a)
     st.filings = [];
     expect(item('2026-09', 'filings_not_finalized').count).toBe(0); // a company with no finalized filing of any form owes nothing (m2)
     expect(checklistOf(st, CO, '2026-07').find((i) => i.severity === 'blocking')?.code).toBe('depreciation_not_run');

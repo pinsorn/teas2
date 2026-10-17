@@ -4,7 +4,7 @@ import { MockError } from '../log';
 import { fromSatang, toSatang } from '../money';
 import { monthLabelTh } from '../periods';
 import { type Filing, type PayrollRow, PERIOD, boxOf, chainBlockers, dueDateOf, fnv, tie } from './pp30';
-import { baseBlockers, deriveRows, draftWarnings, nidBlockers, payrollHref, payrollMovement, payrollSnapInvariants, runRefs, runsOf, ssoOpen } from './pnd1';
+import { baseBlockers, deriveRows, draftWarnings, nidBlockers, payrollHref, payrollMovement, payrollSnapInvariants, rateOf, runRefs, runsOf, ssoOpen } from './pnd1';
 
 /** PY3: สปส.1-10 (the social security return of a month). Wage base and contributions come from the STORED slips (the slip's own floor / ceiling), employee and employer totals are Σ slip `sso` / `ssoEmployer` (ruling 6). */
 const sat = (m: string | undefined) => toSatang(m ?? '0.00');
@@ -46,7 +46,7 @@ export function ssoModel(st: MockState, companyId: string, period: string): Fili
 }
 export const ssoSnapshot = (st: MockState, companyId: string, period: string): Pick<Filing, 'payroll' | 'docs' | 'carryIn' | 'pp36'> => {
   const runs = runsOf(st, companyId, period);
-  return { payroll: { runs: runRefs(runs), rows: deriveRows(runs, 'sso') }, docs: [], carryIn: '0.00', pp36: '0.00' };
+  return { payroll: { runs: runRefs(runs), rows: deriveRows(runs, 'sso'), ...(rateOf(runs) !== undefined ? { rateBp: rateOf(runs)! } : {}) }, docs: [], carryIn: '0.00', pp36: '0.00' };
 };
 
 /** Ruling 6 export "ไฟล์ส่งประกันสังคม": fixed-width text, 135 columns a line (one TIS-620 byte a column), CRLF, built ONLY from the finalized return's stored rows and the company as filed.
@@ -58,7 +58,7 @@ export function ssoFileText(f: Filing): string {
   const txt = (s: string, w: number) => s.slice(0, w).padEnd(w, ' ');
   const total = (g: (r: PayrollRow) => string | undefined) => fromSatang(sum(rows, g));
   const be = `${f.period.slice(5, 7)}${Number(f.period.slice(0, 4)) + 543}`;
-  const lines = [`1${txt(co.ssoEmployerAccountNo ?? '', 10)}${co.branchCode.padStart(6, '0')}${be}${txt(co.legalNameTh, 60)}${'0500'}${String(rows.length).padStart(6, '0')}${num(total((r) => r.wageBase), 15)}${num(fromSatang(sum(rows, (r) => r.sso) + sum(rows, (r) => r.ssoEmployer)), 15)}${' '.repeat(12)}`,
+  const lines = [`1${txt(co.ssoEmployerAccountNo ?? '', 10)}${co.branchCode.padStart(6, '0')}${be}${txt(co.legalNameTh, 60)}${String(f.payroll!.rateBp ?? 500).padStart(4, '0')}${String(rows.length).padStart(6, '0')}${num(total((r) => r.wageBase), 15)}${num(fromSatang(sum(rows, (r) => r.sso) + sum(rows, (r) => r.ssoEmployer)), 15)}${' '.repeat(12)}`,
     ...rows.map((r) => `2${txt(r.nationalId, 13)}${txt(r.name, 60)}${num(r.wageBase, 15)}${num(r.sso, 15)}${num(r.ssoEmployer, 15)}${' '.repeat(16)}`)];
   for (const l of lines) if (l.length !== 135 || ![...l].every((ch) => tis620Byte(ch) !== undefined)) throw fail(500, 'filing.sso_layout', 'ไฟล์ประกันสังคมสร้างไม่ถูกรูปแบบ (135 ตัวอักษร / TIS-620)');
   return `${lines.join('\r\n')}\r\n`;

@@ -1,10 +1,12 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PaperModel } from '@/domain/types';
 import { USER as me } from '../../fixtures/documents';
 import { setSettings } from '../../settings';
 import { buildSeedState, resetState, type MockState } from '../../store';
 import { testServer } from '../../test-server';
-import { createDraft, issue } from '../commands';
+import { cancel, createDraft, issue, revise } from '../commands';
+import { withFixedClock } from '../log';
+import { obPayrollProblem } from '../payroll';
 import { checkInvariants } from '../invariants';
 import { toSatang } from '../money';
 import { exportFilingText, filingHistory, finalizeFiling, getFiling } from './index';
@@ -12,10 +14,13 @@ import { employeeCertificates, yearRows } from './pnd1a';
 
 // PY3 rulings 5 and 8: ภ.ง.ด.1ก = the opening-balance payroll YTD of that year + Σ the year's FINALIZED ภ.ง.ด.1 months; the annual 50 ทวิ for employees comes from its stored rows.
 const CO = 'co-vat', NV = 'co-nonvat';
+// the mock's `today` is a constant (2026-10-14); the 2026 ภ.ง.ด.1ก is only fileable once the year is over, so these tests move it
+let clock: string | undefined;
+vi.mock('../log', async (orig) => { const m = await orig<typeof import('../log')>(); return { ...m, today: () => clock ?? m.today() }; });
 let st: MockState;
 beforeAll(() => testServer.listen({ onUnhandledFrame: 'error' }));
 afterAll(() => testServer.close());
-beforeEach(() => { localStorage.clear(); resetState(); setSettings({ companyKey: 'vat', role: 'accountant', screenState: 'normal' }); st = buildSeedState(); });
+beforeEach(() => { clock = undefined; localStorage.clear(); resetState(); setSettings({ companyKey: 'vat', role: 'accountant', screenState: 'normal' }); st = buildSeedState(); clock = '2027-01-15'; }); // the seed is built on the real mock today
 const sat = (m: string) => toSatang(m);
 const err = (fn: () => unknown): { status?: number; code?: string; title?: string } => { try { fn(); } catch (e) { return e as { code?: string }; } return {}; };
 const a1 = (co: string, y: string) => getFiling(st, co, 'PND1A', y);
@@ -44,7 +49,6 @@ describe('ruling 5: the opening part (AC3) + the finalized months', () => {
   it('the VAT company\'s 2026: blocked while a month with an issued run is not filed (names the month, links to it); clear once September is filed', () => {
     const m = a1(CO, '2026');
     expect(m.blockers).toEqual([expect.objectContaining({ code: 'pnd1_open', labelTh: expect.stringContaining('ก.ย. 2569'), href: '/payroll/filings?tab=pnd1&period=2026-09' })]);
-    expect(m.warnings.join(' ')).toContain('ยังไม่สิ้นปี');
     expect(err(() => file1a(CO, '2026')).code).toBe('filing.blocked');
     file1(CO, '2026-09');
     expect(a1(CO, '2026').blockers).toEqual([]);
@@ -82,10 +86,36 @@ describe('ruling 5: the opening part (AC3) + the finalized months', () => {
     file1a(CO, '2026');
     expect(checkInvariants(st).filter((x) => /filing PND1A/.test(x))).toEqual([]);
   });
-  it('a run cannot be issued into a year whose ภ.ง.ด.1ก is filed', () => {
-    file1(CO, '2026-09'); file1a(CO, '2026');
-    const d = createDraft(st, CO, 'PR', { header: { documentDate: '2026-10-14', reference: 'ต.ค.' }, lines: [{ id: 'n1', description: '', qty: '1', unit: '', unitPrice: '0.00', taxCode: 'EX', employeeId: 'emp-01', pay: { salary: '120000.00' } }] }, me, 'k-oct');
-    expect(err(() => issue(st, d.id, d.version, me))).toMatchObject({ status: 409, code: 'filing.period_filed' });
+  it('a run cannot be issued into a PAST year whose ภ.ง.ด.1ก is filed (the non-VAT 2025)', () => {
+    file1a(NV, '2025');
+    const d = createDraft(st, NV, 'PR', { header: { documentDate: '2025-12-20', reference: 'ธ.ค. 2568' }, lines: [{ id: 'n1', description: '', qty: '1', unit: '', unitPrice: '0.00', taxCode: 'EX', employeeId: 'nemp-01', pay: { salary: '15000.00' } }] }, me, 'k-dec');
+    expect(withFixedClock('2026-01-20T10:00:00+07:00', () => err(() => issue(st, d.id, d.version, me)))).toMatchObject({ status: 409, code: 'filing.period_filed' });
+  });
+  it('B1: the CURRENT year cannot be filed (year_not_closed blocker); the seeded October draft run still issues; once the year is over it files', () => {
+    clock = undefined; // the real mock today: 2026-10
+    file1(CO, '2026-09');
+    const m = a1(CO, '2026');
+    expect(m.blockers.map((x) => x.code)).toEqual(['year_not_closed']);
+    expect(m.blockers[0].labelTh).toContain('2569');
+    expect(err(() => file1a(CO, '2026')).code).toBe('filing.blocked');
+    const d = st.docs.find((x) => x.id === 'pr-2026-10')!;
+    expect(issue(st, d.id, d.version, me).status).toBe('issued'); // nothing stranded: the year is still open
+    clock = '2027-01-15';
+    expect(a1(CO, '2026').blockers.map((x) => x.code)).toEqual(['pnd1_open']); // the new October run is not filed yet
+  });
+  it('M2: the opening balance a filed ภ.ง.ด.1ก took is locked (revise of its payroll YTD, cancel, a new OB into the year; plan path = the same guard) and checked against the 1ก', () => {
+    file1a(NV, '2025');
+    const nob = st.docs.find((x) => x.id === 'nob-1')!;
+    const rows = nob.opening!.payrollYtd.map((r) => ({ ...r, pit: '1.00' }));
+    const x = err(() => revise(st, 'nob-1', { header: nob.header, lines: nob.lines, opening: { ...nob.opening!, payrollYtd: rows } } as never, nob.version, 'แก้', me));
+    expect(x).toMatchObject({ status: 409, code: 'filing.locked' });
+    expect(x.title).toContain('ภ.ง.ด.1ก');
+    expect(err(() => cancel(st, 'nob-1', nob.version, 'OTHER', 'x', me))).toMatchObject({ status: 409, code: 'filing.locked' });
+    expect(obPayrollProblem(st, NV, undefined, { header: { documentDate: '2025-06-30' }, opening: { ...nob.opening!, payrollYtd: rows } })).toMatchObject({ status: 409, code: 'filing.locked' }); // a new OB into the filed year
+    expect(obPayrollProblem(st, NV, nob, { header: nob.header, opening: nob.opening })).toBeUndefined(); // a revise that leaves the payroll YTD alone is untouched
+    expect(obPayrollProblem(st, NV, undefined, { header: { documentDate: '2024-12-31' }, opening: { ...nob.opening!, payrollYtd: rows } })).toBeUndefined(); // another year
+    nob.opening!.payrollYtd[0].pit = '1.00'; // the source moves behind the filing
+    expect(found(/PND1A 2025.*opening/)).toBe(true);
   });
   it('an employee without a national id blocks; the year with nothing to file has no_documents; the history lists the year and nothing is payable', () => {
     expect(a1(CO, '2025').blockers.map((b) => b.code)).toEqual(['no_documents']);

@@ -33,7 +33,7 @@ export interface Pp36Row { id: string; number?: string; date: IsoDate; partyId?:
 export interface Pp30Invoice { number: string; date: IsoDate; name: string; tin: string; base7: Money; vat: Money }
 /** PY3: one employee as a payroll return filed them (copied from the stored slips of the runs it took). `pit` is the ภ.ง.ด.1 / ภ.ง.ด.1ก figure, `wageBase` the สปส.1-10 one (ceiling / floor as the slip stored them); `ob` = the opening-balance part of a ภ.ง.ด.1ก row. */
 export interface PayrollRow { employeeId: string; name: string; nationalId: string; income: Money; pit?: Money; wageBase?: Money; sso: Money; ssoEmployer: Money; ob?: { income: Money; pit: Money; sso: Money } }
-export interface PayrollSnap { runs: { id: string; number: string; revision: number }[]; rows: PayrollRow[]; /** ภ.ง.ด.1ก: the finalized ภ.ง.ด.1 months of the year it added up */ months?: string[] }
+export interface PayrollSnap { runs: { id: string; number: string; revision: number }[]; rows: PayrollRow[]; /** สปส.1-10: the contribution rate (basis points) the stored slips used, written in the file header (PY3a) */ rateBp?: number; /** ภ.ง.ด.1ก: the finalized ภ.ง.ด.1 months of the year it added up */ months?: string[] }
 /** A finalized filing: the boxes, the tie-outs and the exact documents, all frozen at finalize. */
 export interface Filing {
   companyId: string; form: FilingForm; period: string; status: 'finalized'; boxes: FilingBox[]; tieOuts: TieOut[]; docs: Pp30Doc[]; carryIn: Money; pp36: Money; finalizedAt: string; finalizedBy: string; dueDate: IsoDate;
@@ -43,6 +43,7 @@ export interface Filing {
   cit?: CitSnapshot; pnd51?: Pnd51Snapshot;
   /** PY3: a payroll return (ภ.ง.ด.1 / ภ.ง.ด.1ก / สปส.1-10) is its frozen snapshot: the runs it took, one row per employee copied from their stored slips, and (ภ.ง.ด.1ก) the opening-balance part and the ภ.ง.ด.1 months it took */
   payroll?: PayrollSnap;
+  /** PY3a M1: fingerprint of what no other invariant re-derives (company as filed, due date, period, form, who and when); the invariant recomputes it */ fp?: number;
   /** M2: who filed, as the company was at finalize (the file and the page read this, never the master now); a payroll return also freezes the SSO employer account (PY3) */ company: { taxId: string; branchCode: string; legalNameTh: string; ssoEmployerAccountNo?: string };
 }
 

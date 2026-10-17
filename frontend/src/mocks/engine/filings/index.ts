@@ -9,12 +9,12 @@ import { fromSatang, toSatang } from '../money';
 import { isClosed, monthLabelTh, refuseYearClosed } from '../periods';
 import { resolveRole } from '../posting';
 import { isFiledPeriod, openClaimMonth } from '../purchase-vat';
-import { type DocLike, type Filing, type Pp30Doc, PERIOD, boxOf, chainStart, getPp30, pp30Boxes, pp30Docs, pp30Model, pp30Netting, pp30RowOf, pp36VatOf, prevMonth, requireVat, tie } from './pp30';
+import { type DocLike, type Filing, type Pp30Doc, PERIOD, boxOf, chainStart, fnv, getPp30, pp30Boxes, pp30Docs, pp30Model, pp30Netting, pp30RowOf, pp36VatOf, prevMonth, requireVat, tie } from './pp30';
 import { CIT_FORMS, YEAR, citBuild, citInvariants, citSnapshotModel, isCit } from './cit';
 import { filingHref as filingHref0, paymentInvariants, paymentStateOf } from './payment';
 import { PND_FORMS, type PndForm, isPnd, pndAttachment, pndModel, pndRows, pndSnapshot, wantedWhtRows, whtKey, whtRowOfWt } from './pnd-wht';
 import { lastDayOf, pp36Attachment, pp36Key, pp36Model, pp36RowOf, pp36Rows, pp36Snapshot, pp36Vat } from './pp36';
-import { formName, pnd1Attachment, pnd1Invariants, pnd1Model, pnd1Snapshot } from './pnd1';
+import { deriveRows, formName, pnd1Attachment, pnd1Invariants, pnd1Model, pnd1Snapshot, runsOf } from './pnd1';
 import { YEAR as YEAR_RE, pnd1aAttachment, pnd1aInvariants, pnd1aModel, pnd1aSnapshot } from './pnd1a';
 import { ssoAttachment, ssoFileText, ssoInvariants, ssoModel, ssoSnapshot } from './sso';
 
@@ -42,6 +42,8 @@ const NOT_BUILT = () => fail(404, 'filing.not_available', 'ยังไม่ม
 /** The frozen snapshot of a finalized ภ.ง.ด. / ภ.พ.36 as the model reads it (ruling 1: never recomputed). */
 const snapshotModel = (f: Filing): FilingModel => f.cit || f.pnd51 ? citSnapshotModel(f) : ({ form: f.form, period: f.period, status: 'finalized', boxes: f.boxes, tieOuts: f.tieOuts, blockers: [], warnings: [],
   attachment: f.payroll ? payrollAttachment(f) : f.wht ? pndAttachment(f.wht) : pp36Attachment(f.p36 ?? []), finalizedAt: f.finalizedAt, finalizedBy: f.finalizedBy, company: f.company, version: 1, dueDate: f.dueDate, exports: f.form === 'PP36' || f.form === 'PND54' ? ['pdf'] : ['rdprep-txt', 'pdf'] });
+/** PY3a M1: the fields of a finalized filing nothing else re-derives (the company as filed - SSO employer account included -, due date, period, form, who and when). */
+const fpOf = (f: Filing): number => fnv(JSON.stringify([f.company, f.dueDate, f.period, f.form, f.finalizedAt, f.finalizedBy]));
 const payrollAttachment = (f: Filing) => (f.form === 'SSO1-10' ? ssoAttachment(f.payroll!.rows) : f.form === 'PND1A' ? pnd1aAttachment(f.payroll!.rows) : pnd1Attachment(f.payroll!.rows));
 
 /** A form's filing for a period: the frozen snapshot once finalized (ruling 1: never recomputed), else the draft computed from the documents. */
@@ -92,6 +94,8 @@ export function finalizeFiling(st: MockState, companyId: string, form: FilingFor
   const tieOuts = built ? m.tieOuts : form === 'PP36' ? [tie('filing.tie.pp36Gl', boxOf(m.boxes, 'vat'), pp36Gl(st, companyId, period, (snap as ReturnType<typeof pp36Snapshot>).journal ?? []))] : m.tieOuts;
   st.filings.push({ companyId, form, period, status: 'finalized', company: { taxId: co.taxId, branchCode: co.branchCode, legalNameTh: co.legalNameTh, ...(isPayroll(form) && co.ssoEmployerAccountNo ? { ssoEmployerAccountNo: co.ssoEmployerAccountNo } : {}) }, boxes: m.boxes, tieOuts, ...snap,
     finalizedAt: stamp(), finalizedBy: actor.name, dueDate: m.dueDate });
+  const added = st.filings[st.filings.length - 1];
+  added.fp = fpOf(added); // PY3a M1
   logAudit(st, actor, companyId, 'filing.finalize', `${form} ${period}`, { status: 'draft' }, { status: 'finalized', net: boxOf(m.boxes, form === 'PP30' && boxOf(m.boxes, '12') > 0 ? '12' : NET_BOX[form]!) });
   return getFiling(st, companyId, form, period);
 }
@@ -230,6 +234,7 @@ export function filingInvariants(st: MockState): string[] {
     if (seen.has(`${f.companyId}|${f.form}|${f.period}`)) out.push(`${w}: finalized twice`);
     seen.add(`${f.companyId}|${f.form}|${f.period}`);
     for (const t of f.tieOuts) if (sat(t.left) - sat(t.right) + (t.reconciling ?? []).reduce((n, r) => n + sat(r.amount), 0) !== sat(t.diff)) out.push(`${w}: tie-out ${t.labelKey} diff ${t.diff} is not left - right + reconciling`);
+    if (f.fp !== undefined && f.fp !== fpOf(f)) out.push(`${w}: its fingerprint does not match the company as filed, the due date, the period or who filed it (the frozen snapshot was edited)`);
     if (f.form === 'PP30') ppInvariants(st, f, w, out);
     else if (isCit(f.form)) citInvariants(st, f, w, out);
     else if (f.wht) pndInvariants(st, f, w, out);
@@ -332,6 +337,8 @@ export function unfiledForms(st: MockState, companyId: string, month: string): F
   owed('PP30', !!st.companies.find((c) => c.id === companyId)?.vatRegistered);
   for (const f of PND_FORMS) owed(f, pndRows(st, companyId, f, month).length > 0);
   owed('PP36', pp36Rows(st, companyId, month).length > 0);
+  owed('PND1', runsOf(st, companyId, month).length > 0); // PY3a m-close: the payroll returns of a month with issued runs
+  owed('SSO1-10', deriveRows(runsOf(st, companyId, month), 'sso').length > 0);
   return out;
 }
 export const filingHref = hrefOf;

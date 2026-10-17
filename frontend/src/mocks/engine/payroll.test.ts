@@ -1042,6 +1042,11 @@ describe('PY2 ruling 9: the payslip paper model is the frozen slip, nothing reco
 });
 
 describe('PY3 minors carried from the PY2 Opus review (m2 - m5)', () => {
+  it('PY3a m-print: a single-slip print of an employee who is not on the run is refused 404 payroll.employee_not_on_run', async () => {
+    const r = await fetch('http://localhost/bff/v1/docs/PR/pr-2026-09/printed', { method: 'POST', body: JSON.stringify({ copy: false, employee: 'emp-04' }), headers: { 'content-type': 'application/json' } });
+    expect(r.status).toBe(404);
+    expect((await r.json()).code).toBe('payroll.employee_not_on_run');
+  });
   const post = (p: string, body: unknown) => fetch(`http://localhost/bff/v1${p}`, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } });
   const addLine = () => { st.bankLines.push({ companyId: 'co-vat', id: 'bl-m4', accountId: 'ba-kbank', importId: 'bi-001', date: '2026-10-14', description: 'จ่ายเงินเดือน', amount: `-${NET_BONUS()}`, balance: '0.00', status: 'unmatched' }); };
   it('m2: printing one employee\'s slip does not consume the run\'s ต้นฉบับ; the first full-run print is the original, the next a copy', async () => {

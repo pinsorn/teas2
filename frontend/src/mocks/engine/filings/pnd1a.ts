@@ -71,7 +71,9 @@ export function pnd1aModel(st: MockState, companyId: string, year: string): Fili
     if (runsOf(st, companyId, p).length && !months.some((f) => f.period === p)) blockers.push({ code: 'pnd1_open', labelTh: `ยังไม่ได้ยืนยันแบบ ภ.ง.ด.1 เดือน ${monthLabelTh(p)}`, href: payrollHref('pnd1', p) });
   }
   blockers.push(...nidBlockers(rows));
-  const warnings = year >= today().slice(0, 4) ? [`ปี ${Number(year) + 543} ยังไม่สิ้นปี รอบเงินเดือนที่ออกต่อไปจะอยู่ในแบบนี้ไม่ได้เมื่อยืนยันแล้ว`] : [];
+  // PY3a B1: like the CIT year forms, a year is filed only once it is over: a filed ภ.ง.ด.1ก refuses every later run of the year and nothing reopens it
+  if (today() <= `${year}-12-31`) blockers.push({ code: 'year_not_closed', labelTh: `ปี ${Number(year) + 543} ยังไม่สิ้นปี ยืนยัน ภ.ง.ด.1ก ได้หลังสิ้นปี (เมื่อยืนยันแล้วออกรอบเงินเดือนของปีนี้เพิ่มไม่ได้)` });
+  const warnings: string[] = [];
   return { form: 'PND1A', period: year, status: 'draft', boxes, tieOuts: ties(months, rows, boxes), blockers, warnings, attachment: pnd1aAttachment(rows), version: fnv(JSON.stringify([months.map((f) => f.period), rows])), dueDate: due(year), exports: ['rdprep-txt', 'pdf'] };
 }
 export const pnd1aSnapshot = (st: MockState, companyId: string, year: string): Pick<Filing, 'payroll' | 'docs' | 'carryIn' | 'pp36'> => {
@@ -90,6 +92,11 @@ export function pnd1aInvariants(st: MockState, f: Filing, w: string, out: string
     const x = want[i] as PayrollRow | undefined;
     if (!x) continue;
     for (const k of new Set([...Object.keys(r), ...Object.keys(x)]) as Set<keyof PayrollRow>) if (JSON.stringify(r[k]) !== JSON.stringify(x[k])) out.push(`${w}: row ${r.employeeId} ${k} ${JSON.stringify(r[k]) ?? 'none'} but opening + months give ${JSON.stringify(x[k]) ?? 'none'}`);
+  }
+  const live = obOf(st, f.companyId, year), kept = new Map(have.filter((r) => r.ob).map((r) => [r.employeeId, r.ob!])); // PY3a M2: the opening balance the 1ก took is still what the books hold
+  for (const id of new Set([...live.keys(), ...kept.keys()])) {
+    const a = live.get(id), b = kept.get(id);
+    if (!a || !b || a.income !== sat(b.income) || a.pit !== sat(b.pit) || a.sso !== sat(b.sso)) out.push(`${w}: the opening payroll year to date of ${id} on the return (${b ? `${b.income} / ${b.pit} / ${b.sso}` : 'none'}) is not what the opening balance holds now (${a ? `${fromSatang(a.income)} / ${fromSatang(a.pit)} / ${fromSatang(a.sso)}` : 'none'})`);
   }
   if (JSON.stringify(pnd1aBoxes(have)) !== JSON.stringify(f.boxes)) out.push(`${w}: the stored boxes are not Σ its stored rows`);
   const t = f.tieOuts[0];

@@ -46,14 +46,15 @@ describe('the figures come from the stored slips', () => {
     expect(r[0].employee).toBe('875.00');
   });
   it('the wage base uses the floor / ceiling the SLIP stored, not today\'s table', () => {
-    const s = doc('pr-bonus-09').payroll!.slips.find((x) => x.employeeId === 'emp-01')!; // the employee's LAST slip of the month carries the tables the row uses
+    const s = doc('pr-2026-09').payroll!.slips.find((x) => x.employeeId === 'emp-01')!; // PY3a m-floor: each slip's base uses its own tables
     s.tables.ssoCeiling = '10000.00';
     const row = sso().attachment!.rows[0];
     expect(row.wage).toBe('10000.00');
     expect(row.employee).toBe('875.00'); // the contribution is Σ the slip's own sso, not recomputed from the base
   });
-  it('an employee not under SSO is not on the return', () => {
-    doc('pr-2026-09').payroll!.slips.find((x) => x.employeeId === 'emp-03')!.employee.ssoRegistered = false;
+  it('an employee not under SSO (no slip registered, none took a contribution) is not on the return', () => {
+    const s = doc('pr-2026-09').payroll!.slips.find((x) => x.employeeId === 'emp-03')!;
+    Object.assign(s, { sso: '0.00', ssoEmployer: '0.00' }); s.employee.ssoRegistered = false;
     expect(sso().attachment!.rows.map((r) => r.name)).not.toContain('มาลี ใจงาม');
   });
 });
@@ -126,7 +127,7 @@ describe('single-fault tampers of a filed สปส.1-10', () => {
     ['a row\'s employer share edited', (s) => { s.filings.find((f) => f.form === 'SSO1-10' && f.period === '2026-09')!.payroll!.rows[1].ssoEmployer = '1.00'; }, /row emp-02 ssoEmployer/],
     ['a row\'s national id edited', (s) => { s.filings.find((f) => f.form === 'SSO1-10' && f.period === '2026-09')!.payroll!.rows[2].nationalId = '1100200300400'; }, /row emp-03 nationalId/],
     ['the stored employer total box edited', (s) => { s.filings.find((f) => f.form === 'SSO1-10' && f.period === '2026-09')!.boxes.find((b) => b.code === 'employer')!.amount = '1.00'; }, /boxes are not Σ/],
-    ['the stored ceiling of the slip edited (the wage base moves, the row does not)', (s) => { s.docs.find((d) => d.id === 'pr-bonus-09')!.payroll!.slips[0].tables.ssoCeiling = '10000.00'; }, /row emp-01 wageBase/],
+    ['the stored ceiling of the slip edited (the wage base moves, the row does not)', (s) => { s.docs.find((d) => d.id === 'pr-2026-09')!.payroll!.slips[0].tables.ssoCeiling = '10000.00'; }, /row emp-01 wageBase/],
     ['the SSO account of the company as filed removed', (s) => { delete s.filings.find((f) => f.form === 'SSO1-10' && f.period === '2026-09')!.company.ssoEmployerAccountNo; }, /SSO employer account/],
     ['a taken run\'s number changed', (s) => { s.docs.find((d) => d.id === 'pr-bonus-09')!.number = 'PR-X'; }, /run pr-bonus-09 is PR-X/],
   ];
@@ -135,5 +136,26 @@ describe('single-fault tampers of a filed สปส.1-10', () => {
     expect(checkInvariants(st)).toEqual([]);
     tamper(st);
     expect(found(re), checkInvariants(st).join('\n')).toBe(true);
+  });
+});
+
+describe('PY3a minors m-rate / m-two-slips / m-floor', () => {
+  it('m-rate: the header rate is the stored slips\' rate, not a literal; a stored rate edited after filing is caught', () => {
+    for (const d of runsOf(st, CO, '2026-09')) for (const s of d.payroll!.slips) s.tables.ssoRateBp = 300;
+    file();
+    expect(exportFilingText(st, CO, 'SSO1-10', '2026-09').slice(83, 87)).toBe('0300');
+    expect(exportFilingText(st, CO, 'SSO1-10', '2026-08').slice(83, 87)).toBe('0500');
+    st.filings.find((f) => f.form === 'SSO1-10' && f.period === '2026-09')!.payroll!.rateBp = 500;
+    expect(found(/rate/)).toBe(true);
+  });
+  it('m-two-slips: an employee is on the return if ANY slip of the month took a contribution (the last slip not registered does not drop the row)', () => {
+    doc('pr-bonus-09').payroll!.slips.find((x) => x.employeeId === 'emp-02')!.employee.ssoRegistered = false;
+    expect(sso().attachment!.rows.map((r) => r.name)).toContain('วิชาญ ขยันงาน');
+  });
+  it('m-floor: the wage base is the sum of the base each slip used (a prorated slip under the floor is lifted PER SLIP): two 1,000.00 slips -> 3,300.00 and 5 % of it is the 165.00 contributed', () => {
+    for (const [run] of [['pr-2026-09'], ['pr-bonus-09']]) { const s = doc(run).payroll!.slips.find((x) => x.employeeId === 'emp-01')!; s.salaryPaid = '1000.00'; s.sso = '82.50'; s.ssoEmployer = '82.50'; }
+    const r = sso().attachment!.rows.find((x) => x.name.includes('สมศรี'))!;
+    expect(r.wage).toBe('3300.00');
+    expect(r.employee).toBe('165.00');
   });
 });

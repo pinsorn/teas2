@@ -211,7 +211,7 @@ describe('the period close checklist (ruling 5)', () => {
   it('counts the ภ.พ.30 and each ภ.ง.ด. / ภ.พ.36 with documents in the month that is not finalized', () => {
     expect(unfiledForms(st, CO, '2026-10')).toEqual(['PP30', 'PND3', 'PND53', 'PND54', 'PP36']);
     expect(item('2026-10')).toMatchObject({ count: 5, severity: 'warning', href: '/tax/vat?period=2026-10' });
-    expect(item('2026-09').count).toBe(1); // only the ภ.พ.30 of September is open; ภ.ง.ด.3 / 53 are filed
+    expect(item('2026-09').count).toBe(3); // the ภ.พ.30 of September and (PY3a) its ภ.ง.ด.1 / สปส.1-10 are open; ภ.ง.ด.3 / 53 are filed
     expect(item('2026-08').count).toBe(0);
     expect(item('2026-07').count).toBe(0); // before every chain
   });
@@ -224,7 +224,7 @@ describe('the period close checklist (ruling 5)', () => {
   });
   it('m2: a form counts from its own chain start; a never-filed form from the earliest filing of ANY form; a company with none counts nothing', () => {
     st.filings = st.filings.filter((f) => f.form === 'PND53' && f.period === '2026-09');
-    expect(unfiledForms(st, CO, '2026-09')).toEqual(['PP30', 'PND3']); // PP30 / PND3 never filed: owed from 2026-09 on (the PND53 itself is filed)
+    expect(unfiledForms(st, CO, '2026-09')).toEqual(['PP30', 'PND3', 'PND1', 'SSO1-10']); // PP30 / PND3 never filed: owed from 2026-09 on (the PND53 itself is filed)
     expect(unfiledForms(st, CO, '2026-08')).toEqual([]); // before the earliest filing of any form: PND3 / PND53 have documents but are not owed
     st.filings = [];
     expect(unfiledForms(st, CO, '2026-09')).toEqual([]);

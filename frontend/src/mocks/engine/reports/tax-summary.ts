@@ -3,7 +3,8 @@ import type { FormCatalogue, FormCatalogueItem, ReportChip, ReportColumn, Report
 import type { MockState } from '../../store';
 import { filingHref, getFiling, unfiledForms } from '../filings';
 import { boxOf } from '../filings/pp30';
-import { PND_FORMS, formName } from '../filings/pnd-wht';
+import { PND_FORMS } from '../filings/pnd-wht';
+import { formName } from '../filings/pnd1';
 import { MockError, today } from '../log';
 import { fromSatang } from '../money';
 import { monthLabelTh } from '../periods';
@@ -70,10 +71,10 @@ const FORMS: Omit<FormCatalogueItem, 'lastFinalized'>[] = [
 ]; // [SP-R] every due rule is a mock rule awaiting SP2's tax research
 
 /** The form catalogue (every form, its period kind, due rule and last finalized period) and the filing history across forms: read-only, newest first, one row per finalized filing. ภ.พ.30 is absent for a company outside VAT. */
-export function formCatalogue(st: MockState, companyId: string): FormCatalogue {
+export function formCatalogue(st: MockState, companyId: string, canPayroll = true): FormCatalogue { // PY3a m-forms: the payroll returns (ภ.ง.ด.1 / 1ก / สปส.1-10) are listed only for a user who reads payroll
   const co = st.companies.find((c) => c.id === companyId)!, mine = st.filings.filter((f) => f.companyId === companyId);
   const forms = FORMS.filter((f) => f.form !== 'PP30' || co.vatRegistered).map((f) => ({ ...f, lastFinalized: mine.filter((x) => x.form === f.form).map((x) => x.period).sort().pop() ?? null }));
-  const history = [...mine].sort((a, b) => b.finalizedAt.localeCompare(a.finalizedAt)).map((f) => ({
+  const history = mine.filter((f) => canPayroll || !['PND1', 'PND1A', 'SSO1-10'].includes(f.form)).sort((a, b) => b.finalizedAt.localeCompare(a.finalizedAt)).map((f) => ({
     form: f.form, nameTh: formName(f.form), period: f.period, finalizedAt: f.finalizedAt, finalizedBy: f.finalizedBy, exports: getFiling(st, companyId, f.form, f.period).exports, href: filingHref(f.form, f.period) }));
   return { forms, history, company: { legalNameTh: co.legalNameTh, taxId: co.taxId, branchCode: co.branchCode, address: co.address } };
 }

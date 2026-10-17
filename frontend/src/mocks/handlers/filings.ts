@@ -41,7 +41,7 @@ export const filingHandlers = [
     return { claimPeriod: openClaimMonth(c.st, c.company.id, dd, q.get('vendorDocDate') || undefined) ?? dd.slice(0, 7) };
   })),
   // TX3b: the form catalogue with the filing history across forms (tax.read), and the VAT threshold watch (null for a VAT company; any signed-in role that may read tax)
-  http.get('*/bff/v1/form-catalogue', () => act(READ, (c) => { const m = formCatalogue(c.st, c.company.id); return c.s.screenState === 'empty' ? { ...m, forms: [], history: [] } : m; })),
+  http.get('*/bff/v1/form-catalogue', () => act(READ, (c) => { const m = formCatalogue(c.st, c.company.id, c.perms.includes(PAYROLL_READ)); return c.s.screenState === 'empty' ? { ...m, forms: [], history: [] } : m; })),
   http.get('*/bff/v1/vat-threshold', () => act(READ, (c) => vatThresholdWatch(c.st, c.company.id))),
   http.get('*/bff/v1/filings/PND1A/:year/certificates', ({ params }) => act(PAYROLL_READ, (c) => (c.s.screenState === 'empty' ? [] : employeeCertificates(c.st, c.company.id, String(params.year))))), // PY3 ruling 8: the 50 ทวิ of the employees, from the finalized ภ.ง.ด.1ก
   http.get('*/bff/v1/filings/:form/:period/export', ({ params }) => act(readOf(params.form), (c) => new HttpResponse(exportFilingText(c.st, c.company.id, form(params.form), String(params.period)), { headers: { 'content-type': 'text/plain; charset=utf-8', 'content-disposition': `attachment; filename="${params.form}-${params.period}.txt"` } }))),

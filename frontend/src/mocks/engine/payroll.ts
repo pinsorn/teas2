@@ -251,6 +251,9 @@ export function obPayrollProblem(st: MockState, companyId: string, prev: Stored 
   const a = side(prev), b = side(next);
   if (prev && next && a.year === b.year && JSON.stringify(a.rows) === JSON.stringify(b.rows)) return undefined;
   for (const x of [a, b]) {
+    if (x.rows.length && st.filings.some((f) => f.companyId === companyId && f.form === 'PND1A' && f.period === x.year)) { // PY3a M2: a filed ภ.ง.ด.1ก took this year's opening payroll YTD
+      return fail(409, 'filing.locked', `ภ.ง.ด.1ก ปี ${Number(x.year) + 543} ยื่นแล้วและใช้ยอดเงินเดือนสะสมจากยอดยกมาปีนี้ จึงออกยอดยกมาที่มียอดเงินเดือนสะสม แก้ยอดสะสม หรือยกเลิกยอดยกมานี้ไม่ได้ ไม่มีทางออกในระบบ (แบบรายปียื่นแล้ว ถ้าต้องแก้ให้ยื่นแบบเพิ่มเติมนอกระบบ)`);
+    }
     const ids = x.rows.map((r) => r.employeeId), runs = ids.length ? liveRuns(st, companyId).filter((d) => d.header.documentDate.slice(0, 4) === x.year && d.payroll!.slips.some((s) => ids.includes(s.employeeId))) : [];
     if (runs.length) return fail(409, 'payroll.ob_in_use', `ยอดยกมานี้มียอดเงินเดือนสะสมของพนักงานที่มีรอบเงินเดือนของปี ${x.year} อยู่ (${runs.map((d) => d.number).join(', ')}) ยอดสะสมของใบจ่ายเงินเดือนเหล่านั้นต่อเนื่องจากยอดนี้ จึงออกยอดยกมานี้ แก้ยอดสะสม หรือยกเลิกยอดยกมาไม่ได้ ทางออก: ยกเลิกรอบเงินเดือนเหล่านั้นก่อน (จากรอบล่าสุดย้อนขึ้นไป)`);
   }

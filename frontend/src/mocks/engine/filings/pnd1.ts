@@ -26,6 +26,8 @@ export const formName = (f: string): string => (f === 'PND1' ? 'ภ.ง.ด.1' :
 export const runsOf = (st: MockState, companyId: string, period: string): Stored[] =>
   st.docs.filter((d) => d.companyId === companyId && d.type === 'PR' && LIVE.includes(d.status) && !!d.payroll && d.header.documentDate.startsWith(period))
     .sort((a, b) => a.header.documentDate.localeCompare(b.header.documentDate) || (a.number ?? a.id).localeCompare(b.number ?? b.id));
+/** PY3a m-rate: the contribution rate (basis points) of the stored slips of the month (the last slip's tables); the file header writes it. */
+export const rateOf = (runs: Stored[]): number | undefined => runs.flatMap((d) => d.payroll!.slips).pop()?.tables.ssoRateBp;
 export const runRefs = (runs: Stored[]) => runs.map((d) => ({ id: d.id, number: d.number ?? d.id, revision: d.revision }));
 
 /** One row per employee from the stored slips of `runs` (an employee with a slip in two runs of the month is one row: the figures add up). ภ.ง.ด.1: every employee paid, with income, PIT and the SSO paid (for the ภ.ง.ด.1ก and the 50 ทวิ).
@@ -36,10 +38,10 @@ export function deriveRows(runs: Stored[], kind: PayrollKind): PayrollRow[] {
   const rows: PayrollRow[] = [];
   for (const [employeeId, slips] of by) {
     const last = slips[slips.length - 1], total = (k: 'gross' | 'pit' | 'sso' | 'ssoEmployer' | 'salaryPaid') => slips.reduce((n, s) => n + sat(s[k]), 0);
-    if (kind === 'sso' && !last.employee.ssoRegistered) continue;
+    if (kind === 'sso' && !slips.some((s) => s.employee.ssoRegistered || sat(s.sso) > 0)) continue; // PY3a m-two-slips: any slip of the month under SSO puts the employee on the return
     const base = { employeeId, name: last.name, nationalId: last.employee.nationalId ?? '', income: fromSatang(total('gross')), sso: fromSatang(total('sso')), ssoEmployer: fromSatang(total('ssoEmployer')) };
     if (kind === 'pnd1') rows.push({ ...base, pit: fromSatang(total('pit')) });
-    else rows.push({ ...base, wageBase: fromSatang(total('sso') > 0 ? Math.min(Math.max(total('salaryPaid'), sat(last.tables.ssoFloor)), sat(last.tables.ssoCeiling)) : 0) });
+    else rows.push({ ...base, wageBase: fromSatang(slips.reduce((n, s) => n + (sat(s.sso) > 0 ? Math.min(Math.max(sat(s.salaryPaid), sat(s.tables.ssoFloor)), sat(s.tables.ssoCeiling)) : 0), 0)) }); // PY3a m-floor: the base each slip used (its own floor / ceiling, as the engine applies them per slip), so base x rate = what was contributed
   }
   return rows;
 }
@@ -120,6 +122,7 @@ export function payrollSnapInvariants(st: MockState, f: Filing, w: string, out: 
   const listed = new Set(snap.runs.map((r) => r.id));
   for (const d of runsOf(st, f.companyId, f.period)) if (!listed.has(d.id)) out.push(`${w}: run ${d.id} is missing from the snapshot`);
   const live = found.filter((d) => LIVE.includes(d.status) && !!d.payroll), want = deriveRows(live, kind), have = snap.rows;
+  if (kind === 'sso' && snap.rateBp !== rateOf(live)) out.push(`${w}: the contribution rate ${snap.rateBp ?? 'none'} but the stored slips give ${rateOf(live) ?? 'none'}`);
   if (want.length !== have.length) out.push(`${w}: the stored rows are ${have.length} but the stored slips of the stored runs give ${want.length}`);
   for (const [i, r] of have.entries()) {
     const x = want[i] as PayrollRow | undefined;
