@@ -12,7 +12,7 @@ import { MockError, logActivity, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
 import { monthLabelTh } from './periods';
 import { resolveRole } from './posting';
-import { formName } from './filings/pnd-wht';
+import { formName } from './filings/pnd1';
 import { inForceTax, livePaymentOf, payableAccountOf, filingHref, taxDueOf } from './filings/payment';
 import { isCit } from './filings/cit';
 import { type Filing, nextMonth } from './filings/pp30';
@@ -219,12 +219,18 @@ export function match(st: MockState, companyId: string, lineId: string, req: Mat
     stored = { role: diff.role, amount: fromSatang(diffSat), journalId: j.id };
   }
   Object.assign(l, { status: 'matched', matches, matchedDocIds: matches.map((m) => m.docId), ...(stored ? { diff: stored } : {}) });
-  for (const m of matches) logActivity(st, m.docId, actor, 'bank.match', `จับคู่กับรายการเดินบัญชี ${label(l)} (${formatMoney(m.amount)} บาท)`);
+  for (const m of matches) logOn(st, m.docId, actor, 'bank.match', `จับคู่กับรายการเดินบัญชี ${label(l)} (${formatMoney(m.amount)} บาท)`);
   logActivity(st, l.id, actor, 'bank.match', `จับคู่กับ ${matches.map((m) => m.number).join(', ')}`);
   logAudit(st, actor, companyId, 'bank.match', l.id, { status: 'unmatched' }, { status: 'matched', matches: matches.map((m) => [m.docId, m.amount]), diff: stored });
   return publicLine(st, l);
 }
 
+/** PY3 m4: a match is logged on the document, and a payroll payment's match on its RUN as well (the payment id has no page of its own). */
+const logOn = (st: MockState, docId: string, actor: Actor, action: string, detail: string) => {
+  logActivity(st, docId, actor, action, detail);
+  const run = st.payrollPayments.find((p) => p.id === docId)?.runId;
+  if (run) logActivity(st, run, actor, action, detail);
+};
 const refuseIfTransferPending = (st: MockState, companyId: string, l: StoredLine) => {
   if (pendingTransfer(st, companyId, l.id)) throw fail(409, 'bank.transfer_pending', 'รายการนี้มีรายการโอนระหว่างบัญชีค้างอยู่ (ยกเลิกการจับคู่ไว้) บันทึกซ้ำจะนับเงินสองครั้ง กด "โอนระหว่างบัญชี" เพื่อจับคู่ใหม่ หรือกลับรายการโอนก่อน');
 };
@@ -309,7 +315,7 @@ export function unmatch(st: MockState, companyId: string, lineId: string, actor:
     const last = j?.entries[j.entries.length - 1];
     if (j && last && last.kind !== 'reversal') j.entries = [...j.entries, correctionReversal(st, companyId, last)];
   }
-  for (const m of l.matches ?? []) logActivity(st, m.docId, actor, 'bank.unmatch', `ยกเลิกการจับคู่กับรายการเดินบัญชี ${label(l)}${locked ? ` (ช่วงที่ปิดการกระทบยอดแล้ว) เหตุผล: ${why}` : why ? ` เหตุผล: ${why}` : ''}`);
+  for (const m of l.matches ?? []) logOn(st, m.docId, actor, 'bank.unmatch', `ยกเลิกการจับคู่กับรายการเดินบัญชี ${label(l)}${locked ? ` (ช่วงที่ปิดการกระทบยอดแล้ว) เหตุผล: ${why}` : why ? ` เหตุผล: ${why}` : ''}`);
   logActivity(st, l.id, actor, 'bank.unmatch', locked ? `ยกเลิกการจับคู่ในช่วงที่ปิดแล้ว เหตุผล: ${why}` : why || 'ยกเลิกการจับคู่');
   delete l.matches; delete l.matchedDocIds; delete l.diff;
   l.status = 'unmatched';
@@ -403,6 +409,7 @@ const taxWhat = (form: FilingForm, period: string) => `${formName(form)} เด�
 /** The filing a payment is for, with its tax (satang): P3 not finalized, P4 nothing due, P5 already paid - the refusals the dialog's list shares with the command. */
 function payableFiling(st: MockState, companyId: string, form: FilingForm, period: string): { f: Filing; due: number } {
   if (isCit(form)) throw fail(422, 'tax_payment.not_supported', 'ภาษีเงินได้นิติบุคคลชำระผ่านระบบนี้ไม่ได้ (ไม่มีการลงบัญชีภาษีเงินได้ค้างจ่ายในระบบ) บันทึกการชำระด้วยใบสำคัญสมุดรายวัน');
+  if (form === 'PND1A') throw fail(422, 'tax_payment.not_supported', 'ภ.ง.ด.1ก เป็นแบบสรุปรายปี ไม่มียอดชำระ (ภาษีเงินเดือนชำระตามแบบ ภ.ง.ด.1 รายเดือน)');
   const f = st.filings.find((x) => x.companyId === companyId && x.form === form && x.period === period);
   if (!f) throw fail(409, 'tax_payment.not_finalized', `แบบ ${taxWhat(form, period)} ยังไม่ได้ยืนยัน ทางออก: ยืนยันแบบก่อนชำระภาษี`);
   const due = taxDueOf(f);

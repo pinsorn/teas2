@@ -52,7 +52,8 @@ function Inner({ form, periodKind }: { form: FilingForm; periodKind: 'month' | '
   const hist = useQuery({ queryKey: qk.filings(companyId, form), queryFn: () => endpoints.listFilings(form), enabled: !!companyId && applies });
   const period = search.get('period') || hist.data?.next || '';
   const q = useQuery({ queryKey: qk.filing(companyId, form, period), queryFn: () => endpoints.getFiling(form, period), enabled: !!companyId && applies && !!period });
-  const year = periodKind === 'year'; // TX3a: ภ.ง.ด.50 / 51 name a fiscal year (YYYY, Christian era in the URL)
+  const year = periodKind === 'year'; // TX3a: ภ.ง.ด.50 / 51 name a fiscal year (YYYY, Christian era in the URL); PY3: so does the ภ.ง.ด.1ก
+  const payroll = form === 'PND1' || form === 'PND1A' || form === 'SSO1-10'; // PY3: the payroll returns lock payroll RUNS, not vouchers
   const periodLabel = year ? t('yearLabel', { year: String(Number(period) + 543) }) : monthBE(period);
   const [confirming, setConfirming] = useState(false);
   const finalize = useMutation({
@@ -102,7 +103,7 @@ function Inner({ form, periodKind }: { form: FilingForm; periodKind: 'month' | '
         <Alert role="status" data-testid="filed-banner">
           <LockIcon aria-hidden />
           <AlertTitle>{t('filed.title')}</AlertTitle>
-          <AlertDescription>{t(form === 'PP30' ? 'filed.body' : year ? 'filed.bodyCit' : 'filed.bodyOther', { by: m.finalizedBy ?? '', at: formatDateBE((m.finalizedAt ?? '').slice(0, 10)) })}</AlertDescription>
+          <AlertDescription>{t(form === 'PP30' ? 'filed.body' : payroll ? 'filed.bodyPayroll' : year ? 'filed.bodyCit' : 'filed.bodyOther', { by: m.finalizedBy ?? '', at: formatDateBE((m.finalizedAt ?? '').slice(0, 10)) })}</AlertDescription>
         </Alert>
       ) : null}
       {filed && m.payment ? (
@@ -157,7 +158,7 @@ function Inner({ form, periodKind }: { form: FilingForm; periodKind: 'month' | '
             {disabledWhy ? <span className="text-small text-muted-foreground" data-testid="finalize-why">{disabledWhy}</span> : null}
           </>
         ) : (
-          m.exports.includes('rdprep-txt') ? <Button variant="outline" onClick={() => void exportTxt()}><DownloadIcon aria-hidden />{t('export.txt')}</Button> : null
+          m.exports.includes('rdprep-txt') ? <Button variant="outline" onClick={() => void exportTxt()}><DownloadIcon aria-hidden />{t(form === 'SSO1-10' ? 'export.sso' : 'export.txt')}</Button> : null
         )}
         <Button variant="outline" onClick={() => window.print()}><PrinterIcon aria-hidden />{t('export.print')}</Button>
       </div>

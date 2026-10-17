@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { PaperModel, PayslipPaperModel } from '@/domain/types';
@@ -47,7 +49,8 @@ describe('PayslipPaper (PY2): one A5 slip per employee, every figure from the mo
 
   it('is A5 at print (a named page) and scrolls sideways inside its container on a narrow screen; the stamp of a cancelled run is on every slip', () => {
     const { container } = render(<PayslipPaper model={model([slip(1), slip(2)], { voidMark: { label: 'ยกเลิก' } })} />);
-    expect(container.querySelector('style')?.textContent).toMatch(/@page\s+payslip\s*\{[^}]*size:\s*A5/);
+    expect(container.querySelector('style')).toBeNull(); // PY3 m6: the A5 page rules live in paper.css, not in an inline <style>
+    expect(readFileSync(join(process.cwd(), 'src/kit/paper/paper.css'), 'utf8')).toMatch(/@page\s+payslip\s*\{[^}]*size:\s*A5/);
     expect(container.querySelector('.overflow-x-auto')).not.toBeNull();
     expect(container.querySelectorAll('[data-paper-void]')).toHaveLength(2);
   });

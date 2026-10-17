@@ -398,6 +398,7 @@ function paymentInvariants(st: MockState): string[] {
     const code = payableCode(st, p.companyId), want: [string, number, number][] = [[code, satOf(p.amount), 0], [p.account.accountCode, 0, satOf(p.amount)]];
     if (e.lines.length !== 2 || want.some(([c, dr, cr], i) => e.lines[i].accountCode !== c || satOf(e.lines[i].debit) !== dr || satOf(e.lines[i].credit) !== cr)) out.push(`${w}: journal is not Dr ${code} / Cr ${p.account.accountCode} for ${p.amount} (lines ${e.lines.map((l) => `${l.accountCode} ${l.debit}/${l.credit}`).join(', ')})`);
     if (j.accountId !== p.accountId) out.push(`${w}: journal is on account ${j.accountId} but the payment froze ${p.accountId}`);
+    if (e.date !== p.date && !(e.late && e.date > p.date)) out.push(`${w}: journal entry date ${e.date} but the payment date is ${p.date} (only a late posting by the go-live floor or a closed month may be later)`); // m1: placed() floors to the bank go-live
     if (!!p.reversed !== (last?.kind === 'reversal')) out.push(`${w}: ${p.reversed ? 'reversed on the record but its journal is not' : 'journal reversed but the payment is not marked reversed'}`);
     const links = st.links.filter((l) => l.active && l.kind === 'settles' && l.from === p.id);
     if (p.reversed ? links.length !== 0 : links.length !== 1 || links[0].to !== p.runId || satOf(links[0].amount) !== satOf(p.amount)) out.push(`${w}: settles link ${p.reversed ? 'still active after unpay' : 'missing or not the payment amount to its run'}`);

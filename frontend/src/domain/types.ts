@@ -10,7 +10,7 @@ export type Role = 'operator' | 'accountant' | 'admin';
 export type TaxCode = 'S7' | 'Z0' | 'EX'; // standard 7 %, zero-rated, exempt
 
 export interface Company { id: string; legalNameTh: string; legalNameEn?: string; taxId: string; branchCode: string;
-  vatRegistered: boolean; address: string; phone?: string }
+  vatRegistered: boolean; address: string; phone?: string; /** ST1 (company settings): the SSO employer account, 10 digits; the สปส.1-10 cannot be filed without it (PY3) */ ssoEmployerAccountNo?: string }
 export interface Membership { companyId: string; companyName: string; role: Role }
 export interface Me { userId: string; displayName: string; memberships: Membership[]; activeCompanyId: string;
   vatRegistered: boolean; permissions: string[];
@@ -176,8 +176,8 @@ export interface DocSummary { id: string; type: DocType; number?: string; status
 export interface Page<T> { items: T[]; nextCursor?: string; total?: number }
 
 export type LinkKind = 'converted_from' | 'settles' | 'adjusts' | 'groups' | 'replaces' | 'issues';
-/** `type` 'STL' = a settlement record (FN3), not a document: `number` is its id, `status` follows it (posted = issued, reversed = cancelled). */
-export interface ChainNode { id: string; type: DocType | 'STL'; number?: string; status: DocStatus; total: Money; progress?: string }
+/** `type` 'PRP' = the payment of a payroll run (PY3 m3); 'STL' = a settlement record (FN3), not a document: `number` is its id, `status` follows it (posted = issued, reversed = cancelled). */
+export interface ChainNode { id: string; type: DocType | 'STL' | 'PRP'; number?: string; status: DocStatus; total: Money; progress?: string }
 /** `from` = the document whose command created the link (DO→SO converted_from, RC→TI settles, CN→TI adjusts,
  *  BL→TI groups, new TI→old TI replaces, PV→WT issues); `to` = the document it refers to. */
 export interface ChainEdge { from: string; to: string; kind: LinkKind; amount?: Money; qty?: Qty; active: boolean; wht?: Money }
@@ -274,7 +274,7 @@ export interface PaperModel {
   /** PV: the tax withheld per WHT type (income type + rate, the base and the tax), as the server computed it. */ whtLines?: { label: string; base: Money; tax: Money }[];
   /** Label of the party block when it is not the customer (PV: 'ผู้รับเงิน'). */ partyLabel?: string;
   /** WT (50 ทวิ, D-21): everything the certificate prints, server-built and frozen at the first print (I7). */
-  certificate?: { form: 'PND2' | 'PND3' | 'PND53' | 'PND54'; sequence?: string; incomeType: string; incomeLabel: string; paidOn: IsoDate; income: Money; tax: Money; taxInWords: string;
+  certificate?: { form: 'PND1A' | 'PND2' | 'PND3' | 'PND53' | 'PND54'; /** PND1A (50 ทวิ for an employee, PY3): the SSO the employee paid in the year, printed in the funds field */ ssoPaid?: Money; sequence?: string; incomeType: string; incomeLabel: string; paidOn: IsoDate; income: Money; tax: Money; taxInWords: string;
     condition: 'withhold' | 'forever' | 'once'; voucher?: string };
   /** JV (ใบสำคัญทั่วไป): the account lines as posted, with the server's totals. */
   journal?: { lines: { no: number; accountCode: string; accountName: string; description: string; debit: Money; credit: Money }[]; debit: Money; credit: Money };

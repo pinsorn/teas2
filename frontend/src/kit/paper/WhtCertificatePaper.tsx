@@ -9,7 +9,7 @@ type Cert = NonNullable<PaperModel['certificate']>;
 // its boxes, rows and captions, laid out in React and filled from the WT's stored snapshot. The PDF itself is never shipped. Thai legal form (D-21): the labels stay Thai whatever the UI language is.
 const COPIES = ['ฉบับที่ 1 (สำหรับผู้ถูกหักภาษี ณ ที่จ่าย ใช้แนบพร้อมกับแบบแสดงรายการภาษี)', 'ฉบับที่ 2 (สำหรับผู้ถูกหักภาษี ณ ที่จ่าย เก็บไว้เป็นหลักฐาน)'];
 const FORMS: { key: Cert['form'] | 'x'; label: string }[] = [
-  { key: 'x', label: '(1) ภ.ง.ด.1ก' }, { key: 'x', label: '(2) ภ.ง.ด.1ก พิเศษ' }, { key: 'PND2', label: '(3) ภ.ง.ด.2' }, { key: 'PND3', label: '(4) ภ.ง.ด.3' },
+  { key: 'PND1A', label: '(1) ภ.ง.ด.1ก' }, { key: 'x', label: '(2) ภ.ง.ด.1ก พิเศษ' }, { key: 'PND2', label: '(3) ภ.ง.ด.2' }, { key: 'PND3', label: '(4) ภ.ง.ด.3' },
   { key: 'x', label: '(5) ภ.ง.ด.2ก' }, { key: 'x', label: '(6) ภ.ง.ด.3ก' }, { key: 'PND53', label: '(7) ภ.ง.ด.53' }, { key: 'PND54', label: 'ภ.ง.ด.54 (จ่ายต่างประเทศ)' }, // 54 is not on the RD form; it is kept so a foreign payment is not printed with no return ticked
 ];
 const CONDITIONS: { key: Cert['condition'] | 'x'; label: string }[] = [
@@ -84,7 +84,7 @@ function Sheet({ m, copy }: { m: PaperModel; copy: number }) {
         </tbody>
       </table>
       <div className="paper-rd-words"><b>รวมเงินภาษีที่หักนำส่ง (ตัวอักษร)</b><span>({c.taxInWords})</span></div>
-      <div className="paper-rd-box paper-rd-funds">เงินที่จ่ายเข้า กบข./กสจ./กองทุนสงเคราะห์ครูโรงเรียนเอกชน........................บาท กองทุนประกันสังคม........................บาท กองทุนสำรองเลี้ยงชีพ........................บาท</div>
+      <div className="paper-rd-box paper-rd-funds" data-field="funds">เงินที่จ่ายเข้า กบข./กสจ./กองทุนสงเคราะห์ครูโรงเรียนเอกชน........................บาท กองทุนประกันสังคม{c.ssoPaid ? <b data-field="sso-paid"> {formatMoney(c.ssoPaid)} </b> : '........................'}บาท กองทุนสำรองเลี้ยงชีพ........................บาท</div>
       <div className="paper-rd-box paper-rd-cond"><b>ผู้จ่ายเงิน</b>{CONDITIONS.map((x) => <span key={x.label}><Check on={x.key === c.condition} /> {x.label}</span>)}</div>
       <div className="paper-rd-foot">
         <div className="paper-rd-box paper-rd-warn"><b>คำเตือน</b> ผู้มีหน้าที่ออกหนังสือรับรองการหักภาษี ณ ที่จ่าย ฝ่าฝืนไม่ปฏิบัติตามมาตรา 50 ทวิ แห่งประมวลรัษฎากร ต้องรับโทษทางอาญาตามมาตรา 35 แห่งประมวลรัษฎากร</div>
@@ -105,7 +105,11 @@ export function WhtCertificatePaper({ model }: { model: PaperModel; /** Tests on
   if (!model.certificate) return null;
   return (
     <Paper ready>
-      <div className="paper-stack paper-rd"><Sheet m={model} copy={0} /><Sheet m={model} copy={1} /></div>
+      <CertificateSheets model={model} />
     </Paper>
   );
+}
+/** PY3 ruling 8: the two copies of ONE certificate, exported so the employees' annual 50 ทวิ (`EmployeeWhtCertificatePaper`) reuses this layout instead of forking it. */
+export function CertificateSheets({ model }: { model: PaperModel }) {
+  return <div className="paper-stack paper-rd"><Sheet m={model} copy={0} /><Sheet m={model} copy={1} /></div>;
 }

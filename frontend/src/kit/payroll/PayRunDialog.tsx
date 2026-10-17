@@ -8,7 +8,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import type { Doc } from '@/domain/types';
-import { api } from '@/lib/api/client';
 import { endpoints } from '@/lib/api/endpoints';
 import { formatDateBE, formatMoney, todayIso } from '@/lib/format';
 import { Guarded } from '../doc-view/Guarded';
@@ -32,7 +31,7 @@ export function PayRunDialog({ doc, onClose }: { doc: Doc; onClose: () => void }
   const min = doc.header.documentDate;
   const [date, setDate] = useState(() => { const d = me?.businessDate ?? todayIso(); return d < min ? min : d; });
   const go = useMutation({
-    mutationFn: () => api<Doc>('POST', `/docs/PR/${encodeURIComponent(doc.id)}/pay`, { accountId, date, version: doc.version }),
+    mutationFn: () => endpoints.payRun(doc.id, { accountId, date, version: doc.version }),
     onSuccess: async () => { await qc.invalidateQueries({ queryKey: [company] }); onClose(); },
   });
   return (
@@ -73,7 +72,7 @@ export function UnpayDialog({ doc, onClose }: { doc: Doc; onClose: () => void })
   const { me } = useMe();
   const [reason, setReason] = useState('');
   const go = useMutation({
-    mutationFn: () => api<Doc>('POST', `/docs/PR/${encodeURIComponent(doc.id)}/unpay`, { reason, version: doc.version }),
+    mutationFn: () => endpoints.unpayRun(doc.id, { reason, version: doc.version }),
     onSuccess: async () => { await qc.invalidateQueries({ queryKey: [me?.activeCompanyId] }); onClose(); },
   });
   return (

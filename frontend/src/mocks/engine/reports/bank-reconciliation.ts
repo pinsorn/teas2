@@ -45,7 +45,7 @@ export function bankReconciliation(st: MockState, companyId: string, p: BankRecP
     const effect = d.type === 'OB' ? (cutoff && cutoff <= to ? (side === 'RC' ? 1 : -1) * toSatang(d.totals.total) : 0) : effectOn(st.journals.find((x) => x.docId === d.id)?.preview.entries ?? payEntries(st, d.id) ?? []);
     const left = effect - (side === 'RC' ? 1 : -1) * (matchedBy.get(d.id) ?? 0);
     if (left === 0) continue;
-    const row: ReportRow = { level: 1, kind: 'row', cells: { item: `${side} ${d.number ?? d.id}${d.party?.name ? ` · ${d.party.name}` : ''}`, date: d.header.documentDate, amount: fromSatang(side === 'RC' ? left : -left) } };
+    const row: ReportRow = { level: 1, kind: 'row', cells: { item: `${st.payrollPayments.some((p) => p.id === d.id) ? '' : `${side} `}${d.number ?? d.id}${d.party?.name ? ` · ${d.party.name}` : ''}`, date: d.header.documentDate, amount: fromSatang(side === 'RC' ? left : -left) } };
     (side === 'RC' ? transit : outstanding).push({ row, sat: side === 'RC' ? left : -left });
   }
   for (const j of st.bankJournals) {

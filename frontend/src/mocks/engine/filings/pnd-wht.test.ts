@@ -28,7 +28,7 @@ const revisePv = (id: string, patch: { header?: Partial<Doc['header']>; lines?: 
 
 describe('the seed', () => {
   it('files ภ.ง.ด.3 and ภ.ง.ด.53 for 2026-08 and 2026-09; the chain of each form starts at 2026-08', () => {
-    expect(st.filings.filter((f) => f.companyId === CO && f.form !== 'PP30').map((f) => `${f.form} ${f.period}`)).toEqual(['PND3 2026-08', 'PND53 2026-08', 'PND3 2026-09', 'PND53 2026-09']);
+    expect(st.filings.filter((f) => f.companyId === CO && f.form !== 'PP30' && f.form !== 'PND1' && f.form !== 'SSO1-10').map((f) => `${f.form} ${f.period}`)).toEqual(['PND3 2026-08', 'PND53 2026-08', 'PND3 2026-09', 'PND53 2026-09']);
     expect([chainStart(st, CO, 'PND3'), chainStart(st, CO, 'PND53'), chainStart(st, CO, 'PND54')]).toEqual(['2026-08', '2026-08', undefined]);
     expect(getFiling(st, CO, 'PND53', '2026-08')).toMatchObject({ status: 'finalized', finalizedBy: me.name, blockers: [] });
     expect(checkInvariants(st)).toEqual([]);

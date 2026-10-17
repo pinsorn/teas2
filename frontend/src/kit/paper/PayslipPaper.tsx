@@ -9,46 +9,6 @@ const L = { phone: 'โทร', taxId: 'เลขประจำตัวผู�
   net: 'เงินได้สุทธิ', words: 'จำนวนเงินตัวอักษร', ssoEr: 'ประกันสังคมส่วนนายจ้าง (ไม่หักจากพนักงาน)', ytd: 'ยอดสะสมตั้งแต่ต้นปี', ytdIncome: 'รายได้สะสม', ytdPit: 'ภาษีสะสม', ytdSso: 'ประกันสังคมสะสม', baht: 'บาท' };
 const mark = (name: string) => name.replace(/^(บริษัท|ห้างหุ้นส่วนจำกัด|ห้างหุ้นส่วนสามัญ|หจก\.|บจก\.)\s*/, '').charAt(0);
 
-/** A5 on paper (a named page: the rest of the app prints A4), one sheet per slip. On a narrow screen the sheets scroll sideways inside their own container. */
-const CSS = `
-@page payslip { size: A5; margin: 0; }
-.payslip-stack { display: grid; justify-content: center; gap: 20px; padding: 20px 12px; }
-.paper-root .payslip-page { width: 559px; height: 794px; padding: 30px 34px; font-size: 8.4pt; line-height: 1.35; page: payslip; }
-.payslip-page header { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 2pt solid var(--paper-accent); }
-.payslip-page .ps-seller { display: flex; gap: 10px; }
-.payslip-page .ps-logo { flex: none; width: 40px; height: 40px; border-radius: 50%; border: 1.6pt solid var(--paper-accent); display: grid; place-items: center; font-weight: 700; font-size: 17pt; color: var(--paper-accent-text); line-height: 1; }
-.payslip-page h2 { font-size: 10.5pt; font-weight: 700; line-height: 1.25; }
-.payslip-page .ps-title { text-align: right; flex: none; }
-.payslip-page .ps-title h2 { font-size: 15pt; color: var(--paper-accent); }
-.payslip-page .ps-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
-.payslip-page .ps-box { border: 0.75pt solid var(--paper-rule); border-radius: 6px; padding: 6px 9px; }
-.payslip-page .ps-box dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; margin: 0; }
-.payslip-page .ps-box dt { color: var(--paper-muted); }
-.payslip-page .ps-box dd { margin: 0; text-align: right; font-weight: 600; }
-.payslip-page .ps-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; flex: 1; align-content: start; }
-.payslip-page table { width: 100%; border-collapse: collapse; }
-.payslip-page th { text-align: left; font-weight: 600; color: var(--paper-accent-text); background: var(--paper-tint); padding: 4px 6px; border-bottom: 1.2pt solid var(--paper-accent); }
-.payslip-page td { padding: 3px 6px; border-bottom: 0.5pt solid var(--paper-hair); vertical-align: top; }
-.payslip-page td.r, .payslip-page th.r { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.payslip-page tr.ps-sum td { font-weight: 700; border-top: 0.75pt solid var(--paper-ink); border-bottom: 0; }
-.payslip-page .ps-net { margin-top: 8px; background: var(--paper-accent); color: var(--paper-accent-contrast); border-radius: 6px; padding: 7px 10px; display: flex; justify-content: space-between; align-items: baseline; }
-.payslip-page .ps-net b { font-size: 14pt; }
-.payslip-page .ps-words { margin-top: 5px; background: var(--paper-tint); border-radius: 6px; padding: 5px 9px; font-weight: 600; color: var(--paper-accent-text); }
-.payslip-page .ps-ytd { margin-top: 8px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-.payslip-page .ps-ytd div { border: 0.75pt solid var(--paper-hair); border-radius: 6px; padding: 4px 8px; }
-.payslip-page .ps-ytd span { display: block; color: var(--paper-muted); font-size: 7.6pt; }
-.payslip-page .ps-ytd b { font-variant-numeric: tabular-nums; }
-.payslip-page .ps-note { margin-top: 8px; font-size: 7.6pt; color: var(--paper-muted); }
-.payslip-page .ps-sign { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 18px; }
-.payslip-page .ps-sig { text-align: center; }
-.payslip-page .ps-sig .line { border-bottom: 0.75pt solid var(--paper-ink); height: 22px; }
-.payslip-page .ps-sig .who { margin-top: 3px; font-weight: 600; }
-@media print {
-  .payslip-stack { display: block; padding: 0; background: none; }
-  .paper-root .payslip-page { height: 793px; box-shadow: none; break-after: page; break-inside: avoid; }
-  .paper-root .payslip-page:last-child { break-after: auto; }
-}
-`;
 
 function Slip({ m, s }: { m: PaperModel; s: PayslipPaperModel }) {
   const co = m.seller;
@@ -115,7 +75,6 @@ export function PayslipPaper({ model: m, only }: { model: PaperModel; only?: str
   const slips = (m.payslips ?? []).filter((s) => !only || s.employeeId === only);
   return (
     <Paper ready>
-      <style>{CSS}</style>
       <div className="overflow-x-auto">
         <div className="paper-stack payslip-stack">{slips.map((s) => <Slip key={s.employeeId} m={m} s={s} />)}</div>
       </div>

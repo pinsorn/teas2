@@ -57,7 +57,8 @@ export function PaperView({ type, id, copy = false, toolbar = false }: { type: D
             printing.current = true; setLogFailed(false);
             // The print is logged FIRST and the server decides ต้นฉบับ / สำเนา. If it says copy while this page shows the original, the paper is re-rendered as สำเนา before anything is printed;
             // a print that could not be logged is not printed (nobody could tell whether the original is already out).
-            endpoints.markPrinted(type, id, asCopy)
+            const employee = type === 'PR' ? new URLSearchParams(window.location.search).get('employee') ?? undefined : undefined; // PY3 m2: `?employee=` prints one payslip, which is not the run's print
+            endpoints.markPrinted(type, id, asCopy, employee)
               .then((r) => {
                 if (me) void qc.invalidateQueries({ queryKey: [me.activeCompanyId, 'doc', type, id] });
                 if (r.copy && !asCopy) { printWhenReady.current = true; setForced(true); } else window.print();

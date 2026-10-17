@@ -200,6 +200,12 @@ export const SCREENS: Screen[] = [
   { name: 'whtPp36', route: '/tax/wht?tab=pp36&period=2026-10', company: 'both', states: true },
   { name: 'whtWithheld', route: '/tax/wht?tab=withheld', company: 'both', states: true },
   { name: 'whtMissingCert', route: '/tax/wht?tab=missing', company: 'both', states: true },
+  { name: 'payrollFilingsPnd1', route: '/payroll/filings?tab=pnd1&period=2026-09', company: 'both', states: true }, // PY3: September's ภ.ง.ด.1 (a draft: finalizable for the VAT company)
+  { name: 'payrollFilingsPnd1Filed', route: '/payroll/filings?tab=pnd1&period=2026-08', company: 'both', states: true }, // finalized: the frozen snapshot, payable
+  { name: 'payrollFilingsPnd1a', route: '/payroll/filings?tab=pnd1a&period=2025', company: 'both', states: true }, // the non-VAT company's 2025 is its opening balance only
+  { name: 'payrollFilingsSso', route: '/payroll/filings?tab=sso&period=2026-09', company: 'both', states: true }, // the non-VAT company has no SSO employer account: blocked, exit = company settings
+  { name: 'payrollFilingsSsoFiled', route: '/payroll/filings?tab=sso&period=2026-08', company: 'both', states: true },
+  { name: 'payrollFilingsCert', route: '/payroll/filings?tab=cert&period=2025', company: 'both', states: true }, // the annual 50 ทวิ of the employees (empty until the ภ.ง.ด.1ก of the year is filed)
   { name: 'cit', route: '/tax/cit', company: 'both', states: true }, // TX3a: the ภ.ง.ด.50 of the last year that ended (2025: the year-end close is not done in the seed)
   { name: 'citPnd51', route: '/tax/cit?tab=pnd51&period=2026', company: 'both', states: true },
   { name: 'citYear2026', route: '/tax/cit?period=2026', company: 'both', states: true },

@@ -324,10 +324,10 @@ export const docsWriteHandlers = [
   // the print action was used (the paper page's print button): what it counts as is the server's decision
   http.post('*/bff/v1/docs/:type/:id/printed', ({ request, params }) => guarded(String(params.type), P('read'), async (c0, t) => {
     own(c0, t, params.id);
-    const body = (await request.json().catch(() => ({}))) as { copy?: boolean };
+    const body = (await request.json().catch(() => ({}))) as { copy?: boolean; employee?: string };
     const c = ctx(); // the body was awaited: read the state again so two quick prints (two tabs) see each other and only one is the original
     const doc = own(c, t, params.id);
-    const r = markPrinted(c.st, doc, body.copy === true, ACTOR, t === 'WT' && PAPER_BUILDERS.WT && !['draft', 'pending', 'approved'].includes(doc.status) ? PAPER_BUILDERS.WT(c, publicDoc(doc), false) : undefined); // 50 tawi: frozen at the first print (I7)
+    const r = markPrinted(c.st, doc, body.copy === true, ACTOR, t === 'WT' && PAPER_BUILDERS.WT && !['draft', 'pending', 'approved'].includes(doc.status) ? PAPER_BUILDERS.WT(c, publicDoc(doc), false) : undefined, body.employee); // 50 tawi: frozen at the first print (I7); PY3 m2: `employee` = one payslip of a run (not the run's print)
     done(c);
     return HttpResponse.json(r);
   })),

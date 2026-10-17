@@ -9,19 +9,21 @@ import { type Filing, boxOf } from './pp30';
 /** TX2c: paying a finalized return to the Revenue Department. The payment is a bank journal of kind 'tax' (Dr the return's payable [+ other legs] / Cr the bank) with a frozen reference to the return; "paid" is derived from it, the filing snapshot is never touched. */
 const sat = (m: string | undefined) => toSatang(m ?? '0.00');
 
-/** The tax a finalized return asks to be paid (satang): ภ.พ.30 the net payable (box 11, = max(5 - 7 - 10, 0)), ภ.ง.ด. box "tax", ภ.พ.36 box "vat". */
+/** The tax a finalized return asks to be paid (satang): ภ.พ.30 the net payable (box 11, = max(5 - 7 - 10, 0)), ภ.ง.ด. box "tax", ภ.พ.36 box "vat"; PY3: ภ.ง.ด.1 the PIT (box "tax"), สปส.1-10 the employee + employer contributions (box "total"). */
 export function taxDueOf(f: Filing): number {
-  return f.form === 'PP30' ? boxOf(f.boxes, '11') : boxOf(f.boxes, f.form === 'PP36' ? 'vat' : 'tax');
+  return f.form === 'PP30' ? boxOf(f.boxes, '11') : boxOf(f.boxes, f.form === 'PP36' ? 'vat' : f.form === 'SSO1-10' ? 'total' : 'tax');
 }
-/** The payable a payment of this return clears: VatPayable (PP30), Pnd36VatPayable (PP36), WhtPayable keyed by the form (PND*). */
+/** The payable a payment of this return clears: VatPayable (PP30), Pnd36VatPayable (PP36), WhtPayable keyed by the form (PND2 / 3 / 53 / 54); PY3: PitPayable 2153 (ภ.ง.ด.1), SsoPayable 2160 (สปส.1-10). */
 export function payableAccountOf(st: MockState, f: Filing): string {
   const ctx = { companyId: f.companyId, docType: 'PV' as const };
   if (f.form === 'PP30') return resolveRole(st, 'VatPayable', ctx).code;
   if (f.form === 'PP36') return resolveRole(st, 'Pnd36VatPayable', ctx).code;
+  if (f.form === 'PND1') return resolveRole(st, 'PitPayable', { companyId: f.companyId, docType: 'PR' }).code;
+  if (f.form === 'SSO1-10') return resolveRole(st, 'SsoPayable', { companyId: f.companyId, docType: 'PR' }).code;
   return resolveRole(st, 'WhtPayable', { ...ctx, whtForm: f.form as 'PND2' | 'PND3' | 'PND53' | 'PND54' }).code;
 }
 /** Where a form's page lives (the same two-branch href the filing lock uses). */
-export const filingHref = (form: FilingForm, period: string) => (form === 'PP30' ? `/tax/vat?period=${period}` : form === 'PND50' || form === 'PND51' ? `/tax/cit?tab=${form.toLowerCase()}&period=${period}` : `/tax/wht?tab=${form.toLowerCase()}&period=${period}`);
+export const filingHref = (form: FilingForm, period: string) => (form === 'PP30' ? `/tax/vat?period=${period}` : form === 'PND1' || form === 'PND1A' || form === 'SSO1-10' ? `/payroll/filings?tab=${form === 'SSO1-10' ? 'sso' : form.toLowerCase()}&period=${period}` : form === 'PND50' || form === 'PND51' ? `/tax/cit?tab=${form.toLowerCase()}&period=${period}` : `/tax/wht?tab=${form.toLowerCase()}&period=${period}`);
 export const inForceTax = (j: BankJournal) => j.kind === 'tax' && j.entries[j.entries.length - 1]?.kind !== 'reversal';
 /** The in-force payment of a return (at most one, invariant T3). */
 export const livePaymentOf = (st: MockState, f: Filing): BankJournal | undefined =>

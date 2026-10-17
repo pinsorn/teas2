@@ -25,7 +25,8 @@ export const BANK_FIXTURES = { bankKbank: 'ba-kbank', bankEmpty: 'ba-scb', nbank
 export const SCHEDULE_FIXTURES = { schedRecurringTi: 'sch-rec-ti', schedAmortisation: 'sch-amort', nschedRecurring: 'nsch-rec-iv' } as const;
 /** TX1 filing periods (YYYY-MM): not documents. 2026-08 is finalized, 2026-09 is a draft that can be finalized (the gate demo), 2026-10 is a draft with blockers (drafts, and September still open). */
 /** TX2b: the ภ.ง.ด.53 and ภ.พ.36 drafts are October's (blocked until the month ends); the ภ.ง.ด.3 / 53 of 2026-08 and 2026-09 are filed. */
-export const FILING_FIXTURES = { pp30Finalized: '2026-08', pp30Due: '2026-09', pp30Draft: '2026-10', pnd53Draft: '2026-10', pp36Draft: '2026-10' } as const;
+/** PY3: `pnd1Draft` = the VAT company's ภ.ง.ด.1 of September (a draft that can be finalized; August's ภ.ง.ด.1 and สปส.1-10 are filed); `ssoBlocked` = the NON-VAT company's สปส.1-10 of September (blocked: no SSO employer account). */
+export const FILING_FIXTURES = { pp30Finalized: '2026-08', pp30Due: '2026-09', pp30Draft: '2026-10', pnd53Draft: '2026-10', pp36Draft: '2026-10', pnd1Draft: '2026-09', ssoBlocked: '2026-09' } as const;
 export type FixtureKey = DocFixtureKey | keyof typeof BANK_FIXTURES | keyof typeof SCHEDULE_FIXTURES | keyof typeof FILING_FIXTURES;
 
 /** An issued, untouched TI of pc-01 (the multi-target receipt vector settles two of them). */
@@ -161,8 +162,9 @@ export function fixtureIds(st: MockState): Record<FixtureKey, string> {
   }
   const co = st.companies.find((c) => c.vatRegistered)!.id;
   for (const [k, period] of Object.entries(FILING_FIXTURES) as [keyof typeof FILING_FIXTURES, string][]) {
-    const m = getFiling(st, co, k === 'pnd53Draft' ? 'PND53' : k === 'pp36Draft' ? 'PP36' : 'PP30', period);
-    if (m.status === (k === 'pp30Finalized' ? 'finalized' : 'draft') && (k === 'pp30Due' ? !m.blockers.length : k !== 'pp30Finalized' ? m.blockers.length : true)) out[k] = period; else missing.push(k);
+    const m = k === 'ssoBlocked' ? getFiling(st, st.companies.find((c) => !c.vatRegistered)!.id, 'SSO1-10', period) : getFiling(st, co, k === 'pnd53Draft' ? 'PND53' : k === 'pp36Draft' ? 'PP36' : k === 'pnd1Draft' ? 'PND1' : 'PP30', period);
+    const open = k === 'pp30Due' || k === 'pnd1Draft'; // these two are drafts that can be finalized; the other drafts are blocked
+    if (m.status === (k === 'pp30Finalized' ? 'finalized' : 'draft') && (open ? !m.blockers.length : k !== 'pp30Finalized' ? m.blockers.length : true) && (k !== 'ssoBlocked' || m.blockers.some((b) => b.code === 'sso_account'))) out[k] = period; else missing.push(k);
   }
   if (missing.length) throw new Error(`fixture ids unresolved: ${missing.join(', ')}`);
   return out as Record<FixtureKey, string>;

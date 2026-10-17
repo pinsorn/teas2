@@ -35,3 +35,11 @@
 | 2026-10-17 | SP1c TX4 implement (50 ทวิ RD layout, PP30 official boxes 8-12) | sonnet-implementer | Ham gate follow-ups; Opus review after (filing kit) |
 | 2026-10-17 | SP1c TX4 review (PP30 official boxes, 50 ทวิ layout) | opus-reviewer (fresh) | filing kit money: carry / cap / netting consumers |
 | 2026-10-17 | SP1c PY1 implement (employees, payroll runs, PIT / SSO, posting) | sonnet-implementer | default implementer; Opus review after (money) |
+| 2026-10-18 | SP1c PY1 review (payroll engine: PIT / SSO, frozen slips, YTD chain, posting) | opus-reviewer (fresh) | money + payroll tax engine; reviewer never touched it |
+| 2026-10-18 | SP1c PY1a fix (Opus REJECT: freeze on revise, OB vs runs, whole-slip invariant, 2190 deductions) | sonnet-implementer (fresh) | fix round from a written brief; Opus re-review after |
+| 2026-10-18 | SP1c PY1a re-review | opus-reviewer (warm) | round 2 of the PY1 money review |
+| 2026-10-18 | SP1c PY1b fix (2190 clearable; plan refuses PR / OB problems up front) | sonnet-implementer (fresh) | small fix from a written brief; Opus round 3 after |
+| 2026-10-18 | SP1c PY1b re-review | opus-reviewer (warm) | round 3 of the PY1 money review |
+| 2026-10-18 | SP1c PY2 implement (pay the run, unpay, payslip drawer, payslip paper) | sonnet-implementer (fresh) | default implementer; Opus review after (money) |
+| 2026-10-18 | SP1c PY2 review (pay / unpay, payslips) | opus-reviewer (fresh) | money: payment, reversal, settlement invariants |
+| 2026-10-18 | SP1c PY3 implement (ภ.ง.ด.1, 1ก, สปส.1-10, employee 50 ทวิ, pay PND1 / SSO; PY2 minors) | sonnet-implementer (fresh) | default implementer; Opus review after (tax) |
