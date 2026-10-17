@@ -12,7 +12,7 @@ import { trialBalance } from './trial-balance';
 const BUILDERS: Partial<Record<ReportKind, (st: MockState, companyId: string, p: Record<string, string>) => ReportModel>> = {
   'trial-balance': (st, c, p) => trialBalance(st, c, { ...p, asOf: p.asOf || today() }),
   'general-journal': (st, c, p) => generalJournal(st, c, { from: p.from, to: p.to, account: p.account?.trim(), source: p.source }),
-  'asset-register': (st, c, p) => assetRegister(st, c, p),
+  'asset-register': (st, c, p) => assetRegister(st, c, { ...p, asOf: p.asOf || today() }),
   'bank-reconciliation': (st, c, p) => bankReconciliation(st, c, { account: p.account ?? '', to: p.to || today() }),
 };
 export const isBuilt = (k: string): k is ReportKind => Object.hasOwn(BUILDERS, k);

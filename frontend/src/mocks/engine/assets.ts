@@ -50,6 +50,20 @@ export function monthAmount(a: Terms, month: string, accumulated: number, throug
   return Math.min(days === dim ? base : rd(base * days, dim), cap);
 }
 
+/** What `month` depreciates for an asset whose first run is `month` (= depFrom) after a late registration: every month from catchUpFrom through `month`, each by `monthAmount` on what the earlier ones accumulated (AC7a). Otherwise just the month.
+ *  `throughDay`: only the last month, up to that day (a disposal). `catchUp` is set when more than the month itself is in the amount (`months` counts the run month). */
+export function dueIn(a: Terms & { depFrom: string; catchUpFrom?: string }, month: string, accumulated: number, throughDay?: number): { amount: number; catchUp?: { from: string; months: number } } {
+  const from = a.catchUpFrom && month === a.depFrom ? a.catchUpFrom : month;
+  let amount = 0;
+  for (let m = from; m <= month; m = addMonths(m, 1)) amount += monthAmount(a, m, accumulated + amount, m === month ? throughDay : undefined);
+  return { amount, ...(from < month ? { catchUp: { from, months: monthIdx(month) - monthIdx(from) + 1 } } : {}) };
+}
+/** The first month an asset depreciates in, and its catch-up: the natural month, unless a live run already covers it - then the month after the latest run, with the natural month as `catchUpFrom`. */
+const firstMonths = (st: MockState, companyId: string, natural: string): { depFrom: string; catchUpFrom?: string } => {
+  const latest = liveDps(st, companyId).at(-1);
+  return latest && natural <= latest.dp!.month ? { depFrom: addMonths(latest.dp!.month, 1), catchUpFrom: natural } : { depFrom: natural };
+};
+
 // ---------------------------------------------------------------- reading
 
 const docOf = (st: MockState, id: string | undefined) => (id ? st.docs.find((d) => d.id === id) : undefined);
@@ -137,14 +151,12 @@ export function activateAsset(st: MockState, companyId: string, input: ActivateI
   const name = (input.name ?? r.name), life = input.source.kind === 'ob' ? input.lifeMonths ?? r.lifeMonths : input.lifeMonths;
   const t = checkTerms(r.cost, r.opening, name, input.salvage, life, input.source.kind === 'ob' ? r.startDate : input.startDate);
   beforeSource(r, input.source.kind, t.start);
-  const depFrom = r.depFrom ?? t.start.slice(0, 7);
-  const dp = liveDps(st, companyId).find((x) => x.dp!.month >= depFrom);
-  if (dp) throw fail(409, 'fa.dp_exists', `มีค่าเสื่อมราคางวด ${dp.dp!.month} ลงบัญชีแล้ว ลงทะเบียนสินทรัพย์ที่เริ่มคิดค่าเสื่อมก่อนหน้านั้นไม่ได้ ทางออก: ยกเลิกรายการค่าเสื่อมราคาจากงวดล่าสุดย้อนกลับไปก่อน`);
+  const first = firstMonths(st, companyId, r.depFrom ?? t.start.slice(0, 7));
   const cls = r.assetClass;
   const codes: FaCodes = { cost: r.codes.cost ?? roleCode(st, companyId, 'FixedAsset', { assetClass: cls }), accumulated: r.codes.accumulated ?? roleCode(st, companyId, 'AccumulatedDepreciation', { assetClass: cls }),
     expense: roleCode(st, companyId, 'DepreciationExpense'), gain: roleCode(st, companyId, 'DisposalGainLoss', { outcome: 'gain' }), loss: roleCode(st, companyId, 'DisposalGainLoss', { outcome: 'loss' }) };
   const at = stamp(), id = opts?.id ?? newId(st, 'FA'), date = opts?.date ?? today(), cost = fromSatang(r.cost);
-  const asset: AssetData = { name: name.trim(), assetClass: cls, cost, salvage: fromSatang(t.salvage), lifeMonths: t.life, method: 'straight_line', startDate: t.start, depFrom, opening: fromSatang(r.opening),
+  const asset: AssetData = { name: name.trim(), assetClass: cls, cost, salvage: fromSatang(t.salvage), lifeMonths: t.life, method: 'straight_line', startDate: t.start, ...first, opening: fromSatang(r.opening),
     source: input.source, codes, accumulated: fromSatang(r.opening), nbv: fromSatang(r.cost - r.opening) };
   const d: Stored = { companyId, id, type: 'FA', number: allocate(st, companyId, 'FA', date), status: 'issued', correctionClass: 'L', revision: 0, version: 1,
     header: { documentDate: date, reference: r.number, ...(r.partyId ? { partyId: r.partyId } : {}) }, ...(r.party ? { party: r.party } : {}), lines: [], totals: plainTotals(cost), locks: [], createdBy: actor, issuedAt: at, asset };
@@ -197,8 +209,8 @@ export function planDepreciation(st: MockState, companyId: string, month: string
     if (a.disposed || a.depFrom > month) continue;
     const gap = uncoveredMonth(st, companyId, a.depFrom, month);
     if (gap && !problem) problem = fail(409, 'dp.asset_behind', `สินทรัพย์ ${fa.number} ${a.name} ยังไม่มีค่าเสื่อมราคางวด ${monthLabelTh(gap)} ทางออก: คิดค่าเสื่อมราคางวดนั้นก่อน (เปิดงวดบัญชีอีกครั้งถ้างวดนั้นปิดแล้ว)`);
-    const amount = monthAmount(a, month, accumulatedOf(st, fa, reviseId));
-    if (amount > 0) rows.push({ assetId: fa.id, assetNumber: fa.number, name: a.name, assetClass: a.assetClass, amount: fromSatang(amount), expenseCode: a.codes.expense, accumulatedCode: a.codes.accumulated });
+    const { amount, catchUp } = dueIn(a, month, accumulatedOf(st, fa, reviseId));
+    if (amount > 0) rows.push({ assetId: fa.id, assetNumber: fa.number, name: a.name, assetClass: a.assetClass, amount: fromSatang(amount), expenseCode: a.codes.expense, accumulatedCode: a.codes.accumulated, ...(catchUp ? { catchUp } : {}) });
   }
   return { month, date, rows, total: fromSatang(rows.reduce((n, r) => n + sat(r.amount), 0)), ...(problem ? { problem } : {}) };
 }
@@ -320,13 +332,13 @@ export function disposeAsset(st: MockState, companyId: string, id: string, input
   const buyer = sale ? st.parties.find((p) => p.id === input.buyerId && p.companyId === companyId && p.kind === 'customer' && p.active !== false) : undefined;
   if (sale && !(proceeds > 0)) throw bad('ราคาขายต้องมากกว่า 0');
   if (sale && !buyer) throw bad('ต้องเลือกผู้ซื้อ (ลูกค้า) ของบริษัทนี้');
-  if (date < a.startDate || month < a.depFrom) throw fail(422, 'fa.dispose_date', `วันที่จำหน่ายต้องไม่ก่อนวันที่เริ่มใช้งาน (${a.startDate})`);
+  if (date < a.startDate || month < (a.catchUpFrom ?? a.depFrom)) throw fail(422, 'fa.dispose_date', `วันที่จำหน่ายต้องไม่ก่อนวันที่เริ่มใช้งาน (${a.startDate})`);
   dateGuards(st, companyId, date); // not in the future, in an open month
   const gap = uncoveredMonth(st, companyId, a.depFrom, month);
   if (gap) throw fail(409, 'fa.dp_missing', `ต้องคิดค่าเสื่อมราคาทุกงวดก่อนเดือนที่จำหน่ายให้ครบ ทางออก: คิดค่าเสื่อมราคางวด ${monthLabelTh(gap)} ก่อน`);
   const later = liveDps(st, companyId).find((d) => d.dp!.month >= month);
   if (later) throw fail(409, 'fa.dp_after', `มีค่าเสื่อมราคางวด ${monthLabelTh(later.dp!.month)} ลงบัญชีแล้ว (เดือนที่จำหน่ายหรือหลังจากนั้น) ทางออก: ยกเลิกรายการค่าเสื่อมราคาจากงวดล่าสุดย้อนกลับมาถึงงวดนั้น`);
-  const before = accumulatedOf(st, fa), partial = monthAmount(a, month, before, Number(date.slice(8, 10))), acc = before + partial, nbv = sat(a.cost) - acc;
+  const before = accumulatedOf(st, fa), partial = dueIn(a, month, before, Number(date.slice(8, 10))).amount, acc = before + partial, nbv = sat(a.cost) - acc;
   const vatReg = vatOf(st, companyId), type = vatReg ? 'TI' : 'IV';
   const line: DocLine | undefined = sale ? { id: `${fa.id}-sale`, description: `ขายสินทรัพย์ ${fa.number} ${a.name}`, qty: '1', unit: 'รายการ', unitPrice: fromSatang(proceeds), taxCode: vatReg ? 'S7' : 'EX' } : undefined;
   const vat = line ? sat(computeDoc([line], false, vatReg).totals.vat) : 0, diff = proceeds - nbv;
@@ -479,10 +491,9 @@ export function reviseAsset(st: MockState, companyId: string, id: string, patch:
   if (fromOb && patch.startDate !== undefined && patch.startDate !== a.startDate) throw fail(422, 'fa.invalid', 'วันที่เริ่มใช้งานของสินทรัพย์จากยอดยกมาแก้ไม่ได้ (มาจากวันที่ได้มา)');
   const t = checkTerms(sat(a.cost), sat(a.opening), name, patch.salvage ?? a.salvage, patch.lifeMonths ?? a.lifeMonths, patch.startDate ?? a.startDate);
   if (!fromOb) beforeSource(resolveSource(st, companyId, a.source), 'bill', t.start);
-  const depFrom = fromOb ? a.depFrom : t.start.slice(0, 7);
-  const dp = money ? liveDps(st, companyId).find((x) => x.dp!.month >= depFrom) : undefined;
-  if (dp) throw fail(409, 'fa.dp_exists', `มีค่าเสื่อมราคางวด ${dp.dp!.month} ลงบัญชีแล้ว เริ่มคิดค่าเสื่อมก่อนหน้านั้นไม่ได้ ทางออก: ยกเลิกรายการค่าเสื่อมราคาจากงวดล่าสุดย้อนกลับไปก่อน`);
-  const next: Stored = { ...fa, revision: fa.revision + 1, version: fa.version + 1, asset: { ...a, name: name.trim(), salvage: fromSatang(t.salvage), lifeMonths: t.life, startDate: t.start, depFrom } };
+  const { catchUpFrom: _c, ...kept } = a; void _c;
+  const first = fromOb || !money ? { depFrom: a.depFrom, ...(a.catchUpFrom ? { catchUpFrom: a.catchUpFrom } : {}) } : firstMonths(st, companyId, t.start.slice(0, 7)); // only a money change (no rows yet) re-derives the months
+  const next: Stored = { ...fa, revision: fa.revision + 1, version: fa.version + 1, asset: { ...kept, name: name.trim(), salvage: fromSatang(t.salvage), lifeMonths: t.life, startDate: t.start, ...first } };
   put(st, next);
   st.revisions.push({ docId: id, revision: next.revision, at: stamp(), actor, snapshot: publicDoc(next), diff: [] });
   logActivity(st, id, actor, 'revise', 'แก้ไขเงื่อนไขสินทรัพย์');
@@ -510,6 +521,9 @@ export function assetInvariants(st: MockState): string[] {
     const k = a.source.kind === 'bill' ? `${co}|${a.source.docId}|${a.source.lineId}` : `${co}|${a.source.docId}|${a.source.rowId}`;
     seen.set(k, [...(seen.get(k) ?? []), fa.id]);
     try { const r = resolveSource(st, co, a.source); if (a.source.kind === 'bill' && a.startDate < r.docDate) out.push(`${fa.id}: in service ${a.startDate}, before its source document (${r.docDate})`);
+      const natural = r.depFrom ?? a.startDate.slice(0, 7), first = a.catchUpFrom ?? a.depFrom; // AC7a: an asset starts at its natural month, or (registered after a run covered it) catches that month up in the run at depFrom
+      if (first !== natural) out.push(`${fa.id}: ${a.catchUpFrom ? 'catch-up month' : 'depreciation start'} ${first} is not the natural first month ${natural} of its source`);
+      if (a.catchUpFrom && a.catchUpFrom > a.depFrom) out.push(`${fa.id}: catch-up month ${a.catchUpFrom} is after the month it starts depreciating (${a.depFrom})`);
       if (r.cost !== cost || r.opening !== sat(a.opening)) out.push(`${fa.id}: cost ${a.cost} / opening ${a.opening} are not what its source posted (${fromSatang(r.cost)} / ${fromSatang(r.opening)})`); } catch { out.push(`${fa.id}: source ${a.source.docId} is not live (or the line / row is gone)`); }
     const acc = accumulatedOf(st, fa);
     if (acc !== sat(a.accumulated) || cost - acc !== sat(a.nbv)) out.push(`${fa.id}: accumulated ${a.accumulated} / NBV ${a.nbv} but opening + live run rows + disposal partial is ${fromSatang(acc)} / ${fromSatang(cost - acc)}`);
@@ -524,7 +538,7 @@ export function assetInvariants(st: MockState): string[] {
     const month = d.date.slice(0, 7), gap = uncoveredMonth(st, co, a.depFrom, month);
     if (gap) out.push(`${fa.id}: disposed in ${month} but ${gap}, before the disposal month, has no live run`);
     const before = acc - sat(d.partial), diff = sat(d.proceeds) - (cost - acc);
-    if (d.cost !== a.cost || sat(d.accumulated) !== acc || sat(d.nbv) !== cost - acc || sat(d.partial) !== monthAmount(a, month, before, Number(d.date.slice(8, 10)))
+    if (d.cost !== a.cost || sat(d.accumulated) !== acc || sat(d.nbv) !== cost - acc || sat(d.partial) !== dueIn(a, month, before, Number(d.date.slice(8, 10))).amount
       || d.gainLoss !== fromSatang(Math.abs(diff)) || d.outcome !== (diff > 0 ? 'gain' : diff < 0 ? 'loss' : 'none')) out.push(`${fa.id}: disposal figures are not cost / accumulated / NBV / gain-loss of the asset at ${d.date}`);
     const want = sig(disposalEntryLines(st, co, { ...d, faNumber: fa.number }));
     if (d.kind === 'write_off') { const e = current(fa.id); if (!e || sig(e.lines) !== want) out.push(`${fa.id}: disposal entry is not the frozen disposal (cost ${d.cost}, accumulated ${d.accumulated})`); continue; }
@@ -549,6 +563,12 @@ export function assetInvariants(st: MockState): string[] {
       if (a.codes.expense !== r.expenseCode || a.codes.accumulated !== r.accumulatedCode || a.assetClass !== r.assetClass) out.push(`${dp.id}: row for ${fa.number} does not carry the frozen codes of the asset`);
       if (!(sat(r.amount) > 0)) out.push(`${dp.id}: row for ${fa.number} has no amount`);
       if (a.depFrom > p.month) out.push(`${dp.id}: row for ${fa.number} is before the month it starts depreciating (${a.depFrom})`);
+      if (r.catchUp && !(a.catchUpFrom && p.month === a.depFrom)) out.push(`${dp.id}: catch-up on a row that is not the first (catch-up) row of ${fa.number}`);
+      if (a.catchUpFrom && p.month === a.depFrom) { // the first row: what the frozen terms add up to from the natural month, and how it says so
+        const want = dueIn(a, p.month, sat(a.opening));
+        if (sat(r.amount) !== want.amount) out.push(`${dp.id}: catch-up row for ${fa.number} is ${r.amount} but the frozen terms give ${fromSatang(want.amount)}`);
+        if (JSON.stringify(r.catchUp) !== JSON.stringify(want.catchUp)) out.push(`${dp.id}: catch-up marker of ${fa.number} is ${JSON.stringify(r.catchUp)}, the frozen terms give ${JSON.stringify(want.catchUp)}`);
+      }
       if (a.disposed && a.disposed.date.slice(0, 7) <= p.month) out.push(`${dp.id}: row for ${fa.number}, which was disposed of in or before ${p.month} (its disposal carries the disposal month's depreciation)`);
     });
     const sum = rows.reduce((n, r) => n + sat(r.amount), 0);

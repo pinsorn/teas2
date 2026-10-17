@@ -146,3 +146,53 @@ test('what the operator cannot do, and what no one can do through the generic ro
   await page.goto(`${DP}/new?role=operator`);
   await expect(page.locator('[data-screen-state="forbidden"]').first()).toBeVisible();
 });
+
+screenContract({ name: 'asset register report', path: '/reports/asset-register', heading: 'รายงานทะเบียนสินทรัพย์', company: 'both', states: [...STATES], forbiddenRole: 'operator' });
+
+test('AC7a: a bill registered after the runs it belongs to is caught up in the next run; the register report ties and names the class', async ({ page }) => {
+  await page.goto('/'); await fixtureId(page, 'faActive');
+  // July's and August's runs exist; a car-wash machine bought on 10 Jul is registered only now
+  const line = { id: 'cl-late', description: 'เครื่องล้างรถ', qty: '1', unit: 'เครื่อง', unitPrice: '36000.00', taxCode: 'EX', expenseCategory: 'capex-equipment' };
+  const draft = await send(page, 'POST', '/docs/PB', { header: { partyId: 'pv-10', documentDate: '2026-07-10', vendorDocNumber: 'AC7A-E2E', vendorDocDate: '2026-07-10' }, lines: [line] });
+  await send(page, 'POST', `/docs/PB/${draft.json.id}/issue`, { version: draft.json.version });
+  const reg = await send(page, 'POST', '/assets', { source: { kind: 'bill', docId: draft.json.id, lineId: 'cl-late' }, name: 'เครื่องล้างรถ', lifeMonths: 36, startDate: '2026-07-10' });
+  expect(reg.status).toBe(201);
+  const fa = reg.json as unknown as Asset & { asset: { depFrom: string; catchUpFrom?: string } };
+  expect([fa.asset.depFrom, fa.asset.catchUpFrom]).toEqual(['2026-09', '2026-07']);
+  // September's preview: the machine's first row is the three months in one (709.68 + 1,000.00 + 1,000.00), the scanner's an ordinary month
+  await page.goto(`${DP}/new`);
+  await expect(page.getByLabel('งวด (เดือน)')).toHaveValue('2026-09');
+  await expect(page.getByTestId('dp-catchup')).toHaveText('รวมย้อนหลัง ก.ค. 2569–ก.ย. 2569 (3 เดือน)');
+  await expect(page.getByTestId('dp-rows')).toContainText('2,709.68');
+  await expect(page.getByTestId('dp-rows')).toContainText('อุปกรณ์สำนักงาน'); // the class by its label, not its code
+  await expect(page.getByTestId('dp-rows')).not.toContainText('equipment');
+  await expect(page.getByTestId('dp-total')).toHaveText('3,043.01');
+  await shot(page, 'dp-preview-catchup');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await shot(page, 'dp-preview-catchup-390');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await axeClean(page);
+  await page.getByRole('button', { name: 'ลงบัญชีค่าเสื่อมราคา' }).click();
+  await expect(page).toHaveURL(new RegExp(`${DP}/[^/]+$`));
+  await expect(page.getByTestId('dp-catchup')).toBeVisible();
+  await page.goto(`${FA}/${fa.id}`);
+  await expect(page.getByTestId('fa-accumulated')).toHaveText('2,709.68');
+  await expect(page.getByTestId('fa-catchup')).toContainText('ก.ค. 2569');
+  await expect(page.getByTestId('fa-summary')).toContainText('อุปกรณ์สำนักงาน');
+  // the register report: as of a date, per class, linked to each asset, tied to the ledger
+  await page.goto('/reports/asset-register?asOf=2026-09-30');
+  const tbl = page.getByRole('table', { name: 'ทะเบียนสินทรัพย์' });
+  await expect(tbl).toContainText('อุปกรณ์สำนักงาน');
+  await expect(tbl).not.toContainText('equipment');
+  await expect(tbl.getByRole('row').filter({ hasText: 'เครื่องล้างรถ' })).toContainText('2,709.68');
+  await expect(tbl.getByRole('link', { name: fa.number })).toBeVisible();
+  await expect(page.getByText('ยอดกระทบตรงกัน').first()).toBeVisible();
+  await shot(page, 'asset-register-report');
+  await axeClean(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await shot(page, 'asset-register-report-390');
+  for (const asOf of ['2026-08-31', '2026-09-30', '2026-12-31']) {
+    const rep = await api<{ asOf: string; tieOuts: { diff: string }[] }>(page, `/reports/asset-register?asOf=${asOf}`);
+    expect([rep.asOf, rep.tieOuts[0].diff]).toEqual([asOf, '0.00']);
+  }
+});

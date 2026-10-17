@@ -406,6 +406,18 @@ describe('an asset from an opening-balance row (ruling 1, 2)', () => {
     expect(err(() => activateAsset(st, NV, { source: { kind: 'ob', docId: ob.id, rowId: a.id! } }, ME)).code).toBe('fa.source_taken');
     expect(unregisteredCapex(st, NV).some((r) => r.source.kind === 'ob')).toBe(false);
   });
+  it('AC7a: an opening row registered after the runs of its first months is caught up in the next run (natural first month = the month after the cut-off)', () => {
+    blank();
+    const { ob, a } = row();
+    runDepreciation(st, NV, '2026-07', ME); runDepreciation(st, NV, '2026-08', ME); // empty runs: the asset is not registered yet
+    const fa = activateAsset(st, NV, { source: { kind: 'ob', docId: ob.id, rowId: a.id! }, salvage: '1.00' }, ME);
+    expect(fa.asset).toMatchObject({ depFrom: '2026-09', catchUpFrom: '2026-01' });
+    const r = planDepreciation(st, NV, '2026-09').rows.find((x) => x.assetId === fa.id)!;
+    expect(r).toMatchObject({ amount: '6749.82', catchUp: { from: '2026-01', months: 9 } }); // 9 x round(44,999.00 / 60) = 9 x 749.98
+    runDepreciation(st, NV, '2026-09', ME);
+    expect(doc(fa.id).asset).toMatchObject({ accumulated: '15749.82', nbv: '29250.18' });
+    expect(checkInvariants(st)).toEqual([]);
+  });
   it('the batch cannot be cancelled, or its asset row or cut-off changed, while the asset is live; other revisions pass', () => {
     blank();
     const { ob, a } = row();
@@ -529,20 +541,26 @@ describe('editing an asset and the guards on registering (ruling 2)', () => {
     for (const p of [{ salvage: '0.00' }, { lifeMonths: 12 }, { startDate: '2026-09-01' }]) expect(err(() => reviseAsset(st, CO, fa.id, p, ME)).code, JSON.stringify(p)).toBe('fa.locked');
     expect(reviseAsset(st, CO, fa.id, { name: 'ชื่อใหม่อีกครั้ง' }, ME).asset!.name).toBe('ชื่อใหม่อีกครั้ง');
   });
-  it('an asset that would start depreciating in a month already run is refused (the exit: cancel the runs back to it)', () => {
+  it('an asset that would start depreciating in a month already run is registered with a catch-up (AC7a): depFrom is the next unrun month, catchUpFrom its natural first month', () => {
     blank();
     register(capexBill(), { startDate: '2026-07-01' });
     runDepreciation(st, CO, '2026-07', ME); runDepreciation(st, CO, '2026-08', ME);
-    expect(err(() => register(capexBill(), { startDate: '2026-08-15' })).code).toBe('fa.dp_exists');
-    expect(register(capexBill(), { startDate: '2026-09-01' }).asset!.depFrom).toBe('2026-09'); // later months are fine
+    const late = register(capexBill(), { startDate: '2026-08-15' });
+    expect(late.asset).toMatchObject({ startDate: '2026-08-15', depFrom: '2026-09', catchUpFrom: '2026-08' });
+    const later = register(capexBill(), { startDate: '2026-09-01' }); // a month nobody ran yet: nothing changes
+    expect(later.asset!.depFrom).toBe('2026-09');
+    expect('catchUpFrom' in later.asset!).toBe(false);
   });
-  it('moving an asset (no rows of its own yet) back into a month already run is refused too', () => {
+  it('moving an asset (no rows of its own yet) re-derives depFrom / catchUpFrom by the same rule', () => {
     blank();
     register(capexBill(), { startDate: '2026-07-01' });
     runDepreciation(st, CO, '2026-07', ME); runDepreciation(st, CO, '2026-08', ME);
     const later = register(capexBill(), { startDate: '2026-09-01' }); // nothing of its own depreciated yet
-    expect(err(() => reviseAsset(st, CO, later.id, { startDate: '2026-08-10' }, ME)).code).toBe('fa.dp_exists');
-    expect(reviseAsset(st, CO, later.id, { startDate: '2026-09-20' }, ME).asset!.depFrom).toBe('2026-09');
+    expect(reviseAsset(st, CO, later.id, { startDate: '2026-08-10' }, ME).asset).toMatchObject({ depFrom: '2026-09', catchUpFrom: '2026-08' });
+    const back = reviseAsset(st, CO, later.id, { startDate: '2026-09-20' }, ME).asset!;
+    expect(back.depFrom).toBe('2026-09');
+    expect('catchUpFrom' in back).toBe(false);
+    expect(reviseAsset(st, CO, later.id, { name: 'เปลี่ยนแค่ชื่อ' }, ME).asset).toMatchObject({ depFrom: '2026-09' }); // a name change re-derives nothing
     expect(checkInvariants(st)).toEqual([]);
   });
   it('the fixed-asset accounts name the register and the runs as their way in', () => {
@@ -647,5 +665,119 @@ describe('AC5 fix1 A3: an opening balance with asset rows is cut off on a month 
     expect(obProblem(st, 'co-nonvat', body('2025-12-15'), ob.id)?.code).toBe('ob.asset_cutoff');
     expect(obProblem(st, 'co-nonvat', body('2025-12-31'), ob.id)?.code).not.toBe('ob.asset_cutoff');
     expect(obProblem(st, 'co-nonvat', body('2025-12-15', []), ob.id)?.code).not.toBe('ob.asset_cutoff');
+  });
+});
+
+
+describe('AC7a: late registration is caught up in the next run (A4)', () => {
+  /** A (from 1 July, 36 months = 1000.00 a month) ran July and August. B (36000.00, 36 months, in service 10 July: 22 of 31 days = 709.68) is registered AFTER August's run. */
+  const late = () => {
+    blank();
+    const a = register(capexBill('36000.00', '2026-07-01'), { name: 'A', startDate: '2026-07-01' });
+    for (const m of ['2026-07', '2026-08']) runDepreciation(st, CO, m, ME);
+    const b = register(capexBill('36000.00', '2026-07-10'), { name: 'B', startDate: '2026-07-10' });
+    return { a, b };
+  };
+  const row = (month: string, id: string) => planDepreciation(st, CO, month).rows.find((r) => r.assetId === id);
+  const fires = (re: RegExp) => { const m = checkInvariants(st).filter((x) => re.test(x)); expect(m, `${re} in ${JSON.stringify(checkInvariants(st))}`).not.toEqual([]); };
+
+  it('freezes catchUpFrom (the natural first month) and depFrom (the month after the latest live run) at registration', () => {
+    const { b } = late();
+    expect(b.asset).toMatchObject({ startDate: '2026-07-10', depFrom: '2026-09', catchUpFrom: '2026-07' });
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('the first row is the catch-up: the monthly amounts it would have had from catchUpFrom through the run month (start month prorated), with catchUp { from, months }', () => {
+    const { a, b } = late();
+    expect(row('2026-09', b.id)).toMatchObject({ amount: '2709.68', catchUp: { from: '2026-07', months: 3 } }); // 709.68 + 1000.00 + 1000.00
+    expect(row('2026-09', a.id)).toMatchObject({ amount: '1000.00' });
+    expect(row('2026-09', a.id)!.catchUp).toBeUndefined();
+    const dp = runDepreciation(st, CO, '2026-09', ME);
+    expect(dp.totals.total).toBe('3709.68');
+    expect(st.journals.find((j) => j.docId === dp.id)!.preview.entries[0].lines.map((l) => [l.accountCode, l.debit, l.credit])).toEqual([['5300', '3709.68', '0.00'], ['1211', '0.00', '3709.68']]); // posts in the run month
+    expect(doc(b.id).asset).toMatchObject({ accumulated: '2709.68', nbv: '33290.32' });
+    expect(checkInvariants(st)).toEqual([]);
+    expect(row('2026-10', b.id)).toMatchObject({ amount: '1000.00' }); // the month after is an ordinary row
+    expect(row('2026-10', b.id)!.catchUp).toBeUndefined();
+  });
+  it('the catch-up adds up to cost - salvage and no more (the closing month takes the remainder, later months nothing)', () => {
+    late();
+    const c = register(capexBill('3000.00', '2026-07-01'), { name: 'C', lifeMonths: 2, startDate: '2026-07-16', salvage: '500.00' }); // 2500.00: Jul 645.16, Aug 1250.00, Sep the remaining 604.84
+    expect(row('2026-09', c.id)).toMatchObject({ amount: '2500.00', catchUp: { from: '2026-07', months: 3 } });
+  });
+  it('an asset with no live run at or after its natural month is unchanged (catchUpFrom absent, ordinary rows)', () => {
+    blank();
+    const a = register(capexBill(), { startDate: '2026-08-01' });
+    expect('catchUpFrom' in a.asset!).toBe(false);
+    expect(row('2026-08', a.id)!.catchUp).toBeUndefined();
+  });
+  it('recomputing the latest run recomputes the catch-up the same way', () => {
+    const { b } = late();
+    const dp = runDepreciation(st, CO, '2026-09', ME);
+    const r = reviseDp(st, dp.id, ME);
+    expect(r.dp!.rows.find((x) => x.assetId === b.id)).toMatchObject({ amount: '2709.68', catchUp: { from: '2026-07', months: 3 } });
+    expect(doc(b.id).asset!.accumulated).toBe('2709.68');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('cancelling the catch-up run puts the asset back to unrun; running again repeats it', () => {
+    const { b } = late();
+    const dp = runDepreciation(st, CO, '2026-09', ME);
+    cancel(st, dp.id, dp.version, 'OTHER', 'x', ME);
+    expect(doc(b.id).asset!.accumulated).toBe('0.00');
+    expect(row('2026-09', b.id)).toMatchObject({ amount: '2709.68' });
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('disposal in the first-run month: the partial includes the catch-up months (July, August and September up to the disposal day)', () => {
+    const { b } = late();
+    const d = disposeAsset(st, CO, b.id, { date: '2026-09-20', kind: 'write_off' }, ME);
+    expect(d.asset!.disposed).toMatchObject({ partial: '2376.35', accumulated: '2376.35' }); // 709.68 + 1000.00 + 1000.00 x 20 / 30 = 666.67
+    expect(checkInvariants(st)).toEqual([]);
+    expect(planDepreciation(st, CO, '2026-09').rows.some((r) => r.assetId === b.id)).toBe(false); // the run leaves it out
+  });
+  it('disposal in a month already run is refused with the cancel-runs exit (not a "before the start" refusal)', () => {
+    const { b } = late();
+    expect(err(() => disposeAsset(st, CO, b.id, { date: '2026-08-20', kind: 'write_off' }, ME)).code).toBe('fa.dp_after');
+    expect(err(() => disposeAsset(st, CO, b.id, { date: '2026-07-05', kind: 'write_off' }, ME)).code).toBe('fa.dispose_date'); // before the in-service date
+  });
+  it('invariant: catchUpFrom is not after depFrom', () => {
+    const { b } = late();
+    doc(b.id).asset!.catchUpFrom = '2026-10'; fires(/catch-up month .* after/);
+  });
+  it('invariant: catchUpFrom is the natural first month of the source', () => {
+    const { b } = late();
+    doc(b.id).asset!.catchUpFrom = '2026-08'; fires(/natural first month/);
+  });
+  it('invariant: an asset without catchUpFrom starts depreciating at its natural month', () => {
+    const { b } = late();
+    delete doc(b.id).asset!.catchUpFrom; fires(/natural first month/);
+  });
+  it('invariant: the catch-up row is the recomputed sum from the frozen terms', () => {
+    const { b } = late();
+    const dp = runDepreciation(st, CO, '2026-09', ME);
+    dp.dp!.rows.find((x) => x.assetId === b.id)!.amount = '2709.67'; // the row alone (its run total, journal and the asset's running figures are left as they were)
+    fires(/catch-up row .* is 2709\.67 but/);
+  });
+  it('invariant: the first row of a catch-up asset carries the catch-up marker, with the frozen from / months', () => {
+    const { b } = late();
+    const r = runDepreciation(st, CO, '2026-09', ME).dp!.rows.find((x) => x.assetId === b.id)!;
+    r.catchUp = { from: '2026-07', months: 2 }; fires(/catch-up marker/);
+    delete r.catchUp; fires(/catch-up marker/);
+  });
+  it('invariant: catchUp is only on the first row of the asset', () => {
+    const { a } = late();
+    const dp = runDepreciation(st, CO, '2026-09', ME), rowsOfA = liveDps(st, CO).map((d) => d.dp!.rows.find((x) => x.assetId === a.id)!);
+    rowsOfA[1].catchUp = { from: '2026-07', months: 2 }; // A's August row
+    fires(/catch-up on a row that is not the first/);
+    delete rowsOfA[1].catchUp;
+    rowsOfA[0].catchUp = { from: '2026-07', months: 1 }; // A's first row, but A has no catch-up
+    fires(/catch-up on a row that is not the first/);
+    void dp;
+  });
+  it('the per-asset and per-class ties hold with the catch-up in the books', () => {
+    const { a, b } = late();
+    runDepreciation(st, CO, '2026-09', ME);
+    expect(doc(a.id).asset!.accumulated).toBe('3000.00');
+    expect(doc(b.id).asset!.accumulated).toBe('2709.68');
+    expect(checkInvariants(st)).toEqual([]);
+    doc(b.id).asset!.accumulated = '2709.67'; fires(/accumulated .* but/);
   });
 });

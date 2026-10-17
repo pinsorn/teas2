@@ -75,8 +75,9 @@ export interface FaCodes { cost: string; accumulated: string; expense: string; g
 export interface Disposal { date: IsoDate; kind: 'sale' | 'write_off'; name: string; cost: Money; accumulated: Money; partial: Money; nbv: Money; proceeds?: Money; vat?: Money;
   outcome: 'gain' | 'loss' | 'none'; gainLoss: Money; codes: FaCodes & { ar?: string; vat?: string }; tiId?: string; buyerId?: string }
 export interface AssetData { name: string; assetClass: string; cost: Money; salvage: Money; lifeMonths: number; method: 'straight_line'; startDate: IsoDate; /** the first month a depreciation run may cover (start month; an opening-balance asset: the month after the cut-off) */ depFrom: string;
+  /** AC7a: set only when the asset was registered after a run already covered its natural first month: that month (depFrom is then the month after the latest run). The first run's row catches the months up. */ catchUpFrom?: string;
   opening: Money; source: FaSource; codes: FaCodes; accumulated: Money; nbv: Money; disposed?: Disposal }
-export interface DpRow { assetId: string; assetNumber?: string; name: string; assetClass: string; amount: Money; expenseCode: string; accumulatedCode: string }
+export interface DpRow { assetId: string; assetNumber?: string; name: string; assetClass: string; amount: Money; expenseCode: string; accumulatedCode: string; /** AC7a: on the asset's first row only - the months (from `from`, `months` of them, counting the run month) the amount adds up */ catchUp?: { from: string; months: number } }
 export interface DpData { month: string; rows: DpRow[] }
 /** AC3 opening balances. `side`: AR / AP = customer / vendor invoices, EMP = owed to an employee (2180), DEP = customer deposit (2140), PRE = vendor prepayment (1140). */
 export type ObSide = 'AR' | 'AP' | 'EMP' | 'DEP' | 'PRE';

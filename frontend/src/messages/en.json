@@ -248,6 +248,7 @@
       "payrollRuns": "Payroll runs",
       "payrollFilings": "Payroll filings",
       "financialStatements": "Financial statements",
+      "assetRegister": "Fixed asset register report",
       "receivablesPayables": "Receivables and payables",
       "salesPurchases": "Sales and purchases summary",
       "auditReport": "Audit",
@@ -414,6 +415,7 @@
       "tiCreditedToZero": "Tax invoice: credited in full, outstanding 0.00, still issued",
       "nqtPrint": "Print quotation (non-VAT, no tax rows)",
       "trialBalance": "Trial balance",
+      "assetRegisterReport": "Fixed asset register report",
       "customers": "Customers list",
       "customerView": "Customer detail",
       "vendors": "Vendors list",
@@ -942,6 +944,8 @@
     "fa": {
       "name": "Asset",
       "class": "Class",
+      "catchUp": "Catch-up depreciation from",
+      "catchUpValue": "{from} (included in the {first} run)",
       "source": "Source",
       "cost": "Cost",
       "salvage": "Salvage value",
@@ -1005,6 +1009,7 @@
     },
     "dp": {
       "noRows": "No asset depreciates in this month.",
+      "catchUp": "Includes catch-up {from} – {to} ({months} months)",
       "rowsLabel": "Depreciation per asset",
       "asset": "Asset",
       "class": "Class",

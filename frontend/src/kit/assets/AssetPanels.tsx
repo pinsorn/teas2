@@ -22,7 +22,7 @@ import { ForbiddenState } from '../states/ForbiddenState';
 import { LoadingState } from '../states/LoadingState';
 import { MoneyField } from '../opening/fields';
 import { FormRow, Problem, fieldError } from '../schedules/ScheduleDialogs';
-import { DepreciationPreview } from './DepreciationPreview';
+import { DepreciationPreview, monthTh, useClassLabel } from './DepreciationPreview';
 import { DisposeDialog } from './DisposeDialog';
 
 /** A page whose data is not here yet: loading, forbidden or failed - each its own state, never an empty page. */
@@ -71,6 +71,7 @@ function TermsDialog({ asset, onClose }: { asset: Doc; onClose: () => void }) {
 /** The paper tab of a fixed asset: the frozen terms, the running figures, the disposal (if any) and the asset's own actions. */
 export function AssetSummary({ doc, permissions }: { doc: Doc; permissions: string[] }) {
   const t = useTranslations('assets.fa');
+  const label = useClassLabel();
   const qc = useQueryClient();
   const { me } = useMe();
   const [open, setOpen] = useState<'dispose' | 'terms'>();
@@ -87,12 +88,13 @@ export function AssetSummary({ doc, permissions }: { doc: Doc; permissions: stri
     <div className="grid gap-4 text-body" data-testid="fa-summary">
       <dl className="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-x-6 gap-y-2">
         <Item label={t('name')}>{a.name}</Item>
-        <Item label={t('class')}>{a.assetClass}</Item>
+        <Item label={t('class')}>{label(a.assetClass)}</Item>
         <Item label={t('source')}>{doc.header.reference ?? ''}</Item>
         <Item label={t('cost')} testId="fa-cost">{formatMoney(a.cost)}</Item>
         <Item label={t('salvage')}>{formatMoney(a.salvage)}</Item>
         <Item label={t('life')}>{t('months', { n: a.lifeMonths })}</Item>
         <Item label={t('start')}>{formatDateBE(a.startDate)}</Item>
+        {a.catchUpFrom ? <Item label={t('catchUp')} testId="fa-catchup">{t('catchUpValue', { from: monthTh(a.catchUpFrom), first: monthTh(a.depFrom) })}</Item> : null}
         <Item label={t('opening')}>{formatMoney(a.opening)}</Item>
         <Item label={t('accumulated')} testId="fa-accumulated">{formatMoney(a.accumulated)}</Item>
         <Item label={t('nbv')} testId="fa-nbv">{formatMoney(a.nbv)}</Item>
@@ -194,6 +196,7 @@ function RegisterDialog({ row, onClose }: { row: UnregisteredAsset; onClose: () 
 /** "ลงทะเบียนสินทรัพย์": the capex lines (bills / vouchers) and opening-balance asset rows nobody has registered yet. There is no manual asset: the source already posted the cost, and the exit for "I bought something" is to record the purchase. */
 export function RegisterAssets() {
   const t = useTranslations('assets.register');
+  const label = useClassLabel();
   const { me } = useMe();
   const [pick, setPick] = useState<UnregisteredAsset>();
   const q = useQuery({ queryKey: [me?.activeCompanyId ?? '', 'assets-unregistered'], queryFn: () => endpoints.unregisteredAssets(), enabled: !!me });
@@ -222,7 +225,7 @@ export function RegisterAssets() {
                 <TableRow key={`${r.source.docId}-${'lineId' in r.source ? r.source.lineId : r.source.rowId}`}>
                   <TableCell className="whitespace-normal">{r.docType} {r.docNumber} · {formatDateBE(r.date)}{r.partyName ? ` · ${r.partyName}` : ''}</TableCell>
                   <TableCell className="whitespace-normal">{r.description}</TableCell>
-                  <TableCell>{r.assetClass}</TableCell>
+                  <TableCell>{label(r.assetClass)}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatMoney(r.cost)}</TableCell>
                   <TableCell className="text-right">
                     <TooltipProvider><Guarded why={can ? undefined : t('needPermission', { permission: 'doc.FA.create' })}>{(p) => <Button {...p} size="sm" variant="outline" onClick={() => setPick(r)}>{t('register')}</Button>}</Guarded></TooltipProvider>
