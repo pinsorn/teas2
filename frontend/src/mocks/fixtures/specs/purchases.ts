@@ -118,6 +118,15 @@ export const PURCHASE_SPECS: SeedSpec[] = [
   // pv-foreign: a software service from Ireland, FOR-SVC grossed up (PND54); the service line feeds PP.36
   { id: 'pv-foreign', type: 'PV', companyId: VAT, date: '2026-10-13', partyId: 'pv-12', status: 'issued', header: { whtMode: 'grossup_always' },
     lines: [line('pv-foreign', 1, 'ค่าบริการซอฟต์แวร์ (ไอร์แลนด์)', '1', 'งาน', '10000.00', 'EX', { expenseCategory: 'services', whtTypeCode: 'FOR-SVC', pnd36: true })] },
+  // TX2: the voucher months behind the finalized ภ.ง.ด.3 / 53 of 2026-08 and 2026-09 (own lines, SVC 3 % deducted; the juristic payee is a ภ.ง.ด.53, the individual a ภ.ง.ด.3). New ids: no earlier e2e touches a filed voucher.
+  { id: 'pv-aug-53', type: 'PV', companyId: VAT, date: '2026-08-20', partyId: 'pv-02', status: 'issued', header: { reference: 'ค่าที่ปรึกษา ส.ค. 2569' },
+    lines: [line('pv-aug-53', 1, 'ค่าที่ปรึกษาการตลาด', '1', 'งาน', '20000.00', 'EX', { expenseCategory: 'services', whtTypeCode: 'SVC' })] },
+  { id: 'pv-aug-3', type: 'PV', companyId: VAT, date: '2026-08-22', partyId: 'pv-09', status: 'issued', header: { reference: 'ค่าถ่ายภาพ ส.ค. 2569' },
+    lines: [line('pv-aug-3', 1, 'ค่าถ่ายภาพงานแสดงสินค้า', '1', 'งาน', '5000.00', 'EX', { itemId: 'EXP-05', expenseCategory: 'services', whtTypeCode: 'SVC' })] },
+  { id: 'pv-sep-53', type: 'PV', companyId: VAT, date: '2026-09-18', partyId: 'pv-02', status: 'issued', header: { reference: 'ค่าที่ปรึกษา ก.ย. 2569' },
+    lines: [line('pv-sep-53', 1, 'ค่าที่ปรึกษาการตลาด', '1', 'งาน', '15000.00', 'EX', { expenseCategory: 'services', whtTypeCode: 'SVC' })] },
+  { id: 'pv-sep-3', type: 'PV', companyId: VAT, date: '2026-09-19', partyId: 'pv-09', status: 'issued', header: { reference: 'ค่าถ่ายภาพ ก.ย. 2569' },
+    lines: [line('pv-sep-3', 1, 'ค่าถ่ายภาพแคตตาล็อก', '1', 'งาน', '8000.00', 'EX', { itemId: 'EXP-05', expenseCategory: 'services', whtTypeCode: 'SVC' })] },
   // pv-can: a voucher cancelled after issue - its certificate is cancelled with it
   { id: 'pv-can', type: 'PV', companyId: VAT, date: '2026-10-12', partyId: 'pv-09', status: 'cancelled', header: {},
     lines: [line('pv-can', 1, 'ค่าถ่ายภาพงานอีเวนต์', '1', 'งาน', '3000.00', 'EX', { itemId: 'EXP-05', expenseCategory: 'services', whtTypeCode: 'SVC' })] },

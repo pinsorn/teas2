@@ -2,7 +2,7 @@ import type { Actor, Allocation, ChainEdge, CorrectionNote, CorrectionPlan, Corr
 import { PERMISSIONS_BY_ROLE } from '../permissions';
 import type { MockState } from '../store';
 import {
-  type Body, LIVE, approvalOnRevise, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, keepNoteLines, keepOmitted, markReplaced, refuseBelowSettled, refuseNonPositive, refusePartyChange, refuseUnissuableReceipt, refuseUnrevisablePurchase, reissue, revise, reviseNeedsApprover, stableJson, totalsOf,
+  type Body, LIVE, approvalOnRevise, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, keepNoteLines, keepOmitted, markReplaced, refuseBelowSettled, refuseNonPositive, refusePartyChange, refuseUnissuableReceipt, refuseUnrevisablePurchase, reissue, revise, reviseBody, reviseNeedsApprover, stableJson, totalsOf,
 } from './commands';
 import { refuseObLocked, refuseReconciled, refuseSettled } from './locks';
 import { filingLock, refuseFiled } from './filings';
@@ -110,7 +110,8 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
     if (reviseNeedsApprover(st, d, proposed) && !PERMISSIONS_BY_ROLE[role].includes(`doc.${d.type}.approve`)) throw approvalOnRevise(); // C1: more money than was approved - a plan nobody here may run is never shown
     refuseReconciled(st, d, { header: proposed.header, totals: totalsOf(st, d.companyId, d.type, proposed, d.id) }); // FN2: a plan that would move a matched document's cash, account or date is never shown
     refuseSettled(st, d, { header: proposed.header, totals: totalsOf(st, d.companyId, d.type, proposed, d.id) }); // FN3: the same for a leg of a posted settlement
-    refuseFiled(st, d, { header: withClaimPeriod(st, d.companyId, d.type, proposed.header), lines: proposed.lines }); // TX1: a plan that moves what a finalized ภ.พ.30 took is never shown (the header carries the derived claim period and forfeit, as revise judges it)
+    const rb = d.type === 'PV' ? reviseBody(st, d, proposed) : proposed; // TX2: a voucher's WHT is re-frozen exactly as the revise would, so plan and revise judge the same certificates
+    refuseFiled(st, d, { header: withClaimPeriod(st, d.companyId, d.type, rb.header), lines: rb.lines, allocations: rb.allocations, whtFrozen: rb.whtFrozen }); // TX1 / TX2: a plan that moves what a finalized return took is never shown (the header carries the derived claim period and forfeit, as revise judges it)
     refuseScheduleSource(st, d, { header: proposed.header, lines: proposed.lines }); // AC4: and for a line with a live amortisation run
     refuseAssetSource(st, d, { header: proposed.header, lines: proposed.lines }); // AC5: and a line a live fixed asset was made from
     refuseScheduleNote(st, d, 'revise', { header: proposed.header, lines: proposed.lines }); // AC4: and a note on one

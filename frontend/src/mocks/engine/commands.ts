@@ -426,8 +426,8 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   if (jp) throw jp;
   refuseOverConversion(st, d, body);
   body = { ...body, header: withClaimPeriod(st, d.companyId, d.type, body.header) }; // the first unfiled month of its window (normally the document month) unless a period was chosen
-  refuseIntoFiled(st, { ...d, status: 'issued', header: body.header, lines: body.lines }); // B1: nothing enters a month whose ภ.พ.30 is finalized (plans, approvals, schedule runs and disposals all issue here)
   body = withWht(st, d.companyId, d.type, body); // a voucher: the WHT as of now, fixed from here on (C1)
+  refuseIntoFiled(st, { ...d, status: 'issued', header: body.header, lines: body.lines, allocations: body.allocations, whtFrozen: body.whtFrozen, party: partyOf(st, d.companyId, body.header.partyId) }); // B1: nothing enters a month whose ภ.พ.30 / ภ.ง.ด. / ภ.พ.36 is finalized (plans, approvals, schedule runs and disposals all issue here)
   body = { ...body, header: withBankSnapshot(st, d.companyId, d.type, body.header) }; // an RC / PV: the account as it is now, fixed from here on (I3)
   const bad = settleProblem(st, d.companyId, d.type, body, outstandingNow(st), { partyExempt: opts?.partyExempt, prior: opts?.prior, priorParty: opts?.priorParty });
   if (bad) throw bad; // nothing has been written yet: a refused issue leaves no number, link or journal behind
@@ -589,7 +589,7 @@ function certNote(d: Stored, body: Body): string | undefined {
 }
 
 /** Revise in place (classes N and L). A T-class document only accepts non-fiscal changes here; fiscal ones go through a correction plan. */
-function reviseBody(st: MockState, d: Stored, raw: Body): Body {
+export function reviseBody(st: MockState, d: Stored, raw: Body): Body {
   const keepBank = keepOmitted(d, raw.header); // absent bank account / dimensions mean "unchanged": the company default must not fill the bank in (it would read as a move)
   const sent = stored(st, d.companyId, d.type, { ...raw, header: keepBank, lines: keepCategories(d, raw.lines), allocations: raw.allocations ?? d.allocations }, d.allocations, d.header);
   const kept = keepNoteLines(d, sent); // an API caller cannot send the engine-set VAT back: the issued lines stand
@@ -647,7 +647,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   const totals = totalsOf(st, d.companyId, d.type, fin, d.id);
   refuseReconciled(st, d, { header: fin.header, totals }); // FN2: a matched document keeps its cash, bank account and date; anything else stays editable
   refuseSettled(st, d, { header: fin.header, totals }); // FN3: a leg of a posted settlement keeps its amount, deposit, party and date
-  refuseFiled(st, d, { header: fin.header, lines: fin.lines }); // TX1: a filed document keeps everything the ภ.พ.30 took (notes and paper-only fields stay free)
+  refuseFiled(st, d, { header: fin.header, lines: fin.lines, allocations: fin.allocations, whtFrozen: fin.whtFrozen }); // TX1 / TX2: a filed document keeps everything the return took (notes and paper-only fields stay free)
   refuseScheduleSource(st, d, { header: fin.header, lines: fin.lines }); // AC4: a line a schedule holds keeps its money, account and date
   refuseAssetSource(st, d, { header: fin.header, lines: fin.lines }); // AC5: likewise a line a live fixed asset was made from
   refuseScheduleNote(st, d, 'revise', { header: fin.header, lines: fin.lines });

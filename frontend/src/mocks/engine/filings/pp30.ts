@@ -1,7 +1,7 @@
 import { CREDIT_NOTES, LIVE } from '@/domain/doc-types';
 import type { FilingBlocker, FilingBox, FilingForm, FilingModel } from '@/domain/filings';
 import type { ReportColumn, ReportModel, ReportRow, TieOut } from '@/domain/reports';
-import type { DocHeader, DocLine, DocStatus, DocType, IsoDate, Money } from '@/domain/types';
+import type { Allocation, DocHeader, DocLine, DocStatus, DocType, IsoDate, JournalEntryPreview, Money, WhtFrozen } from '@/domain/types';
 import { docEditHref, docViewHref } from '@/descriptors';
 import { formatDateBE } from '@/lib/format';
 import { isValidTin } from '@/domain/tin';
@@ -20,10 +20,19 @@ export interface Pp30Doc {
   /** M6: an input row's paper, frozen with it: the number printed on the vendor's own tax invoice / note, and for an expense claim one entry per vendor tax invoice (the register prints one row each). */
   vendorDocNo?: string; invoices?: Pp30Invoice[];
 }
+/** TX2: a ภ.ง.ด. attachment row as the return took it from one certificate (WT) and its voucher (PV): the payee as the voucher stored it, the income type, the figures, the payer's condition. */
+export interface WhtRow {
+  id: string; pvId: string; number?: string; date: IsoDate; partyId?: string; partyName: string; tin: string; branch: string; address: string; entityKind: string;
+  code: string; incomeType: string; nameTh: string; rate: string; form: string; income: Money; tax: Money; condition: string;
+}
+/** TX2: a voucher behind a ภ.พ.36: the service base (Σ net of its `pnd36` lines) it gave. */
+export interface Pp36Row { id: string; number?: string; date: IsoDate; partyId?: string; partyName: string; base: Money }
 export interface Pp30Invoice { number: string; date: IsoDate; name: string; tin: string; base7: Money; vat: Money }
 /** A finalized filing: the boxes, the tie-outs and the exact documents, all frozen at finalize. */
 export interface Filing {
   companyId: string; form: FilingForm; period: string; status: 'finalized'; boxes: FilingBox[]; tieOuts: TieOut[]; docs: Pp30Doc[]; carryIn: Money; pp36: Money; finalizedAt: string; finalizedBy: string; dueDate: IsoDate;
+  /** TX2: ภ.ง.ด. rows / ภ.พ.36 rows / the ภ.พ.36 journal entry (dated the payment month's last day, G3) / whether its VAT is claimable input VAT (a VAT company) - all frozen at finalize; `docs` is the ภ.พ.30 list and is [] for these */
+  wht?: WhtRow[]; p36?: Pp36Row[]; journal?: JournalEntryPreview[]; claims?: boolean;
   /** M2: who filed, as the company was at finalize (the file and the page read this, never the master now) */ company: { taxId: string; branchCode: string; legalNameTh: string };
 }
 
@@ -38,7 +47,7 @@ export const nextMonth = (p: string): string => { const y = Number(p.slice(0, 4)
 /** [SP-R] the ภ.พ.30 is due on the 15th of the following month (e-filing is extended to the 23rd; the mock keeps the paper date, which Home's deadline card also uses). */
 const dueDateOf = (p: string): IsoDate => { const y = Number(p.slice(0, 4)), m = Number(p.slice(5, 7)); return m === 12 ? `${y + 1}-01-15` : `${y}-${String(m + 1).padStart(2, '0')}-15`; };
 
-export type DocLike = { id: string; type: DocType; companyId: string; number?: string; status: DocStatus; header: DocHeader; lines: DocLine[]; party?: { name?: string; taxId?: string; branchCode?: string } };
+export type DocLike = { id: string; type: DocType; companyId: string; number?: string; status: DocStatus; header: DocHeader; lines: DocLine[]; party?: { name?: string; taxId?: string; branchCode?: string; address?: string }; allocations?: Allocation[]; whtFrozen?: WhtFrozen };
 
 /** The row a document makes in the ภ.พ.30 (undefined = it is not in one). `d.header` / `d.lines` may be a PROPOSED body (the filing lock compares it with what the filing took). */
 export function pp30RowOf(st: MockState, d: DocLike): Pp30Doc | undefined {
@@ -112,15 +121,22 @@ export function glMovement(st: MockState, companyId: string, account: '2151' | '
     if (!d || d.companyId !== companyId || d.type === 'OB') continue;
     for (const e of j.preview.entries) if ((kinds.includes(d.type) ? (account === '2151' ? d.header.documentDate.slice(0, 7) : claimPeriodOf(d.type, d.header)) : e.date.slice(0, 7)) === period) total += net(e.lines);
   }
-  for (const e of [...st.bankJournals.filter((b) => b.companyId === companyId).flatMap((b) => b.entries), ...st.settlements.filter((s) => s.companyId === companyId).flatMap((s) => s.journal)]) if (e.date.startsWith(period)) total += net(e.lines);
+  for (const e of [...st.bankJournals.filter((b) => b.companyId === companyId).flatMap((b) => b.entries), ...st.settlements.filter((s) => s.companyId === companyId).flatMap((s) => s.journal), ...st.filings.filter((f) => f.companyId === companyId).flatMap((f) => f.journal ?? [])]) if (e.date.startsWith(period)) total += net(e.lines);
   return sign * total;
 }
 
-/** ภ.พ.36 self-assessed VAT of the period's finalized PP36 (G2): none exists until TX2 files it. */
+/** ภ.พ.36 self-assessed VAT claimable in the ภ.พ.30 of `period` (G2): the VAT of the finalized ภ.พ.36 of the PAYMENT month before it. [SP-R] ม.82/4 / ม.83/6: the ภ.พ.36 is filed and paid the month after the payment, and the VAT is input VAT of the month it is paid.
+ *  A ภ.พ.36 of a company outside VAT (`claims` false) is cost (InputVatUnclaimed) and enters no ภ.พ.30. Each ภ.พ.36 is read by exactly one claim month. */
 export const pp36VatOf = (st: MockState, companyId: string, period: string): number =>
-  st.filings.filter((f) => f.companyId === companyId && f.form === 'PP36' && f.period === period).reduce((n, f) => n + boxOf(f.boxes, 'vat'), 0);
+  st.filings.filter((f) => f.companyId === companyId && f.form === 'PP36' && f.claims && f.period === prevMonth(period)).reduce((n, f) => n + boxOf(f.boxes, 'vat'), 0);
+/** The ภ.พ.36 VAT booked into 1170 in `period` (the payment month) that the ภ.พ.30 of `period` does not claim (it claims next month): the named reconciling line of the input GL tie-out. */
+export const pp36BookedIn = (st: MockState, companyId: string, period: string): number =>
+  st.filings.filter((f) => f.companyId === companyId && f.form === 'PP36' && f.claims && f.period === period).reduce((n, f) => n + boxOf(f.boxes, 'vat'), 0);
 
-const tie = (labelKey: string, left: number, right: number): TieOut => ({ labelKey, left: fromSatang(left), right: fromSatang(right), diff: fromSatang(left - right) });
+export const tie = (labelKey: string, left: number, right: number, reconciling: { labelTh: string; amount: number }[] = []): TieOut => ({ labelKey, left: fromSatang(left), right: fromSatang(right),
+  diff: fromSatang(left - right + reconciling.reduce((n, r) => n + r.amount, 0)), ...(reconciling.length ? { reconciling: reconciling.map((r) => ({ labelTh: r.labelTh, amount: fromSatang(r.amount) })) } : {}) });
+/** The reconciling line for a ภ.พ.36 booked in `period`: the ledger holds `amount` that the month's return does not claim, so the sum adds it on the return's side (negative: it is on the ledger side). */
+export const pp36Line = (period: string, amount: number) => (amount ? [{ labelTh: `ภ.พ.36 เดือน ${monthLabelTh(period)} (ลงบัญชีเดือนนี้ ขอเครดิตใน ภ.พ.30 เดือนถัดไป)`, amount }] : []);
 
 // ---------------------------------------------------------------- the registers (reports)
 
@@ -161,12 +177,25 @@ export const registerReport = (kind: 'vat-output-register' | 'vat-input-register
 export function requireVat(st: MockState, companyId: string): void {
   if (!vatOf(st, companyId)) throw fail(404, 'filing.not_available', 'บริษัทนี้ไม่ได้จดทะเบียนภาษีมูลค่าเพิ่ม จึงไม่มีแบบ ภ.พ.30');
 }
-const fnv = (s: string): number => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return h >>> 0; };
+export const fnv = (s: string): number => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return h >>> 0; };
 
 /** The month the company's chain of ภ.พ.30 starts at: its FIRST finalized one (ruling 4: months before it are before TEAS took over filing). */
-export const chainStart = (st: MockState, companyId: string): string | undefined =>
-  st.filings.filter((f) => f.companyId === companyId && f.form === 'PP30').map((f) => f.period).sort()[0];
-const filedIn = (st: MockState, companyId: string, period: string) => st.filings.find((f) => f.companyId === companyId && f.form === 'PP30' && f.period === period);
+export const chainStart = (st: MockState, companyId: string, form: FilingForm = 'PP30'): string | undefined =>
+  st.filings.filter((f) => f.companyId === companyId && f.form === form).map((f) => f.period).sort()[0];
+const filedIn = (st: MockState, companyId: string, period: string, form: FilingForm = 'PP30') => st.filings.find((f) => f.companyId === companyId && f.form === form && f.period === period);
+/** The blockers every monthly form shares (ruling 4): a month still open (B1a), a month before the form's chain, a previous month of the same form not finalized. `href` opens that form's page for a month. */
+export function chainBlockers(st: MockState, companyId: string, form: FilingForm, period: string, name: string, href: (p: string) => string, owed?: (p: string) => boolean): FilingBlocker[] {
+  const out: FilingBlocker[] = [];
+  if (period >= today().slice(0, 7)) out.push({ code: 'period_not_ended', labelTh: `เดือน ${monthLabelTh(period)} ยังไม่สิ้นเดือน ยืนยันแบบ ${name} ได้หลังสิ้นเดือน` }); // B1a: a month still open would be filed before its last document
+  const start = chainStart(st, companyId, form);
+  if (start && period < start) out.push({ code: 'before_chain', labelTh: `งวดนี้อยู่ก่อนงวดแรกที่ยื่นในระบบ (${monthLabelTh(start)})` });
+  else if (start && period > start) {
+    // a monthly form owes the month before it; a form whose months can be empty (WHT, ภ.พ.36: `owed`) owes the first earlier month of the chain that HAS documents and is not finalized
+    let p = owed ? start : prevMonth(period);
+    for (; p < period; p = nextMonth(p)) if ((!owed || owed(p)) && !filedIn(st, companyId, p, form)) { out.push({ code: 'previous_open', labelTh: `ยังไม่ได้ยืนยันแบบ ${name} เดือน ${monthLabelTh(p)}`, href: href(p) }); break; }
+  }
+  return out;
+}
 
 export function blockersOf(st: MockState, companyId: string, period: string): FilingBlocker[] {
   const out: FilingBlocker[] = [];
@@ -175,10 +204,7 @@ export function blockersOf(st: MockState, companyId: string, period: string): Fi
   for (const d of st.docs.filter((x) => x.companyId === companyId && OUT.includes(x.type) && DRAFTISH.includes(x.status) && x.header.documentDate.startsWith(period)).sort((a, b) => a.header.documentDate.localeCompare(b.header.documentDate) || a.id.localeCompare(b.id))) {
     out.push({ code: 'draft_document', labelTh: `${d.type} ฉบับร่างลงวันที่ ${formatDateBE(d.header.documentDate)} ยังไม่ได้ออก`, href: docEditHref(d.type, d.id) });
   }
-  if (period >= today().slice(0, 7)) out.push({ code: 'period_not_ended', labelTh: `เดือน ${monthLabelTh(period)} ยังไม่สิ้นเดือน ยืนยันแบบ ภ.พ.30 ได้หลังสิ้นเดือน` }); // B1a: a month still open would be filed before its last invoice
-  const start = chainStart(st, companyId);
-  if (start && period < start) out.push({ code: 'before_chain', labelTh: `งวดนี้อยู่ก่อนงวดแรกที่ยื่นในระบบ (${monthLabelTh(start)})` });
-  else if (start && period > start && !filedIn(st, companyId, prevMonth(period))) out.push({ code: 'previous_open', labelTh: `ยังไม่ได้ยืนยันแบบ ภ.พ.30 เดือน ${monthLabelTh(prevMonth(period))}`, href: `/tax/vat?period=${prevMonth(period)}` });
+  out.push(...chainBlockers(st, companyId, 'PP30', period, 'ภ.พ.30', (p) => `/tax/vat?period=${p}`));
   return out;
 }
 
@@ -193,7 +219,7 @@ export function pp30Model(st: MockState, companyId: string, period: string): Fil
   const base: FilingModel = { form: 'PP30', period, status: 'draft', boxes, tieOuts: [], blockers: blockersOf(st, companyId, period), warnings, version: fnv(JSON.stringify([docs, carryIn, pp36])), dueDate: dueDateOf(period), exports: ['rdprep-txt', 'pdf'] };
   const tieOuts = [
     tie('filing.tie.outputGl', boxOf(boxes, '5'), glMovement(st, companyId, '2151', period)),
-    tie('filing.tie.inputGl', boxOf(boxes, '7') - pp36, glMovement(st, companyId, '1170', period)),
+    tie('filing.tie.inputGl', boxOf(boxes, '7') - pp36, glMovement(st, companyId, '1170', period), pp36Line(period, pp36BookedIn(st, companyId, period))),
     tie('filing.tie.outputRegister', boxOf(boxes, '5'), sat(reg('vat-output-register', '', docs, {}, []).rows.find((r) => r.kind === 'total')?.cells.vat)),
     tie('filing.tie.inputRegister', boxOf(boxes, '7') - pp36, sat(reg('vat-input-register', '', docs, {}, []).rows.find((r) => r.kind === 'total')?.cells.vat)),
   ];

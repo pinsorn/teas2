@@ -110,6 +110,7 @@ export function checkInvariants(st: MockState): string[] {
   }
   for (const j of st.bankJournals) jsrc.push({ id: `bank journal ${j.id}`, companyId: j.companyId, entries: j.entries });
   for (const y of st.yearCloses) jsrc.push({ id: `year close ${y.id}`, companyId: y.companyId, entries: y.journal }); // AC6: the closing entries balance and post to postable accounts like any other
+  for (const f of st.filings) if (f.journal) jsrc.push({ id: `filing ${f.form} ${f.period}`, companyId: f.companyId, entries: f.journal }); // TX2: the ภ.พ.36 entry feeds the GL maps like a document's
   for (const s of st.settlements) jsrc.push({ id: `settlement ${s.id}`, companyId: s.companyId, entries: s.journal }); // FN3: a settlement's own journal feeds every GL map below like a document's
   for (const { id, companyId, d, entries } of jsrc) {
     for (const e of entries) {
@@ -130,7 +131,7 @@ export function checkInvariants(st: MockState): string[] {
         if (l.accountCode === '1130') { const pk = `${companyId}|${l.partyName ?? ''}`; arByParty.set(pk, (arByParty.get(pk) ?? 0) + a - b); }
         if (l.accountCode === '2110') { const pk = `${companyId}|${l.partyName ?? ''}`; apByParty.set(pk, (apByParty.get(pk) ?? 0) + b - a); }
         if (l.accountCode === '2180') { const pk = `${companyId}|${l.partyName ?? ''}`; empByParty.set(pk, (empByParty.get(pk) ?? 0) + b - a); }
-        if (l.accountCode === '1170' && (!d || d.type === 'PB' || d.type === 'EX' || ADJUSTS[d.type] === 'PB')) { const pk = `${companyId}|${d ? claimPeriodOf(d.type, d.header) : 'bank journal'}`; inputVat.set(pk, (inputVat.get(pk) ?? 0) + a - b); }
+        if (l.accountCode === '1170' && (d ? d.type === 'PB' || d.type === 'EX' || ADJUSTS[d.type] === 'PB' : !id.startsWith('filing '))) { const pk = `${companyId}|${d ? claimPeriodOf(d.type, d.header) : 'bank journal'}`; inputVat.set(pk, (inputVat.get(pk) ?? 0) + a - b); }
       }
       if (dr !== cr) out.push(`${where}: unbalanced (Dr ${fromSatang(dr)} / Cr ${fromSatang(cr)})`);
     }

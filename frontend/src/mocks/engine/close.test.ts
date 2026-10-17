@@ -62,7 +62,7 @@ describe('checklist (ruling 2)', () => {
     st.filings = st.filings.filter((f) => f.period !== '2026-08');
     expect(item('2026-08', 'filings_not_finalized').count).toBe(1); // a gap after the chain start counts
     st.filings = [];
-    expect(item('2026-09', 'filings_not_finalized').count).toBe(0); // no chain, nothing owed
+    expect(item('2026-09', 'filings_not_finalized').count).toBe(2); // no ภ.พ.30 chain: it owes nothing; the ภ.ง.ด.3 / 53 of September (TX2: no chain either, documents in the month) count
     expect(checklistOf(st, CO, '2026-07').find((i) => i.severity === 'blocking')?.code).toBe('depreciation_not_run');
   });
   it('drafts_in_month counts every unissued document dated in the month (warning, list link)', () => {

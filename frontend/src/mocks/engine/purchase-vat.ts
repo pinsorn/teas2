@@ -1,4 +1,5 @@
 import { inputVatExpired } from '@/domain/claim-window';
+import type { FilingForm } from '@/domain/filings';
 import { isValidTin } from '@/domain/tin';
 import type { DocHeader, DocLine, DocType, VendorInvoice } from '@/domain/types';
 import { EXPENSE_CATEGORIES, type ExpenseCategory } from '../fixtures/expense-categories';
@@ -86,7 +87,7 @@ export const withClaimPeriod = (st: MockState, companyId: string, type: DocType,
 };
 
 /** TX1: a month whose ภ.พ.30 is finalized takes nothing new (nothing enters a filed month). */
-export const isFiledPeriod = (st: MockState, companyId: string, period: string): boolean => st.filings.some((f) => f.companyId === companyId && f.form === 'PP30' && f.period === period);
+export const isFiledPeriod = (st: MockState, companyId: string, period: string, form: FilingForm = 'PP30'): boolean => st.filings.some((f) => f.companyId === companyId && f.form === form && f.period === period);
 /** TX1 / ม.82/3: the first month inside the claim window (D .. V+6) whose ภ.พ.30 is not finalized - where a late vendor invoice is claimed by default. Undefined = every month of the window is filed. */
 export function openClaimMonth(st: MockState, companyId: string, documentDate: string, vendorDocDate?: string): string | undefined {
   const d = documentDate.slice(0, 7), v = (vendorDocDate || documentDate).slice(0, 7);

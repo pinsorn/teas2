@@ -31,7 +31,7 @@ const sepTi = () => st.docs.find((d) => d.type === 'TI' && d.status === 'issued'
 
 describe('the seed', () => {
   it('has 2026-07 and 2026-08 finalized, 2026-09 finalizable and 2026-10 blocked; the chain starts at 2026-07', () => {
-    expect(st.filings.filter((f) => f.companyId === CO).map((f) => `${f.form} ${f.period}`)).toEqual(['PP30 2026-07', 'PP30 2026-08']);
+    expect(st.filings.filter((f) => f.companyId === CO && f.form === 'PP30').map((f) => `${f.form} ${f.period}`)).toEqual(['PP30 2026-07', 'PP30 2026-08']);
     expect(chainStart(st, CO)).toBe('2026-07');
     expect(getFiling(st, CO, 'PP30', '2026-08')).toMatchObject({ status: 'finalized', finalizedBy: me.name, blockers: [] });
     expect(getFiling(st, CO, 'PP30', '2026-09')).toMatchObject({ status: 'draft', blockers: [] });
@@ -146,7 +146,7 @@ describe('finalize', () => {
     const lock = derivedLocks(st, get(t.id)).find((l) => l.kind === 'filing')!;
     expect(lock).toMatchObject({ reason: 'ภ.พ.30 เดือน ก.ย. 2569 ยื่นแล้ว', exits: ['ออกใบลดหนี้ / ใบเพิ่มหนี้ในงวดถัดไป'], href: '/tax/vat?period=2026-09' });
     expect(err(() => finalizeFiling(st, CO, 'PP30', '2026-09', m.version, me)).code).toBe('filing.already_finalized');
-    expect(st.filings.filter((f) => f.companyId === CO && f.period === '2026-09')).toHaveLength(1);
+    expect(st.filings.filter((f) => f.companyId === CO && f.form === 'PP30' && f.period === '2026-09')).toHaveLength(1);
     expect(checkInvariants(st)).toEqual([]);
   });
   it('is refused while a blocker stands, naming it (October: drafts, and September not finalized)', () => {
