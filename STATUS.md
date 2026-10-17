@@ -3,16 +3,17 @@
 **Goal:** TEAS 1 feature parity, rebuilt with accounting flexibility, better UX and a systematic, gated delivery
 (`docs/specs/SP0-charter.md` §1). Run every session from `Y:\ClaudePlayground\TEAS2` (TEAS-Project is read-only reference).
 
-## Now — 2026-10-16 22:00
-- **SP1c groups 00–03** merged (PR #7–#10).
-- **SP1c group 04 Finance approved by Ham** (branch `feat/sp1c-04-finance`, worktree `Y:\ClaudePlayground\T2-sp1ab`): FN1 bank / cash accounts (own GL each, frozen once used; bank snapshot on issued RC / PV) + statement import (KBiz CSV, integrity triple-check), FN2 reconciliation (same-account matching, split / batch / fee, transfers between own accounts, reconciliation lock, lock-to-date, go-live boundary, report), FN3 settlement records (deposits, prepayments, netting, cumulative write-off tolerance). Money tasks Opus-reviewed to APPROVE. Gate: 1341 unit, 515 e2e (`--workers=1`). Interim rulings P-08..P-11 added to SP-R `DECISIONS.md`.
+## Now — 2026-10-17 13:00
+- **SP1c groups 00–04** merged (PR #7–#11).
+- **SP1c group 05 Accounting approved by Ham 2026-10-17** (branch `feat/sp1c-05-accounting`, worktree `Y:\ClaudePlayground\T2-sp1ab`): AC1 journal vouchers / reverse / accruals, AC2 chart of accounts, AC3 opening balances wizard, AC4 recurring templates + amortisation schedules, AC5 fixed assets / depreciation runs / disposal by TI, AC6 period close + year-end closing entry, and Ham's pre-merge follow-ups AC7a (late registration catch-up, asset-register report, fa-car), AC7b (template editor), AC7c (real DBD แบบ 2 / P&L format 2.7 and ภ.ง.ด.50 ปี 2568 lines). Every money task Opus-reviewed to APPROVE. Gate at a6b5f95: 1719 unit, 691 e2e (`--workers=1`), build green.
+- Ham rulings 2026-10-17: late asset registration = catch-up in the next run; DBD P&L format 2.7; ภ.ง.ด.50 mapped per `docs/research/tax/dbd-fs-lines-and-pnd50.md` (add-backs computed in group 06).
 - **SP-R** (worktree `Y:\ClaudePlayground\T2-spr`, branch `docs/sp-r`): B1–B4 done; decision list `docs/research/tax/DECISIONS.md` (56 points) with Ham.
 - Execution: subagent-driven; the controller commits; quota pools Claude / Codex / Gemini (Ham) tracked in `docs/plans/progress/`. Previews are local (Coolify later).
 
 ## Resume checklist (next session)
 0. Invoke `superpowers:subagent-driven-development`; the ledgers are the source of truth:
    `T2-sp1ab\.superpowers\sdd\<group>\progress.md`, `T2-spr\.superpowers\sdd\2026-10-14-sp-r-tax-research\progress.md`.
-1. SP1c: group 05 accounting (`docs/plans/sp1c/05-accounting.md`; master plan `docs/plans/2026-10-14-sp1c-all-screens.md`). Carries are in the group-02..04 ledgers (TX1 claim-period filing lock incl. date edits that flip forfeit; TX2 PP.36 self-assessed VAT + paying VAT / WHT to RD from a bank line; ST3 approval policy and write-off tolerance snapshot at issue; AC / closing: bank go-live opening screen + in-transit at go-live (Ham 2026-10-16); UI polish: PV list "ผู้ขาย" column shows employees, netting pairs listed one-way, single banner when a receipt lock also applies).
+1. SP1c: group 06 tax (`docs/plans/sp1c/06-tax.md`; master plan `docs/plans/2026-10-14-sp1c-all-screens.md`). Carries are in the group-02..05 ledgers (group 05: filings_not_finalized count from TX1; DEP/PRE opening items not applicable by FN3 yet; asset-command version optional; template history screen; fiscal-year definition for configurable calendars; TX1 claim-period filing lock incl. date edits that flip forfeit; TX2 PP.36 self-assessed VAT + paying VAT / WHT to RD from a bank line; ST3 approval policy and write-off tolerance snapshot at issue; AC / closing: bank go-live opening screen + in-transit at go-live (Ham 2026-10-16); UI polish: PV list "ผู้ขาย" column shows employees, netting pairs listed one-way, single banner when a receipt lock also applies).
 2. SP-R: record Ham's DECISIONS.md rulings → ADR for spec changes → Task 7+ golden fixtures.
 
 ## Waiting on Ham
