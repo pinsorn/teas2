@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Actor, DocLine } from '@/domain/types';
 import { buildSeedState, type MockState } from '../../store';
-import { activateAsset, runDepreciation } from '../assets';
-import { createDraft, issue } from '../commands';
+import { activateAsset, disposeAsset, liveDps, reverseDisposal, runDepreciation } from '../assets';
+import { cancel, createDraft, issue } from '../commands';
+import { checklistOf, closePeriod } from '../close';
 import { today } from '../log';
 import { toSatang } from '../money';
 import { companyEntries } from '../ledger';
@@ -97,5 +98,35 @@ describe('asset register (AC7a: as-of, class labels)', () => {
     expect(byName(m, 'เครื่องล้างรถ')).toMatchObject({ accumulated: '2709.68', nbv: '33290.32' });
     expect(m.tieOuts![0].diff).toBe('0.00');
     expect(assetRegister(st, 'co-vat', { asOf: '2026-08-31' }).tieOuts![0].diff).toBe('0.00');
+  });
+});
+
+describe('asset register: the as-of date is history (F2)', () => {
+  const ack = (co: string, m: string) => checklistOf(st, co, m).filter((i) => i.severity === 'warning' && i.count > 0).map(({ code, count }) => ({ code, count }));
+  const closeTo = (co: string, ms: string[]) => { for (const m of ms) closePeriod(st, co, m, ME, { acknowledge: ack(co, m) }); };
+  const days = (from: string, to: string) => { const out: string[] = []; for (let d = new Date(`${from}T00:00:00Z`); d <= new Date(`${to}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) out.push(d.toISOString().slice(0, 10)); return out; };
+  const tiesEveryDay = () => { for (const co of ['co-vat', 'co-nonvat']) for (const d of days('2026-09-01', '2026-10-31')) expect(assetRegister(st, co, { asOf: d }).tieOuts!.map((t) => t.diff), `${co} ${d}`).toEqual(['0.00', '0.00']); };
+
+  it('a September run cancelled late (its month closed) still counts at 30 Sep: ties 0.00 on every date, per-row figures include it', () => {
+    runDepreciation(st, 'co-nonvat', '2026-09', ME);
+    closeTo('co-nonvat', ['2026-07', '2026-08', '2026-09']);
+    const sep = liveDps(st, 'co-nonvat').at(-1)!;
+    cancel(st, sep.id, sep.version, 'OTHER', 'x', ME);
+    expect(st.journals.find((j) => j.docId === sep.id)!.preview.entries.at(-1)!.date > '2026-09-30').toBe(true); // the reversal is dated after the month
+    tiesEveryDay();
+    const m = assetRegister(st, 'co-nonvat', { asOf: '2026-09-30' });
+    expect(byName(m, 'รถยนต์')).toMatchObject({ accumulated: '168000.00', nbv: '312000.00' }); // 96,000.00 opening + 9 x 8,000.00 caught up in September
+    expect(byName(assetRegister(st, 'co-nonvat', { asOf: '2026-10-31' }), 'รถยนต์')).toMatchObject({ accumulated: '96000.00' }); // cancelled by then
+  });
+  it('a sale invoice cancelled and a write-off undone after the date: the asset counts as sold exactly while the ledger says so', () => {
+    const fa = st.docs.find((d) => d.id === 'fa-sold')!, ti = st.docs.find((d) => d.id === fa.asset!.disposed!.tiId)!;
+    cancel(st, ti.id, ti.version, 'OTHER', 'x', ME);
+    tiesEveryDay();
+    expect(byName(assetRegister(st, 'co-vat', { asOf: '2026-09-30' }), 'เครื่องพิมพ์มัลติฟังก์ชัน')).toMatchObject({ status: 'ขาย' });
+    expect(byName(assetRegister(st, 'co-vat', { asOf: '2026-10-31' }), 'เครื่องพิมพ์มัลติฟังก์ชัน')).toMatchObject({ status: 'ใช้งานอยู่' });
+    const off = disposeAsset(st, 'co-vat', 'fa-sold', { date: '2026-09-25', kind: 'write_off' }, ME);
+    reverseDisposal(st, 'co-vat', off.id, ME);
+    tiesEveryDay();
+    expect(byName(assetRegister(st, 'co-vat', { asOf: '2026-09-25' }), 'เครื่องพิมพ์มัลติฟังก์ชัน')).toMatchObject({ status: 'ขาย' });
   });
 });

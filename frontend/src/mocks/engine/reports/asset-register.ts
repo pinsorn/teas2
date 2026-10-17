@@ -1,30 +1,40 @@
 import type { ReportModel, ReportRow } from '@/domain/reports';
+import type { DpRow } from '@/domain/types';
 import type { MockState } from '../../store';
-import { liveDps, liveFas, unregisteredCapex } from '../assets';
+import { liveFas, unregisteredCapex } from '../assets';
 import { companyEntries } from '../ledger';
 import { today } from '../log';
 import { fromSatang, toSatang } from '../money';
-import { lastDayOf } from '../schedules';
 import { docViewHref } from '@/descriptors';
 
 const sat = (m: string | undefined) => toSatang(m ?? '0.00');
 
 /** The asset register (AC5): one row per live asset with its frozen cost, what it has accumulated (opening + live runs + the disposal partial) and its net book value, a subtotal per class, and a tie-out of the accumulated depreciation to the ledger.
- *  As of `asOf` (default today): an asset exists from the date of its source document; it has accumulated its opening + the live runs whose month had ended + the disposal partial once the disposal date is reached (a disposal after the date has not happened: the asset is still held).
+ *  As of `asOf` (default today): an asset exists from the date of its source document; it has accumulated its opening + the run rows and the disposal partial that the ledger entries dated by then stand for (so a run or sale cancelled later still counts on the earlier date, and the tie-out holds on any date).
  *  Tie-out: the held assets' accumulated + the opening-balance asset rows nobody has registered yet = GL of the accumulated-depreciation accounts up to the date. Capex lines not yet registered are listed in the notes. The class is named by the chart account it lives on. */
 export function assetRegister(st: MockState, companyId: string, p: Record<string, string> = {}): ReportModel {
   const asOf = p.asOf || today();
   const dateOf = (docId: string) => st.docs.find((d) => d.id === docId)?.header.documentDate ?? '';
-  const ran = liveDps(st, companyId).filter((d) => lastDayOf(d.dp!.month) <= asOf);
-  const at = (f: ReturnType<typeof liveFas>[number]) => { // accumulated and what became of the asset by asOf
-    const x = f.asset!, gone = !!x.disposed && x.disposed.date <= asOf;
-    const acc = sat(x.opening) + ran.flatMap((d) => d.dp!.rows).filter((r) => r.assetId === f.id).reduce((n, r) => n + sat(r.amount), 0) + (gone ? sat(x.disposed!.partial) : 0);
-    return { gone, acc, nbv: sat(x.cost) - acc };
+  // The date is history: a run / disposal counts by its ENTRIES dated by asOf (a reversal counts from its own date), not by whether it is live today. A run's rows are those of the revision its latest entry stands for.
+  const runRows = st.docs.filter((d) => d.companyId === companyId && d.type === 'DP' && !!d.dp).flatMap((d) => {
+    let rev = 0, rows: DpRow[] = [];
+    for (const e of st.journals.find((j) => j.docId === d.id)?.preview.entries ?? []) {
+      if (e.kind === 'correction') rev++;
+      if (e.date <= asOf) rows = e.kind === 'reversal' ? [] : st.revisions.find((r) => r.docId === d.id && r.revision === rev)?.snapshot.dp?.rows ?? d.dp!.rows;
+    }
+    return rows;
+  });
+  const at = (f: ReturnType<typeof liveFas>[number]) => { // accumulated and what became of the asset by asOf: the disposal is the invoice (a sale) or the asset's own entry (a write-off) whose entries dated by asOf still remove its cost
+    const x = f.asset!, tis = st.docs.filter((d) => d.header.disposal?.faId === f.id).map((d) => d.id);
+    const net = (id: string, code: string) => (st.journals.find((j) => j.docId === id)?.preview.entries ?? []).filter((e) => e.date <= asOf).flatMap((e) => e.lines).filter((l) => l.accountCode === code).reduce((n, l) => n + sat(l.debit) - sat(l.credit), 0);
+    const by = [f.id, ...tis].find((id) => net(id, x.codes.cost) < 0), partial = by ? net(by, x.codes.expense) : 0;
+    const acc = sat(x.opening) + runRows.filter((r) => r.assetId === f.id).reduce((n, r) => n + sat(r.amount), 0) + partial;
+    return { gone: !!by, sale: !!by && by !== f.id, acc, nbv: sat(x.cost) - acc };
   };
   const fas = liveFas(st, companyId).filter((f) => dateOf(f.asset!.source.docId) <= asOf).sort((a, b) => (a.asset!.assetClass).localeCompare(b.asset!.assetClass) || (a.number ?? '').localeCompare(b.number ?? ''));
   const rows: ReportRow[] = [];
   const held = fas.filter((f) => !at(f).gone), sold = fas.filter((f) => at(f).gone);
-  const line = (f: (typeof fas)[number]): ReportRow => { const x = f.asset!, w = at(f); return { level: 1, kind: 'row', href: docViewHref('FA', f.id), cells: { number: f.number ?? f.id, name: x.name, start: x.startDate, cost: x.cost, accumulated: fromSatang(w.acc), nbv: fromSatang(w.nbv), status: w.gone ? (x.disposed!.kind === 'sale' ? 'ขาย' : 'ตัดจำหน่าย') : 'ใช้งานอยู่' } }; };
+  const line = (f: (typeof fas)[number]): ReportRow => { const x = f.asset!, w = at(f); return { level: 1, kind: 'row', href: docViewHref('FA', f.id), cells: { number: f.number ?? f.id, name: x.name, start: x.startDate, cost: x.cost, accumulated: fromSatang(w.acc), nbv: fromSatang(w.nbv), status: w.gone ? (w.sale ? 'ขาย' : 'ตัดจำหน่าย') : 'ใช้งานอยู่' } }; };
   let cost = 0, acc = 0, nbv = 0;
   for (const cls of [...new Set(held.map((f) => f.asset!.assetClass))]) { // the totals are the assets HELD at asOf: what the ledger carries
     const mine = held.filter((x) => x.asset!.assetClass === cls);

@@ -50,13 +50,13 @@ export function monthAmount(a: Terms, month: string, accumulated: number, throug
   return Math.min(days === dim ? base : rd(base * days, dim), cap);
 }
 
-/** What `month` depreciates for an asset whose first run is `month` (= depFrom) after a late registration: every month from catchUpFrom through `month`, each by `monthAmount` on what the earlier ones accumulated (AC7a). Otherwise just the month.
- *  `throughDay`: only the last month, up to that day (a disposal). `catchUp` is set when more than the month itself is in the amount (`months` counts the run month). */
+/** What `month` depreciates for an asset whose first run is `depFrom` after a late registration: for any month up to `depFrom` (a run never asks before it; a disposal may), every month from catchUpFrom through `month`, each by `monthAmount` on what the earlier ones accumulated (AC7a). Otherwise just the month.
+ *  `throughDay`: only the last month, up to that day (a disposal). `catchUp` is set when more than the month itself is in the amount (`months` counts the months that depreciated something, the run month included). */
 export function dueIn(a: Terms & { depFrom: string; catchUpFrom?: string }, month: string, accumulated: number, throughDay?: number): { amount: number; catchUp?: { from: string; months: number } } {
-  const from = a.catchUpFrom && month === a.depFrom ? a.catchUpFrom : month;
-  let amount = 0;
-  for (let m = from; m <= month; m = addMonths(m, 1)) amount += monthAmount(a, m, accumulated + amount, m === month ? throughDay : undefined);
-  return { amount, ...(from < month ? { catchUp: { from, months: monthIdx(month) - monthIdx(from) + 1 } } : {}) };
+  const from = a.catchUpFrom && month <= a.depFrom ? a.catchUpFrom : month;
+  let amount = 0, months = 0;
+  for (let m = from; m <= month; m = addMonths(m, 1)) { const x = monthAmount(a, m, accumulated + amount, m === month ? throughDay : undefined); amount += x; if (x > 0) months++; }
+  return { amount, ...(from < month ? { catchUp: { from, months } } : {}) };
 }
 /** The first month an asset depreciates in, and its catch-up: the natural month, unless a live run already covers it - then the month after the latest run, with the natural month as `catchUpFrom`. */
 const firstMonths = (st: MockState, companyId: string, natural: string): { depFrom: string; catchUpFrom?: string } => {

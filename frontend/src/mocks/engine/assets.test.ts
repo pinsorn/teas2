@@ -8,7 +8,7 @@ import type { MockError } from './log';
 import { toSatang } from './money';
 import { activateAsset, disposeAsset, liveDps, monthAmount, planDepreciation, previewDepreciation, reverseDisposal, reviseAsset, reviseDp, runDepreciation, unregisteredCapex } from './assets';
 import { correctionPlan } from './corrections';
-import { obProblem } from './opening';
+import { buildOb, obProblem } from './opening';
 
 const ME: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
 const CO = 'co-vat';
@@ -606,6 +606,7 @@ describe('the seed car (AC7a): an opening-balance asset registered after the Aug
     const s = buildSeedState(), fa = s.docs.find((x) => x.id === 'nfa-car')!;
     expect(fa.asset).toMatchObject({ assetClass: 'vehicle', cost: '480000.00', opening: '96000.00', accumulated: '96000.00', startDate: '2025-01-01', lifeMonths: 60, depFrom: '2026-09', catchUpFrom: '2026-01', codes: { cost: '1220', accumulated: '1221' } });
     expect(planDepreciation(s, 'co-nonvat', '2026-09').rows.find((r) => r.assetId === 'nfa-car')).toMatchObject({ amount: '72000.00', catchUp: { from: '2026-01', months: 9 } }); // 9 x 8,000.00
+    expect(buildOb(s, 'co-nonvat', s.docs.find((x) => x.id === 'nob-1')!).check.plug).toBe('1500.00'); // the car's 384,000.00 NBV is funded by its own line: the opening difference is what it was before the car
     expect(liveDps(s, 'co-nonvat').some((d) => d.dp!.rows.some((r) => r.assetId === 'nfa-car'))).toBe(false); // none of the seeded runs carries it
     expect(checkInvariants(s)).toEqual([]);
   });
@@ -742,6 +743,33 @@ describe('AC7a: late registration is caught up in the next run (A4)', () => {
     expect(d.asset!.disposed).toMatchObject({ partial: '2376.35', accumulated: '2376.35' }); // 709.68 + 1000.00 + 1000.00 x 20 / 30 = 666.67
     expect(checkInvariants(st)).toEqual([]);
     expect(planDepreciation(st, CO, '2026-09').rows.some((r) => r.assetId === b.id)).toBe(false); // the run leaves it out
+  });
+  it('F1: a disposal before the first run (runs cancelled back) takes every month from the natural month through the disposal day, not the disposal month alone', () => {
+    const { b } = late();
+    const aug = liveDps(st, CO).at(-1)!;
+    cancel(st, aug.id, aug.version, 'OTHER', 'x', ME);
+    const d = disposeAsset(st, CO, b.id, { date: '2026-08-15', kind: 'write_off' }, ME);
+    expect(d.asset!.disposed).toMatchObject({ partial: '1193.55', accumulated: '1193.55' }); // July 709.68 + 1000.00 x 15 / 31 = 483.87
+    expect(checkInvariants(st)).toEqual([]);
+    d.asset!.disposed!.partial = '483.87'; fires(/disposal figures/); // the August-only figure is no longer accepted
+  });
+  it('F1: the seed car written off inside its catch-up window carries January to July (accumulated 155,870.97, NBV 324,129.03)', () => {
+    st = buildSeedState();
+    const aug = liveDps(st, 'co-nonvat').at(-1)!;
+    cancel(st, aug.id, aug.version, 'OTHER', 'x', ME);
+    const d = disposeAsset(st, 'co-nonvat', 'nfa-car', { date: '2026-08-15', kind: 'write_off' }, ME);
+    expect(d.asset!.disposed).toMatchObject({ partial: '59870.97', accumulated: '155870.97', nbv: '324129.03' }); // 7 x 8,000.00 + 8,000.00 x 15 / 31 = 3,870.97
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('N2: the catch-up label counts only the months that depreciated something (the cap can stop earlier months)', () => {
+    blank();
+    register(capexBill('36000.00', '2026-07-01'), { name: 'A', startDate: '2026-07-01' });
+    for (const m of ['2026-07', '2026-08']) runDepreciation(st, CO, m, ME);
+    const c = register(capexBill('3000.00', '2026-07-01'), { name: 'C', startDate: '2026-07-01', lifeMonths: 3 }); // 1000.00 a month: July, Aug, Sep take it all
+    const r = runDepreciation(st, CO, '2026-09', ME);
+    expect(r.dp!.rows.find((x) => x.assetId === c.id)).toMatchObject({ amount: '3000.00', catchUp: { from: '2026-07', months: 3 } });
+    const e = register(capexBill('2000.00', '2026-07-01'), { name: 'E', startDate: '2026-07-01', lifeMonths: 1, salvage: '1000.00' }); // 1000.00 in July; the cap stops August and September
+    expect(planDepreciation(st, CO, '2026-10').rows.find((x) => x.assetId === e.id)).toMatchObject({ amount: '1000.00', catchUp: { from: '2026-07', months: 1 } });
   });
   it('disposal in a month already run is refused with the cancel-runs exit (not a "before the start" refusal)', () => {
     const { b } = late();
