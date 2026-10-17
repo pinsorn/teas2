@@ -8,6 +8,7 @@ import type { MockError } from './log';
 import { toSatang } from './money';
 import { activateAsset, disposeAsset, liveDps, monthAmount, planDepreciation, previewDepreciation, reverseDisposal, reviseAsset, reviseDp, runDepreciation, unregisteredCapex } from './assets';
 import { correctionPlan } from './corrections';
+import { obProblem } from './opening';
 
 const ME: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
 const CO = 'co-vat';
@@ -596,5 +597,55 @@ describe('the locks an asset and a run read with (ruling 2 / 3: "locked, exit: .
     const off = disposeAsset(st, CO, a.id, { date: '2026-09-10', kind: 'write_off' }, ME);
     expect(lockOf(off.id)).toMatchObject({ reason: expect.stringContaining('จำหน่ายแล้ว') });
     expect(err(() => cancel(st, off.id, doc(off.id).version, 'OTHER', 'x', ME)).code).toBe('fa.has_disposal');
+  });
+});
+
+// ---------------------------------------------------------------- AC5 fix round 1 (Opus Tier-2): A1 / A2 / A3 / N1, on the seed
+describe('AC5 fix1: a disposal stands on the runs and on its own invoice', () => {
+  beforeEach(() => { st = buildSeedState(); });
+  const tiOf = () => doc(doc('fa-sold').asset!.disposed!.tiId!);
+  const noDisposal = (ti: ReturnType<typeof tiOf>) => { const { disposal: _d, ...h } = ti.header; void _d; return h; };
+
+  it('A1: recomputing the latest run is refused while a later disposal stands on it (sale and write-off); the exit is to undo the disposal', () => {
+    expect(err(() => reviseDp(st, 'dp-2026-08', ME)).code).toBe('dp.has_disposal');
+    expect(checkInvariants(st)).toEqual([]);
+    cancel(st, tiOf().id, tiOf().version, 'OTHER', 'x', ME); // the exit
+    runDepreciation(st, CO, '2026-09', ME);
+    disposeAsset(st, CO, 'fa-scan', { date: '2026-10-10', kind: 'write_off' }, ME);
+    const sep = liveDps(st, CO).at(-1)!;
+    expect(err(() => reviseDp(st, sep.id, ME)).code).toBe('dp.has_disposal');
+    expect(checkInvariants(st)).toEqual([]);
+    reverseDisposal(st, CO, 'fa-scan', ME);
+    expect(reviseDp(st, sep.id, ME).dp!.month).toBe('2026-09'); // free again
+    expect(checkInvariants(st)).toEqual([]);
+  });
+
+  it('A2: the disposal invoice takes no revise and no correction plan of any kind (notes only included); nothing moves', () => {
+    const ti = tiOf(), before = JSON.stringify(st.docs.find((d) => d.id === ti.id));
+    const prop = { header: { ...noDisposal(ti), notes: 'แก้หมายเหตุ' }, lines: ti.lines };
+    expect(err(() => correctionPlan(st, ti.id, prop, 'accountant')).code).toBe('fa.disposal_locked'); // non-fiscal branch
+    expect(err(() => correctionPlan(st, ti.id, { ...prop, lines: [{ ...ti.lines[0], unitPrice: '20000.00' }] }, 'accountant')).code).toBe('fa.disposal_locked'); // fiscal branch
+    expect(err(() => revise(st, ti.id, { header: { ...ti.header, notes: 'x' }, lines: ti.lines }, ti.version, 'x', ME)).code).toBe('fa.disposal_locked'); // the engine backstop
+    expect(JSON.stringify(doc(ti.id))).toBe(before);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+
+  it('N1: header.disposal of a live disposal invoice is the asset\'s frozen disposal (single-fault tamper fires; the ids may differ)', () => {
+    expect(checkInvariants(st)).toEqual([]);
+    tiOf().header.disposal!.cost = '1.00';
+    expect(checkInvariants(st).some((m) => /header\.disposal/.test(m))).toBe(true);
+  });
+});
+
+describe('AC5 fix1 A3: an opening balance with asset rows is cut off on a month end', () => {
+  beforeEach(() => { st = buildSeedState(); });
+  it('refuses a mid-month cut-off (ob.asset_cutoff) and accepts the month end; a batch without asset rows is not asked', () => {
+    const ob = doc('nob-1');
+    const body = (date: string, assets = ob.opening!.assets) => ({ header: { ...ob.header, documentDate: date }, lines: ob.lines, opening: { ...ob.opening!, assets } });
+    expect(ob.opening!.assets.length).toBeGreaterThan(0);
+    expect(ob.header.documentDate).toBe('2025-12-31'); // the seed complies
+    expect(obProblem(st, 'co-nonvat', body('2025-12-15'), ob.id)?.code).toBe('ob.asset_cutoff');
+    expect(obProblem(st, 'co-nonvat', body('2025-12-31'), ob.id)?.code).not.toBe('ob.asset_cutoff');
+    expect(obProblem(st, 'co-nonvat', body('2025-12-15', []), ob.id)?.code).not.toBe('ob.asset_cutoff');
   });
 });

@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { setSettings } from '../settings';
-import { loadState, resetState } from '../store';
+import { loadState, resetState, saveState } from '../store';
 import { testServer } from '../test-server';
 
 beforeAll(() => testServer.listen({ onUnhandledFrame: 'error' }));
@@ -90,6 +90,30 @@ describe('fixed assets over the wire (AC5)', () => {
     setSettings({ role: 'operator' });
     expect((await call('GET', '/assets/unregistered')).status).toBe(403); // doc.FA.read is the accountant's
     expect((await call('POST', '/depreciation/runs', { month: '2026-09' })).status).toBe(403);
+  });
+  it('N3: dispose, undispose and terms refuse a stale version (doc.version_conflict); undispose needs doc.FA.cancel', async () => {
+    const fa = await json(await call('GET', '/docs/FA/fa-scan'));
+    for (const [p, b] of [['dispose', { date: '2026-09-10', kind: 'write_off' }], ['undispose', {}], ['terms', { lifeMonths: 24 }]] as const) {
+      const r = await call('POST', `/docs/FA/fa-scan/${p}`, { ...b, version: fa.version + 7 });
+      expect([r.status, (await json(r)).code], p).toEqual([409, 'doc.version_conflict']);
+    }
+    expect((await call('POST', '/docs/FA/fa-scan/dispose', { date: '2026-09-10', kind: 'write_off', version: fa.version })).status).toBe(200);
+    const off = await json(await call('GET', '/docs/FA/fa-scan'));
+    expect((await call('POST', '/docs/FA/fa-scan/undispose', { version: off.version })).status).toBe(200);
+    setSettings({ role: 'operator' });
+    const r = await call('POST', '/docs/FA/fa-scan/undispose', {});
+    expect([r.status, (await json(r)).detail]).toEqual([403, 'ต้องมีสิทธิ์ doc.FA.cancel']);
+  });
+
+  it('N2: a sale that needs approval is refused for an actor without doc.TI.approve; nothing is written', async () => {
+    const st = loadState();
+    st.approvalPolicies.push({ companyId: 'co-vat', docType: 'TI', enabled: true, selfApproval: true });
+    saveState(st);
+    const before = JSON.stringify(loadState().docs.filter((d) => d.id === 'fa-scan'));
+    const r = await call('POST', '/docs/FA/fa-scan/dispose', { date: '2026-09-10', kind: 'sale', proceeds: '5000.00', buyerId: 'pc-01' });
+    expect([r.status, (await json(r)).detail]).toEqual([403, 'ต้องมีสิทธิ์ doc.TI.approve']);
+    expect(JSON.stringify(loadState().docs.filter((d) => d.id === 'fa-scan'))).toBe(before);
+    expect((await call('POST', '/docs/FA/fa-scan/dispose', { date: '2026-09-10', kind: 'write_off' })).status).toBe(200); // a write-off posts no invoice: no approval
   });
   it('the register report lists the assets per class and ties the accumulated depreciation to the ledger (both companies)', async () => {
     for (const key of ['vat', 'nonvat'] as const) {

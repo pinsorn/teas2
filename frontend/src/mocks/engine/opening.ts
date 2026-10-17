@@ -5,6 +5,7 @@ import { goLiveOf } from './commands';
 import { MockError } from './log';
 import { fromSatang, toSatang } from './money';
 import { firstOpenDate } from './periods';
+import { lastDayOf } from './schedules';
 
 /** The first day of the earliest month of the company's period calendar that is not closed (periods before it are closed): the books of an open month already hold documents, so an opening cannot be dated inside or after it. No calendar = the first open month from today. */
 export const firstOpenMonthStart = (st: MockState, companyId: string): IsoDate => {
@@ -151,6 +152,7 @@ export function obProblem(st: MockState, companyId: string, body: Part, selfId?:
   if (!date) return undefined;
   const firstOpen = firstOpenMonthStart(st, companyId), limit = prevDay(firstOpen);
   if (date > limit) return fail(422, 'ob.cutoff', `วันตัดยอดต้องไม่เกิน ${limit} (วันก่อนเริ่มงวดบัญชีแรกที่ยังเปิดอยู่ ${firstOpen} งวดที่เปิดแล้วมีเอกสารอยู่)`);
+  if (op.assets.length && date !== lastDayOf(date.slice(0, 7))) return fail(422, 'ob.asset_cutoff', `วันตัดยอดที่มีสินทรัพย์ต้องเป็นวันสิ้นเดือน (${lastDayOf(date.slice(0, 7))}) เพราะค่าเสื่อมราคาเริ่มคิดจากเดือนถัดไป ทางออก: ใช้วันสิ้นเดือน`);
   const other = liveBatches(st, companyId).find((d) => d.id !== selfId);
   if (other) return fail(409, 'ob.already_exists', `บริษัทนี้มียอดยกมา ${other.number ?? other.id} อยู่แล้ว มีได้ฉบับเดียว ให้แก้ไข (revise) ฉบับเดิมหรือยกเลิกก่อน`);
   for (const l of body.lines.filter((x) => isUsed(x) && !!x.accountCode)) {

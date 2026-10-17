@@ -4,7 +4,7 @@ import { ADJUSTS, LIVE } from '@/domain/doc-types';
 import type { Actor, AssetData, Disposal, DocHeader, DocLine, DocOpening, DocTotals, DocType, DpData, DpRow, FaCodes, FaSource, IsoDate, JournalLinePreview, Lock, Money, PartySummary } from '@/domain/types';
 import type { MockState } from '../store';
 import { approvalRequired } from './approval';
-import { allocate, approveAndIssue, correctionReversal, createDraft, dateGuards, issue, newId, placed, publicDoc, put, setJournal } from './commands';
+import { allocate, approveAndIssue, correctionReversal, createDraft, dateGuards, issue, newId, placed, publicDoc, put, setJournal, stableJson } from './commands';
 import { payoutOf } from './settlement';
 import { bahtText } from './bahtText';
 import { ledgerFor } from './ledger';
@@ -235,6 +235,12 @@ export function runDepreciation(st: MockState, companyId: string, month: string,
   return d;
 }
 
+/** A run a later disposal stands on (the disposal froze its accumulated incl. this run's row) is neither cancelled nor recomputed. Exit: undo the disposal. */
+function refuseRunUnderDisposal(st: MockState, d: Stored): void {
+  const sold = liveFas(st, d.companyId).find((f) => f.asset!.disposed && f.asset!.disposed.date.slice(0, 7) > d.dp!.month);
+  if (sold) throw fail(409, 'dp.has_disposal', `สินทรัพย์ ${sold.number} จำหน่ายแล้วโดยอาศัยค่าเสื่อมราคางวดนี้ ทางออก: ยกเลิกการจำหน่ายก่อน`);
+}
+
 /** "แก้ไข" a run (only the latest live one): recomputed from the frozen asset data as it is now, the old entry reversed and the new one posted. */
 export function reviseDp(st: MockState, id: string, actor: Actor): Stored {
   const d = docOf(st, id);
@@ -242,6 +248,7 @@ export function reviseDp(st: MockState, id: string, actor: Actor): Stored {
   if (!LIVE.includes(d.status)) throw fail(409, 'doc.not_revisable', 'แก้ไขได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   const live = liveDps(st, d.companyId), latest = live[live.length - 1];
   if (latest.id !== d.id) throw fail(409, 'dp.not_latest', `แก้ไขหรือยกเลิกได้เฉพาะรายการค่าเสื่อมราคางวดล่าสุด (${monthLabelTh(latest.dp!.month)}) ย้อนงวดหลังก่อน`);
+  refuseRunUnderDisposal(st, d);
   const p = planDepreciation(st, d.companyId, d.dp.month, d.id);
   if (p.problem) throw p.problem;
   const was = d.dp.rows.map((r) => r.assetId), next: Stored = { ...d, dp: { month: d.dp.month, rows: p.rows }, totals: plainTotals(p.total), revision: d.revision + 1, version: d.version + 1 };
@@ -262,8 +269,7 @@ export function beforeAssetCancel(st: MockState, d: Stored): void {
   if (d.type === 'DP' && d.dp) {
     const live = liveDps(st, d.companyId), latest = live[live.length - 1];
     if (latest && latest.id !== d.id) throw fail(409, 'dp.not_latest', `แก้ไขหรือยกเลิกได้เฉพาะรายการค่าเสื่อมราคางวดล่าสุด (${monthLabelTh(latest.dp!.month)}) ย้อนงวดหลังก่อน`);
-    const sold = liveFas(st, d.companyId).find((f) => f.asset!.disposed && f.asset!.disposed.date.slice(0, 7) > d.dp!.month);
-    if (sold) throw fail(409, 'dp.has_disposal', `สินทรัพย์ ${sold.number} จำหน่ายแล้วโดยอาศัยค่าเสื่อมราคางวดนี้ ทางออก: ยกเลิกการจำหน่ายก่อน`);
+    refuseRunUnderDisposal(st, d);
   }
   if (d.type === 'FA' && d.asset) {
     if (d.asset.disposed) throw fail(409, 'fa.has_disposal', 'สินทรัพย์นี้จำหน่ายแล้ว ยกเลิกไม่ได้ ทางออก: ยกเลิกการจำหน่าย (ยกเลิกใบกำกับภาษีขาย หรือกดยกเลิกการตัดจำหน่าย) ก่อน');
@@ -292,6 +298,12 @@ export function disposalEntryLines(st: MockState, companyId: string, p: Disposal
   add(p.codes.vat, 0, vat);
   if (p.outcome === 'gain') add(p.codes.gain, 0, gl);
   return out;
+}
+
+/** Would the sale invoice of a disposal (proceeds + VAT) need approval under the company's TI / IV policy? The handler asks before disposing, so a caller without `.approve` is refused up front. */
+export function saleNeedsApproval(st: MockState, companyId: string, proceeds: Money | undefined): boolean {
+  const vatReg = vatOf(st, companyId), p = sat(proceeds);
+  return p > 0 && approvalRequired(st, companyId, vatReg ? 'TI' : 'IV', computeDoc([{ id: 'x', description: 'x', qty: '1', unit: 'x', unitPrice: fromSatang(p), taxCode: vatReg ? 'S7' : 'EX' }], false, vatReg).totals.total);
 }
 
 export interface DisposeInput { date: IsoDate; kind: 'sale' | 'write_off'; proceeds?: Money; buyerId?: string }
@@ -525,6 +537,7 @@ export function assetInvariants(st: MockState): string[] {
   for (const ti of st.docs) if ((ti.type === 'TI' || ti.type === 'IV') && ti.header.disposal && LIVE.includes(ti.status)) {
     const fa = docOf(st, ti.header.disposal.faId);
     if (!fa?.asset?.disposed || fa.asset.disposed.tiId !== ti.id || !LIVE.includes(fa.status)) out.push(`${ti.id}: disposal invoice for ${ti.header.disposal.faId}, which is not an asset disposed through it`);
+    else { const { tiId: _t, ...frozen } = fa.asset.disposed, { faId: _f, faNumber: _n, ...hd } = ti.header.disposal; void _t; void _f; void _n; if (stableJson(frozen) !== stableJson(hd)) out.push(`${ti.id}: header.disposal is not the disposal frozen on asset ${fa.number}`); }
   }
   for (const dp of st.docs.filter((d) => d.type === 'DP' && LIVE.includes(d.status) && d.dp)) {
     const p = dp.dp!, co = dp.companyId, rows = p.rows;

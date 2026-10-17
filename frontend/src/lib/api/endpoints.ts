@@ -123,9 +123,9 @@ export const endpoints = {
   /** AC5 fixed assets and depreciation runs (their own commands; the generic document routes refuse FA / DP). */
   unregisteredAssets: () => api<{ items: UnregisteredAsset[] }>('GET', '/assets/unregistered'),
   registerAsset: (body: { source: FaSource; name?: string; salvage?: Money; lifeMonths?: number; startDate?: IsoDate }) => api<Doc>('POST', '/assets', body),
-  disposeAsset: (id: string, body: { date: IsoDate; kind: 'sale' | 'write_off'; proceeds?: Money; buyerId?: string }) => api<Doc>('POST', `/docs/FA/${id}/dispose`, body),
-  undisposeAsset: (id: string) => api<Doc>('POST', `/docs/FA/${id}/undispose`, {}),
-  reviseAssetTerms: (id: string, body: { name?: string; salvage?: Money; lifeMonths?: number; startDate?: IsoDate }) => api<Doc>('POST', `/docs/FA/${id}/terms`, body),
+  disposeAsset: (id: string, body: { version: number; date: IsoDate; kind: 'sale' | 'write_off'; proceeds?: Money; buyerId?: string }) => api<Doc>('POST', `/docs/FA/${id}/dispose`, body),
+  undisposeAsset: (id: string, version: number) => api<Doc>('POST', `/docs/FA/${id}/undispose`, { version }),
+  reviseAssetTerms: (id: string, body: { version: number; name?: string; salvage?: Money; lifeMonths?: number; startDate?: IsoDate }) => api<Doc>('POST', `/docs/FA/${id}/terms`, body),
   previewDepreciation: (month?: string) => api<DpPreview>('GET', `/depreciation/preview${qs({ month })}`),
   runDepreciation: (month: string) => api<Doc>('POST', '/depreciation/runs', { month }),
   recomputeDepreciation: (id: string, version: number) => api<Doc>('POST', `/docs/DP/${id}/recompute`, { version }),

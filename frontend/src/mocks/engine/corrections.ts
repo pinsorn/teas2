@@ -84,6 +84,7 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
   const d = getDoc(st, id);
   proposed = { ...proposed, header: keepOmitted(d, proposed.header) };
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_correctable', 'แก้ไขได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
+  refuseDisposalCorrection(d); // AC5: the invoice of a disposal is cancelled (which un-disposes the asset), never revised or cancelled and reissued
   const label = `${d.type} ${d.number ?? ''}`.trim();
   const steps: Omit<CorrectionStep, 'order'>[] = [];
   const add = (action: CorrectionStep['action'], doc: Stored, summary: string, permission: string, note?: CorrectionNote) =>
@@ -111,7 +112,6 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
     add('revise', d, `แก้ไข ${label} (เลขที่เดิม เพิ่มรุ่นแก้ไข)`, `doc.${d.type}.correct`);
     explanation = 'การแก้ไขนี้ไม่กระทบภาษี แก้ไขในเอกสารเดิมและเก็บประวัติการแก้ไข';
   } else {
-    refuseDisposalCorrection(d); // AC5: the invoice of a disposal is cancelled (which un-disposes the asset), never cancelled and reissued
     refuseScheduleSource(st, d); // AC4: a cancel / reissue under a live amortisation run
     refuseScheduleNote(st, d, 'cancel');
     refuseSettled(st, d); // FN3: a fiscal correction cancels / reissues: a leg of a posted settlement is refused up front (its links come from a settlement, not a document)

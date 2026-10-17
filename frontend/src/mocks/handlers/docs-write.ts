@@ -10,7 +10,7 @@ import { refuseJvRevise, reverseJv } from '../engine/journal';
 import { controlExit } from '../engine/reconcile';
 import { resolvedBankId } from '../engine/settlement';
 import { buildPlan, correctionPlan, executePlan, planStale } from '../engine/corrections';
-import { activateAsset, disposeAsset, planDepreciation, reverseDisposal, reviseAsset, reviseDp, runDepreciation, suggestMonth, unregisteredCapex } from '../engine/assets';
+import { activateAsset, disposeAsset, planDepreciation, reverseDisposal, reviseAsset, reviseDp, runDepreciation, saleNeedsApproval, suggestMonth, unregisteredCapex } from '../engine/assets';
 import { MockError } from '../engine/log';
 import { closeRemainder, remainingOf, setMark } from '../engine/marks';
 import { CLASS } from '../fixtures/documents';
@@ -71,6 +71,8 @@ function own(c: Ctx, type: DocType, id: unknown) {
   if (!d) throw new MockError(404, 'doc.not_found', 'ไม่พบเอกสาร');
   return d;
 }
+/** AC5: an optional `version` the caller holds; a stale one is refused (same as /recompute). */
+const staleVersion = (d: { version: number }, v: number | undefined) => { if (v !== undefined && v !== d.version) throw new MockError(409, 'doc.version_conflict', 'เอกสารถูกแก้ไขโดยผู้อื่นแล้ว กรุณาโหลดใหม่'); };
 const versionOf = (req: Request, body?: { version?: number }) => {
   const v = body?.version ?? Number(req.headers.get('If-Match')?.replace(/"/g, ''));
   if (!Number.isFinite(v)) throw new MockError(422, 'doc.version_required', 'ต้องระบุเวอร์ชันของเอกสาร');
@@ -307,23 +309,27 @@ export const docsWriteHandlers = [
     return HttpResponse.json(publicDoc(fa), { status: 201 });
   })),
   http.post('*/bff/v1/docs/FA/:id/dispose', ({ request, params }) => guarded('FA', 'doc.FA.issue', async (c) => {
-    own(c, 'FA', params.id);
-    const b = ((await request.json().catch(() => ({}))) ?? {}) as { date?: string; kind?: 'sale' | 'write_off'; proceeds?: string; buyerId?: string };
+    const d = own(c, 'FA', params.id);
+    const b = ((await request.json().catch(() => ({}))) ?? {}) as { date?: string; kind?: 'sale' | 'write_off'; proceeds?: string; buyerId?: string; version?: number };
+    staleVersion(d, b.version);
     const inv = c.company.vatRegistered ? 'TI' : 'IV';
     if (b.kind === 'sale') for (const v of ['create', 'issue']) if (!c.perms.includes(`doc.${inv}.${v}`)) return forbidden(`doc.${inv}.${v}`); // the sale issues the invoice: its rights too
+    if (b.kind === 'sale' && saleNeedsApproval(c.st, c.company.id, b.proceeds) && !c.perms.includes(`doc.${inv}.approve`)) return forbidden(`doc.${inv}.approve`); // a policy-gated invoice is approved by whoever may, not by the dispose command
     const fa = disposeAsset(c.st, c.company.id, String(params.id), { date: String(b.date), kind: b.kind as 'sale', ...(b.proceeds !== undefined ? { proceeds: b.proceeds } : {}), ...(b.buyerId ? { buyerId: b.buyerId } : {}) }, ACTOR);
     done(c);
     return HttpResponse.json(publicDoc(fa));
   })),
-  http.post('*/bff/v1/docs/FA/:id/undispose', ({ params }) => guarded('FA', 'doc.FA.issue', (c) => {
-    own(c, 'FA', params.id);
+  http.post('*/bff/v1/docs/FA/:id/undispose', ({ request, params }) => guarded('FA', 'doc.FA.cancel', async (c) => {
+    const d = own(c, 'FA', params.id);
+    staleVersion(d, (((await request.json().catch(() => ({}))) ?? {}) as { version?: number }).version);
     const fa = reverseDisposal(c.st, c.company.id, String(params.id), ACTOR);
     done(c);
     return HttpResponse.json(publicDoc(fa));
   })),
   http.post('*/bff/v1/docs/FA/:id/terms', ({ request, params }) => guarded('FA', 'doc.FA.correct', async (c) => {
-    own(c, 'FA', params.id);
-    const b = ((await request.json().catch(() => ({}))) ?? {}) as { name?: string; salvage?: string; lifeMonths?: number; startDate?: string };
+    const d = own(c, 'FA', params.id);
+    const b = ((await request.json().catch(() => ({}))) ?? {}) as { name?: string; salvage?: string; lifeMonths?: number; startDate?: string; version?: number };
+    staleVersion(d, b.version);
     const fa = reviseAsset(c.st, c.company.id, String(params.id), { ...(typeof b.name === 'string' ? { name: b.name } : {}), ...(typeof b.salvage === 'string' ? { salvage: b.salvage } : {}), ...(b.lifeMonths !== undefined ? { lifeMonths: b.lifeMonths } : {}), ...(typeof b.startDate === 'string' ? { startDate: b.startDate } : {}) }, ACTOR);
     done(c);
     return HttpResponse.json(publicDoc(fa));
@@ -342,7 +348,7 @@ export const docsWriteHandlers = [
   http.post('*/bff/v1/docs/DP/:id/recompute', ({ request, params }) => guarded('DP', 'doc.DP.correct', async (c) => {
     const d = own(c, 'DP', params.id);
     const b = ((await request.json().catch(() => ({}))) ?? {}) as { version?: number };
-    if (b.version !== undefined && b.version !== d.version) throw new MockError(409, 'doc.version_conflict', 'เอกสารถูกแก้ไขโดยผู้อื่นแล้ว กรุณาโหลดใหม่');
+    staleVersion(d, b.version);
     const dp = reviseDp(c.st, d.id, ACTOR);
     done(c);
     return HttpResponse.json(publicDoc(dp));

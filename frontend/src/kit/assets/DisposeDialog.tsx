@@ -23,7 +23,7 @@ export function DisposeDialog({ asset, onClose }: { asset: Doc; onClose: () => v
   const [proceeds, setProceeds] = useState('');
   const [buyerId, setBuyerId] = useState('');
   const go = useMutation({
-    mutationFn: () => endpoints.disposeAsset(asset.id, { date, kind, ...(kind === 'sale' ? { proceeds, buyerId } : {}) }),
+    mutationFn: () => endpoints.disposeAsset(asset.id, { version: asset.version, date, kind, ...(kind === 'sale' ? { proceeds, buyerId } : {}) }),
     onSuccess: async () => { await qc.invalidateQueries({ queryKey: [me?.activeCompanyId] }); onClose(); },
   });
   const sale = kind === 'sale';

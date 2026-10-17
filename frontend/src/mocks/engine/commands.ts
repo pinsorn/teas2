@@ -15,7 +15,7 @@ import { adjustSnapshot, hasSnapshot, isNote, noteHeader, noteMissing, noteProbl
 import { SeriesAllocator } from './numbering';
 import { refuseObLocked, refuseReconciled, refuseSettled } from './locks';
 import { refuseScheduleNote, refuseScheduleSource } from './schedules';
-import { afterAssetCancel, beforeAssetCancel, beforeDisposalTiCancel, onDisposalTiCancelled, refuseAssetNote, refuseAssetSource, refuseDisposalNote } from './assets';
+import { afterAssetCancel, beforeAssetCancel, beforeDisposalTiCancel, onDisposalTiCancelled, refuseAssetNote, refuseAssetSource, refuseDisposalCorrection, refuseDisposalNote } from './assets';
 import { buildOb, cancelObItems, EMPTY_OPENING, freezeOpening, obCalc, obMissing, obProblem, obTotals, plainOpening, syncObItems } from './opening';
 import { firstOpenDate, isClosed, monthLabelTh } from './periods';
 import { balanceOf, certError, cleanAllocations, fiscalAllocations, freezeWht, groupTotals, payDefaults, payLines, payoutOf, resolvedBankId, settleExtras, settleProblem, settleTotals, withBankSnapshot } from './settlement';
@@ -603,6 +603,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   let body = reviseBody(st, d, raw);
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_revisable', 'แก้ไขได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   checkVersion(d, version);
+  refuseDisposalCorrection(d); // AC5 backstop: header.disposal is server-owned and never survives a revise
   if (d.correctionClass === 'T' && isFiscalChange(d, body)) {
     throw new MockError(422, 'doc.revise_not_allowed', 'การแก้ไขนี้กระทบภาษี ต้องทำผ่านแผนการแก้ไข (ยกเลิก/ออกใหม่/ใบลดหนี้)');
   }

@@ -45,7 +45,7 @@ function TermsDialog({ asset, onClose }: { asset: Doc; onClose: () => void }) {
   const a = asset.asset!;
   const [name, setName] = useState(a.name), [salvage, setSalvage] = useState(a.salvage), [life, setLife] = useState(String(a.lifeMonths)), [start, setStart] = useState(a.startDate);
   const go = useMutation({
-    mutationFn: () => endpoints.reviseAssetTerms(asset.id, { name, salvage, lifeMonths: Number(life), ...(a.source.kind === 'bill' ? { startDate: start } : {}) }),
+    mutationFn: () => endpoints.reviseAssetTerms(asset.id, { version: asset.version, name, salvage, lifeMonths: Number(life), ...(a.source.kind === 'bill' ? { startDate: start } : {}) }),
     onSuccess: async () => { await qc.invalidateQueries({ queryKey: [me?.activeCompanyId] }); onClose(); },
   });
   return (
@@ -76,7 +76,7 @@ export function AssetSummary({ doc, permissions }: { doc: Doc; permissions: stri
   const [open, setOpen] = useState<'dispose' | 'terms'>();
   const a = doc.asset;
   const undo = useMutation({
-    mutationFn: () => endpoints.undisposeAsset(doc.id),
+    mutationFn: () => endpoints.undisposeAsset(doc.id, doc.version),
     onSuccess: async () => { await qc.invalidateQueries({ queryKey: [me?.activeCompanyId] }); },
   });
   if (!a) return null;
