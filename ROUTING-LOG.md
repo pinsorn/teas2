@@ -18,3 +18,4 @@
 | 2026-10-17 | SP1c AC6 review (period close / reopen, year-end close, closing entry) | opus-reviewer | money + control (period locks, closing entry) diff — plan marks Opus; warm reviewer |
 | 2026-10-17 | SP1c AC7a review (late registration catch-up, fa-car, asset-register report) | opus-reviewer | money diff (depreciation math, invariants, GL tie) — warm reviewer |
 | 2026-10-17 | SP1c AC7b review (recurring schedule template editor, template re-freeze) | opus-reviewer | frozen money data a run turns into a draft — warm reviewer |
+| 2026-10-17 | SP1c TX1 review (PP30 filing kit, registers, frozen finalize, filing lock) | opus-reviewer (fresh) | tax + lock diff — plan marks Opus; warm reviewer context full, new area |
