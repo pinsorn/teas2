@@ -23,3 +23,5 @@
 | 2026-10-17 | SP1c TX2a review (PND returns, PP36, voucher filing lock) | opus-reviewer (warm TX1) | tax + lock diff; reviewer holds the TX1 filing kit |
 | 2026-10-17 | SP1c TX2c design (pay finalized returns to RD; PP30 netting vs GL tie-outs) | opus-designer | footgun: ledger netting, liability clearing, invariants — design before Sonnet implements |
 | 2026-10-17 | SP1c TX2b implement (WHT hub UI, PP36 screen, WHT receivable, missing 50 ทวิ, WT list) | sonnet-implementer | UI + reports on the approved TX2a engine |
+| 2026-10-17 | SP1c TX2b review (WHT hub UI, receivable / missing-cert reports) | sonnet-reviewer | UI + read-only money reports; one small engine change (PP36 ack) |
+| 2026-10-17 | SP1c TX2c implement (PP30 netting at finalize, pay tax from a bank line) | sonnet-implementer | airtight Opus design spec; Opus review after |
