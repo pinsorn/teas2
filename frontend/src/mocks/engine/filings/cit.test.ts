@@ -42,6 +42,13 @@ describe('loss carry-forward (ruling 3, I11): 5 years, oldest first, expired dro
     expect(r.used).toBe(B(150));
     expect(r.rows.map((x) => [x.year, x.used, x.status])).toEqual([[2021, '120.00', 'used'], [2023, '30.00', 'partly'], [2024, '0.00', 'unused']]);
   });
+  it('ruling 2: what earlier returns used is not available again; the remainder still expires and still goes oldest first', () => {
+    const r = lossSetOff([L(2021, 100), L(2023, 100)], 2026, B(1000), 5, [L(2021, 60), L(2023, 100)]);
+    expect(r.rows).toEqual([{ year: 2021, amount: '100.00', used: '40.00', status: 'used', prior: '60.00' }, { year: 2023, amount: '100.00', used: '0.00', status: 'consumed', prior: '100.00' }]);
+    expect(r.used).toBe(B(40));
+    expect(lossSetOff([L(2020, 100)], 2026, B(1000), 5, [L(2020, 40)]).rows[0]).toMatchObject({ used: '0.00', status: 'expired' });
+    expect(lossSetOff([L(2021, 100)], 2026, B(30), 5, [L(2021, 40)]).rows[0]).toMatchObject({ used: '30.00', status: 'partly' });
+  });
   it('no profit, no set-off', () => { expect(lossSetOff([L(2024, 50)], 2025, -B(10)).used).toBe(0); expect(lossSetOff([L(2024, 50)], 2025, 0).rows[0].status).toBe('unused'); });
 });
 

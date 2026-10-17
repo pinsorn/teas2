@@ -40,7 +40,7 @@ export function buildSeed(role: Role): MockState {
   const items = [...vatItems(), ...nonVatItems()];
   const { docs, links, activity, revisions, series } = buildDocs(parties, items);
   return {
-    version: 42,
+    version: 43,
     companies,
     memberships: companies.map((c) => ({ userId: 'u-1', companyId: c.id, companyName: c.legalNameTh, role: c.vatRegistered ? role : 'operator' })),
     parties, items, docs, links, activity, revisions, journals: [], bankImports: [], bankLines: [], bankJournals: [], settlements: [], schedules: [], yearCloses: [], filings: [], citYears: citYearsSeed(), settlementTolerance: companies.map((c) => ({ companyId: c.id, rounding: '1.00', smallWriteOff: '100.00' })), audit: [], series, attachments: [], prints: [],

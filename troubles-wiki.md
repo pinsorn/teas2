@@ -186,3 +186,13 @@ Entry format — terse, greppable by symptom:
 - **Symptom:** `wht-receivable` (or any report that decides whether a cancelled document counts at an as-of date) ties in a pinned-clock test but shows a false diff in the running app / an unpinned test after a cancel.
 - **Root cause:** `ledger.ts withReversal` (the computed preview) dates a reversal at `doc.cancel.at` (wall clock), while the entry actually STORED in `st.journals` (`commands.ts reverseEntry` / `correctionReversal`) is dated `today()` (the mock anchor), the first open date (closed month) or the original date. `companyEntries` (the GL side of every tie-out) reads the stored entry. They coincide only under `withFixedClock`.
 - **Fix:** anything that needs "when did this document's reversal hit the GL" reads the stored entry (`st.journals.find(j => j.docId === id)?.preview.entries`, kind `reversal` -> `date`), never `cancel.at` or `withReversal` (`whtAllocations` does this). Test it with an UNPINNED cancel and a closed-month (late) reversal.
+
+## `git worktree remove --force` deletes the main worktree's `node_modules` contents (Windows, TX3a review)
+- **Symptom:** after removing a probe worktree, `vitest` / `tsc` in the MAIN worktree fail with "not found" / ENOENT; `.bin` and some `node_modules/.pnpm` files are gone.
+- **Root cause:** the probe worktree's `node_modules` was a junction to the main one; `--force` follows the junction and deletes the target's contents.
+- **Fix:** remove the junction first with `cmd /c rmdir <worktree>\node_modules` (no `/s`), THEN `git worktree remove`. Recovery: `corepack pnpm install --frozen-lockfile --offline --force`.
+
+## A test that closes FY2026 fails with `period.year_not_ended` (TX3a fix1)
+- **Symptom:** `closeYear(st, co, 2026, ...)` throws `period.year_not_ended`; once forced past that, the seed invariants report "posted after it closed" for every 2026 entry.
+- **Root cause:** the mock world's today is the fixed `ANCHOR` (2026-10-17, `engine/log.ts`), and months set `status: 'closed'` by hand have no `closedAt`.
+- **Fix:** in the test, `vi.mock('../log')` to return a settable `today`, set the months `closed` WITH `closedAt` in the far future, and close FY2025 first (`period.year_order`). See `close2026` in `filings/cit-engine.test.ts`.

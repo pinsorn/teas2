@@ -8,14 +8,16 @@ export type ReportKind = 'trial-balance' | 'profit-loss' | 'balance-sheet' | 'ge
 export interface ReportParamSpec { key: string; kind: 'date' | 'month' | 'year' | 'range' | 'party' | 'account' | 'dimension' | 'select' | 'bool';
   labelKey: string; options?: { value: string; labelKey: string }[]; required?: boolean; /** Carried in the query but not shown (the report is scoped by the page that hosts it). */ hidden?: boolean }
 export interface ReportColumn { key: string; labelKey: string; align?: 'start' | 'end'; kind?: 'money' | 'date' | 'text' | 'qty' | 'status' }
-export interface ReportRow { level: 0 | 1 | 2; kind: 'group' | 'row' | 'subtotal' | 'total'; cells: Record<string, string>; href?: string }
+/** TX3b: one return of a month in the tax summary's status column; `form` is the printed name ('' for na), `href` opens the return. */
+export interface ReportChip { form: string; state: 'finalized' | 'paid' | 'draft' | 'owed' | 'na'; href?: string }
+export interface ReportRow { level: 0 | 1 | 2; kind: 'group' | 'row' | 'subtotal' | 'total'; cells: Record<string, string>; href?: string; chips?: ReportChip[] }
 /** diff = left - right + Σ reconciling (computed by the server). A reconciling line is a NAMED amount one side holds on purpose and the other does not yet (TX2: a ภ.พ.36 booked this month, claimed in next month's ภ.พ.30); positive = the ledger side holds it. */
 export interface TieOut { labelKey: string; left: Money; right: Money; diff: Money; reconciling?: { labelTh: string; amount: Money }[] }
 export interface ReportModel { kind: ReportKind; titleKey: string; params: Record<string, string>; asOf?: IsoDate;
   columns: ReportColumn[]; rows: ReportRow[]; tieOuts?: TieOut[]; notes?: string[] }
 
 /** TX3b G1: a non-VAT company's last 12 months of sales against the registration threshold. `level` warns from 80 %, `danger` from 100 %; `percent` is rounded down to 0.01. */
-export interface VatThresholdWatch { revenue: Money; threshold: Money; percent: string; level: 'ok' | 'warning' | 'danger'; messageTh: string; from: IsoDate; to: IsoDate }
+export interface VatThresholdWatch { revenue: Money; threshold: Money; percent: string; level: 'ok' | 'warning' | 'danger'; from: IsoDate; to: IsoDate }
 /** TX3b: a form of the Revenue Department as the catalogue lists it. `href` opens the page where it is prepared; `printable` = a React rendition of the paper form from the company data (D-21). */
 export interface FormCatalogueItem { form: string; nameTh: string; periodKind: 'month' | 'year' | 'half-year' | 'event'; dueRuleTh: string; lastFinalized: string | null; href: string; printable?: boolean }
 export interface FilingHistoryRow { form: string; nameTh: string; period: string; finalizedAt: string; finalizedBy: string; exports: ('rdprep-txt' | 'pdf')[]; href: string }

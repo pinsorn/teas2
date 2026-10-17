@@ -1129,7 +1129,7 @@
     }
   },
   "taxPage": {
-    "threshold": { "title": "VAT registration threshold", "revenue": "Sales in the last 12 months", "of": "of the {threshold} baht threshold", "window": "{from} to {to}", "ok": "Still below the registration threshold", "bar": "Sales as a share of the threshold" },
+    "threshold": { "message": { "warning": "Close to the VAT registration threshold", "danger": "Over the threshold: register for VAT within 30 days" }, "title": "VAT registration threshold", "revenue": "Sales in the last 12 months", "of": "of the {threshold} baht threshold", "window": "{from} to {to}", "ok": "Still below the registration threshold", "bar": "Sales as a share of the threshold" },
     "forms": { "title": "Forms and filing history", "catalogue": "Forms", "form": "Form", "periodKind": "Period", "due": "Due", "last": "Last period filed", "none": "Never filed", "open": "Open", "print": "Print form with company data",
       "kinds": { "month": "Monthly", "year": "Yearly", "half-year": "Half-year", "event": "On an event" },
       "history": { "title": "Filing history", "empty": "Nothing filed yet", "period": "Period", "at": "Confirmed", "by": "By", "files": "Files", "rdprep": "RD Prep", "pdf": "PDF" },

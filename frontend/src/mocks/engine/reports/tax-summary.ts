@@ -1,5 +1,5 @@
 import type { FilingForm } from '@/domain/filings';
-import type { FormCatalogue, FormCatalogueItem, ReportColumn, ReportModel, ReportRow } from '@/domain/reports';
+import type { FormCatalogue, FormCatalogueItem, ReportChip, ReportColumn, ReportModel, ReportRow } from '@/domain/reports';
 import type { MockState } from '../../store';
 import { filingHref, getFiling, unfiledForms } from '../filings';
 import { boxOf } from '../filings/pp30';
@@ -15,18 +15,18 @@ const lastDayOf = (m: string) => `${m}-${String(new Date(Date.UTC(Number(m.slice
 /** The monthly returns a month can owe, in the order the status chips are drawn. */
 const MONTHLY: FilingForm[] = ['PP30', 'PND2', 'PND3', 'PND53', 'PND54', 'PP36'];
 
-/** The status chips of a month, encoded `<form name>:<state>:<href>` joined by `;` (state: finalized / paid / draft / owed / na). A finalized month is its snapshot; an unfiled one is owed once its month has ended (the SAME helper the
+/** The status chips of a month (state: finalized / paid / draft / owed / na). A finalized month is its snapshot; an unfiled one is owed once its month has ended (the SAME helper the
  *  close checklist uses: `unfiledForms`), a draft while it is still the current month. A month with no return to file says na; a future month says nothing. */
-function chips(st: MockState, companyId: string, month: string): string {
+function chips(st: MockState, companyId: string, month: string): ReportChip[] {
   const now = today().slice(0, 7);
-  if (month > now) return '';
+  if (month > now) return [];
   const owed = unfiledForms(st, companyId, month);
   const out = MONTHLY.flatMap((form) => {
     const f = st.filings.find((x) => x.companyId === companyId && x.form === form && x.period === month);
     const state = f ? (getFiling(st, companyId, form, month).payment?.status === 'paid' ? 'paid' : 'finalized') : owed.includes(form) ? (month < now ? 'owed' : 'draft') : '';
-    return state ? [`${formName(form)}:${state}:${filingHref(form, month)}`] : [];
+    return state ? [{ form: formName(form), state, href: filingHref(form, month) } as ReportChip] : [];
   });
-  return out.length ? out.join(';') : ':na:';
+  return out.length ? out : [{ form: '', state: 'na' }];
 }
 
 /** สรุปภาษีรายเดือน (TX3b): twelve months of a year x sales, output / input / net VAT (VAT companies), the tax withheld by form, the tax customers withheld from us, and a status chip per return. A finalized month reads its stored
@@ -40,19 +40,20 @@ export function taxSummary(st: MockState, companyId: string, p: Record<string, s
   const kept = whtAllocations(st, companyId);
   const sums: Record<string, number> = {};
   const rows: ReportRow[] = MONTHS.map((mm) => {
-    const month = `${year}-${mm}`, cells: Record<string, string> = { month: monthLabelTh(month), status: chips(st, companyId, month) };
+    const month = `${year}-${mm}`, cells: Record<string, string> = { month: monthLabelTh(month), status: '' };
     if (month <= now) {
       const filed = (form: FilingForm) => st.filings.some((f) => f.companyId === companyId && f.form === form && f.period === month);
       const show = (form: FilingForm) => filed(form) || canPreview; // a finalized month needs no preview right
       const put = (key: string, sat: number) => { cells[key] = fromSatang(sat); sums[key] = (sums[key] ?? 0) + sat; };
       if (vat && show('PP30')) {
         const b = getFiling(st, companyId, 'PP30', month).boxes;
-        put('sales', boxOf(b, '1')); put('outVat', boxOf(b, '5')); put('inVat', boxOf(b, '7')); put('netVat', boxOf(b, '8') - boxOf(b, '9'));
+        put('sales', boxOf(b, '1')); put('outVat', boxOf(b, '5')); put('inVat', boxOf(b, '7')); put('netVat', boxOf(b, '5') - boxOf(b, '7')); // the month's own net, signed: boxes 8 / 9 are after the carry-in (box 10)
       } else if (!vat && canPreview) put('sales', salesRevenue(st, companyId, `${month}-01`, lastDayOf(month)));
       for (const form of PND_FORMS) if (show(form)) put(form.toLowerCase(), boxOf(getFiling(st, companyId, form, month).boxes, 'tax'));
+      // what customers withheld from us is a receipt-side figure, not a filing: tax.read (the report's gate) is the intended right, no preview right needed
       put('whtIn', kept.filter((a) => a.date.startsWith(month)).reduce((n, a) => n + a.wht, 0));
     }
-    return { level: 0, kind: 'row', cells, ...(vat ? { href: `/tax/vat?tab=output&period=${month}` } : {}) };
+    return { level: 0, kind: 'row', cells, chips: chips(st, companyId, month), ...(vat ? { href: `/tax/vat?tab=output&period=${month}` } : {}) };
   });
   rows.push({ level: 0, kind: 'total', cells: Object.fromEntries(Object.entries(sums).map(([k, v]) => [k, fromSatang(v)])) });
   return { kind: 'tax-summary', titleKey: 'reports.taxSummary.title', params: { year }, columns, rows };

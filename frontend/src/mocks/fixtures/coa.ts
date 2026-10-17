@@ -18,7 +18,7 @@ const CLASS_OF = (code: string, subClass: string, parent?: string): AccountClass
     case '2': return 'current-liability';
     case '3': return 'equity';
     case '4': return subClass === 'other-income' ? 'other-income' : 'sales-revenue';
-    default: return code === '5100' ? 'cost-of-sales' : ['5170', '5180', '5210', '5220', '5500'].includes(code) ? 'other-expense' : 'selling-admin-expense';
+    default: return code === '5600' ? 'income-tax' : code === '5100' ? 'cost-of-sales' : ['5170', '5180', '5210', '5220', '5500'].includes(code) ? 'other-expense' : 'selling-admin-expense';
   }
 };
 /**
@@ -47,6 +47,7 @@ const PL_BY_CODE: Record<string, [string, string]> = {
   '5170': ['pl-other-expenses', 'p50-sga-other-taxes'], '5180': ['pl-other-expenses', 'p50-sga-other-taxes'], '5200': ['pl-administrative-expenses', 'p50-sga-other-fees'],
   '5210': ['pl-other-expenses', 'p50-other-expense-misc'], '5220': ['pl-other-expenses', 'p50-sga-bad-debt'], '5300': ['pl-administrative-expenses', 'p50-sga-depreciation'],
   '5400': ['pl-administrative-expenses', 'p50-sga-employee'], '5410': ['pl-administrative-expenses', 'p50-sga-employee'], '5500': ['pl-other-expenses', 'p50-other-expense-disposal-loss'],
+  '5600': ['pl-income-tax', 'p50-income-tax'],
 };
 const statutory = (code: string, subClass: string): Pick<Account, 'dbdLine' | 'pnd50Box'> => {
   const pl = PL_BY_CODE[code], dbd = pl?.[0] ?? DBD_BY_CODE[code] ?? DBD[subClass];
@@ -85,6 +86,7 @@ const POSTABLE: Row[] = [
   ['5210', 'ผลต่างจากการปัดเศษ', 'expense', '5000'], ['5220', 'หนี้สูญ/ตัดจำหน่ายเล็กน้อย', 'expense', '5000'], ['5300', 'ค่าเสื่อมราคา', 'expense', '5000'],
   ['5400', 'เงินเดือน', 'payroll-expense', '5000'], ['5410', 'เงินสมทบประกันสังคม', 'payroll-expense', '5000'],
   ['5500', 'ขาดทุนจากการจำหน่ายสินทรัพย์', 'expense', '5000'],
+  ['5600', 'ภาษีเงินได้นิติบุคคล', 'expense', '5000'], // TX3a fix1 M4: the CIT expense (ภ.ง.ด.50 8.1), booked by the user's JV
 ];
 
 export const chartOfAccounts = (): Account[] => [

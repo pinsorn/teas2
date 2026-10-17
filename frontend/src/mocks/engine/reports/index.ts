@@ -1,4 +1,4 @@
-import type { ReportKind, ReportModel } from '@/domain/reports';
+import type { ReportChip, ReportKind, ReportModel } from '@/domain/reports';
 import en from '@/messages/en.json';
 import th from '@/messages/th.json';
 import type { MockState } from '../../store';
@@ -40,14 +40,14 @@ const cell = (v: string, money = false) => {
   return /[",\r\n]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
 };
 
-/** A status column (`<form>:<state>:<href>;...`) as words: "ภ.พ.30 ยื่นแล้ว; ภ.ง.ด.3 ค้างยื่น". */
-const statusText = (v: string, locale: Locale) => v.split(';').filter(Boolean).map((x) => { const [form, state] = x.split(':'); return `${form} ${msg(locale, `reports.taxSummary.states.${state}`)}`.trim(); }).join('; ');
+/** A row's status chips as words: "ภ.พ.30 ยื่นแล้ว; ภ.ง.ด.3 ค้างยื่น". */
+const statusText = (chips: ReportChip[] = [], locale: Locale) => chips.map((c) => `${c.form} ${msg(locale, `reports.taxSummary.states.${c.state}`)}`.trim()).join('; ');
 
 /** text/csv body: UTF-8 BOM (Excel reads Thai), CRLF line ends, headers in the caller's locale. Money stays the server's plain decimal string;
  *  a total row is named in the first text column. */
 export function reportCsv(m: ReportModel, locale: Locale = 'th'): string {
   const label = m.columns.findIndex((c) => !c.kind || c.kind === 'text');
   const body = m.rows.map((r) => m.columns.map((c, i) => (!r.cells[c.key] && i === label && (r.kind === 'total' || r.kind === 'subtotal')
-    ? cell(msg(locale, 'reports.total')) : cell(c.kind === 'status' ? statusText(r.cells[c.key] ?? '', locale) : r.cells[c.key] ?? '', c.kind === 'money'))));
+    ? cell(msg(locale, 'reports.total')) : cell(c.kind === 'status' ? statusText(r.chips, locale) : r.cells[c.key] ?? '', c.kind === 'money'))));
   return `${BOM}${[m.columns.map((c) => cell(msg(locale, c.labelKey))), ...body].map((l) => l.join(',')).join('\r\n')}\r\n`;
 }

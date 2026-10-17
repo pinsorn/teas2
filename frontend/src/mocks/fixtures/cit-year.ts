@@ -20,7 +20,7 @@ export const CIT_RULES = {
   lossYears: 5,
   /** [SP-R] the ภ.ง.ด.51 pays half of the tax on the estimated profit, less the tax withheld in months 1-6. */
   prepaidRateBp: 5000,
-  /** [SP-R] a ภ.ง.ด.51 estimate whose tax is under 75 % of the tax the year turned out to need (a shortfall of more than 25 %) draws a warning on the ภ.ง.ด.50. */
+  /** [SP-R] a ภ.ง.ด.51 estimate whose PROFIT is under 75 % of the taxable profit the year turned out to have (a shortfall of more than 25 %, ม.67 ตรี) draws a warning; only on the estimate path on the ภ.ง.ด.50. */
   underEstimateBp: 7500,
   /** [SP-R] the ภ.ง.ด.50 is due 150 days after the year end (e-filing is extended by 8 days; the mock keeps the paper date); the ภ.ง.ด.51 at the end of the second month after month 6. */
   pnd50DueDays: 150,

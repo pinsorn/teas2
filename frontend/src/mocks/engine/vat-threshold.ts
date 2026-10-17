@@ -8,7 +8,6 @@ import { fromSatang, toSatang } from './money';
 export const VAT_THRESHOLD = '1800000.00';
 /** [SP-R] the warning starts at 80 % of it. */
 const WARN_PCT = 80;
-const MESSAGE = { ok: '', warning: 'ใกล้เกณฑ์ต้องจดทะเบียนภาษีมูลค่าเพิ่ม', danger: 'เกินเกณฑ์ ต้องจดทะเบียนภาษีมูลค่าเพิ่มภายใน 30 วัน' } as const; // [SP-R] the 30 days
 
 /** Integer satang against the threshold, so 79.99 / 80.00 / 100.00 % are exact. */
 export const thresholdLevel = (revenue: number): VatThresholdWatch['level'] => {
@@ -37,5 +36,5 @@ export function vatThresholdWatch(st: MockState, companyId: string, asOf = today
   if (st.companies.find((c) => c.id === companyId)?.vatRegistered !== false) return null;
   const month = asOf.slice(0, 7), from = `${addMonths(month, -11)}-01`, to = lastDay(month);
   const revenue = salesRevenue(st, companyId, from, to), level = thresholdLevel(revenue);
-  return { revenue: fromSatang(revenue), threshold: VAT_THRESHOLD, percent: (Math.floor((revenue * 10000) / toSatang(VAT_THRESHOLD)) / 100).toFixed(2), level, messageTh: MESSAGE[level], from, to };
+  return { revenue: fromSatang(revenue), threshold: VAT_THRESHOLD, percent: (Math.floor((revenue * 10000) / toSatang(VAT_THRESHOLD)) / 100).toFixed(2), level, from, to };
 }

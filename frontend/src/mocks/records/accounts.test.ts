@@ -56,7 +56,7 @@ describe('chart of accounts record (AC2)', () => {
       if (a.postable) { expect(a.dbdLine, a.code).toBeTruthy(); expect(!!a.pnd50Box, a.code).toBe(pl); } else expect(a.dbdLine ?? a.pnd50Box).toBeUndefined();
     }
     const by = (c: string) => chartOfAccounts().find((a) => a.code === c)!;
-    expect(by('1211').dbdLine).toBe('bs-ppe'); expect(by('1180').dbdLine).toBe('bs-current-tax-asset'); expect(by('5300')).toMatchObject({ dbdLine: 'pl-administrative-expenses', pnd50Box: 'p50-sga-depreciation' });
+    expect(by('1211').dbdLine).toBe('bs-ppe'); expect(by('1180').dbdLine).toBe('bs-current-tax-asset'); expect(by('5300')).toMatchObject({ dbdLine: 'pl-administrative-expenses', pnd50Box: 'p50-sga-depreciation' }); expect(by('5600')).toMatchObject({ class: 'income-tax', dbdLine: 'pl-income-tax', pnd50Box: 'p50-income-tax' });
   });
 
   it('creates 5190 under 5000: audited, listed, and the ledger invariants still hold', async () => {

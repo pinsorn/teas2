@@ -22,7 +22,7 @@ export function VatThresholdCard() {
       {alarm ? <AlertTriangleIcon aria-hidden /> : null}
       <AlertTitle>{t('title')}: {w.percent}%</AlertTitle>
       <AlertDescription className="grid gap-2">
-        {alarm ? <p className="font-medium text-foreground" data-testid="vat-threshold-message">{w.messageTh}</p> : <p>{t('ok')}</p>}
+        {alarm ? <p className="font-medium text-foreground" data-testid="vat-threshold-message">{t(`message.${w.level}` as never)}</p> : <p>{t('ok')}</p>}
         <div role="progressbar" aria-label={t('bar')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} className="h-2 w-full rounded bg-muted">
           <div className={w.level === 'danger' ? 'h-2 rounded bg-destructive' : 'h-2 rounded bg-primary'} style={{ width: `${pct}%` }} />
         </div>

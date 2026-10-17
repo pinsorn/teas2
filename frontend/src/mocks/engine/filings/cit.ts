@@ -1,12 +1,13 @@
 import type { CitLoss, CitYearData, CitYearPatch, CitYearView, FilingBlocker, FilingBox, FilingForm, FilingModel } from '@/domain/filings';
 import { isValidTin } from '@/domain/tin';
 import type { Actor, IsoDate, Money } from '@/domain/types';
+import { GROUP_OF, type AccountClass } from '@/records/accounts';
 import { CIT_RULES } from '../../fixtures/cit-year';
 import type { MockState } from '../../store';
 import { MockError, logAudit, stamp } from '../log';
 import { fromSatang, toSatang } from '../money';
 import { yearClosed } from '../periods';
-import { balances, netProfit, plOf } from '../reports/profit-loss';
+import { balances, netProfit } from '../reports/profit-loss';
 import { whtAllocations } from '../reports/wht-receivable';
 import { type Filing, boxOf, fnv, tie } from './pp30';
 
@@ -47,16 +48,17 @@ export function citTax(taxable: number, sme: boolean, ladder: Ladder = sme ? R.l
   return { tax: Math.floor((num + 5000) / 10000), bands };
 }
 
-export interface LossRow { year: number; amount: Money; used: Money; status: 'used' | 'partly' | 'unused' | 'expired' }
-/** Ruling 3 (I11): a loss of year Y is set off in years Y+1 .. Y+lossYears, oldest first, up to the profit; older ones are expired and the year itself or later cannot use it. */
-export function lossSetOff(losses: CitLoss[], year: number, profit: number, years = R.lossYears): { rows: LossRow[]; used: number } {
-  let avail = Math.max(profit, 0), used = 0;
+export interface LossRow { year: number; amount: Money; used: Money; status: 'used' | 'partly' | 'unused' | 'expired' | 'consumed'; /** what earlier finalized returns used (only when > 0) */ prior?: Money }
+/** Ruling 3 (I11): a loss of year Y is set off in years Y+1 .. Y+lossYears, oldest first, up to the profit; older ones are expired and the year itself or later cannot use it.
+ *  Ruling 2 (fix1): `before` = what the earlier finalized returns used of each loss year; only the remainder is available, and it expires with the loss. */
+export function lossSetOff(losses: CitLoss[], year: number, profit: number, years = R.lossYears, before: CitLoss[] = []): { rows: LossRow[]; used: number } {
+  let left = Math.max(profit, 0), used = 0;
   const rows = [...losses].sort((a, b) => a.year - b.year).map((l): LossRow => {
-    const amt = sat(l.amount);
-    if (year - l.year > years) return { year: l.year, amount: l.amount, used: '0.00', status: 'expired' };
-    const u = l.year >= year ? 0 : Math.min(avail, amt);
-    avail -= u; used += u;
-    return { year: l.year, amount: l.amount, used: fromSatang(u), status: u === 0 ? 'unused' : u === amt ? 'used' : 'partly' };
+    const amt = sat(l.amount), prior = sat(before.find((b) => b.year === l.year)?.amount), avail = Math.max(0, amt - prior), p = prior > 0 ? { prior: fromSatang(prior) } : {};
+    if (year - l.year > years) return { year: l.year, amount: l.amount, used: '0.00', status: 'expired', ...p };
+    const u = l.year >= year ? 0 : Math.min(left, avail);
+    left -= u; used += u;
+    return { year: l.year, amount: l.amount, used: fromSatang(u), status: u === 0 ? (avail === 0 && prior > 0 ? 'consumed' : 'unused') : u === avail ? 'used' : 'partly', ...p };
   });
   return { rows, used };
 }
@@ -69,13 +71,21 @@ export const donationExcess = (spent: number, profit: number, bp = R.donationRat
 // ---------------------------------------------------------------- the books -> รายการที่ 2 lines 1-9
 
 export interface PlMoney { revenue: Money; cost: Money; otherIncome: Money; otherExpense: Money; sga: Money; entertainment: Money; citExpense: Money; charity: Money; education: Money }
-interface PlRead { pl: PlMoney; unmapped: { code: string; nameTh: string; amount: Money }[]; mapped: { charity: boolean; education: boolean }; net: number }
-/** Ruling 1: the P&L accounts of the year (or its first `through`), each into the ภ.ง.ด.50 line its mapping names. An account with a balance and no mapping is listed, and stops the filing (line 9 would not be the P&L profit). */
-export function readPl(st: MockState, companyId: string, year: number, through?: IsoDate): PlRead {
+/** Ruling 3 (fix1): the account -> line mapping (and class) a ภ.ง.ด.50 took, frozen in its snapshot so a later chart edit moves only the years not yet filed. */
+export type PlMap = Record<string, { box: string; class: string }>;
+interface PlRead { pl: PlMoney; unmapped: { code: string; nameTh: string; amount: Money }[]; mapped: { charity: boolean; education: boolean }; net: number; map: PlMap }
+/** Ruling 1: the P&L accounts of the year (or its first `through`), each into the ภ.ง.ด.50 line its mapping names. An account with a balance and no mapping is listed, and stops the filing (line 9 would not be the P&L profit).
+ *  `frozen` reads a filed return's own mapping instead of the live chart (net = the same Σ revenue - Σ expense as reports/profit-loss.ts, over the frozen classes). */
+export function readPl(st: MockState, companyId: string, year: number, through?: IsoDate, frozen?: PlMap): PlRead {
   const t = { revenue: 0, cost: 0, otherIncome: 0, otherExpense: 0, sga: 0, entertainment: 0, citExpense: 0, charity: 0, education: 0 };
-  const unmapped: PlRead['unmapped'] = [];
-  for (const [code, v] of plOf(st, companyId, balances(st, companyId, year, false, through))) {
-    const a = st.accounts.find((x) => x.companyId === companyId && x.code === code), box = a?.pnd50Box ?? '';
+  const unmapped: PlRead['unmapped'] = [], map: PlMap = {};
+  let net = 0;
+  const meta = (code: string) => { if (frozen) return frozen[code]; const a = st.accounts.find((x) => x.companyId === companyId && x.code === code); return a ? { box: a.pnd50Box ?? '', class: a.class as string } : undefined; };
+  for (const [code, v] of [...balances(st, companyId, year, false, through)].filter(([, x]) => x !== 0).sort(([a], [b]) => a.localeCompare(b))) {
+    const m = meta(code);
+    if (!m || !['revenue', 'expense'].includes(GROUP_OF[m.class as AccountClass])) continue;
+    map[code] = m; net -= v;
+    const a = st.accounts.find((x) => x.companyId === companyId && x.code === code), box = m.box;
     if (box === 'p50-revenue-direct') t.revenue -= v;
     else if (box.startsWith('p50-cogs-') || box.startsWith('p50-prod-')) t.cost += v;
     else if (box.startsWith('p50-other-income-')) t.otherIncome -= v;
@@ -89,8 +99,7 @@ export function readPl(st: MockState, companyId: string, year: number, through?:
     } else unmapped.push({ code, nameTh: a?.nameTh ?? code, amount: fromSatang(v) });
   }
   const has = (box: string) => st.accounts.some((a) => a.companyId === companyId && a.pnd50Box === box);
-  return { pl: Object.fromEntries(Object.entries(t).map(([k, v]) => [k, fromSatang(v)])) as unknown as PlMoney, unmapped, mapped: { charity: has('p50-sga-charity'), education: has('p50-sga-education-sport') },
-    net: netProfit(st, companyId, year, through) };
+  return { pl: Object.fromEntries(Object.entries(t).map(([k, v]) => [k, fromSatang(v)])) as unknown as PlMoney, unmapped, mapped: { charity: has('p50-sga-charity'), education: has('p50-sga-education-sport') }, net, map };
 }
 
 // ---------------------------------------------------------------- the ภ.ง.ด.50
@@ -100,11 +109,12 @@ export interface WhtCredit { rcId: string; number: string; date: IsoDate; custom
 /** Everything a finalized ภ.ง.ด.50 froze (ruling 9): the figures from the books, the user's adjustments with their reasons, the losses, the credits, the SME flag and the rules used. The boxes are derived from it. */
 export interface CitSnapshot {
   year: number; paidUpCapital: Money; sme: boolean; rules: CitRules; pl: PlMoney; user: CitLine[]; losses: CitLoss[];
-  /** the tax the finalized ภ.ง.ด.51 of the year paid, and the tax it estimated (the under-estimate check) */ pnd51: Money; pnd51EstimateTax?: Money;
+  /** the tax the finalized ภ.ง.ด.51 of the year paid, and the profit (and way) it estimated (the under-estimate check) */ pnd51: Money; pnd51Estimate?: { mode: 'input' | 'h1x2'; profit: Money };
+  /** ruling 2: what the earlier finalized returns used of each loss year; ruling 3: the account mapping the figures were read with */ lossUsedBefore: CitLoss[]; map: PlMap;
   credits: WhtCredit[]; uncertified: WhtCredit[]; /** lines the mock could not compute (no account in the chart) */ skipped: ('18' | '19')[];
 }
 const sum = (xs: { amount: Money }[]) => xs.reduce((n, x) => n + sat(x.amount), 0);
-const LOSS_LABEL: Record<LossRow['status'], string> = { used: 'ใช้หมด', partly: 'ใช้บางส่วน', unused: 'ยังไม่ได้ใช้', expired: 'หมดอายุ (เกิน 5 รอบบัญชี)' };
+const LOSS_LABEL: Record<LossRow['status'], string> = { consumed: 'ใช้หมดแล้วในปีก่อน', used: 'ใช้หมด', partly: 'ใช้บางส่วน', unused: 'ยังไม่ได้ใช้', expired: 'หมดอายุ (เกิน 5 รอบบัญชี)' };
 
 /** The whole return from the frozen figures (pure): the lines, the tax and the credits. The one function the draft, the finalize and the invariant all use. */
 export function citDerive(s: CitSnapshot) {
@@ -113,13 +123,13 @@ export function citDerive(s: CitSnapshot) {
   const u = (line: number) => s.user.filter((x) => x.line === line);
   const lim = entertainmentLimit(p.revenue, sat(s.paidUpCapital), r.entertainment), ent = Math.max(0, p.entertainment - lim);
   const computed11: CitLine[] = [
-    { code: '8.1', line: 11, kind: 'computed', labelTh: 'ภาษีเงินได้นิติบุคคล (ม.65 ตรี (6))', amount: fromSatang(Math.max(p.citExpense, 0)), basis: `ยอดบัญชีภาษีเงินได้นิติบุคคลของปีนี้ ${s.pl.citExpense} บาท` },
+    { code: '8.1', line: 11, kind: 'computed', labelTh: 'ภาษีเงินได้นิติบุคคล (ม.65 ตรี (6))', amount: fromSatang(p.citExpense), basis: `ยอดบัญชีภาษีเงินได้นิติบุคคลของปีนี้ ${s.pl.citExpense} บาท` },
     { code: '8.2', line: 11, kind: 'computed', labelTh: 'ค่ารับรองส่วนที่เกินเกณฑ์ (กฎกระทรวง 143)', amount: fromSatang(ent),
       basis: `ค่ารับรอง ${s.pl.entertainment} บาท เกินเพดาน ${fromSatang(lim)} บาท (มากกว่าของ ร้อยละ 0.3 ของรายได้ ${s.pl.revenue} และร้อยละ 0.3 ของทุนชำระแล้ว ${s.paidUpCapital} ไม่เกิน ${r.entertainment.cap})` },
   ];
   const l10 = sum(u(10)), l11 = sum(u(11)) + sum(computed11), l13 = sum(u(13));
   const l12 = l9 + l10 + l11, l14 = l12 - l13;
-  const loss = lossSetOff(s.losses, s.year, l14, r.lossYears), l16 = l14 - loss.used;
+  const loss = lossSetOff(s.losses, s.year, l14, r.lossYears, s.lossUsedBefore), l16 = l14 - loss.used;
   const don = (code: '18' | '19', labelTh: string, spent: number): CitLine => ({ code, line: Number(code) as 18 | 19, kind: 'computed', labelTh, amount: fromSatang(s.skipped.includes(code) ? 0 : donationExcess(spent, l16, r.donationRateBp)),
     basis: s.skipped.includes(code) ? 'ข้าม — ไม่มีบัญชีรายจ่ายประเภทนี้ในผังบัญชี' : `รายจ่าย ${fromSatang(spent)} บาท เกินร้อยละ 2 ของกำไรสุทธิหลังหักขาดทุน ${fromSatang(Math.max(l16, 0))} บาท` });
   const computed18 = [don('18', 'รายจ่ายเพื่อการกุศลสาธารณะส่วนที่เกินร้อยละ 2', p.charity), don('19', 'รายจ่ายเพื่อการศึกษาหรือการกีฬาส่วนที่เกินร้อยละ 2', p.education)];
@@ -146,7 +156,7 @@ export function citAttachment(s: CitSnapshot): NonNullable<FilingModel['attachme
     rows: [
       row('SME', s.sme ? 'เข้าเกณฑ์ SME' : 'ไม่เข้าเกณฑ์ SME', '', `ทุนที่ชำระแล้ว ${s.paidUpCapital} บาท (เกณฑ์ไม่เกิน ${s.rules.sme.maxPaidUpCapital}) และรายได้ ${s.pl.revenue} บาท (เกณฑ์ไม่เกิน ${s.rules.sme.maxRevenue})`),
       ...d.lines.map((l) => row(l.code, `${l.labelTh} (บรรทัด ${l.line})`, money(l.amount), l.kind === 'user' ? `${l.basis} — ${l.by ?? ''}` : l.basis)),
-      ...d.loss.rows.map((l) => row(`ขาดทุน ${l.year + 543}`, `ขาดทุนสะสมยกมา — ${LOSS_LABEL[l.status]}`, l.used, `ขาดทุน ${l.amount} บาท ใช้ได้ถึงรอบบัญชี ${l.year + s.rules.lossYears + 543}`)),
+      ...d.loss.rows.map((l) => row(`ขาดทุน ${l.year + 543}`, `ขาดทุนสะสมยกมา — ${LOSS_LABEL[l.status]}`, l.used, `ขาดทุน ${l.amount} บาท${l.prior ? ` (ใช้ไปแล้วในปีก่อน ${l.prior} บาท)` : ''} ใช้ได้ถึงรอบบัญชี ${l.year + s.rules.lossYears + 543}`)),
       ...d.bands.map((b) => row(`${b.rateBp / 100}%`, 'ขั้นอัตราภาษี', fromSatang(pct(sat(b.base), b.rateBp)), `กำไรสุทธิส่วน ${b.from} - ${b.to} บาท อัตราร้อยละ ${b.rateBp / 100}`)),
       ...s.credits.map((c) => row(`หัก ณ ที่จ่าย`, `${c.number} ${c.customer}`, c.amount, `หนังสือรับรองเลขที่ ${c.certNumber} (${c.target})`)),
     ] };
@@ -156,9 +166,9 @@ export function citWarnings(s: CitSnapshot): string[] {
   const w: string[] = [];
   for (const c of s.uncertified) w.push(`ยังไม่มีหนังสือรับรอง — เครดิตไม่ได้: ${c.number} ${c.customer} ${c.amount} บาท`);
   for (const k of s.skipped) w.push(`ไม่มีบัญชีรายจ่ายสำหรับบรรทัด ${k} ในผังบัญชี จึงไม่ได้คำนวณบรรทัดนี้`);
-  const d = citDerive(s);
-  if (s.pnd51EstimateTax !== undefined && d.tax > 0 && sat(s.pnd51EstimateTax) < pct(d.tax, s.rules.underEstimateBp)) {
-    w.push(`ภาษีที่ประมาณไว้ใน ภ.ง.ด.51 (${s.pnd51EstimateTax} บาท) ต่ำกว่าภาษีที่คำนวณได้จริง (${fromSatang(d.tax)} บาท) เกินร้อยละ ${(10000 - s.rules.underEstimateBp) / 100} อาจต้องเสียเงินเพิ่ม`);
+  const d = citDerive(s), e = s.pnd51Estimate; // ม.67 ตรี: the estimated PROFIT short of the actual by more than 25 %; only when an estimate was entered (the H1 x 2 path made none)
+  if (e && e.mode === 'input' && d.taxable > 0 && sat(e.profit) < pct(d.taxable, s.rules.underEstimateBp)) {
+    w.push(`ประมาณการกำไรสุทธิใน ภ.ง.ด.51 (${e.profit} บาท) ต่ำกว่ากำไรสุทธิที่ต้องเสียภาษีจริง (${fromSatang(d.taxable)} บาท) เกินร้อยละ ${(10000 - s.rules.underEstimateBp) / 100} อาจต้องเสียเงินเพิ่ม`);
   }
   return w;
 }
@@ -233,8 +243,11 @@ export function updateCitYear(st: MockState, companyId: string, period: string, 
   if (patch.paidUpCapital !== undefined) row.paidUpCapital = money(patch.paidUpCapital, 'ทุนที่ชำระแล้ว', { positive: true });
   if (patch.losses !== undefined) {
     if (!Array.isArray(patch.losses)) throw fail(422, 'validation.failed', 'รายการขาดทุนสะสมไม่ถูกต้อง');
+    const seen = new Set<number>();
     row.losses = patch.losses.map((l) => {
-      if (!Number.isInteger(l.year) || l.year > year) throw fail(422, 'validation.failed', 'ปีของขาดทุนสะสมต้องเป็นปีก่อนหน้า');
+      if (!Number.isInteger(l.year) || l.year >= year) throw fail(422, 'validation.failed', 'ปีของขาดทุนสะสมต้องเป็นปีก่อนปีบัญชีนี้');
+      if (seen.has(l.year)) throw fail(422, 'validation.failed', `ขาดทุนสะสมปี ${l.year + 543} ซ้ำ`);
+      seen.add(l.year);
       return { year: l.year, amount: money(l.amount, 'จำนวนขาดทุนสะสม', { positive: true, nonZero: true }) };
     });
   }
@@ -287,6 +300,13 @@ export const pnd50Due = (year: number): IsoDate => addDays(`${year}-12-31`, R.pn
 export const pnd51Due = (year: number): IsoDate => `${year}-08-31`;
 export const citDue = (form: 'PND50' | 'PND51', period: string): IsoDate => (form === 'PND50' ? pnd50Due(Number(period)) : pnd51Due(Number(period)));
 
+const userLines = (adjustments: CitYearData['adjustments']): CitLine[] => adjustments.map((a) => ({ code: a.id, line: a.line, kind: 'user', labelTh: `รายการปรับปรุง (ผู้ใช้)`, amount: a.amount, basis: a.reason, id: a.id, by: a.by, at: a.at }));
+/** Ruling 2: what the finalized ภ.ง.ด.50 of the earlier years used of each loss year (read from their frozen snapshots). */
+function lossUsedBefore(st: MockState, companyId: string, year: number): CitLoss[] {
+  const by = new Map<number, number>();
+  for (const f of st.filings) if (f.companyId === companyId && f.form === 'PND50' && f.cit && f.cit.year < year) for (const r of citDerive(f.cit).loss.rows) if (sat(r.used) > 0) by.set(r.year, (by.get(r.year) ?? 0) + sat(r.used));
+  return [...by].sort(([a], [b]) => a - b).map(([y, v]) => ({ year: y, amount: fromSatang(v) }));
+}
 const credits = (st: MockState, companyId: string, year: number, lastMonth: number) => {
   const all = whtAllocations(st, companyId).filter((a) => a.date.startsWith(`${year}-`) && Number(a.date.slice(5, 7)) <= lastMonth)
     .map((a): WhtCredit => ({ rcId: a.rcId, number: a.number, date: a.date, customer: a.customer, target: a.target, certNumber: a.cert, amount: fromSatang(a.wht) }));
@@ -305,24 +325,29 @@ export function citBuild(st: MockState, companyId: string, form: 'PND50' | 'PND5
   const year = requireYear(st, companyId, period), d = dataOf(st, companyId, year);
   const base = { form, period, status: 'draft' as const, exports: ['pdf' as const], dueDate: citDue(form, period) };
   if (form === 'PND50') {
-    const { pl, unmapped, mapped } = readPl(st, companyId, year), c = credits(st, companyId, year, 12), f51 = filingOf(st, companyId, 'PND51', year);
+    const { pl, unmapped, mapped, map } = readPl(st, companyId, year), c = credits(st, companyId, year, 12), f51 = filingOf(st, companyId, 'PND51', year);
     const paidUp = sat(d.paidUpCapital);
-    const snap: CitSnapshot = { year, paidUpCapital: d.paidUpCapital, sme: isSme(paidUp, sat(pl.revenue)), rules: JSON.parse(JSON.stringify(R)) as CitRules, pl, losses: d.losses,
-      user: d.adjustments.map((a) => ({ code: a.id, line: a.line, kind: 'user', labelTh: `รายการปรับปรุง (ผู้ใช้)`, amount: a.amount, basis: a.reason, id: a.id, by: a.by, at: a.at })),
-      pnd51: f51 ? f51.boxes.find((b) => b.code === 'tax')!.amount : '0.00', ...(f51 ? { pnd51EstimateTax: f51.boxes.find((b) => b.code === 'estimateTax')!.amount } : {}), ...c,
+    const snap: CitSnapshot = { year, paidUpCapital: d.paidUpCapital, sme: isSme(paidUp, sat(pl.revenue)), rules: JSON.parse(JSON.stringify(R)) as CitRules, pl, losses: d.losses.map((l) => ({ ...l })),
+      user: userLines(d.adjustments), lossUsedBefore: lossUsedBefore(st, companyId, year), map,
+      pnd51: f51 ? f51.boxes.find((b) => b.code === 'tax')!.amount : '0.00', ...(f51?.pnd51 ? { pnd51Estimate: { mode: f51.pnd51.mode, profit: f51.pnd51.estimateProfit } } : {}), ...c,
       skipped: [...(mapped.charity ? [] : ['18' as const]), ...(mapped.education ? [] : ['19' as const])] };
     const x = citDerive(snap), blockers = sharedBlockers(st, companyId, d, year);
     if (!yearClosed(st, companyId, `${year}-12-31`)) blockers.push({ code: 'year_not_closed', labelTh: `ปีบัญชี ${year + 543} ยังไม่ได้ปิดบัญชีสิ้นปี ปิดบัญชีสิ้นปีก่อนจึงจะยืนยัน ภ.ง.ด.50 ได้`, href: `/accounting/period-close?year=${year}` });
+    // ruling 2: a loss is set off year by year, so the years are filed in order (an earlier year not filed yet while this year holds a loss it could have used; a later year already filed)
+    const open = st.citYears.filter((r) => r.companyId === companyId && r.year < year && !filingOf(st, companyId, 'PND50', r.year));
+    if (open.length && d.losses.some((l) => open.some((e) => l.year < e.year))) blockers.push({ code: 'earlier_year_unfiled', labelTh: `ปีบัญชี ${open[0].year + 543} ยังไม่ได้ยื่น ภ.ง.ด.50 — ขาดทุนสะสมใช้หักตามลำดับปี ยื่นปีก่อนหน้าก่อน`, href: `/tax/cit?year=${open[0].year}` });
+    if (st.filings.some((f) => f.companyId === companyId && f.form === 'PND50' && Number(f.period) > year)) blockers.push({ code: 'later_year_filed', labelTh: `ภ.ง.ด.50 ของปีบัญชีที่ใหม่กว่ายื่นแล้ว — ยื่นปีบัญชี ${year + 543} ย้อนหลังไม่ได้ (ขาดทุนสะสมใช้หักตามลำดับปี)` });
     for (const u of unmapped) blockers.push({ code: 'unmapped_account', labelTh: `บัญชี ${u.code} ${u.nameTh} (ยอด ${u.amount} บาท) ยังไม่ได้ระบุช่อง ภ.ง.ด.50 กำไรสุทธิในแบบจึงไม่ตรงกับงบกำไรขาดทุน`, href: '/accounting/chart-of-accounts' });
     const model: FilingModel = { ...base, boxes: x.boxes, blockers, warnings: citWarnings(snap), attachment: citAttachment(snap), version: fnv(JSON.stringify(snap)),
       // ruling 8: no CIT journal; the expense the user booked (JV) vs the tax the return computes, shown amber and never blocking
-      tieOuts: [tie('filing.tie.citGl', x.tax, Math.max(sat(pl.citExpense), 0))] };
+      tieOuts: [tie('filing.tie.citGl', x.tax, sat(pl.citExpense))] };
     return { model, cit: snap };
   }
   const h1 = readPl(st, companyId, year, `${year}-06-30`), mode = d.estimate?.mode ?? 'h1x2', c = credits(st, companyId, year, 6);
   const h1Profit = fromSatang(h1.net), estimate = mode === 'h1x2' ? h1.net * 2 : sat(d.estimate?.netProfit);
   const snap: Pnd51Snapshot = { year, paidUpCapital: d.paidUpCapital, sme: isSme(sat(d.paidUpCapital), sat(h1.pl.revenue) * 2), rules: JSON.parse(JSON.stringify(R)) as CitRules, mode, estimateProfit: fromSatang(estimate), h1Profit, h1Revenue: h1.pl.revenue, ...c };
   const blockers = sharedBlockers(st, companyId, d, year);
+  if (filingOf(st, companyId, 'PND50', year)) blockers.push({ code: 'pnd50_filed', labelTh: `ภ.ง.ด.50 ของปีบัญชี ${year + 543} ยื่นแล้ว — ยื่น ภ.ง.ด.51 ของปีนี้ไม่ได้ (ภาษีที่ชำระไว้ตาม ภ.ง.ด.51 ต้องนำไปหักใน ภ.ง.ด.50 ก่อนยื่น)` });
   if (mode === 'input' && d.estimate?.netProfit === undefined) blockers.push({ code: 'estimate_missing', labelTh: 'ยังไม่ได้กรอกประมาณการกำไรสุทธิ' });
   if (mode === 'h1x2' && Array.from({ length: 6 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`).some((m) => st.periods.find((p) => p.companyId === companyId && p.month === m)?.status !== 'closed')) {
     blockers.push({ code: 'h1_not_closed', labelTh: `วิธีกำไร 6 เดือนแรก x 2 ต้องปิดงวดบัญชีเดือน 1-6 ของปี ${year + 543} ให้ครบก่อน`, href: `/accounting/period-close?year=${year}` });
@@ -349,7 +374,12 @@ export function citInvariants(st: MockState, f: Filing, w: string, out: string[]
   const year = Number(f.period);
   if (f.form === 'PND51') {
     if (!f.pnd51) out.push(`${w}: its snapshot is missing`);
-    else if (!same(pnd51Derive(f.pnd51).boxes, f.boxes)) out.push(`${w}: the stored boxes are not what its stored snapshot gives`);
+    else {
+      const p = f.pnd51;
+      if (!same(pnd51Derive(p).boxes, f.boxes)) out.push(`${w}: the stored boxes are not what its stored snapshot gives`);
+      if (p.sme !== isSme(sat(p.paidUpCapital), sat(p.h1Revenue) * 2, p.rules)) out.push(`${w}: the SME flag is not what the paid-up capital and the H1 revenue give`);
+      if (p.mode === 'h1x2' && sat(p.estimateProfit) !== sat(p.h1Profit) * 2) out.push(`${w}: the H1 x 2 estimate ${p.estimateProfit} is not twice the H1 profit ${p.h1Profit}`);
+    }
     return;
   }
   const s = f.cit;
@@ -357,11 +387,20 @@ export function citInvariants(st: MockState, f: Filing, w: string, out: string[]
   const x = citDerive(s);
   if (!same(x.boxes, f.boxes)) out.push(`${w}: the stored boxes are not what its stored snapshot gives`);
   if (!yearClosed(st, f.companyId, `${year}-12-31`)) out.push(`${w}: finalized but the fiscal year ${year} is not closed`);
-  if (sat(f.boxes.find((b) => b.code === '2.9')?.amount) !== netProfit(st, f.companyId, year)) out.push(`${w}: line 2.9 is not the P&L net profit of ${year}`);
-  const now = readPl(st, f.companyId, year);
+  const now = readPl(st, f.companyId, year, undefined, s.map); // the mapping it froze (a later chart edit moves only the unfiled years)
+  if (sat(f.boxes.find((b) => b.code === '2.9')?.amount) !== now.net) out.push(`${w}: line 2.9 is not the P&L net profit of ${year}`);
   if (JSON.stringify(now.pl) !== JSON.stringify(s.pl)) out.push(`${w}: the books no longer give the figures it took`);
+  if (s.sme !== isSme(sat(s.paidUpCapital), sat(s.pl.revenue), s.rules)) out.push(`${w}: the SME flag is not what the paid-up capital and the revenue give`);
   const f51 = filingOf(st, f.companyId, 'PND51', year);
   if (sat(s.pnd51) !== (f51 ? boxOf(f51.boxes, 'tax') : 0)) out.push(`${w}: the ภ.ง.ด.51 credit ${s.pnd51} is not the finalized ภ.ง.ด.51's tax`);
+  if (JSON.stringify(s.pnd51Estimate) !== JSON.stringify(f51?.pnd51 ? { mode: f51.pnd51.mode, profit: f51.pnd51.estimateProfit } : undefined)) out.push(`${w}: the ภ.ง.ด.51 estimate is not the finalized ภ.ง.ด.51's`);
+  if (JSON.stringify(s.uncertified) !== JSON.stringify(credits(st, f.companyId, year, 12).uncertified)) out.push(`${w}: the uncertified list is not the live one`);
+  const row = rowOf(st, f.companyId, year);
+  if (!row || JSON.stringify(s.user) !== JSON.stringify(userLines(row.adjustments))) out.push(`${w}: the adjustments are not the locked year data`);
+  if (!row || JSON.stringify(s.losses) !== JSON.stringify(row.losses)) out.push(`${w}: the losses are not the locked year data`);
+  const before = lossUsedBefore(st, f.companyId, year);
+  if (JSON.stringify(s.lossUsedBefore) !== JSON.stringify(before)) out.push(`${w}: the losses used before ${year} are not what the earlier finalized returns used`);
+  for (const l of citDerive(s).loss.rows) if (sat(l.used) + sat(s.lossUsedBefore.find((b) => b.year === l.year)?.amount) > sat(l.amount)) out.push(`${w}: the loss of ${l.year} is used more than its amount (I11)`);
   const live = new Map(credits(st, f.companyId, year, 12).credits.map((c) => [`${c.rcId}|${c.target}`, c]));
   for (const c of s.credits) { const l = live.get(`${c.rcId}|${c.target}`); if (!l || l.certNumber !== c.certNumber || l.amount !== c.amount) out.push(`${w}: credit ${c.number} no longer carries the certificate and tax it took`); }
   const t = f.tieOuts[0];
