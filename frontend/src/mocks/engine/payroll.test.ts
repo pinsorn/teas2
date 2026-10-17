@@ -8,6 +8,7 @@ import { buildSeedState, loadState, resetState, type MockState } from '../store'
 import { testServer } from '../test-server';
 import { cancel, compute, createDraft, issue, revise } from './commands';
 import { checkInvariants } from './invariants';
+import { buildPlan } from './corrections';
 import { derivedLocks } from './locks';
 import type { MockError } from './log';
 import { computeSlip, inputOf, refuseLaterRun, ssoOf, type SlipInput } from './payroll';
@@ -561,7 +562,7 @@ describe('PY1a ruling 4: an other deduction is money owed to someone else (2190)
     expect(ded).toMatchObject({ credit: '500.00', debit: '0.00' });
     expect(ded.partyName).toBeUndefined();
     expect(e.lines.filter((l) => l.accountCode === '2190')).toHaveLength(1);
-    expect(st.accounts.find((a) => a.companyId === 'co-vat' && a.code === '2190')).toMatchObject({ nameTh: 'เงินหักจากพนักงานรอนำส่ง', subClass: 'payroll-liability', parent: '2100' });
+    expect(st.accounts.find((a) => a.companyId === 'co-vat' && a.code === '2190')).toMatchObject({ nameTh: 'เงินหักจากพนักงานรอนำส่ง', subClass: 'accrual', parent: '2100' });
     expect(st.accounts.find((a) => a.companyId === 'co-nonvat' && a.code === '2190')).toBeDefined();
   });
   it('the 2180 tie no longer carries the deductions: a deduction line moved back to 2180 under the name is caught', () => {
@@ -581,6 +582,50 @@ describe('PY1a ruling 5: pay below the SSO', () => {
     expect(x.title).toContain('จิ๋ว ค่าแรงน้อย');
     expect(x.title).toContain('82.50');
     expect(x.title).not.toContain('รายการหักอื่น');
+  });
+});
+
+describe('PY1b N1: 2190 can be cleared by a JV and a bank line; the document-owned payables stay refused', () => {
+  const call = (method: string, p: string, body?: unknown) => fetch(`http://localhost/bff/v1${p}`, { method, body: body ? JSON.stringify(body) : undefined, headers: { 'content-type': 'application/json' } });
+  const jvLine = (id: string, code: string, debit: string, credit: string): DocLine => ({ id, description: code, qty: '1', unit: '', unitPrice: '0.00', taxCode: 'EX', accountCode: code, debit, credit });
+  const jv = (dr: string, cr: string) => { const d = createDraft(st, 'co-vat', 'JV', { header: { documentDate: '2026-10-10' }, lines: [jvLine('a', dr, '500.00', '0.00'), jvLine('b', cr, '0.00', '500.00')] }, ME, `k-${dr}-${cr}`); return () => issue(st, d.id, d.version, ME); };
+
+  it('a JV Dr 2190 / Cr 5110 issues (remitting the held deductions) and the books stay clean; a bank account on the other leg is still refused', () => {
+    const r = jv('2190', '5110')();
+    expect(r.status).toBe('issued');
+    expect(err(jv('2190', '1120')).code).toBe('ledger.control_account'); // the cash account stays the bank screen's
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('the JV picker and the bank-line picker offer 2190; 2170 / 2153 / 2160 are offered by neither', async () => {
+    const jvPick = ((await (await call('GET', '/accounting/journal-accounts')).json()) as { code: string }[]).map((a) => a.code);
+    const bankPick = ((await (await call('GET', '/finance/postable-accounts')).json()) as { code: string }[]).map((a) => a.code);
+    expect(jvPick).toContain('2190');
+    expect(bankPick).toContain('2190');
+    for (const code of ['2170', '2153', '2160']) { expect(jvPick, code).not.toContain(code); expect(bankPick, code).not.toContain(code); }
+  });
+  it('2170 / 2153 / 2160 are still refused at JV issue', () => {
+    for (const code of ['2170', '2153', '2160']) expect(err(jv(code, '5110')).code, code).toBe('ledger.control_account');
+  });
+});
+
+describe('PY1b N2: a correction plan for a run or an opening balance that would refuse is never shown', () => {
+  const call = (method: string, p: string, body?: unknown) => fetch(`http://localhost/bff/v1${p}`, { method, body: body ? JSON.stringify(body) : undefined, headers: { 'content-type': 'application/json' } });
+  it('a PR plan changing the pay-date month is refused 422 payroll.month_fixed, no plan', async () => {
+    const b = doc('pr-bonus-09');
+    const r = await call('POST', `/docs/PR/${b.id}/correction-plan`, { header: { ...b.header, documentDate: '2026-10-01' }, lines: b.lines });
+    expect(r.status).toBe(422);
+    const j = (await r.json()) as { code?: string; steps?: unknown };
+    expect(j.code).toBe('payroll.month_fixed');
+    expect(j.steps).toBeUndefined();
+  });
+  it('the plan builder itself refuses an OB payroll year-to-date change under a live run (not only the wire / reviseBody order)', () => {
+    cancel(st, 'npr-2026-09', doc('npr-2026-09').version, 'OTHER', 'ทดสอบ', ME);
+    const ob = doc('nob-1');
+    ob.header.documentDate = '2026-06-30';
+    const d = createDraft(st, 'co-nonvat', 'PR', { header: { documentDate: '2026-10-10' }, lines: [row('nemp-01')] }, ME, 'k-n2');
+    issue(st, d.id, d.version, ME);
+    const e = err(() => buildPlan(st, ob.id, { header: ob.header, lines: ob.lines, opening: { ...ob.opening!, payrollYtd: [{ employeeId: 'nemp-01', income: '1.00', pit: '0.00', sso: '0.00' }] } }, 'accountant'));
+    expect(e).toMatchObject({ status: 409, code: 'payroll.ob_in_use' });
   });
 });
 
