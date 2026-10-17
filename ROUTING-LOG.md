@@ -25,3 +25,5 @@
 | 2026-10-17 | SP1c TX2b implement (WHT hub UI, PP36 screen, WHT receivable, missing 50 ทวิ, WT list) | sonnet-implementer | UI + reports on the approved TX2a engine |
 | 2026-10-17 | SP1c TX2b review (WHT hub UI, receivable / missing-cert reports) | sonnet-reviewer | UI + read-only money reports; one small engine change (PP36 ack) |
 | 2026-10-17 | SP1c TX2c implement (PP30 netting at finalize, pay tax from a bank line) | sonnet-implementer | airtight Opus design spec; Opus review after |
+| 2026-10-17 | SP1c TX2c review (PP30 netting, payTax / reverse, payable invariants) | opus-reviewer (fresh) | money + ledger diff; warm reviewer context ~320k |
+| 2026-10-17 | SP1c TX3a implement (CIT PND50/51 engine, adjustments, loss carry, credits) | sonnet-implementer | default implementer; Opus review after |
