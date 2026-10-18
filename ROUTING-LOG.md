@@ -64,3 +64,4 @@
 | 2026-10-18 | SP1c ST1 review (company settings, users, roles) | opus-reviewer | auth/permissions + identity snapshot; fresh reviewer |
 | 2026-10-18 | SP1c ST1a fix round (role edit last-admin, pending invites, payslip/50 tawi frozen seller, corrections effective perms) | sonnet-implementer (warm, ST1 worker) | Opus REJECT (B1 last admin via role edit); warm re-review after |
 | 2026-10-18 | SP1c ST1b (rest of ST1a after the cap stop) | sonnet-implementer (warm, ST1 worker) | same area; Opus re-review of ST1a+ST1b together |
+| 2026-10-18 | SP1c ST2 implement (posting rules, preview, dimensions + account rules, expense categories; ST1 carries) | sonnet-implementer (fresh) | new area (ST1 worker context large); Opus review after (ledger rules) |
