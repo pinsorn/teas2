@@ -143,6 +143,6 @@ Keys `pnd1Draft`, `ssoBlocked` (non-VAT).
 ### Task GPY: Ham gate — payroll
 
 - [x] Consolidated gate green; production build / staging.
-- [ ] Send Ham: employees; the payroll grid (**D-11: a fourth line editor — needs Ham's acknowledgement because SP0
+- [x] Send Ham: employees; the payroll grid (**D-11: a fourth line editor — needs Ham's acknowledgement because SP0
   §7.1 names three**); PIT / SSO figures as `[SP-R]` fixtures; several runs per month; pay; payslips; filings.
-- [ ] AskUserQuestion "Payroll approve?" — approve / approve with changes / rework. Record in `STATUS.md`.
+- [x] AskUserQuestion "Payroll approve?" — approve / approve with changes / rework. Record in `STATUS.md`.
