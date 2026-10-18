@@ -172,16 +172,46 @@ describe('ST4 images and templates on the paper', () => {
     expect(paper(d.id).images).toEqual({ signature: SIG_A });
     updateTemplate(st, me, VAT, 'TI', { showLogo: true, showStamp: true, showSignature: false, version: v0 + 1 });
     expect(paper(d.id).signatures).toEqual([]);
-    expect(paper(d.id).images).toEqual({ logo: LOGO_A, stamp: STAMP_A }); // no signature, and with no line there is nowhere for the stamp to sit
+    expect(paper(d.id).images).toEqual({ logo: LOGO_A, stamp: STAMP_A }); // no signature; the stamp does not depend on the lines (ST4a m3): it sits beside the block
     expect(paper(d.id).issuer?.stampAt).toBeUndefined();
     updateTemplate(st, me, VAT, 'TI', { showLogo: true, showStamp: true, showSignature: true, signatureLabels: ['ผู้รับเงิน', 'ผู้อนุมัติ'], version: v0 + 2 });
     expect(paper(d.id).signatures).toEqual(['ผู้รับเงิน', 'ผู้อนุมัติ']);
-    expect(paper(d.id).issuer?.signatureAt).toBe('ผู้อนุมัติ'); // the issuer's own line is not in the list: the last line takes the signature
+    expect(paper(d.id).issuer?.signatureAt).toBeUndefined(); // ST4a M1: the issuer's own line is not in the list: nothing is signed (never the last line)
+    expect(paper(d.id).images).toEqual({ logo: LOGO_A, stamp: STAMP_A });
+    expect(paper(d.id).issuer?.stampAt).toBeUndefined();
     updateTemplate(st, me, VAT, 'QT', { showLogo: false, showStamp: false, showSignature: false, version: 1 });
     expect(optionsOf(st, 'co-nonvat', 'QT')).toMatchObject({ showSignature: true, version: 1 }); // another company's template is untouched
     expect(paper(other.id).signatures.length).toBeGreaterThan(0);
     expect(st.audit.filter((a) => a.command === 'template.update')).toHaveLength(4);
     expect(templatesView(st, VAT, DEFAULT_SIGNATURES()).items.find((t) => t.type === 'TI')).toMatchObject({ signatureLabels: ['ผู้รับเงิน', 'ผู้อนุมัติ'], version: v0 + 3 });
+  });
+  it('ST4a M1: a template with only counterparty lines prints no signature and no stamp on them (QT and TI probes)', () => {
+    const qt = st.docs.find((x) => x.companyId === VAT && x.type === 'QT' && x.status !== 'draft')!;
+    const cur = st.docs.find((x) => x.id === qt.id)!;
+    revise(st, qt.id, { header: { ...cur.header }, lines: cur.lines }, cur.version, 'ทดสอบ', me); // re-snapshot with the pictures on
+    updateTemplate(st, me, VAT, 'QT', { showLogo: true, showStamp: true, showSignature: true, signatureLabels: ['ผู้อนุมัติ', 'ลูกค้ายืนยันสั่งซื้อ'], version: 1 });
+    const q = paper(qt.id);
+    expect(q.issuer?.signatureAt).toBeUndefined();
+    expect(q.issuer?.stampAt).toBeUndefined();
+    expect(q.images?.signature).toBeUndefined();
+    const ti = newTi();
+    updateTemplate(st, me, VAT, 'TI', { showLogo: true, showStamp: true, showSignature: true, signatureLabels: ['ผู้ส่งของ', 'ผู้รับของ'], version: 1 });
+    const p = paper(ti.id);
+    expect([p.issuer?.signatureAt, p.issuer?.stampAt, p.images?.signature]).toEqual([undefined, undefined, undefined]);
+    expect(p.images?.stamp).toBe(STAMP_A); // beside the block, on no line
+  });
+  it('ST4a m1: an issued printable without its issue look is caught (single fault)', () => {
+    const d = newTi();
+    delete st.docs.find((x) => x.id === d.id)!.issueLook;
+    expect(checkInvariants(st).some((m) => m.includes(d.id) && m.includes('issue look'))).toBe(true);
+  });
+  it('ST4a m2: the payslip row carries its default labels and a Save of toggles pins nothing; labels already set are kept', () => {
+    expect(templatesView(st, VAT, DEFAULT_SIGNATURES()).items.find((t) => t.type === 'PR')!.signatureLabels).toEqual(['ผู้จ่ายเงิน', 'ผู้รับเงิน']);
+    updateTemplate(st, me, VAT, 'PR', { showLogo: false, showStamp: true, showSignature: true, version: 1 });
+    expect(st.printTemplates!.find((t) => t.type === 'PR')!.signatureLabels).toBeUndefined();
+    updateTemplate(st, me, VAT, 'QT', { showLogo: true, showStamp: true, showSignature: true, signatureLabels: ['ผู้เสนอราคา'], version: 1 });
+    updateTemplate(st, me, VAT, 'QT', { showLogo: false, showStamp: true, showSignature: true, version: 2 });
+    expect(st.printTemplates!.find((t) => t.type === 'QT')!.signatureLabels).toEqual(['ผู้เสนอราคา']);
   });
   it('a template write: agent refused, stale version 409, label outside the fixed list or a duplicate refused - and nothing is written', () => {
     const ok = { showLogo: true, showStamp: true, showSignature: true, version: 1 };

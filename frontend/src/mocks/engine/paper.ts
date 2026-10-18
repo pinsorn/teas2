@@ -21,7 +21,8 @@ function lookOf(c: Ctx, d: Doc): Pick<PaperModel, 'images' | 'issuer'> {
   return { images: { ...(l.logo ? { logo: l.logo } : {}), ...(l.stamp ? { stamp: l.stamp } : {}), ...(l.signature ? { signature: l.signature } : {}) }, issuer: { ...(l.issuerName ? { name: l.issuerName } : {}), ...(l.issuerPosition ? { position: l.issuerPosition } : {}) } };
 }
 /** The signature labels a type prints when its template sets none (the page offers these as the starting point). */
-export const DEFAULT_SIGNATURES = (): Partial<Record<DocType, string[]>> => Object.fromEntries(Object.entries(LOOK).map(([t, l]) => [t, l!.signatures]));
+const PR_SIGNATURES = ['ผู้จ่ายเงิน', 'ผู้รับเงิน'];
+export const DEFAULT_SIGNATURES = (): Partial<Record<DocType, string[]>> => ({ ...Object.fromEntries(Object.entries(LOOK).map(([t, l]) => [t, l!.signatures])), PR: PR_SIGNATURES });
 
 interface Look { titleTh: string; titleEn: string; signatures: string[]; dueLabel?: string }
 const LOOK: Partial<Record<DocType, Look>> = {
@@ -200,7 +201,7 @@ function payslipPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
   return {
     titleTh: 'ใบจ่ายเงินเดือน', titleEn: 'PAYSLIP', copyLabel: copy ? 'สำเนา' : 'ต้นฉบับ', number: d.number ?? '-', documentDate: d.header.documentDate, ...(d.header.reference ? { reference: d.header.reference } : {}),
     seller: d.sellerSnapshot ?? { name: co.legalNameTh, nameEn: co.legalNameEn, address: co.address, phone: co.phone, taxId: co.taxId, branchLabel: branchLabel(co.branchCode) }, buyer: { name: '-', address: '' }, // I3 (ST1a M2): a past payslip keeps the employer it was issued under
-    lines: [], totals: d.totals, signatures: ['ผู้จ่ายเงิน', 'ผู้รับเงิน'], payslips, ...lookOf(c, d),
+    lines: [], totals: d.totals, signatures: PR_SIGNATURES, payslips, ...lookOf(c, d),
     ...(d.status === 'cancelled' ? { voidMark: { label: 'ยกเลิก', note: d.cancel?.reasonText } } : {}),
   };
 }

@@ -62,10 +62,12 @@ export function finishPaper(st: MockState, companyId: string, type: DocType, m: 
   const signatures = o.showSignature ? (o.signatureLabels ?? m.signatures) : [];
   const pick = (v: string | undefined) => (v === undefined ? undefined : v.startsWith('data:') ? v : st.images?.[v]);
   const logo = o.showLogo ? pick(m.images?.logo) : undefined, stamp = o.showStamp ? pick(m.images?.stamp) : undefined, signature = o.showSignature ? pick(m.images?.signature) : undefined;
-  const want = ISSUER_LINE[type], signatureAt = want && signatures.includes(want) ? want : signatures.at(-1);
+  // ST4a M1: OUR signature sits only on the type's issuer line - if the template drops that line nothing is signed (never on a counterparty's line). The stamp sits on the authorised-signatory line, else on the issuer line,
+  // else (no such line) beside the signature block with no line: `stampAt` absent. m3: the stamp does not depend on the lines being shown.
+  const want = ISSUER_LINE[type], signatureAt = want && signatures.includes(want) ? want : undefined;
   const stampAt = signatures.includes(AUTHORISED) ? AUTHORISED : signatureAt;
   const { images: _i, issuer, ...rest } = m; void _i;
-  const imgs = { ...(logo ? { logo } : {}), ...(stamp ? { stamp } : {}), ...(signature ? { signature } : {}) };
+  const imgs = { ...(logo ? { logo } : {}), ...(stamp ? { stamp } : {}), ...(signature && signatureAt ? { signature } : {}) };
   const who = signature && signatureAt ? { ...(issuer?.name ? { name: issuer.name } : {}), ...(issuer?.position ? { position: issuer.position } : {}), signatureAt } : {};
   const who2 = { ...who, ...(stamp && stampAt ? { stampAt } : {}) };
   return { ...rest, signatures, ...(Object.keys(imgs).length ? { images: imgs } : {}), ...(Object.keys(who2).length ? { issuer: who2 } : {}) };
@@ -85,7 +87,7 @@ export function updateTemplate(st: MockState, actor: Actor, companyId: string, t
   const t = type as DocType, rows = (st.printTemplates ??= []), at = rows.findIndex((x) => x.companyId === companyId && x.type === t), cur = rows[at];
   if (v.version !== (cur?.version ?? 1)) throw new MockError(409, 'record.version_conflict', 'แม่แบบนี้ถูกแก้ไขโดยผู้อื่นแล้ว โหลดข้อมูลล่าสุดก่อนบันทึก');
   for (const k of ['showLogo', 'showStamp', 'showSignature'] as const) if (typeof v[k] !== 'boolean') throw new MockError(422, 'record.invalid', 'ข้อมูลแม่แบบไม่ถูกต้อง');
-  const labels = v.signatureLabels;
+  const labels = v.signatureLabels ?? cur?.signatureLabels; // absent = keep what is stored (a Save of the toggles never pins the defaults)
   if (labels !== undefined && (!Array.isArray(labels) || labels.length < 1 || labels.length > 4 || new Set(labels).size !== labels.length || labels.some((l) => !SIGNATURE_LABELS.includes(l as string)))) {
     throw new MockError(422, 'template.bad_label', 'ชื่อผู้ลงนามต้องเลือกจากรายการที่กำหนด (1–4 ช่อง ไม่ซ้ำกัน)');
   }
@@ -102,6 +104,7 @@ export function lookInvariants(st: MockState, out: string[]): void {
   for (const d of st.docs) {
     if (!DOC_TYPES[d.type].printable || ['draft', 'pending', 'approved'].includes(d.status)) continue;
     if (!d.sellerSnapshot) out.push(`${d.id}: issued ${d.type} with no seller snapshot (I3)`);
+    if (!d.issueLook) out.push(`${d.id}: issued ${d.type} with no issue look (the pictures and the issuer it was issued with)`);
     for (const k of ['logo', 'stamp', 'signature'] as const) if (!has(d.issueLook?.[k])) out.push(`${d.id}: the ${k} it was issued with (${d.issueLook?.[k]}) is not in the image store`);
   }
   for (const f of st.filings as (MockState['filings'][number] & { look?: IssueLook })[]) for (const k of ['logo', 'stamp', 'signature'] as const) if (!has(f.look?.[k])) out.push(`filing ${f.form} ${f.period}: the ${k} it was finalized with (${f.look?.[k]}) is not in the image store`);

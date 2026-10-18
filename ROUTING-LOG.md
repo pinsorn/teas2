@@ -78,3 +78,5 @@
 | 2026-10-19 | SP1c ST3 round-2 review (ST3a) | opus-reviewer (warm, ST3 reviewer) | re-check B1 / M1 / M2 / m1 |
 | 2026-10-19 | SP1c ST4 implement (templates + seller / logo / signature / stamp frozen at issue on every paper) | sonnet-implementer (fresh) | new area; parallel with read-only review; Opus review after (freeze rule) |
 | 2026-10-19 | SP1c ST3b (WHT row in use by frozen rate; numbering existing-number ambiguity) | sonnet-implementer (warm, ST3 worker) | Opus r2 REJECT R2-B1; parallel with ST4 (disjoint files, no e2e) |
+| 2026-10-19 | SP1c ST4 review (templates + paper snapshot at issue) | opus-reviewer (fresh) | freeze rule on papers |
+| 2026-10-19 | SP1c ST4a fix round (signature only on issuer line, stamp never on counterparty line, issueLook invariant, PR labels, stamp independent, 50 tawi actor) | sonnet-implementer (warm, ST4 worker) | Opus REJECT ST4 (M1) |

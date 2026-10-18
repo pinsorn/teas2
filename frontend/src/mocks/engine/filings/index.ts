@@ -89,7 +89,7 @@ export function finalizeFiling(st: MockState, companyId: string, form: FilingFor
   const snap = built ? { docs: [], carryIn: '0.00', pp36: '0.00', ...(built.cit ? { cit: built.cit } : { pnd51: built.pnd51 }) }
     : form === 'PP30'
     ? { docs: pp30Docs(st, companyId, period), carryIn: prev ? prev.boxes.find((b) => b.code === '12')!.amount : '0.00', pp36: fromSatang(pp36VatOf(st, companyId, period)), journal: netting }
-    : isPayroll(form) ? (form === 'PND1' ? pnd1Snapshot : form === 'PND1A' ? pnd1aSnapshot : ssoSnapshot)(st, companyId, period)
+    : isPayroll(form) ? (form === 'PND1' ? pnd1Snapshot : form === 'PND1A' ? (s: MockState, c: string, p: string) => pnd1aSnapshot(s, c, p, actor) : ssoSnapshot)(st, companyId, period)
     : form === 'PP36' ? pp36Snapshot(st, companyId, period) : pndSnapshot(st, companyId, form as PndForm, period);
   const tieOuts = built ? m.tieOuts : form === 'PP36' ? [tie('filing.tie.pp36Gl', boxOf(m.boxes, 'vat'), pp36Gl(st, companyId, period, (snap as ReturnType<typeof pp36Snapshot>).journal ?? []))] : m.tieOuts;
   st.filings.push({ fp: 0, companyId, form, period, status: 'finalized', company: { taxId: co.taxId, branchCode: co.branchCode, legalNameTh: co.legalNameTh, address: co.address, ...(co.legalNameEn ? { legalNameEn: co.legalNameEn } : {}), ...(co.phone ? { phone: co.phone } : {}), ...(isPayroll(form) && co.ssoEmployerAccountNo ? { ssoEmployerAccountNo: co.ssoEmployerAccountNo } : {}) }, boxes: m.boxes, tieOuts, ...snap,

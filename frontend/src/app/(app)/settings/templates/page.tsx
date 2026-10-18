@@ -45,7 +45,7 @@ function Editor({ row, labels }: { row: TemplateRow; labels: string[] }) {
   const name = td(`${row.type}.title`);
   const refresh = () => qc.invalidateQueries({ queryKey: [me?.activeCompanyId ?? '', 'settings', 'templates'] });
   const save = useMutation({
-    mutationFn: () => api<TemplatesView>('PUT', `${T}/${row.type}`, { ...v, version: row.version }),
+    mutationFn: () => api<TemplatesView>('PUT', `${T}/${row.type}`, { showLogo: v.showLogo, showStamp: v.showStamp, showSignature: v.showSignature, ...(v.signatureLabels.join('|') !== row.signatureLabels.join('|') ? { signatureLabels: v.signatureLabels } : {}), version: row.version }), // the labels are sent only when changed: a Save of the toggles never pins the defaults
     onSuccess: () => { setMsg({ ok: true, text: t('saved') }); return refresh(); },
     onError: (e) => { setMsg({ ok: false, text: e instanceof ApiError && e.problem.code === 'record.version_conflict' ? t('conflict') : e instanceof ApiError ? e.problem.title : t('failed') }); void refresh(); },
   });

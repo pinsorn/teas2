@@ -1,8 +1,7 @@
 import { LIVE } from '@/domain/doc-types';
 import type { FilingBlocker, FilingBox, FilingModel } from '@/domain/filings';
-import type { IssueLook, PaperModel } from '@/domain/types';
+import type { Actor, IssueLook, PaperModel } from '@/domain/types';
 import type { MockState } from '../../store';
-import { USER } from '../../fixtures/documents';
 import { bahtText } from '../bahtText';
 import { finishPaper, snapshotLook } from '../look';
 import { MockError, today } from '../log';
@@ -78,10 +77,10 @@ export function pnd1aModel(st: MockState, companyId: string, year: string): Fili
   const warnings: string[] = [];
   return { form: 'PND1A', period: year, status: 'draft', boxes, tieOuts: ties(months, rows, boxes), blockers, warnings, attachment: pnd1aAttachment(rows), version: fnv(JSON.stringify([months.map((f) => f.period), rows])), dueDate: due(year), exports: ['rdprep-txt', 'pdf'] };
 }
-/** ST4: the finalize also freezes the logo, the stamp and the signer's signature the employees' 50 ทวิ print (references into `st.images`; beside the company as filed, NOT part of its fingerprint). A finalize is a signed-in user's act. */
-export const pnd1aSnapshot = (st: MockState, companyId: string, year: string): Pick<Filing, 'payroll' | 'docs' | 'carryIn' | 'pp36'> & { look: IssueLook } => {
+/** ST4: the finalize also freezes the logo, the stamp and the signer's signature the employees' 50 ทวิ print (references into `st.images`; beside the company as filed, NOT part of its fingerprint). The signer is whoever finalizes (an agent has no signature). */
+export const pnd1aSnapshot = (st: MockState, companyId: string, year: string, actor: Actor): Pick<Filing, 'payroll' | 'docs' | 'carryIn' | 'pp36'> & { look: IssueLook } => {
   const months = monthsOf(st, companyId, year);
-  return { payroll: { runs: [], rows: yearRows(months, obOf(st, companyId, year)), months: months.map((f) => f.period) }, docs: [], carryIn: '0.00', pp36: '0.00', look: snapshotLook(st, companyId, USER) };
+  return { payroll: { runs: [], rows: yearRows(months, obOf(st, companyId, year)), months: months.map((f) => f.period) }, docs: [], carryIn: '0.00', pp36: '0.00', look: snapshotLook(st, companyId, actor) };
 };
 
 /** Ruling 5: the stored months are exactly the finalized ภ.ง.ด.1 of the year; each row is its stored opening part + Σ those months' stored rows; the boxes are Σ rows; 1ก Σ = opening + Σ months. */

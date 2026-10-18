@@ -48,6 +48,8 @@ export function SigBlocks({ m, box = 'paper-sig', date }: { m: PaperModel; box?:
           {date ? <div className="date">{date} <i /></div> : null}
         </div>
       ))}
+      {im?.stamp && !m.signatures.includes(who?.stampAt ?? '') ? <div style={{ gridColumn: '1 / -1', textAlign: 'right' }}>{/* ST4a m3: no line to sit on (lines off, or the template dropped the authorised / issuer line): the stamp sits beside the block */}
+        {img(im.stamp, { position: 'static', height: '15mm', maxWidth: '24mm', opacity: 0.9 })}</div> : null}
     </>
   );
 }

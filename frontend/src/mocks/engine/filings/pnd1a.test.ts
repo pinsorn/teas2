@@ -199,6 +199,12 @@ describe('ruling 8: the annual 50 ทวิ for employees comes from the finaliz
     delete st.images![ref];
     expect(found(/signature it was finalized with/)).toBe(true);
   });
+  it('ST4a m5: the signer is whoever finalizes - an agent finalize carries no signature', () => {
+    const staff = st.staff.find((m) => m.companyId === NV && m.userId === 'u-1')!;
+    staff.signatureDataUrl = 'data:image/png;base64,DDDDDDDD';
+    finalizeFiling(st, NV, 'PND1A', '2025', a1(NV, '2025').version, { kind: 'agent', id: 'ag-1', name: 'ผู้ช่วยบัญชี (AI)' });
+    expect(employeeCertificates(st, NV, '2025')[0].images?.signature).toBeUndefined();
+  });
   const call = (p: string) => fetch(`http://localhost/bff/v1${p}`);
   it('over the wire: payroll.read reads; the operator is forbidden; another company has none of this company\'s', async () => {
     setSettings({ companyKey: 'nonvat', role: 'accountant', screenState: 'normal' });
