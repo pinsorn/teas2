@@ -16,6 +16,7 @@ import { payDocs, payrollInvariants } from './payroll';
 import { appliedOf, docCash, toleranceOf } from './locks';
 import { payoutOf, resolvedBankId } from './settlement';
 import { consumed, q4 } from './chain';
+import { companyEntries } from './ledger';
 import { divRoundHalfAway, fromSatang, toSatang } from './money';
 import { resolveRole } from './posting';
 import { claimPeriodOf, exForfeited, forfeitedOf, isRecoverable } from './purchase-vat';
@@ -615,6 +616,10 @@ export function checkInvariants(st: MockState): string[] {
   out.push(...filingInvariants(st)); // 20. finalized ภ.พ.30 (TX1): the boxes are what the stored documents give, every listed document still carries what the filing took, none of the month is missing
   out.push(...scheduleInvariants(st)); // 17. schedules (AC4): plan = total, each run JV = its plan row, the prepaid account moved by the live runs
   out.push(...payrollInvariants(st)); // 21. payroll runs (PY1): every slip recomputes from what it stored, net = gross - PIT - SSO - deduction, totals = slips, the journal = totals per role, the year to date is a chain
+  // 22. RP2 (ruling 8a): a posted line that names a party carries that party's id, and the party is of the same company (every party report matches by id)
+  for (const c of st.companies) for (const e of companyEntries(st, c.id)) for (const l of e.lines) {
+    if (l.partyName && !(l.partyId && st.parties.some((p) => p.id === l.partyId && p.companyId === c.id))) out.push(`${c.id}: journal line on ${l.accountCode} for "${l.partyName}" ${l.partyId ? `carries partyId ${l.partyId}, which is not a party of this company` : 'carries no partyId'}`);
+  }
   out.push(...jvInvariants(st)); // 15. journal vouchers (AC1): no controlled account, the journal is the lines, reversals mirror, accruals net to zero
 
   // numbering: gap-free per company x type x month, and the series counter agrees

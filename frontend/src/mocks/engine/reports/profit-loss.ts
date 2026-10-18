@@ -92,7 +92,7 @@ export function profitLoss(st: MockState, companyId: string, p: PlParams): Repor
       notes.push(`งวดเปรียบเทียบ: ${formatDateBE(r.from)} ถึง ${formatDateBE(r.to)}`);
     }
   }
-  if (st.yearCloses.some((y) => y.companyId === companyId && y.date >= from && y.date <= to)) notes.push('บัญชีรายได้/ค่าใช้จ่ายในบัญชีแยกประเภทจะเป็นศูนย์หลังรายการปิดบัญชีสิ้นปี'); // the GL drill of a closed year ends at 0: its closing entry is inside the range
+  if (st.yearCloses.some((y) => y.companyId === companyId && !y.reopened && y.date >= from && y.date <= to)) notes.push('บัญชีรายได้/ค่าใช้จ่ายในบัญชีแยกประเภทจะเป็นศูนย์หลังรายการปิดบัญชีสิ้นปี'); // the GL drill of a closed year ends at 0: its closing entry is inside the range
   const diff = !!cmpMode, keys = [...cols.map((c) => c.key), ...(diff ? ['diff'] : [])], n = keys.length;
   const ext = (v: number[]) => (diff ? [...v, v[0] - v[1]] : v);
 

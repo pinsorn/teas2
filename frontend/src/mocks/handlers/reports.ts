@@ -4,6 +4,8 @@ import { buildReport, isBuilt, reportCsv } from '../engine/reports';
 import { ctx, forbidden, problem, screenGate } from './common';
 
 const PERM = 'report.read';
+/** RP2: receivables / payables and the sales / purchase summaries are the accountant's and the admin's (`report.arap.read`); the operator has neither. The asset register stays `report.read`. */
+const ARAP = ['ar-aging', 'ap-aging', 'customer-statement', 'vendor-ledger', 'sales-summary', 'purchase-summary', 'outstanding-po'];
 const DATE_KEYS = ['asOf', 'from', 'to'];
 /** A real calendar date: the shape AND a round trip (2099-13-45 and 2026-02-30 are refused). */
 const isDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`)) && new Date(`${v}T00:00:00Z`).toISOString().startsWith(v);
@@ -13,7 +15,7 @@ async function run(kind: string, url: URL) {
   const gate = await screenGate('item');
   if (gate) return gate;
   const { st, company, perms, s } = ctx();
-  const need = kind === 'general-journal' ? 'ledger.read' : kind.startsWith('vat-') || kind === 'tax-summary' || kind === 'wht-receivable' || kind === 'missing-wht-cert' ? 'tax.read' : PERM; // the general journal is the ledger itself; the VAT registers and the withholding lists are the tax area's
+  const need = kind === 'general-journal' ? 'ledger.read' : kind.startsWith('vat-') || kind === 'tax-summary' || kind === 'wht-receivable' || kind === 'missing-wht-cert' ? 'tax.read' : ARAP.includes(kind) ? 'report.arap.read' : PERM; // the general journal is the ledger itself; the VAT registers and the withholding lists are the tax area's
   if (!perms.includes(need)) return forbidden(need);
   if (!isBuilt(kind)) return problem(404, 'report.not_built', 'รายงานนี้ยังไม่เปิดให้ใช้งาน');
   const p = Object.fromEntries(url.searchParams);

@@ -10,7 +10,7 @@ import { trialBalance } from './trial-balance';
 export interface GlParams { account?: string; from?: string; to?: string; party?: string; dimension?: string }
 
 /** ReportModel `general-ledger`: one account's lines in date order with a running balance computed here (never by the grid), framed by the opening (every entry before `from`, closing entries included) and the closing.
- *  Shown on the account's natural side (debit for assets and expenses, credit for the rest). A party / dimension filter filters the opening the same way. The party is matched by its id on the posted line (a line posted before RP1a has none and is never matched by a party filter), so a rename or a same-named party changes nothing. A live view of the GL, nothing frozen. */
+ *  Shown on the account's natural side (debit for assets and expenses, credit for the rest). A party / dimension filter filters the opening the same way. The party parameter is a party ID (the page picker sends it): matched by the id on the posted line (a line posted before RP1a has none and is never matched by a party filter), so a rename or a same-named party changes nothing. A live view of the GL, nothing frozen. */
 export function generalLedger(st: MockState, companyId: string, p: GlParams): ReportModel {
   const code = p.account?.trim() ?? '';
   if (!code) throw badParam('ต้องระบุบัญชี');
@@ -19,7 +19,7 @@ export function generalLedger(st: MockState, companyId: string, p: GlParams): Re
   const from = p.from ? needDate('from', p.from) : '', to = p.to ? needDate('to', p.to) : '';
   if (from && to && from > to) throw badParam('วันที่เริ่มต้นต้องไม่หลังวันที่สิ้นสุด');
   const key = p.party?.trim();
-  const party = key ? st.parties.find((x) => x.companyId === companyId && (x.id === key || x.code === key || x.name === key)) : undefined;
+  const party = key ? st.parties.find((x) => x.companyId === companyId && x.id === key) : undefined;
   if (key && !party) throw new MockError(404, 'party.not_found', 'ไม่พบคู่ค้านี้ในบริษัท');
   const [dimType, ...dimRest] = (p.dimension ?? '').split(/[:=]/);
   const dimValue = dimRest.join(':'), filtered = !!party || !!dimType;

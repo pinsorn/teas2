@@ -4,14 +4,21 @@ import th from '@/messages/th.json';
 import type { MockState } from '../../store';
 import { today } from '../log';
 import { generalJournal } from '../journal';
+import { apAging } from './ap-aging';
+import { arAging } from './ar-aging';
 import { assetRegister } from './asset-register';
 import { balanceSheet } from './balance-sheet';
 import { bankReconciliation } from './bank-reconciliation';
+import { customerStatement } from './customer-statement';
 import { generalLedger } from './general-ledger';
 import { missingWhtCert } from './missing-wht-cert';
+import { outstandingPo } from './outstanding-po';
 import { profitLoss } from './profit-loss';
+import { purchaseSummary } from './purchase-summary';
+import { salesSummary } from './sales-summary';
 import { taxSummary } from './tax-summary';
 import { trialBalance } from './trial-balance';
+import { vendorLedger } from './vendor-ledger';
 import { vatInputRegister } from './vat-input-register';
 import { vatOutputRegister } from './vat-output-register';
 import { whtReceivable } from './wht-receivable';
@@ -24,6 +31,8 @@ const BUILDERS: Partial<Record<ReportKind, (st: MockState, companyId: string, p:
   'profit-loss': (st, c, p) => profitLoss(st, c, { ...p, compare: plain(p.compare), format: plain(p.format), from: p.from || `${today().slice(0, 4)}-01-01`, to: p.to || today() }),
   'balance-sheet': (st, c, p) => balanceSheet(st, c, { ...p, compare: plain(p.compare), format: plain(p.format), asOf: p.asOf || today() }),
   'general-ledger': (st, c, p) => generalLedger(st, c, p),
+  'ar-aging': arAging, 'ap-aging': apAging, 'customer-statement': customerStatement, 'vendor-ledger': vendorLedger,
+  'sales-summary': salesSummary, 'purchase-summary': purchaseSummary, 'outstanding-po': (st, c, p) => outstandingPo(st, c, { ...p, asOf: p.asOf || today() }),
   'general-journal': (st, c, p) => generalJournal(st, c, { from: p.from, to: p.to, account: p.account?.trim(), source: p.source }),
   'asset-register': (st, c, p) => assetRegister(st, c, { ...p, asOf: p.asOf || today() }),
   'bank-reconciliation': (st, c, p) => bankReconciliation(st, c, { account: p.account ?? '', to: p.to || today() }),

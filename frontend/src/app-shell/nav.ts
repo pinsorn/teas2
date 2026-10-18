@@ -61,8 +61,8 @@ export const NAV: NavGroup[] = [
   group('reports', [
     item('financialStatements', '/reports/financial-statements', 'report.read'),
     item('assetRegister', '/reports/asset-register', 'report.read'),
-    item('receivablesPayables', '/reports/receivables-payables', LEDGER),
-    item('salesPurchases', '/reports/sales-purchases', LEDGER),
+    item('receivablesPayables', '/reports/receivables-payables', 'report.arap.read'),
+    item('salesPurchases', '/reports/sales-purchases', 'report.arap.read'),
     item('auditReport', '/reports/audit', 'audit.read'),
   ]),
   group('master', [

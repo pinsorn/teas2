@@ -5,6 +5,7 @@ import { liveFas, unregisteredCapex } from '../assets';
 import { companyEntries } from '../ledger';
 import { today } from '../log';
 import { fromSatang, toSatang } from '../money';
+import { resolveRole } from '../posting';
 import { docViewHref } from '@/descriptors';
 
 const sat = (m: string | undefined) => toSatang(m ?? '0.00');
@@ -54,11 +55,26 @@ export function assetRegister(st: MockState, companyId: string, p: Record<string
   const accCodes = new Set(st.accounts.filter((a) => a.companyId === companyId && a.subClass === 'accumulated-depreciation').map((a) => a.code));
   const costCodes = new Set(st.accounts.filter((a) => a.companyId === companyId && a.subClass === 'fixed-asset').map((a) => a.code));
   let gl = 0, glCost = 0;
-  for (const e of companyEntries(st, companyId)) if (e.date <= asOf) for (const l of e.lines) { if (accCodes.has(l.accountCode)) gl += sat(l.credit) - sat(l.debit); if (costCodes.has(l.accountCode)) glCost += sat(l.debit) - sat(l.credit); }
+  const glBy = new Map<string, number>(); // the same ledger sums per account (cost: debit - credit, accumulated: credit - debit), for the tie-out of each class
+  for (const e of companyEntries(st, companyId)) if (e.date <= asOf) for (const l of e.lines) {
+    if (accCodes.has(l.accountCode)) { gl += sat(l.credit) - sat(l.debit); glBy.set(l.accountCode, (glBy.get(l.accountCode) ?? 0) + sat(l.credit) - sat(l.debit)); }
+    if (costCodes.has(l.accountCode)) { glCost += sat(l.debit) - sat(l.credit); glBy.set(l.accountCode, (glBy.get(l.accountCode) ?? 0) + sat(l.debit) - sat(l.credit)); }
+  }
   const waiting = unregisteredCapex(st, companyId);
   const unregistered = waiting.filter((u) => u.docType === 'OB' && dateOf(u.source.docId) <= asOf).reduce((n, u) => n + sat(u.accumulated), 0);
   const unregisteredCost = waiting.filter((u) => dateOf(u.source.docId) <= asOf).reduce((n, u) => n + sat(u.cost), 0); // capex the ledger carries that no asset stands on yet
   const books = acc + unregistered, booksCost = cost + unregisteredCost;
+  // RP2 ruling 6: each class account on its own (1210 / 1211 equipment, 1220 / 1221 vehicles) against the ledger of that account: the held assets on it plus what nobody has registered yet
+  const booksBy = new Map<string, number>();
+  const bump = (code: string, v: number) => booksBy.set(code, (booksBy.get(code) ?? 0) + v);
+  for (const f of held) { bump(f.asset!.codes.cost, sat(f.asset!.cost)); bump(f.asset!.codes.accumulated, at(f).acc); }
+  for (const u of waiting.filter((x) => dateOf(x.source.docId) <= asOf)) {
+    const ob = u.docType === 'OB' ? st.docs.find((d) => d.id === u.source.docId) : undefined, ctx = { companyId, docType: u.docType, assetClass: u.assetClass };
+    bump(ob?.opening?.codes?.[`FixedAsset:${u.assetClass}`] ?? resolveRole(st, 'FixedAsset', ctx).code, sat(u.cost));
+    if (ob) bump(ob.opening?.codes?.[`AccumulatedDepreciation:${u.assetClass}`] ?? resolveRole(st, 'AccumulatedDepreciation', ctx).code, sat(u.accumulated));
+  }
+  const classTies = ['1210', '1211', '1220', '1221'].filter((c) => costCodes.has(c) || accCodes.has(c))
+    .map((c) => ({ labelKey: `reports.assetRegister.tie${c}`, left: fromSatang(booksBy.get(c) ?? 0), right: fromSatang(glBy.get(c) ?? 0), diff: fromSatang((booksBy.get(c) ?? 0) - (glBy.get(c) ?? 0)) }));
   return {
     kind: 'asset-register', titleKey: 'reports.assetRegister.title', asOf, params: { asOf },
     columns: [
@@ -67,7 +83,7 @@ export function assetRegister(st: MockState, companyId: string, p: Record<string
       { key: 'nbv', labelKey: 'reports.assetRegister.nbv', kind: 'money', align: 'end' }, { key: 'status', labelKey: 'reports.assetRegister.status', kind: 'text' },
     ],
     rows,
-    tieOuts: [{ labelKey: 'reports.assetRegister.tie', left: fromSatang(books), right: fromSatang(gl), diff: fromSatang(books - gl) }, { labelKey: 'reports.assetRegister.tieCost', left: fromSatang(booksCost), right: fromSatang(glCost), diff: fromSatang(booksCost - glCost) }],
+    tieOuts: [{ labelKey: 'reports.assetRegister.tie', left: fromSatang(books), right: fromSatang(gl), diff: fromSatang(books - gl) }, { labelKey: 'reports.assetRegister.tieCost', left: fromSatang(booksCost), right: fromSatang(glCost), diff: fromSatang(booksCost - glCost) }, ...classTies],
     ...(waiting.length ? { notes: [`ยังไม่ได้ลงทะเบียน ${waiting.length} รายการ`] } : {}),
   };
 }

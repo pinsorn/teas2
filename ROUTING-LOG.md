@@ -51,3 +51,4 @@
 | 2026-10-18 | SP1c RP1 implement (P&L, balance sheet, GL, dimension columns, comparatives) | sonnet-implementer (fresh) | default implementer; Opus review after (financial statements) |
 | 2026-10-18 | SP1c RP1 review (P&L, BS, GL, dimension columns, comparatives) | opus-reviewer | financial statements tie-outs; fresh reviewer |
 | 2026-10-18 | SP1c RP1a fix round (partyId on posted lines, honest tie-outs, TB dimension drill) | sonnet-implementer (warm, RP1 worker) | Opus REJECT on M1; warm re-review after |
+| 2026-10-18 | SP1c RP2 implement (AR/AP aging, statements, summaries, outstanding PO, asset register tab) | sonnet-implementer (fresh) | new area (RP1 worker context large); Opus review after |

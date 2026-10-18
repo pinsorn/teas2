@@ -16,6 +16,26 @@ beforeEach(() => { localStorage.clear(); st = buildSeedState(); });
 
 const byName = (m: ReturnType<typeof assetRegister>, name: string) => m.rows.find((r) => r.kind === 'row' && r.cells.name === name)!.cells;
 
+describe('RP2 ruling 6: tie-out per class account (1210 / 1211 / 1220 / 1221) at the date', () => {
+  const classTies = (co: string, asOf: string) => assetRegister(st, co, { asOf }).tieOuts!.filter((t) => /tie(1210|1211|1220|1221)$/.test(t.labelKey));
+  it('one line per class account, each tied to the ledger of that account on every date, both companies', () => {
+    for (const co of ['co-vat', 'co-nonvat']) for (const asOf of [today(), '2026-09-30', '2026-09-19', '2026-07-15', '2025-12-31', '2025-06-01']) {
+      const ties = classTies(co, asOf);
+      expect(ties.map((t) => t.labelKey.slice(-4)), co).toEqual(['1210', '1211', '1220', '1221']);
+      expect(ties.map((t) => t.diff), `${co} ${asOf}`).toEqual(['0.00', '0.00', '0.00', '0.00']);
+    }
+    const t = classTies('co-vat', today());
+    expect(t.some((x) => x.left !== '0.00')).toBe(true); // not vacuous: the equipment sits on 1210 / 1211
+    expect(Number(t[0].left)).toBe(Number(t[0].right));
+  });
+  it('a class whose books and ledger differ shows its own difference and no other', () => {
+    for (const e of companyEntries(st, 'co-vat')) { const l = e.lines.find((x) => x.accountCode === '1211'); if (l) { l.credit = (Number(l.credit) + 1).toFixed(2); l.debit = '0.00'; break; } }
+    const ties = classTies('co-vat', today());
+    expect(ties.find((t) => t.labelKey.endsWith('1211'))!.diff).not.toBe('0.00');
+    expect(ties.filter((t) => !t.labelKey.endsWith('1211')).map((t) => t.diff)).toEqual(['0.00', '0.00', '0.00']);
+  });
+});
+
 describe('asset register (AC7a: as-of, class labels)', () => {
   it('ties to the ledger at any as-of date, both companies, before and after the opening, runs and the sale', () => {
     for (const co of ['co-vat', 'co-nonvat'])
@@ -66,7 +86,8 @@ describe('asset register (AC7a: as-of, class labels)', () => {
     for (const co of ['co-vat', 'co-nonvat'])
       for (const asOf of [today(), '2026-09-30', '2026-09-19', '2026-08-31', '2026-07-15', '2026-01-15', '2025-12-31', '2025-06-01']) {
         const m = assetRegister(st, co, { asOf });
-        expect(m.tieOuts!.map((t) => t.diff), `${co} ${asOf}`).toEqual(['0.00', '0.00']); // accumulated, then cost
+        expect(m.tieOuts!.slice(0, 2).map((t) => t.diff), `${co} ${asOf}`).toEqual(['0.00', '0.00']); // accumulated, then cost
+        expect(m.tieOuts!.every((t) => t.diff === '0.00'), `${co} ${asOf} classes`).toBe(true);
       }
     for (const asOf of [today(), '2026-03-31', '2025-12-31']) { // the non-VAT company has no unregistered capex: the register's totals ARE the ledger
       const t = assetRegister(st, 'co-nonvat', { asOf }).rows.find((r) => r.kind === 'total')!.cells;
@@ -105,7 +126,7 @@ describe('asset register: the as-of date is history (F2)', () => {
   const ack = (co: string, m: string) => checklistOf(st, co, m).filter((i) => i.severity === 'warning' && i.count > 0).map(({ code, count }) => ({ code, count }));
   const closeTo = (co: string, ms: string[]) => { for (const m of ms) closePeriod(st, co, m, ME, { acknowledge: ack(co, m) }); };
   const days = (from: string, to: string) => { const out: string[] = []; for (let d = new Date(`${from}T00:00:00Z`); d <= new Date(`${to}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) out.push(d.toISOString().slice(0, 10)); return out; };
-  const tiesEveryDay = () => { for (const co of ['co-vat', 'co-nonvat']) for (const d of days('2026-09-01', '2026-10-31')) expect(assetRegister(st, co, { asOf: d }).tieOuts!.map((t) => t.diff), `${co} ${d}`).toEqual(['0.00', '0.00']); };
+  const tiesEveryDay = () => { for (const co of ['co-vat', 'co-nonvat']) for (const d of days('2026-09-01', '2026-10-31')) expect(assetRegister(st, co, { asOf: d }).tieOuts!.every((t) => t.diff === '0.00'), `${co} ${d}`).toBe(true); };
 
   it('a September run cancelled late (its month closed) still counts at 30 Sep: ties 0.00 on every date, per-row figures include it', () => {
     runDepreciation(st, 'co-nonvat', '2026-09', ME);
