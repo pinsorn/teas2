@@ -71,3 +71,5 @@
 | 2026-10-18 | SP1c ST2 round-2 review (ST2a + ST2b) | opus-reviewer (warm, ST2 reviewer) | re-check B1-B4 / M1-M3 + postedDebit amount heuristic |
 | 2026-10-18 | SP1c ST2c fix round (postedAccount frozen per line, no accessor in state) | sonnet-implementer (warm, ST2a worker) | Opus round-2 REJECT (N1 amount guess, N2 toolbar role persisted) |
 | 2026-10-19 | SP1c ST2 round-3 review (ST2c) | opus-reviewer (warm, ST2 reviewer) | postedAccount freeze + N2 |
+| 2026-10-19 | SP1c ST2e (correction plan sameBody uses sameLines) | sonnet-implementer (warm) | Opus R4 APPROVE minor |
+| 2026-10-19 | SP1c ST3 implement (tax / numbering / approvals + policy + tolerance snapshots) | sonnet-implementer (fresh) | new area; Opus review after (numbering / approvals) |

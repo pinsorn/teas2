@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { DocLine } from '@/domain/types';
 import { createDraft, issue, revise } from '../engine/commands';
+import { buildPlan } from '../engine/corrections';
 import { checkInvariants } from '../engine/invariants';
 import { ledgerFor } from '../engine/ledger';
 import { ROLES, ROLE_FIT, roleProblem } from '../engine/posting';
@@ -321,6 +322,15 @@ describe('ST2d R3-M1: the engine-set postedAccount is not client content - a not
     expect(row.roleId).toBe('operator');
     expect(st.staff.find((m) => m.id === 'usr-vat-1')!.roleId).toBe('accountant');
     expect(listUsers(st, V, 'operator').find((u) => u.id === 'usr-vat-1')!.roleId).toBe('operator');
+  });
+  it('ST2e: a correction plan built without the engine-set postedAccount on an unchanged body is "no change", 0 steps', () => {
+    const st = seed();
+    const d = createDraft(st, V, 'PB', { header: { partyId: 'pv-03', documentDate: '2026-10-01' }, lines: [{ id: 'a', description: 'x', qty: '1', unit: 'u', unitPrice: '1000.00', taxCode: 'S7', expenseCategory: 'supplies' }] }, USER, 'st2e');
+    const pb = issue(st, d.id, d.version, USER);
+    expect(pb.lines[0].postedAccount).toBeTruthy();
+    const p = buildPlan(st, pb.id, { header: pb.header, lines: strip(pb.lines) }, ['doc.PB.correct', 'doc.PB.approve']);
+    expect(p.explanation).toBe('ไม่มีการเปลี่ยนแปลง');
+    expect(p.steps).toHaveLength(0);
   });
   it('a PCN keeps its issued lines and VAT; the revision history never records postedAccount as a change', () => {
     const st = seed();
