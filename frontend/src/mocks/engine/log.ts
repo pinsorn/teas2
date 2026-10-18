@@ -55,6 +55,12 @@ export function changeTaxRate(st: MockState, actor: Actor, companyId: string, co
   if (expectedVersion !== undefined && expectedVersion !== version) throw new MockError(409, 'record.version_conflict', 'ประเภทภาษีนี้ถูกแก้ไขโดยผู้อื่นแล้ว โหลดข้อมูลใหม่ก่อนบันทึก');
   if (!Number.isInteger(rateBp) || rateBp < 0 || rateBp > 10000) throw new MockError(422, 'tax.rate_invalid', 'อัตราต้องอยู่ระหว่าง 0% ถึง 100%');
   const before = { code, rateBp: inForce.rateBp, effectiveFrom: inForce.effectiveFrom };
+  if (inForce.effectiveFrom === effectiveFrom) { // ST3a B1: a row a live document froze / used is never changed (exit: a new row with a later date); an unused row may still be corrected
+    const next = rows.map((x) => x.effectiveFrom).filter((d) => d > effectiveFrom).sort()[0];
+    const used = st.docs.some((d) => d.companyId === companyId && ['issued', 'partly_settled', 'settled'].includes(d.status) && d.header.documentDate >= effectiveFrom && (!next || d.header.documentDate < next)
+      && (d.header.whtTypeCode === code || d.lines.some((l) => l.whtTypeCode === code) || (d.allocations ?? []).some((a) => a.whtTypeCode === code) || !!d.whtFrozen?.lines.some((l) => l.code === code)));
+    if (used) throw new MockError(409, 'tax.rate_in_use', 'อัตรานี้มีเอกสารใช้แล้ว ทางออก: เพิ่มอัตราใหม่ที่มีผลวันถัดไป');
+  }
   if (inForce.effectiveFrom === effectiveFrom) { inForce.rateBp = rateBp; inForce.version = version + 1; } // the date already has its row: a correction REPLACES it (a second row of one date would never apply)
   else st.whtTypes.push({ ...inForce, rateBp, effectiveFrom, version: version + 1 });
   logAudit(st, actor, companyId, 'tax.table.update', code, before, { code, rateBp, effectiveFrom });

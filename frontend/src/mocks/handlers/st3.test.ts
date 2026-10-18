@@ -4,7 +4,7 @@ import { approve, setSelfApproval, setTolerance, submit, updateApprovalRule } fr
 import { createDraft, issue, revise } from '../engine/commands';
 import { checkInvariants } from '../engine/invariants';
 import { MockError, changeTaxRate } from '../engine/log';
-import { allocateNumber, previewNumbering, updateNumbering } from '../engine/numbering';
+import { allocateNumber, parseNumber, previewNumbering, updateNumbering } from '../engine/numbering';
 import { buildReport } from '../engine/reports';
 import { postSettlement } from '../engine/settlement-records';
 import { setWhtActive } from '../engine/wht';
@@ -27,6 +27,14 @@ const get = (st: MockState, id: string) => st.docs.find((d) => d.id === id)!;
 const fmt = (o: object = {}) => ({ prefix: 'QT', scope: 'monthly', format: '{PREFIX}/{YY}{MM}/{####}', version: 1, ...o });
 const gaps = (st: MockState) => buildReport(st, CO, 'number-gaps', {}) as unknown as { rows: { cells: Record<string, string> }[] };
 const four = (x: number) => String(x).padStart(4, '0');
+/** A world where the type has no numbers at all (every seeded type has numbers in 2026, which a scope switch must respect): its documents, their links / history and its series are removed. */
+const clearType = (st: MockState, type: string) => {
+  const ids = new Set(st.docs.filter((d) => d.companyId === CO && d.type === type).map((d) => d.id));
+  st.docs = st.docs.filter((d) => !ids.has(d.id)); st.links = st.links.filter((l) => !ids.has(l.from) && !ids.has(l.to));
+  st.activity = st.activity.filter((a) => !ids.has(a.docId)); st.revisions = st.revisions.filter((r) => !ids.has(r.docId)); st.journals = st.journals.filter((j) => !ids.has(j.docId));
+  for (const k of Object.keys(st.series)) if (k.startsWith(`${CO}|${type}|`)) delete st.series[k];
+  for (const k of Object.keys(st.seriesFormats ?? {})) if (k.startsWith(`${CO}|${type}|`)) delete st.seriesFormats![k];
+};
 
 describe('ST3 numbering: the format is frozen per series key', () => {
   it("the default config reproduces today's numbers exactly", () => {
@@ -63,6 +71,8 @@ describe('ST3 numbering: the format is frozen per series key', () => {
   });
   it('a yearly series: one counter per year; the issue year is judged; the gap audit is clean', () => {
     const st = buildSeedState();
+    clearType(st, 'QT');
+    expect(checkInvariants(st)).toEqual([]);
     updateNumbering(st, me, CO, 'QT', fmt({ scope: 'yearly', format: '{PREFIX}-{YYYY}-{####}' }) as never);
     expect(qt(st, '2026-09-10').number).toBe('QT-2026-0001');
     const d = qt(st, '2026-10-14');
@@ -76,7 +86,7 @@ describe('ST3 numbering: the format is frozen per series key', () => {
   it('a config whose next number already exists is refused (numbering.collision)', () => {
     const st = buildSeedState();
     const d = qt(st, '2026-09-10');
-    get(st, d.id).number = 'QT-2026-0001'; // a number the yearly series would hand out next
+    get(st, d.id).number = 'QT-2027-0001'; // a number the yearly series would hand out next (this year already has monthly numbers: the yearly series starts 2027)
     expect(code(() => updateNumbering(st, me, CO, 'QT', fmt({ scope: 'yearly', format: '{PREFIX}-{YYYY}-{####}' }) as never))).toBe('numbering.collision');
     expect(st.numbering?.length ?? 0).toBe(0);
   });
@@ -97,6 +107,47 @@ describe('ST3 numbering: the format is frozen per series key', () => {
     updateNumbering(st, me, CO, 'QT', { prefix: 'QT', scope: 'monthly', format: '{PREFIX}{YYYY}{MM}{####}', version: 1 } as never);
     expect(allocateNumber(st, CO, 'QT', '2026-09-03')).toBe('QT2026090001');
     expect(st.seriesFormats?.['co-vat|QT|2026-09']).toBe('QT{YYYY}{MM}{####}');
+  });
+});
+
+describe('ST3a M1: a year keeps one scope; a number parses to exactly one key', () => {
+  it('yearly -> monthly in one year: the back-dated QT stays in the yearly series, invariants [], no runaway gap rows', () => {
+    const st = buildSeedState();
+    clearType(st, 'QT');
+    updateNumbering(st, me, CO, 'QT', { prefix: 'QT', scope: 'yearly', format: '{PREFIX}{YYYY}{####}', version: 1 } as never);
+    expect([qt(st, '2026-09-10').number, qt(st, '2026-09-11').number]).toEqual(['QT20260001', 'QT20260002']);
+    const r = updateNumbering(st, me, CO, 'QT', { prefix: 'QT', scope: 'monthly', format: '{PREFIX}{YYYY}{MM}{####}', version: 2 } as never);
+    expect(r.notice?.title).toContain('2027'); // the new scope starts with the first year without numbers
+    expect(qt(st, '2026-09-12').number).toBe('QT20260003');
+    expect(checkInvariants(st)).toEqual([]);
+    expect(gaps(st).rows.filter((x) => x.cells.series.startsWith('QT')).length).toBeLessThan(6);
+    expect(gaps(st).rows.filter((x) => x.cells.state === 'เลขขาด')).toEqual([]);
+  });
+  it('monthly -> yearly in one year: the year (it has monthly numbers) keeps the monthly series in its own format', () => {
+    const st = buildSeedState();
+    const r = updateNumbering(st, me, CO, 'QT', fmt({ scope: 'yearly', format: '{PREFIX}-{YYYY}-{####}' }) as never);
+    expect(r.notice?.title).toContain('2027');
+    expect(qt(st, '2026-09-10').number).toBe('QT-202609-0001'); // 2026-09 had no numbers, but 2026 is a monthly year
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('a number that matches the stored formats of two different keys is malformed, never assigned to a guessed key', () => {
+    const st = buildSeedState();
+    clearType(st, 'QT');
+    st.seriesFormats = { ...st.seriesFormats, 'co-vat|QT|2026': 'QT{YYYY}{####}', 'co-vat|QT|2026-09': 'QT{YYYY}{MM}{####}' };
+    expect(parseNumber(st, CO, 'QT', 'QT2026090001')).toBeUndefined();
+    expect(parseNumber(st, CO, 'QT', 'QT20260001')).toEqual({ key: 'co-vat|QT|2026', seq: 1 });
+  });
+  it('allocation refuses a number that would not parse back to its own key (numbering.ambiguous), writing nothing', () => {
+    const st = buildSeedState();
+    clearType(st, 'QT');
+    st.seriesFormats = { 'co-vat|QT|2026': 'QT{YYYY}{####}', 'co-vat|QT|2026-10': 'QT{YYYY}{MM}{####}' };
+    st.series['co-vat|QT|2026'] = 100000; // the yearly counter's next number QT2026100001 is also the first of the monthly key 2026-10
+    const before = JSON.stringify([st.series, st.seriesFormats]);
+    let e: unknown;
+    try { allocateNumber(st, CO, 'QT', '2026-09-12'); } catch (x) { e = x; }
+    expect(e).toMatchObject({ status: 409, code: 'numbering.ambiguous' });
+    expect((e as Error).message).toContain('แก้รูปแบบเลขที่ในหน้าตั้งค่า');
+    expect(JSON.stringify([st.series, st.seriesFormats])).toBe(before);
   });
 });
 
@@ -145,7 +196,34 @@ describe('ST3 approvals: the policy applying to a document is frozen on it', () 
   });
 });
 
+describe('ST3a M2: re-approval on a revise-up is judged by the stricter of the frozen and the live policy', () => {
+  it('a PV issued while approvals were off cannot be raised to 900,000.00 without an approver once they are on again; the same revise with an approver is accepted and invariants hold', () => {
+    const st = buildSeedState();
+    updateApprovalRule(st, me, CO, 'PV', { enabled: false, version: 1 });
+    const d = pv(st, '10000.00'), i = issue(st, d.id, d.version, me);
+    updateApprovalRule(st, me, CO, 'PV', { enabled: true, minAmount: '50000.00', version: 2 });
+    const raise = (approver?: typeof me) => revise(st, i.id, { header: i.header, lines: [L(i.lines[0].id, '900000.00')] }, get(st, i.id).version, 'raise', me, approver ? { approver } : undefined);
+    expect(code(() => raise())).toBe('approval.required_on_revise');
+    expect(get(st, i.id).totals.total).toBe('10000.00');
+    expect(code(() => raise({ ...me, id: 'u-2', name: 'ผู้อนุมัติ' }))).toBeUndefined();
+    expect(get(st, i.id).approval?.approvedBy?.id).toBe('u-2');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+});
+
 describe('ST3 FN3 M-4: each settlement stores the tolerance in force at its creation', () => {
+  it('each settlement is judged against ITS OWN stored tolerance, in creation order (m1)', () => {
+    const st = buildSeedState();
+    const wo = (amount: string) => ({ kind: 'write_off' as const, date: '2026-10-14', partyId: 'pc-02', targets: [{ docId: 'ti-net', amount }], difference: { role: 'SmallWriteOff' as const, amount } });
+    setTolerance(st, me, CO, { rounding: '1.00', smallWriteOff: '200.00', version: 1 });
+    postSettlement(st, CO, wo('50.00'), me);
+    setTolerance(st, me, CO, { rounding: '1.00', smallWriteOff: '100.00', version: 2 });
+    const b = postSettlement(st, CO, wo('50.00'), me); // 50 + 50 = 100, within the 100.00 it was made under
+    expect(checkInvariants(st)).toEqual([]);
+    const rec = st.settlements.find((x) => x.id === b.id)!;
+    rec.difference!.amount = '120.00'; // one fault: B alone now breaks the 100.00 it was made under (50 + 120 = 170 <= the older 200.00)
+    expect(checkInvariants(st).some((m) => m.includes('exceed the tolerance 100.00'))).toBe(true);
+  });
   it('changing the tolerance leaves existing settlements as they were; new ones follow the new value', () => {
     const st = buildSeedState();
     const wo = (amount: string) => ({ kind: 'write_off' as const, date: '2026-10-14', partyId: 'pc-02', targets: [{ docId: 'ti-net', amount }], difference: { role: 'SmallWriteOff' as const, amount } });
@@ -158,6 +236,28 @@ describe('ST3 FN3 M-4: each settlement stores the tolerance in force at its crea
     expect(code(() => setTolerance(st, me, CO, { rounding: '-1', smallWriteOff: '10.00', version: 2 }))).toBe('approval.invalid_amount');
     expect(code(() => setTolerance(st, me, CO, { rounding: '1.00', smallWriteOff: '10.00', version: 1 }))).toBe('record.version_conflict');
     expect(code(() => setTolerance(st, AGENT, CO, { rounding: '1.00', smallWriteOff: '10.00', version: 2 }))).toBe('agent.forbidden_setting');
+  });
+});
+
+describe('ST3a B1: a rate row a live document used is never changed', () => {
+  it("the reviewer's SVC scenario: a same-date correction of the row a voucher froze is refused tax.rate_in_use, invariants stay []", () => {
+    const st = buildSeedState();
+    changeTaxRate(st, me, CO, 'SVC', 500, '2026-10-10');
+    const d = pv(st, '10000.00', '2026-10-14', { whtTypeCode: 'SVC' }); issue(st, d.id, d.version, me);
+    expect(checkInvariants(st)).toEqual([]);
+    expect(code(() => changeTaxRate(st, me, CO, 'SVC', 400, '2026-10-10'))).toBe('tax.rate_in_use');
+    expect(st.whtTypes.find((t) => t.companyId === CO && t.code === 'SVC' && t.effectiveFrom === '2026-10-10')?.rateBp).toBe(500);
+    expect(checkInvariants(st)).toEqual([]);
+    expect(code(() => changeTaxRate(st, me, CO, 'SVC', 400, '2026-10-15'))).toBeUndefined(); // the exit: a new row with a later date
+  });
+  it('the seed 2020-01-01 row (seven seeded vouchers froze it) cannot be replaced; an unused row still can', () => {
+    const st = buildSeedState();
+    expect(code(() => changeTaxRate(st, me, CO, 'SVC', 500, '2020-01-01'))).toBe('tax.rate_in_use');
+    expect(checkInvariants(st)).toEqual([]);
+    changeTaxRate(st, me, CO, 'SVC', 500, '2027-06-01');
+    expect(code(() => changeTaxRate(st, me, CO, 'SVC', 600, '2027-06-01'))).toBeUndefined(); // no live document is dated in that row's span
+    expect(st.whtTypes.find((t) => t.companyId === CO && t.code === 'SVC' && t.effectiveFrom === '2027-06-01')?.rateBp).toBe(600);
+    expect(checkInvariants(st)).toEqual([]);
   });
 });
 

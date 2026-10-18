@@ -644,13 +644,16 @@ export function checkInvariants(st: MockState): string[] {
     for (const [role, side, n] of jwant) if (j(role, side) !== n) out.push(`${where}: journal ${role} ${side} ${fromSatang(j(role, side))} but its legs say ${fromSatang(n)}`);
   }
   // per target and difference role, Σ the live differences stays within the company's tolerance (ruling 1)
-  const taken = new Map<string, { co: string; role: string; n: number; cap: number }>(); // ST3 (FN3 M-4): each settlement is judged by the tolerance stored on it at creation (the live one only when it has none)
+  const taken = new Map<string, number>(); // ST3a m1 (FN3 M-4): in creation order, each target's running difference is judged by the tolerance stored on THAT settlement (the live one only when it has none)
   for (const s of st.settlements) {
     if (s.status !== 'posted' || !s.difference) continue;
     const cap = s.tolerance ? toSatang(s.difference.role === 'RoundingDifference' ? s.tolerance.rounding : s.tolerance.smallWriteOff) : toleranceOf(st, s.companyId, s.difference.role);
-    for (const t of s.targets) { const k = `${t.docId}|${s.difference.role}`, p = taken.get(k); taken.set(k, { co: s.companyId, role: s.difference.role, n: (p?.n ?? 0) + sat(s.difference.amount, `settlement ${s.id}`), cap: Math.max(p?.cap ?? 0, cap) }); }
+    for (const t of s.targets) {
+      const k = `${t.docId}|${s.difference.role}`, n = (taken.get(k) ?? 0) + sat(s.difference.amount, `settlement ${s.id}`);
+      taken.set(k, n);
+      if (n > cap) out.push(`${t.docId}: live ${s.difference.role} differences ${fromSatang(n)} exceed the tolerance ${fromSatang(cap)} (${s.id})`);
+    }
   }
-  for (const [k, v] of taken) if (v.n > v.cap) out.push(`${k.split('|')[0]}: live ${v.role} differences ${fromSatang(v.n)} exceed the tolerance ${fromSatang(v.cap)}`);
   for (const l of st.links) {
     const s = l.kind === 'settles' ? st.settlements.find((x) => x.id === l.from) : undefined;
     if (s && l.active && s.status !== 'posted') out.push(`link ${l.from} → ${l.to} is active but ${l.from} is ${s.status}`);

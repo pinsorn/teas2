@@ -38,7 +38,7 @@ export const approvalRequiredOf = (st: MockState, d: Stored, total: Money): bool
  *  Needed when that is above both the old payout and what was approved (0.00 when nothing was) and the policy wants approval at that figure, or - for an approved document - when the documents it pays
  *  (allocation targets) change at all (m2: the approver approved paying THOSE bills). A lower figure on the same targets, or the same money, is free. */
 export function reviseNeedsApproval(st: MockState, d: Stored, newPayout: Money, newAllocations?: Allocation[]): boolean {
-  if (!approvalRequiredOf(st, d, newPayout)) return false;
+  if (!approvalRequiredOf(st, d, newPayout) && !approvalRequired(st, d.companyId, d.type, newPayout)) return false; // ST3a M2: raising the money is a NEW approval act - the stricter of the frozen and the live policy asks for it
   const covered = d.approval?.approvedBy ? toSatang(d.approval.amount ?? '0.00') : 0;
   const targets = (a?: Allocation[]) => (a ?? []).map((x) => x.targetId).sort().join('|');
   return (toSatang(newPayout) > toSatang(payoutOf(st, d.companyId, d)) && toSatang(newPayout) > covered) || (!!d.approval?.approvedBy && targets(newAllocations) !== targets(d.allocations));

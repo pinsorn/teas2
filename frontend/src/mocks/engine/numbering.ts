@@ -63,22 +63,46 @@ const regexOf = (tpl: string): RegExp => {
 export function parseNumber(st: MockState, companyId: string, type: DocType, number: string): { key: string; seq: number } | undefined {
   const tpls = new Set<string>([legacyTemplate(type)]);
   for (const [k, t] of Object.entries(st.seriesFormats ?? {})) if (k.startsWith(`${companyId}|${type}|`)) tpls.add(t);
+  const hits = new Map<string, number>(); // ST3a M1: a number must belong to exactly one key; two keys that both store a matching format make it malformed (never a guess)
   for (const tpl of tpls) {
     const g = regexOf(tpl).exec(number)?.groups;
     if (!g) continue;
     const year = g.y ?? `20${g.yy}`, key = g.m ? `${companyId}|${type}|${year}-${g.m}` : `${companyId}|${type}|${year}`;
-    if (templateOfKey(st, key) === tpl) return { key, seq: Number(g.n) };
+    if (templateOfKey(st, key) === tpl) hits.set(key, Number(g.n));
   }
-  return undefined;
+  if (hits.size !== 1) return undefined;
+  const [[key, seq]] = [...hits];
+  return { key, seq };
 }
+
+/** ST3a M1: a period keeps one scope. If the date's year already has numbers in one scope (any monthly key of that year, or the yearly key) every date of that year keeps it; a scope switch applies from the first year with no numbers. */
+export function scopeForDate(st: MockState, companyId: string, type: DocType, date: IsoDate, configured: NumberingScope): NumberingScope {
+  const pre = `${companyId}|${type}|${date.slice(0, 4)}`;
+  for (const [k, n] of Object.entries(st.series)) if (n > 0 && k.startsWith(pre) && (k.length === pre.length || k[pre.length] === '-')) return scopeOfKey(k);
+  return configured;
+}
+/** The template a NEW key of this scope gets: the configured one, or - when the year keeps the other scope - the format of the year's latest key. */
+function templateForNew(st: MockState, cfg: NumberingConfig, key: string, scope: NumberingScope): string {
+  if (scope === cfg.scope) return resolve(cfg);
+  const pre = `${cfg.companyId}|${cfg.docType}|${periodOfKey(key).slice(0, 4)}`;
+  const latest = Object.keys(st.series).filter((k) => st.series[k] > 0 && k.startsWith(pre) && (k.length === pre.length || k[pre.length] === '-')).sort().at(-1);
+  return latest ? templateOfKey(st, latest) : resolve(cfg);
+}
+/** Would the number `seq` of `key` under `tpl` parse back (one parser) to exactly its own key and sequence? */
+function parsesToOwnKey(st: MockState, companyId: string, type: DocType, key: string, tpl: string, seq: number): boolean {
+  const p = parseNumber({ ...st, seriesFormats: { ...(st.seriesFormats ?? {}), [key]: tpl } }, companyId, type, formatByTemplate(tpl, periodOfKey(key), seq));
+  return p?.key === key && p.seq === seq;
+}
+const EXIT = 'ทางออก: แก้รูปแบบเลขที่ในหน้าตั้งค่าเลขที่เอกสาร (เช่น ใส่ตัวคั่นระหว่างปี เดือน และตัวนับ)';
 
 /** The next number of a company's type for a document dated `date`; the first allocation of a key stores the format in force. A number another document already holds is a collision (never issued twice). */
 export function allocateNumber(st: MockState, companyId: string, type: DocType, date: IsoDate): string {
-  const cfg = numberingOf(st, companyId, type), key = seriesKeyOf(companyId, type, date, cfg.scope), have = st.series[key] ?? 0;
-  let tpl = st.seriesFormats?.[key];
-  if (!tpl) { tpl = have ? legacyTemplate(type) : resolve(cfg); (st.seriesFormats ??= {})[key] = tpl; }
+  const cfg = numberingOf(st, companyId, type), scope = scopeForDate(st, companyId, type, date, cfg.scope), key = seriesKeyOf(companyId, type, date, scope), have = st.series[key] ?? 0;
+  const stored = st.seriesFormats?.[key], tpl = stored ?? (have ? legacyTemplate(type) : templateForNew(st, cfg, key, scope));
   const number = formatByTemplate(tpl, periodOfKey(key), have + 1);
+  if (!parsesToOwnKey(st, companyId, type, key, tpl, have + 1)) throw new MockError(409, 'numbering.ambiguous', `เลขที่ ${number} อ่านกลับเป็นชุดเลขอื่นได้ ออกเลขนี้ไม่ได้ ${EXIT}`);
   if (st.docs.some((d) => d.companyId === companyId && d.type === type && d.number === number)) throw new MockError(409, 'numbering.collision', `เลขที่ ${number} มีเอกสารใช้แล้ว ออกเลขซ้ำไม่ได้ ทางออก: แก้รูปแบบเลขที่ในหน้าตั้งค่าเลขที่เอกสาร`);
+  if (!stored) (st.seriesFormats ??= {})[key] = tpl;
   st.series[key] = have + 1;
   return number;
 }
@@ -111,14 +135,18 @@ const nextPeriod = (key: string): string => {
   return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
 };
 /** The first number a config would give: today's period when it has no numbers, else the next period (the format of a key with numbers is frozen). */
-function firstNumber(st: MockState, companyId: string, type: DocType, tpl: string, scope: NumberingScope): { number: string; period: string; inUse: boolean } {
-  const key = seriesKeyOf(companyId, type, today(), scope), inUse = (st.series[key] ?? 0) > 0, period = inUse ? nextPeriod(key) : periodOfKey(key);
-  return { number: formatByTemplate(tpl, period, 1), period, inUse };
+function firstNumber(st: MockState, companyId: string, type: DocType, tpl: string, scope: NumberingScope): { number: string; period: string; inUse: boolean; switched: boolean } {
+  const kept = scopeForDate(st, companyId, type, today(), scope), switched = kept !== scope;
+  let key = seriesKeyOf(companyId, type, today(), scope), inUse = (st.series[key] ?? 0) > 0, period = inUse ? nextPeriod(key) : periodOfKey(key);
+  if (switched) { const y = Number(today().slice(0, 4)) + 1; period = scope === 'yearly' ? String(y) : `${y}-01`; inUse = true; } // this year keeps its scope: the new one starts with the first year without numbers
+  key = `${companyId}|${type}|${period}`;
+  if (!parsesToOwnKey(st, companyId, type, key, tpl, 1)) throw new MockError(422, 'numbering.ambiguous', `เลขที่แรกตามรูปแบบนี้ (${formatByTemplate(tpl, period, 1)}) อ่านกลับเป็นชุดเลขอื่นได้ ${EXIT}`);
+  return { number: formatByTemplate(tpl, period, 1), period, inUse, switched };
 }
 /** The number the next document dated today gets. */
 function nextNumber(st: MockState, companyId: string, type: DocType): string {
-  const cfg = numberingOf(st, companyId, type), key = seriesKeyOf(companyId, type, today(), cfg.scope), have = st.series[key] ?? 0;
-  return formatByTemplate(st.seriesFormats?.[key] ?? (have ? legacyTemplate(type) : resolve(cfg)), periodOfKey(key), have + 1);
+  const cfg = numberingOf(st, companyId, type), scope = scopeForDate(st, companyId, type, today(), cfg.scope), key = seriesKeyOf(companyId, type, today(), scope), have = st.series[key] ?? 0;
+  return formatByTemplate(st.seriesFormats?.[key] ?? (have ? legacyTemplate(type) : templateForNew(st, cfg, key, scope)), periodOfKey(key), have + 1);
 }
 const rowOf = (st: MockState, companyId: string, type: DocType): NumberingRow => {
   const c = numberingOf(st, companyId, type);
@@ -157,5 +185,5 @@ export function updateNumbering(st: MockState, actor: Actor, companyId: string, 
   const list = (st.numbering ??= []), at = list.findIndex((c) => c.companyId === companyId && c.docType === t);
   if (at >= 0) list[at] = next; else list.push(next);
   logAudit(st, actor, companyId, 'numbering.update', t, { prefix: cur.prefix, scope: cur.scope, branch: cur.branch, format: cur.format }, { prefix: next.prefix, scope: next.scope, branch: next.branch, format: next.format });
-  return { row: rowOf(st, companyId, t), ...(f.inUse ? { notice: { code: 'numbering.in_use', title: `มีเลขที่ออกแล้วในงวดปัจจุบัน รูปแบบใหม่มีผลตั้งแต่งวด ${f.period} (เลขที่ที่ออกแล้วไม่เปลี่ยน)` } } : {}) };
+  return { row: rowOf(st, companyId, t), ...(f.inUse ? { notice: { code: 'numbering.in_use', title: `${f.switched ? 'ปีนี้มีเลขที่ออกแล้วด้วยการนับเลขแบบเดิม จึงใช้แบบเดิมต่อจนสิ้นปี ' : 'มีเลขที่ออกแล้วในงวดปัจจุบัน '}รูปแบบใหม่มีผลตั้งแต่งวด ${f.period} (เลขที่ที่ออกแล้วไม่เปลี่ยน)` } } : {}) };
 }

@@ -74,3 +74,4 @@
 | 2026-10-19 | SP1c ST2e (correction plan sameBody uses sameLines) | sonnet-implementer (warm) | Opus R4 APPROVE minor |
 | 2026-10-19 | SP1c ST3 implement (tax / numbering / approvals + policy + tolerance snapshots) | sonnet-implementer (fresh) | new area; Opus review after (numbering / approvals) |
 | 2026-10-19 | SP1c ST3 review (numbering frozen format, approval / tolerance snapshots, WHT) | opus-reviewer (fresh) | numbering / approvals / tax compliance |
+| 2026-10-19 | SP1c ST3a fix round (WHT row in use, one scope per year + unambiguous parse, stricter revise approval, per-settlement tolerance) | sonnet-implementer (warm, ST3 worker) | Opus REJECT ST3 (B1, M1, M2) |
