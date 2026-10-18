@@ -58,7 +58,7 @@ test('pv-multi (pb-2 half + part of pb-po + a transport line): two WHT types, tw
   const c = await chain(page, id);
   const wts = await Promise.all(c.edges.filter((e) => e.kind === 'issues' && e.active).map((e) => doc(page, 'WT', e.to)));
   expect(wts.map((w) => [w.header.whtTypeCode, w.header.whtTax]).sort()).toEqual([['SVC', '270.00'], ['TRANS', '18.00']]);
-  expect(accounts(await api<Ledger>(page, `/docs/PV/${id}/ledger`))).toEqual([['1121', '0.00', '14817.00'], ['2110', '13305.00', '0.00'], ['2132', '0.00', '288.00'], ['5140', '1800.00', '0.00']]);
+  expect(accounts(await api<Ledger>(page, `/docs/PV/${id}/ledger`))).toEqual([['1121', '0.00', '14817.00'], ['2110', '12305.00', '0.00'], ['2110', '1000.00', '0.00'], ['2132', '0.00', '288.00'], ['5140', '1800.00', '0.00']]);
   expect((await doc(page, 'PB', 'pb-2')).outstanding).toBe('12305.00');
 });
 
