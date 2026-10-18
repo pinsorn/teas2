@@ -14,7 +14,8 @@ import { AGENT, USER } from '../fixtures/documents';
 import { setSettings } from '../settings';
 import { buildSeedState, loadState, resetState } from '../store';
 import { testServer } from '../test-server';
-import { listCategories, updateCategory } from './expense-categories';
+import { createCategory, listCategories, updateCategory } from './expense-categories';
+import { createAmortisation, lineCapacity } from '../engine/schedules';
 import { CONTROL_ROLES, createPostingRule, deletePostingRule, listPostingRules, previewPosting, ruleId, updatePostingRule } from './posting-rules';
 
 // ST2 rulings 1 / 2 / 3: policy changes never move a posted entry; a rule is saved only when its account fits the role; the preview is the posting itself.
@@ -226,6 +227,61 @@ describe('ST2b ruling 3: no reader re-derives a posted account from today\'s rul
     expect(checkInvariants(st)).toEqual([]);
     expect(JSON.stringify(assetRegister(st, V, { asOf: '2026-10-31' }))).toBe(before);
     expect(ties().every((x) => Number(x) === 0)).toBe(true);
+  });
+});
+
+describe('ST2c N1: the account of a purchase line is FROZEN on the line - nothing guesses by amount', () => {
+  const mk = (st: ReturnType<typeof seed>, order: string[], key: string) => {
+    const ls = order.map((k) => line(`${k}${key}`, { expenseCategory: k === 'p' ? 'prepaid' : 'supplies' }));
+    const d = createDraft(st, V, 'PB', { header: { partyId: 'pv-03', documentDate: '2026-10-01' }, lines: ls }, USER, `n1-${key}`);
+    return { pb: issue(st, d.id, d.version, USER), p: ls.find((l) => l.expenseCategory === 'prepaid')!, s: ls.find((l) => l.expenseCategory === 'supplies')! };
+  };
+  it('prepaid 1,000 + supplies 1,000, in both line orders: the prepaid line is the source of 1150, the supplies line of nothing (tie cases L1a)', () => {
+    for (const order of [['p', 's'], ['s', 'p']]) {
+      const st = seed();
+      const { pb, p, s } = mk(st, order, order.join(''));
+      expect(lineCapacity(st, pb.id, p.id, '1150')).toBe(100000);
+      expect(lineCapacity(st, pb.id, s.id, '1150')).toBe(0);
+      expect(code(() => createAmortisation(st, V, { name: 'ss', docId: pb.id, lineId: s.id, total: '1000.00', months: 10, startMonth: '2026-10', expenseAccount: '5120' }, USER))).toBeDefined();
+      createAmortisation(st, V, { name: 'pp', docId: pb.id, lineId: p.id, total: '1000.00', months: 10, startMonth: '2026-10', expenseAccount: '5120' }, USER);
+      expect(checkInvariants(st)).toEqual([]);
+      expect(st.docs.find((d) => d.id === pb.id)!.lines.map((l) => l.postedAccount).sort()).toEqual(['1150', '5160']);
+    }
+  });
+  it('the seed went through the commands: every live purchase line carries its account', () => {
+    const lines = seed().docs.filter((d) => ['PB', 'PCN', 'PDN', 'PV', 'EX'].includes(d.type) && d.number && d.status !== 'draft').flatMap((d) => d.lines.map((l) => [d.id, l.id, l.postedAccount]));
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.filter((x) => !x[2])).toEqual([]);
+  });
+  it('INVARIANT (single fault): an issued purchase line without its postedAccount is reported - the seed is clean', () => {
+    const st = seed();
+    expect(checkInvariants(st)).toEqual([]);
+    const d = st.docs.find((x) => x.companyId === V && x.type === 'PB' && x.number && x.status !== 'draft' && !st.schedules.some((sc) => sc.source?.docId === x.id) && !st.docs.some((n) => n.header.refDocId === x.id))!; // no schedule or note stands on it: ONE fault
+    delete d.lines[0].postedAccount;
+    const out = checkInvariants(st);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toContain(`${d.id}: issued purchase line ${d.lines[0].id} has no postedAccount`);
+  });
+  it('two capex lines of the same cost on 1210 / 1220: the class tie-outs are all 0 (tie case L1b)', () => {
+    const st = seed();
+    createCategory(st, USER, V, { code: 'capex-vehicle', nameTh: 'ซื้อรถ', recoverableVat: true, capex: true, assetClass: 'vehicle' });
+    const d = createDraft(st, V, 'PB', { header: { partyId: 'pv-03', documentDate: '2026-10-01' }, lines: [line('e', { expenseCategory: 'capex-equipment' }), line('v', { expenseCategory: 'capex-vehicle' })] }, USER, 'n1b');
+    issue(st, d.id, d.version, USER);
+    expect(assetRegister(st, V, { asOf: '2026-10-31' }).tieOuts!.every((t) => Number(t.diff) === 0)).toBe(true);
+  });
+  it('re-pointing the rule after issue leaves postedAccount and the invariants unchanged; a revise re-stamps with the rules in force then', () => {
+    const st = seed();
+    const { pb, s } = mk(st, ['s'], 's1');
+    const posted = () => st.docs.find((d) => d.id === pb.id)!.lines.find((l) => l.id === s.id)!.postedAccount;
+    expect(posted()).toBe('5160');
+    const r = listPostingRules(st, V).items.find((x) => x.id === ruleId({ level: 'category', key: 'supplies', role: 'Expense' }))!;
+    updatePostingRule(st, USER, V, r.id, { accountCode: '5130', version: r.version });
+    expect(posted()).toBe('5160');
+    expect(checkInvariants(st)).toEqual([]);
+    const cur = st.docs.find((d) => d.id === pb.id)!;
+    revise(st, pb.id, { header: cur.header, lines: cur.lines.map((l) => ({ ...l, unitPrice: '1200.00' })) }, cur.version, 'แก้ราคา', USER);
+    expect(posted()).toBe('5130');
+    expect(checkInvariants(st)).toEqual([]);
   });
 });
 

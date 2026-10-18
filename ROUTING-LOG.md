@@ -68,3 +68,5 @@
 | 2026-10-18 | SP1c ST2 review (posting rules, preview, dimensions, account rules, expense categories) | opus-reviewer | ledger rules / money; fresh reviewer, read-only on commit a9668d8 |
 | 2026-10-18 | SP1c ST2a (ST1 carries r2-m1/m3/m4, reconcile dims from master, item-form categories) | sonnet-implementer (fresh) | ST2 worker stopped at cap; its context 466k — fresh is cheaper; parallel with read-only review |
 | 2026-10-18 | SP1c ST2b fix round (control roles default-only, control account per role, schedules/asset register read stored posting, note tags, per-line revise) | sonnet-implementer (warm, ST2a worker) | Opus REJECT ST2 (B1-B4); warm Opus re-review after |
+| 2026-10-18 | SP1c ST2 round-2 review (ST2a + ST2b) | opus-reviewer (warm, ST2 reviewer) | re-check B1-B4 / M1-M3 + postedDebit amount heuristic |
+| 2026-10-18 | SP1c ST2c fix round (postedAccount frozen per line, no accessor in state) | sonnet-implementer (warm, ST2a worker) | Opus round-2 REJECT (N1 amount guess, N2 toolbar role persisted) |

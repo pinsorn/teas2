@@ -23,7 +23,9 @@ const toRow = (st: MockState, m: StaffMember): UserRow => { const { linkHash: _h
 const shape = (m: StaffMember) => ({ name: m.name, email: m.email, roleId: m.roleId, position: m.position, hasSignature: !!m.signatureDataUrl, active: m.active });
 const bump = (st: MockState, actor: Actor, m: StaffMember, command: string, before: ReturnType<typeof shape>) => { m.version += 1; logAudit(st, actor, m.companyId, command, m.id, before, shape(m)); };
 
-export const listUsers = (st: MockState, companyId: string): UserRow[] => st.staff.filter((m) => m.companyId === companyId).map((m) => toRow(st, m));
+/** ST1b m5 / ST2c N2: u-1's row follows the toolbar role while she holds a system role - a mapped COPY made where the row is read; the stored staff is never touched (no view objects in state). */
+export const listUsers = (st: MockState, companyId: string, toolbarRole?: string): UserRow[] =>
+  st.staff.filter((m) => m.companyId === companyId).map((m) => toRow(st, toolbarRole && m.userId === 'u-1' && isSystemRole(m.roleId) ? { ...m, roleId: toolbarRole } : m));
 
 /** The last administrator of a company cannot be deactivated or moved to a role that cannot manage users; nor can a user do that to themselves (ruling 6, one code). */
 function keepAnAdmin(st: MockState, actor: Actor, m: StaffMember, nextActive: boolean, nextRoleId: string): void {

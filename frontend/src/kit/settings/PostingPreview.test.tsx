@@ -42,7 +42,7 @@ describe('PostingPreview (the resolution order made visible)', () => {
     await screen.findByRole('option', { name: 'ค่าวัสดุสิ้นเปลือง' });
     await user.selectOptions(screen.getByLabelText('หมวดค่าใช้จ่าย'), 'supplies');
     await user.click(screen.getByRole('button', { name: 'ทดสอบ' }));
-    await waitFor(() => expect(row('Expense')).toHaveTextContent('หมวด supplies'));
+    await waitFor(() => expect(row('Expense')).toHaveTextContent('หมวดค่าใช้จ่าย/ประเภทสินทรัพย์ supplies'));
     expect(row('Expense')).toHaveTextContent('5160');
     await user.selectOptions(screen.getByLabelText('ประเภทเอกสาร'), 'EX');
     expect(screen.queryByLabelText('คู่ค้า')).toBeNull();

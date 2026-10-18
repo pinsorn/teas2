@@ -1610,9 +1610,7 @@
       "none": "ยังไม่มีรูป",
       "remove": "ลบรูป",
       "hint": "ไฟล์ PNG, JPEG หรือ WebP ขนาดไม่เกิน 1 MB",
-      "hintSvg": "ไฟล์ PNG, JPEG, WebP หรือ SVG ขนาดไม่เกิน 1 MB",
       "type": "รองรับเฉพาะไฟล์ PNG, JPEG หรือ WebP",
-      "typeSvg": "รองรับเฉพาะไฟล์ PNG, JPEG, WebP หรือ SVG",
       "size": "ไฟล์ใหญ่เกิน 1 MB",
       "read": "อ่านไฟล์ไม่สำเร็จ"
     },

@@ -6,10 +6,11 @@ import { PAPER_BUILDERS } from '../engine/paper';
 import { AGENT, USER } from '../fixtures/documents';
 import { PERMISSIONS_BY_ROLE } from '../permissions';
 import { setSettings } from '../settings';
-import { buildSeedState, loadState, resetState } from '../store';
+import { ctx } from '../handlers/common';
+import { buildSeedState, loadState, resetState, saveState } from '../store';
 import { testServer } from '../test-server';
 import { createRole, updateRole } from './roles';
-import { acceptInvite, inviteUser, setUserActive, updateUser } from './users';
+import { acceptInvite, inviteUser, listUsers, setUserActive, updateUser } from './users';
 
 // ST1a: the Opus review fixes (B1 role edit, M1 pending invite, M2 I3 papers, M3 corrections under a custom role, m4, m7).
 beforeAll(() => testServer.listen({ onUnhandledFrame: 'error' }));
@@ -162,5 +163,20 @@ describe('ST2a: the item form reads the company\'s editable expense categories',
     expect(ok.status).toBe(201);
     setSettings({ companyKey: 'nonvat' });
     expect((await call('POST', '/records/item', { ...item, code: 'ST2A-02', expenseCategory: 'misc' })).status).toBe(422);
+  });
+});
+
+describe('ST2c N2: no accessor objects in state - a structuredClone path (correction plan, asset disposal) cannot persist the toolbar role', () => {
+  it('toolbar = accountant, u-1 stored admin: ctx() + clone + assign + save keeps admin stored; the users list shows the toolbar role', async () => {
+    setSettings({ role: 'admin' }); resetState();
+    setSettings({ role: 'accountant' });
+    const c = ctx();
+    expect(c.st.staff.find((m) => m.companyId === V && m.userId === 'u-1')!.roleId).toBe('admin'); // ctx() leaves the stored rows alone
+    const work = structuredClone(c.st);
+    Object.assign(c.st, work);
+    saveState(c.st);
+    expect(loadState().staff.find((m) => m.companyId === V && m.userId === 'u-1')!.roleId).toBe('admin');
+    expect(listUsers(loadState(), V, 'accountant').find((u) => u.id === 'usr-vat-1')!.roleId).toBe('accountant');
+    expect(listUsers(loadState(), V).find((u) => u.id === 'usr-vat-1')!.roleId).toBe('admin');
   });
 });

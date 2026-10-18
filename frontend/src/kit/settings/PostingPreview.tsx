@@ -25,6 +25,7 @@ export const PREVIEW_TYPES: { type: DocType; side: 'sales' | 'purchase' }[] = [
 export function PostingPreview() {
   const t = useTranslations('settings.posting.preview');
   const tr = useTranslations('settings.posting.roleNames');
+  const tl = useTranslations('settings.posting.levels');
   const { me } = useMe();
   const co = me?.activeCompanyId ?? '';
   const [type, setType] = useState<DocType>('TI');
@@ -88,7 +89,7 @@ export function PostingPreview() {
                   {res.winners.map((w) => (
                     <TableRow key={w.role} data-role={w.role}>
                       <TableCell>{tr(w.role)} <span className="text-small text-muted-foreground">({w.role})</span></TableCell>
-                      <TableCell>{w.rule.replace(/: \w+ → \S+$/, '')}</TableCell>
+                      <TableCell>{tl(w.level)}{w.key ? ` ${w.key}` : ''}</TableCell>
                       <TableCell className="tabular-nums">{w.accountCode} {w.accountName}</TableCell>
                     </TableRow>
                   ))}

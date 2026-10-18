@@ -14,7 +14,7 @@ import { ADJUSTS } from '@/domain/doc-types';
 
 export interface Totals { net: number; vat: number; total: number; wht: number; cash: number }
 /** [role, debit, credit, context additions] in satang; the account behind each role comes from the posting profile (SP0 §5.5). */
-export type RolePosting = [AccountingRole, number, number, (Partial<PostingContext> & { partyName?: string; partyId?: string; openItemId?: string })?][];
+export type RolePosting = [AccountingRole, number, number, (Partial<PostingContext> & { partyName?: string; partyId?: string; openItemId?: string; /** the document line this Expense / FixedAsset row comes from (ST2c: its account is frozen on the line) */ lineId?: string })?][];
 type Rows = (t: Totals, d: Doc, st: MockState, companyId: string) => RolePosting;
 
 /** One row per document line for the net side so an item / category rule can pick that line's account (rows with the same account merge again). */
@@ -30,7 +30,7 @@ const sales = (role: AccountingRole): Rows => (t, d, st, co) => [['AR', t.total,
 const purchaseRows = (d: Doc, st: MockState, co: string): RolePosting => {
   const rs = computeDoc(d.lines, !!d.header.priceIncludesVat, true).lines;
   return d.lines.flatMap((l, i): RolePosting => {
-    const cat = categoryOf(st, co, l), ctx = { itemId: l.itemId, expenseCategory: cat?.code ?? l.expenseCategory, dimensions: l.dimensions };
+    const cat = categoryOf(st, co, l), ctx = { itemId: l.itemId, expenseCategory: cat?.code ?? l.expenseCategory, dimensions: l.dimensions, lineId: l.id };
     // an expense claim claims the VAT of a line only with the vendor's tax invoice behind THAT line (ม.82/3, ม.86/4); every other vendor document by its header's forfeit flag
     const net = toSatang(rs[i].net), vat = toSatang(rs[i].vat), claim = isRecoverable(st, co, l, d.type === 'EX' ? exForfeited(d.header, l) : d.header.inputVatForfeited);
     // I3: VAT that cannot be claimed is cost; on a capex line the cost is the asset's (TAS 16), elsewhere it is InputVatUnclaimed
@@ -65,7 +65,7 @@ export const POST: Partial<Record<DocType, Rows>> = {
     const w = frozenFigures(d.whtFrozen ?? freezeWht(st, companyId, d, d.id)); // the figures fixed at issue (C1); expense = the part of the tax / gross-up we bear
     const rs = computeDoc(d.lines, !!d.header.priceIncludesVat, vatBasisOf(st, companyId, 'PV')).lines;
     const own = d.lines.flatMap((l, i): RolePosting => {
-      const cat = categoryOf(st, companyId, l), ctx = { itemId: l.itemId, expenseCategory: cat?.code ?? l.expenseCategory, dimensions: l.dimensions };
+      const cat = categoryOf(st, companyId, l), ctx = { itemId: l.itemId, expenseCategory: cat?.code ?? l.expenseCategory, dimensions: l.dimensions, lineId: l.id };
       const cost = toSatang(rs[i].net) + toSatang(rs[i].vat); // a voucher line carries no claimable VAT: any VAT on it is cost
       return [cat?.capex ? ['FixedAsset', cost, 0, { ...ctx, assetClass: cat.assetClass }] : ['Expense', cost, 0, ctx]];
     });
@@ -95,8 +95,8 @@ let trace: { role: AccountingRole; r: Resolved }[] | undefined;
 export function traceResolutions<T>(into: { role: AccountingRole; r: Resolved }[], f: () => T): T { trace = into; try { return f(); } finally { trace = undefined; } }
 
 /** Posting for the document as it stands: its original entry, plus the reversal when it is cancelled or replaced.
- *  Types without a ledger effect (N-class, ...) return no entries. A JV (AC1) posts its account lines verbatim. */
-export function ledgerFor(st: MockState, doc: Doc & { companyId?: string }): JournalPreview {
+ *  `accounts` (optional) collects line id -> resolved account for the purchase lines. Types without a ledger effect (N-class, ...) return no entries. A JV (AC1) posts its account lines verbatim. */
+export function ledgerFor(st: MockState, doc: Doc & { companyId?: string }, accounts?: Map<string, string>): JournalPreview {
   const post = POST[doc.type];
   if (!post && doc.type !== 'JV' && doc.type !== 'OB' && doc.type !== 'DP') return { entries: [] };
   const companyId = doc.companyId ?? st.docs.find((d) => d.id === doc.id)?.companyId;
@@ -112,6 +112,7 @@ export function ledgerFor(st: MockState, doc: Doc & { companyId?: string }): Jou
   for (const [role, dr, cr, extra] of post(t, doc, st, companyId)) {
     const r = resolveRole(st, role, { companyId, docType: doc.type, ...(group ? { partyGroup: group } : {}), ...extra }); // ST2: a rule at the party-group level applies to that group's documents
     trace?.push({ role, r });
+    if (accounts && extra?.lineId) accounts.set(extra.lineId, r.code); // ST2c: the account the line's Expense / FixedAsset role resolved to - the one resolution `stampAccounts` freezes on the line
     const dims = { ...doc.header.dimensions, ...extra?.dimensions };
     const party = (role === 'AR' || role === 'AP' || role === 'EmployeePayable' || role === 'CustomerDeposit' || role === 'VendorPrepayment') ? (extra?.partyName ?? partyName) : undefined;
     const partyId = party ? (extra?.partyName ? extra.partyId : doc.header.partyId) : undefined; // the id of the SAME party the name belongs to (an allocation names its target's party)
@@ -127,21 +128,6 @@ export function ledgerFor(st: MockState, doc: Doc & { companyId?: string }): Jou
     ...(x.party ? { partyName: x.party } : {}), ...(x.partyId ? { partyId: x.partyId } : {}), ...(x.openItemId ? { openItemId: x.openItemId } : {}), ...(x.dims ? { dimensions: x.dims } : {}),
   }));
   return withReversal(doc, lines);
-}
-
-/** ST2b ruling 3: the account a bill's line actually posted to, read from the document's STORED journal (its current entry), never from today's rules.
- *  Candidates = accounts `ok` accepts that moved in that entry: `prefer` wins when it moved at least `amount` (satang), then an exact amount, then any that big, then the biggest.
- *  null = the document has no stored journal (a draft / a pending change: the caller resolves live); undefined = it posted that amount to no such account. */
-export function postedDebit(st: MockState, docId: string, amount: number, ok: (code: string) => boolean, prefer?: string): string | null | undefined {
-  const entries = st.journals.find((j) => j.docId === docId)?.preview.entries.filter((e) => e.kind !== 'reversal');
-  const cur = entries?.at(-1);
-  if (!cur) return null;
-  const by = new Map<string, number>();
-  for (const l of cur.lines) if (ok(l.accountCode)) by.set(l.accountCode, (by.get(l.accountCode) ?? 0) + toSatang(l.debit) - toSatang(l.credit));
-  for (const [c, v] of by) by.set(c, Math.abs(v)); // a bill debits the account, its credit note credits it: the size is what counts
-  const all = [...by].filter(([, v]) => v > 0), big = all.filter(([, v]) => v >= amount).map(([c]) => c);
-  if (prefer && big.includes(prefer)) return prefer;
-  return big.find((c) => by.get(c) === amount) ?? big[0] ?? all.sort((x, y) => y[1] - x[1])[0]?.[0]; // the amount only picks between accounts: a line edited after the fact still sits on the account it posted to
 }
 
 /** Every journal entry of a company: its documents', the ones the reconciliation wrote itself (fee / inline / opening) and its settlement records'. The one reader for reports. */

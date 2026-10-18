@@ -52,7 +52,7 @@ export const settingsHandlers = [
   })),
 
   // ---- users (users.manage) ----
-  http.get('*/bff/v1/settings/users', () => guarded('list', 'users.manage', (c) => HttpResponse.json({ items: listUsers(c.st, c.company.id) }))),
+  http.get('*/bff/v1/settings/users', () => guarded('list', 'users.manage', (c) => HttpResponse.json({ items: listUsers(c.st, c.company.id, c.s.role) }))),
   http.post('*/bff/v1/settings/users', ({ request }) => guarded('item', 'users.manage', async (c) => {
     const { row, link } = inviteUser(c.st, actorOf(request), c.company.id, await bodyOf(request));
     return write(c, { ...row, link }, 201); // the only response that carries the link

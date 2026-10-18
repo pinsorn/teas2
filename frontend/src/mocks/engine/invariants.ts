@@ -694,6 +694,8 @@ export function checkInvariants(st: MockState): string[] {
       if (!types.has(k) || !values.has(`${k}|${v}`)) out.push(`${c.id}: journal line on ${l.accountCode} carries dimension ${k} = ${v}, which is not a type / value of the company`);
     }
   }
+  // 26. ST2c (N1): an issued purchase line carries the account its Expense / FixedAsset role posted to - the schedules and the asset register read it, never today's rules
+  for (const d of st.docs) if (['PB', 'PCN', 'PDN', 'PV', 'EX'].includes(d.type) && d.number && d.status !== 'draft') for (const l of d.lines) if (!l.postedAccount) out.push(`${d.id}: issued purchase line ${l.id} has no postedAccount`);
   out.push(...openItemInvariants(st)); // 23 + 24. RP2a: every control line names its open item, and every item's tagged balance is its stored balance
   out.push(...jvInvariants(st)); // 15. journal vouchers (AC1): no controlled account, the journal is the lines, reversals mirror, accruals net to zero
 

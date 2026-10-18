@@ -53,6 +53,7 @@ export interface DocLine { id: string; itemId?: string; description: string; qty
   vatOverride?: Money;
   /** PV lines: the WHT type of this line's income (fixture `[SP-R]`); `expenseCategory` picks the expense account (SP0 5.5). */
   whtTypeCode?: string; expenseCategory?: string;
+  /** ST2c: the account this purchase line's Expense / FixedAsset role resolved to when its journal was last written (issue / revise / reissue), frozen like the category (C1): no reader re-derives it from today's rules. */ postedAccount?: string;
   /** PV service line paid to a foreign payee: the service is used in Thailand, so PP.36 reverse-charge VAT applies (feeds TX2). Engine-defaulted for a foreign payee. */ pnd36?: boolean;
   /** EX line with VAT: the vendor's tax invoice behind it (ม.82/3, ม.86/4). Without all four details the line's VAT is cost (InputVatUnclaimed), never input VAT; with them the claim window of the invoice date applies, per line. */
   vendorInvoice?: VendorInvoice;

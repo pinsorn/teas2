@@ -27,7 +27,7 @@ describe('ruling 2: audit entries carry ip, traceId and client', () => {
     const agent: Actor = { kind: 'agent', id: 'ag-1', name: 'ผู้ช่วยบัญชี (AI)', ownerName: ME.name };
     logAudit(st, agent, VAT, 'x.y', 't');
     expect(st.audit.at(-1)).toMatchObject({ client: 'mcp', ip: '127.0.0.1', traceId: `trc-${st.audit.length}` });
-    expect(st.version).toBe(58);
+    expect(st.version).toBe(59);
   });
 });
 

@@ -67,16 +67,16 @@ function dimensionFaults(st: MockState, companyId: string, d: Posting): Map<stri
     }
   };
   // ruling 5: a fault is keyed by the DOCUMENT line it comes from and that line's content, so a new or edited line is judged in full while an unchanged line keeps the pass it had
-  const seen = new Set<string>();
+  const seen = new Set<string>(), unresolved: string[] = [];
   for (const l of d.lines) {
     let ls: JournalLinePreview[];
-    try { ls = ledgerFor(st, { ...d, companyId, lines: [l] }).entries[0]?.lines ?? []; } catch { continue; } // a half-filled line that does not resolve is judged by the missing list
+    try { ls = ledgerFor(st, { ...d, companyId, lines: [l] }).entries[0]?.lines ?? []; } catch { unresolved.push(`${l.id}:${canon(l)}`); continue; } // a half-filled line that does not resolve is judged by the missing list; the document-level check below is keyed by its content too (ST2c n2)
     check(ls, `${l.id}:${canon(l)}`);
     for (const x of ls) seen.add(x.accountCode);
   }
   let all: JournalLinePreview[] = [];
   try { all = ledgerFor(st, { ...d, companyId }).entries[0]?.lines ?? []; } catch { return out; }
-  check(all.filter((x) => !seen.has(x.accountCode)), 'doc'); // the postings no document line stands behind (tax, cash, control accounts)
+  check(all.filter((x) => !seen.has(x.accountCode)), unresolved.length ? `doc:${unresolved.join(',')}` : 'doc'); // the postings no document line stands behind (tax, cash, control accounts)
   return out;
 }
 /** Issue, revise, the correction plan and the editor's "what is missing" ask this one function. NOT retroactive: with `before` (the document as it stands) only a fault the change INTRODUCES counts, so a rule made stricter later never blocks a note edit on an old document. */

@@ -172,6 +172,16 @@ export const sameLines = (a: DocLine[], b: DocLine[]) => JSON.stringify(a.map(({
 export const keepNoteLines = (d: Doc, body: Body): Body =>
   isNote(d.type) && sameLines(body.lines, d.lines) ? { ...body, header: { ...body.header, ...(d.header.priceIncludesVat ? { priceIncludesVat: true } : {}) }, lines: d.lines } : body;
 /** R1-M4: a PB / PCN / PDN line the API sends without a category keeps its stored one (same line id); only an explicit category changes it. */
+/** ST2c N1: a purchase line's posting account is frozen on the line whenever its journal is (re)written - issue, revise, reissue. ONE resolution: `ledgerFor` collects it as it posts, so the stamp can never differ from the entry. */
+const PURCHASE_POSTED: DocType[] = ['PB', 'PCN', 'PDN', 'PV', 'EX'];
+function stampAccounts(st: MockState, doc: Stored): void {
+  if (!PURCHASE_POSTED.includes(doc.type)) return;
+  const accounts = new Map<string, string>();
+  ledgerFor(st, doc, accounts);
+  doc.lines = doc.lines.map((l) => { const { postedAccount: _p, ...rest } = l; void _p; return accounts.has(l.id) ? { ...rest, postedAccount: accounts.get(l.id)! } : rest; });
+}
+/** A revise that does not repost keeps what the lines froze; a body never carries it in (it is the server's). */
+const carryAccounts = (old: DocLine[], lines: DocLine[]): DocLine[] => lines.map((l) => { const { postedAccount: _p, ...rest } = l; void _p; const o = old.find((x) => x.id === l.id)?.postedAccount; return o ? { ...rest, postedAccount: o } : rest; });
 const keepCategories = (d: Doc, lines: DocLine[]): DocLine[] =>
   !isVendorBill(d.type) && d.type !== 'EX' ? lines : lines.map((l) => {
     const o = d.lines.find((x) => x.id === l.id), c = l.expenseCategory || !o?.expenseCategory ? l : { ...l, expenseCategory: o.expenseCategory };
@@ -453,6 +463,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
     ...(opts?.approver ? { approval: { submittedBy: d.approval?.submittedBy ?? actor, submittedAt: d.approval?.submittedAt ?? stamp(), approvedBy: opts.approver, approvedAt: stamp(), amount: payoutOf(st, d.companyId, { ...d, ...body, totals }) } } : {}),
   };
   if (hasSnapshot(d.type)) next.adjustSnapshot = adjustSnapshot(st, getDoc(st, d.header.refDocId!), next); // the ม.86/10 values as of now: the paper reads them, never recomputes
+  stampAccounts(st, next);
   put(st, next);
   settleTargets(st, next, body.allocations);
   if (isNote(d.type)) adjustTarget(st, next, totals.total);
@@ -684,6 +695,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   const marks = afterRevision(d); // a quotation's customer answer is void once it is revised
   if (marks) next.marks = marks; else delete next.marks;
   refuseDimensions(st, d.companyId, next, d); // ST2: only a fault this revision INTRODUCES (a rule made stricter later never blocks an old document)
+  next.lines = carryAccounts(d.lines, next.lines);
   put(st, next);
   if (isNote(d.type)) { // the note's one adjusts link carries its total: a revised note moves the bill's outstanding with it
     st.links = st.links.map((l) => (l.active && l.kind === 'adjusts' && l.from === id ? { ...l, amount: next.totals.total } : l));
@@ -700,6 +712,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   if (d.correctionClass === 'L') {
     const prev = st.journals.find((j) => j.docId === id)?.preview.entries ?? [];
     const live = prev[prev.length - 1];
+    const stored = st.docs.find((x) => x.id === id); if (stored) stampAccounts(st, stored); // the rules in force at THIS revise
     const fresh = ledgerFor(st, getDoc(st, id)).entries[0];
     const ob = d.type === 'OB'; // an opening balance reverses and reposts at its cut-off, never shifted by a period or a go-live
     setJournal(st, id, { entries: [...prev, ...(live && live.kind !== 'reversal' ? [ob ? reversalOf(live, live.date, stamp()) : correctionReversal(st, d.companyId, live)] : []),
@@ -765,6 +778,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   const oj = st.journals.find((j) => j.docId === old.id);
   const last = oj?.preview.entries[oj.preview.entries.length - 1];
   if (oj && last && last.kind !== 'reversal') oj.preview = { entries: [...oj.preview.entries, correctionReversal(st, old.companyId, last)] };
+  stampAccounts(st, created);
   setJournal(st, created.id, postedNow(st, created.companyId, ledgerFor(st, created)));
   st.revisions.push({ docId: created.id, revision: 0, at, actor, reason, snapshot: publicDoc(created), diff: [] });
   for (const l of carried) if (l.kind === 'settles' || l.kind === 'adjusts') recomputeSettlement(st, l.to);

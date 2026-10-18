@@ -6,7 +6,7 @@ import { testServer } from '../test-server';
 beforeAll(() => testServer.listen({ onUnhandledFrame: 'error' }));
 afterEach(() => testServer.resetHandlers());
 afterAll(() => testServer.close());
-beforeEach(() => { localStorage.clear(); resetState(); setSettings({ companyKey: 'vat', role: 'admin', screenState: 'normal' }); });
+beforeEach(() => { localStorage.clear(); setSettings({ companyKey: 'vat', role: 'admin', screenState: 'normal' }); resetState(); }); // seeded under the admin toolbar: u-1 is STORED as admin
 
 const call = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) =>
   fetch(`http://localhost/bff/v1${path}`, { method, headers: { 'content-type': 'application/json', ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -91,7 +91,8 @@ describe('settings wire (ST1)', () => {
     state.staff.find((m) => m.id === 'usr-vat-1')!.roleId = 'accountant'; // a state seeded while the toolbar said accountant
     localStorage.setItem('teas2.mock.state.v26', JSON.stringify(state));
     expect((await row()).roleId).toBe('admin'); // the list shows the role the toolbar simulates
-    const r = await call('POST', '/settings/users/usr-vat-1/active', { active: false, version: 1 });
+    // ST2c N2: the list is a view; the last-admin rule judges the STORED rows (u-1 is stored accountant here, usr-vat-2 is the stored admin)
+    const r = await call('POST', '/settings/users/usr-vat-2/active', { active: false, version: 1 });
     expect([r.status, (await json(r)).code]).toEqual([409, 'user.last_admin']);
   });
   it('m3 wire: a company PUT without a version is 422, a stale one 409', async () => {
