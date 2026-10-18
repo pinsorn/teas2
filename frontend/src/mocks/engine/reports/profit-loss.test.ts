@@ -7,7 +7,8 @@ import { closeYear } from '../close';
 import { checkInvariants } from '../invariants';
 import { withFixedClock } from '../log';
 import { toSatang } from '../money';
-import { compareRange, netProfit, netProfitRange } from './profit-loss';
+import { PL_CLASSES } from './statement-lines';
+import { balances, compareRange, netProfit, netProfitRange } from './profit-loss';
 import { profitLoss } from './profit-loss';
 import { trialBalance } from './trial-balance';
 
@@ -68,11 +69,23 @@ describe('ruling 1: one source for profit', () => {
     expect(net(m)).toBe(netProfit(st, VAT, 2025));
     expect(m.tieOuts![0].diff).toBe('0.00');
   });
-  it('the tie-out shows a dropped account as a difference, never hides it', () => {
+  it('the tie-out compares the RENDERED rows with the one source: a class with no section shows a difference', () => {
     const m = profitLoss(st, VAT, { from: '2026-01-01', to: '2026-12-31' });
-    const t = m.tieOuts![0];
-    expect(t.left).toBe(t.right);
-    expect(toSatang(t.right)).toBe(netProfitRange(st, VAT, '2026-01-01', '2026-12-31'));
+    expect(m.tieOuts![0].diff).toBe('0.00');
+    expect(toSatang(m.tieOuts![0].right)).toBe(netProfitRange(st, VAT, '2026-01-01', '2026-12-31'));
+    const at = PL_CLASSES.indexOf('selling-admin-expense');
+    PL_CLASSES.splice(at, 1); // the report loses a whole section (what a missed class would do)
+    try {
+      const broken = profitLoss(st, VAT, { from: '2026-01-01', to: '2026-12-31' });
+      expect(broken.tieOuts![0].diff).not.toBe('0.00');
+      expect(toSatang(broken.tieOuts![0].right)).toBe(netProfitRange(st, VAT, '2026-01-01', '2026-12-31')); // the right side is still the one source
+    } finally { PL_CLASSES.splice(at, 0, 'selling-admin-expense'); }
+  });
+  it('a range holding a year-end closing entry says the GL of those accounts reads zero after it; `balances` takes an empty `through` as year end', () => {
+    close2025();
+    expect(profitLoss(st, VAT, { from: '2025-01-01', to: '2025-12-31' }).notes?.join(' ')).toContain('จะเป็นศูนย์หลังรายการปิดบัญชีสิ้นปี');
+    expect(profitLoss(st, VAT, { from: '2026-01-01', to: '2026-12-31' }).notes).toBeUndefined();
+    expect([...balances(st, VAT, 2026, false, '')]).toEqual([...balances(st, VAT, 2026, false)]);
   });
 });
 

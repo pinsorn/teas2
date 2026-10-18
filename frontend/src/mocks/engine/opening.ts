@@ -61,9 +61,9 @@ export function buildOb(st: MockState, companyId: string, body: Part): { lines: 
     ties.push({ key, label, code, tb: money(tb * sg), sub: money(sub * sg), ok: tb === sub });
   };
   const lines: JournalLinePreview[] = [];
-  const line = (code: string, net: number, rule: string, party?: string): void => {
+  const line = (code: string, net: number, rule: string, party?: string, partyId?: string): void => {
     if (net === 0) return;
-    lines.push({ accountCode: code, accountName: nameOf(st, companyId, code), debit: money(Math.max(net, 0)), credit: money(Math.max(-net, 0)), rule, ...(party ? { partyName: party } : {}) });
+    lines.push({ accountCode: code, accountName: nameOf(st, companyId, code), debit: money(Math.max(net, 0)), credit: money(Math.max(-net, 0)), rule, ...(party ? { partyName: party, ...(partyId ? { partyId } : {}) } : {}) });
   };
   const replaced = new Set<string>(); // accounts whose trial-balance line is stated by a step instead
   const frozenName = new Map(op.openItems.filter((i) => i.partyName).map((i) => [i.partyId, i.partyName!])); // AS OF the issue / revise that wrote it: a rename later moves nothing
@@ -80,7 +80,7 @@ export function buildOb(st: MockState, companyId: string, body: Part): { lines: 
         tie(`${side}:${p}`, `${def.label} ${p ? partyName(p) : '(ไม่ระบุคู่ค้า)'}`, code, tbNet(code, p), items.filter((i) => i.partyId === p).reduce((n, i) => n + sg * (satOf(i.amount) || 0), 0), def.dr);
       }
     }
-    for (const p of new Set(items.map((i) => i.partyId))) line(code, sg * items.filter((i) => i.partyId === p).reduce((n, i) => n + (satOf(i.amount) || 0), 0), `${RULE}: ${def.role} → ${code}`, partyName(p));
+    for (const p of new Set(items.map((i) => i.partyId))) line(code, sg * items.filter((i) => i.partyId === p).reduce((n, i) => n + (satOf(i.amount) || 0), 0), `${RULE}: ${def.role} → ${code}`, partyName(p), p);
   }
   // 1: bank / cash accounts: statement balance + deposits in transit - outstanding payments
   // an account the batch opened is tied by the code it froze (a draft: its live code); the others by their live code - a later re-binding of an opened account moves no tie

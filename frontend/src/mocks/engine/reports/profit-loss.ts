@@ -27,8 +27,10 @@ export function balancesRange(st: MockState, companyId: string, from: string, to
   return new Map([...rangeBalances(st, companyId, from, to, closing)].map(([c, per]) => [c, [...per.values()].reduce((a, b) => a + b, 0)]));
 }
 /** Σ debit - Σ credit (satang) per account of the entries dated in `year` (up to `through`); `closing` false leaves the year-end entries out (what they close). */
-export const balances = (st: MockState, companyId: string, year: number, closing: boolean, through = `${year}-12-31`): Map<string, number> =>
-  balancesRange(st, companyId, `${year}-01-01`, through < `${year}-12-31` ? through : `${year}-12-31`, closing);
+export const balances = (st: MockState, companyId: string, year: number, closing: boolean, through?: string): Map<string, number> => {
+  const end = `${year}-12-31`, to = through || end; // an empty `through` is "not given" (year end), never "no end date"
+  return balancesRange(st, companyId, `${year}-01-01`, to < end ? to : end, closing);
+};
 
 const classOf = (st: MockState, companyId: string, code: string) => st.accounts.find((x) => x.companyId === companyId && x.code === code)?.class;
 export const isPl = (st: MockState, companyId: string, code: string) => { const c = classOf(st, companyId, code); return !!c && ['revenue', 'expense'].includes(GROUP_OF[c]); };
@@ -90,6 +92,7 @@ export function profitLoss(st: MockState, companyId: string, p: PlParams): Repor
       notes.push(`งวดเปรียบเทียบ: ${formatDateBE(r.from)} ถึง ${formatDateBE(r.to)}`);
     }
   }
+  if (st.yearCloses.some((y) => y.companyId === companyId && y.date >= from && y.date <= to)) notes.push('บัญชีรายได้/ค่าใช้จ่ายในบัญชีแยกประเภทจะเป็นศูนย์หลังรายการปิดบัญชีสิ้นปี'); // the GL drill of a closed year ends at 0: its closing entry is inside the range
   const diff = !!cmpMode, keys = [...cols.map((c) => c.key), ...(diff ? ['diff'] : [])], n = keys.length;
   const ext = (v: number[]) => (diff ? [...v, v[0] - v[1]] : v);
 
@@ -105,6 +108,7 @@ export function profitLoss(st: MockState, companyId: string, p: PlParams): Repor
     ...(by ? { cell: (code: string, key: string) => { const d = cols.find((c) => c.key === key)?.dimension; return d ? glLink(code, { from, to, dimension: d }) : undefined; } } : {}),
   };
   const sales = secs.find((s) => s.tag === 'sales'), cogs = secs.find((s) => s.tag === 'cogs');
+  // [SP-R] DBD gross profit follows the account MAPPING (a sales-revenue account mapped to "other income" leaves it); net profit is the cross-format invariant
   const gross = sumV([sales ? secTotal(sales, n) : [], cogs ? secTotal(cogs, n).map((x) => -x) : []], n);
   const rows: ReportRow[] = [];
   for (const s of secs) {
@@ -113,7 +117,8 @@ export function profitLoss(st: MockState, companyId: string, p: PlParams): Repor
   }
   // net profit: the figure of netProfitRange itself (the one source) per column - a dimension column is its own lines' sum. The tie-out sets it against the accounts shown.
   const nets = ext(cols.map((c) => c.net));
-  const shown = ext(cols.map((_, i) => accts.reduce((a, x) => a + (x.group === 'revenue' ? x.v[i] : -x.v[i]), 0)));
+  // `shown` = what the sections RENDER (after class / DBD grouping): an account dropped or shown twice is a difference against the one source
+  const shown = ext(cols.map((_, i) => secs.flatMap((s) => s.accts).reduce((a, x) => a + (x.group === 'revenue' ? x.v[i] : -x.v[i]), 0)));
   if (rows.length) rows.push({ level: 0, kind: 'total', cells: { code: '', name: NET_PROFIT_TH, ...money(keys, nets) } });
   const tie = (key: string) => { const i = keys.indexOf(key); return { labelKey: 'reports.pl.tie', left: fromSatang(shown[i]), right: fromSatang(nets[i]), diff: fromSatang(shown[i] - nets[i]) }; };
   return {

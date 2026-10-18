@@ -10,7 +10,7 @@ import { trialBalance } from './trial-balance';
 export interface GlParams { account?: string; from?: string; to?: string; party?: string; dimension?: string }
 
 /** ReportModel `general-ledger`: one account's lines in date order with a running balance computed here (never by the grid), framed by the opening (every entry before `from`, closing entries included) and the closing.
- *  Shown on the account's natural side (debit for assets and expenses, credit for the rest). A party / dimension filter filters the opening the same way. A live view of the GL, nothing frozen. */
+ *  Shown on the account's natural side (debit for assets and expenses, credit for the rest). A party / dimension filter filters the opening the same way. The party is matched by its id on the posted line (a line posted before RP1a has none and is never matched by a party filter), so a rename or a same-named party changes nothing. A live view of the GL, nothing frozen. */
 export function generalLedger(st: MockState, companyId: string, p: GlParams): ReportModel {
   const code = p.account?.trim() ?? '';
   if (!code) throw badParam('ต้องระบุบัญชี');
@@ -23,10 +23,11 @@ export function generalLedger(st: MockState, companyId: string, p: GlParams): Re
   if (key && !party) throw new MockError(404, 'party.not_found', 'ไม่พบคู่ค้านี้ในบริษัท');
   const [dimType, ...dimRest] = (p.dimension ?? '').split(/[:=]/);
   const dimValue = dimRest.join(':'), filtered = !!party || !!dimType;
+  if (p.dimension && (!dimType || !dimValue)) throw badParam('ตัวกรองมิติ (dimension) ต้องอยู่ในรูป ประเภท:ค่า เช่น project:P-A');
   const natural = ['asset', 'expense'].includes(GROUP_OF[account.class]) ? 1 : -1;
 
-  const hit = (l: { accountCode: string; partyName?: string; dimensions?: Record<string, string> }) =>
-    l.accountCode === code && (!party || l.partyName === party.name) && (!dimType || l.dimensions?.[dimType] === dimValue);
+  const hit = (l: { accountCode: string; partyId?: string; dimensions?: Record<string, string> }) =>
+    l.accountCode === code && (!party || l.partyId === party.id) && (!dimType || l.dimensions?.[dimType] === dimValue);
   let open = 0;
   const lines = sources(st, companyId).flatMap((s) => s.entries.flatMap((e) => e.lines.filter(hit).map((l) => ({ s, e, l }))))
     .filter(({ e, l }) => { if (from && e.date < from) { open += toSatang(l.debit) - toSatang(l.credit); return false; } return !to || e.date <= to; })

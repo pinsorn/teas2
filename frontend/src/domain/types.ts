@@ -215,7 +215,7 @@ export interface AuditEntry { id: string; at: string; actor: Actor; companyId: s
   before?: unknown; after?: unknown; result: 'ok' | 'rejected' }
 
 export interface JournalLinePreview { accountCode: string; accountName: string; debit: Money; credit: Money;
-  partyName?: string; dimensions?: Record<string, string>; rule: string }
+  partyName?: string; /** RP1a: the party's id at posting (the name above is the snapshot the documents show); a line without it is never matched by id. */ partyId?: string; dimensions?: Record<string, string>; rule: string }
 export interface JournalEntryPreview { number?: string; date: IsoDate; kind: 'original' | 'reversal' | 'correction';
   /** When the entry was written (mock clock); set once, never changed - a reversal has its own. Closed-period invariant 7 judges with it. */ postedAt?: string;
   /** Posted into the first open period because the original sits in a closed one ("แก้ไขย้อนหลัง"). */ late?: boolean;

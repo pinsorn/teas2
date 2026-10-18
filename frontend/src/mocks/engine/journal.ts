@@ -37,7 +37,7 @@ export function jvEntryLines(st: MockState, companyId: string, lines: DocLine[])
     return {
       accountCode: l.accountCode!, accountName: accountOf(st, companyId, l.accountCode!)?.nameTh ?? l.accountCode!,
       debit: fromSatang(satOf(l.debit) || 0), credit: fromSatang(satOf(l.credit) || 0), rule: l.description.trim() ? `${JV_RULE}: ${l.description.trim()}` : JV_RULE,
-      ...(party ? { partyName: party } : {}), ...(l.dimensions && Object.keys(l.dimensions).length ? { dimensions: l.dimensions } : {}),
+      ...(party ? { partyName: party, partyId: l.partyId! } : {}), ...(l.dimensions && Object.keys(l.dimensions).length ? { dimensions: l.dimensions } : {}),
     };
   });
 }

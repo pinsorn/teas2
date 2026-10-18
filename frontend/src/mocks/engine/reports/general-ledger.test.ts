@@ -101,3 +101,46 @@ describe('ruling 4: general ledger', () => {
     expect(() => generalLedger(st, VAT, { account: '1130', from: '2026-05-01', to: '2026-01-01' })).toThrow(expect.objectContaining({ status: 422 }));
   });
 });
+
+describe('RP1a: the party ledger follows the party id, not its name', () => {
+  const ME = { kind: 'user' as const, id: 'u-1', name: 'สมศรี บัญชีดี' };
+  it('a renamed party keeps its whole ledger (same lines, same closing) and an old line is matched by id', () => {
+    const before = generalLedger(st, VAT, { account: '1130', from: '2026-01-01', to: today(), party: 'pc-10' });
+    expect(body(before).length).toBeGreaterThan(3);
+    st.parties.find((p) => p.id === 'pc-10')!.name = 'ชื่อใหม่หลังแก้คำผิด จำกัด';
+    const after = generalLedger(st, VAT, { account: '1130', from: '2026-01-01', to: today(), party: 'pc-10' });
+    expect(body(after)).toHaveLength(body(before).length);
+    expect(closing(after)).toBe(closing(before));
+    expect(opening(after)).toBe(opening(before));
+    expect(body(after).map((r) => r.cells.party)).toEqual(body(before).map((r) => r.cells.party)); // each line still shows the name it was posted under
+  });
+  it('two parties with the same name are two ledgers', async () => {
+    const { createDraft, issue } = await import('../commands');
+    const { withFixedClock } = await import('../log');
+    const orig = st.parties.find((p) => p.id === 'pc-10')!;
+    st.parties.push({ ...orig, id: 'pc-dup', code: 'DUP-1' });
+    const jv = (id: string, amt: string) => withFixedClock('2026-08-10T10:00:00+07:00', () => {
+      const line = (n: number, code: string, d: string, c: string, partyId?: string) => ({ id: `${id}-${n}`, description: 'x', qty: '1', unit: '', unitPrice: '0.00', taxCode: 'EX' as const, accountCode: code, debit: d, credit: c, ...(partyId ? { partyId } : {}) });
+      const d = createDraft(st, VAT, 'JV', { header: { documentDate: '2026-08-10' }, lines: [line(1, '5110', amt, '0.00'), line(2, '2120', '0.00', amt, id === 'a' ? 'pc-dup' : 'pc-10')] }, ME, `dup-${id}`);
+      return issue(st, d.id, d.version, ME);
+    });
+    jv('a', '100.00'); jv('b', '50.00');
+    const dup = generalLedger(st, VAT, { account: '2120', party: 'pc-dup' }), one = generalLedger(st, VAT, { account: '2120', party: 'pc-10' });
+    expect(body(dup)).toHaveLength(1);
+    expect(closing(dup)).toBe(10000);
+    expect(body(one)).toHaveLength(1);
+    expect(closing(one)).toBe(5000);
+  });
+  it('a dimension filter needs type:value (422 naming the parameter)', () => {
+    for (const dimension of ['project', 'project:', ':P-A']) expect(() => generalLedger(st, NV, { account: '1130', dimension }), dimension).toThrow(expect.objectContaining({ status: 422, code: 'report.bad_param', title: expect.stringContaining('dimension') }));
+  });
+  it('the dimension-filtered trial balance row drills into a GL that closes at the same figure', () => {
+    const tb = trialBalance(st, NV, { asOf: '2026-12-31', dimension: 'project:P-A' });
+    const row = tb.rows.find((r) => r.kind === 'row' && r.cells.code === '1130')!;
+    const q = new URL(row.href!, 'http://x').searchParams;
+    expect(q.get('dimension')).toBe('project:P-A');
+    const gl = generalLedger(st, NV, { account: q.get('account')!, from: q.get('from') ?? '', to: q.get('to') ?? '', dimension: q.get('dimension')! });
+    expect(closing(gl)).toBe(toSatang(row.cells.debit) - toSatang(row.cells.credit));
+    expect(closing(gl)).toBeGreaterThan(0);
+  });
+});

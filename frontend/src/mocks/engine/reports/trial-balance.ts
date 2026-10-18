@@ -36,10 +36,11 @@ export function trialBalance(st: MockState, companyId: string, p: TbParams & { a
     dr += d; cr += c;
     for (const x of vals) colTotal.set(x, (colTotal.get(x) ?? 0) + (v.per.get(x) ?? 0));
     return { level: 0, kind: 'row', cells: { code, name: v.name, debit: fromSatang(d), credit: fromSatang(c), ...Object.fromEntries(vals.map((x) => [dimKey(x), fromSatang(v.per.get(x) ?? 0)])) },
-      href: glLink(code, { to: p.asOf }), ...(by ? { links: Object.fromEntries(vals.filter(Boolean).map((x) => [dimKey(x), glLink(code, { to: p.asOf, dimension: `${by}:${x}` })])) } : {}) };
+      href: glLink(code, { to: p.asOf, ...(p.dimension ? { dimension: p.dimension } : {}) }),...(by ? { links: Object.fromEntries(vals.filter(Boolean).map((x) => [dimKey(x), glLink(code, { to: p.asOf, dimension: `${by}:${x}` })])) } : {}) };
   });
   if (rows.length) rows.push({ level: 0, kind: 'total', cells: { code: '', name: '', debit: fromSatang(dr), credit: fromSatang(cr), ...Object.fromEntries(vals.map((x) => [dimKey(x), fromSatang(colTotal.get(x) ?? 0)])) } });
-  const colSum = [...colTotal.values()].reduce((a, b) => a + b, 0);
+  // left = what the rendered column cells add up to; right = the total column (debit - credit) from the account totals: two separate accumulations
+  const colSum = rows.filter((r) => r.kind === 'row').reduce((a, r) => a + vals.reduce((b, x) => b + toSatang(r.cells[dimKey(x)]), 0), 0);
   return {
     kind: 'trial-balance', titleKey: 'reports.tb.title', asOf: p.asOf,
     params: { asOf: p.asOf, ...(p.dimension ? { dimension: p.dimension } : {}), ...(p.includeZero ? { includeZero: p.includeZero } : {}), ...(by ? { groupBy: by } : {}) },

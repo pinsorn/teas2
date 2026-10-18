@@ -13,7 +13,7 @@ import { computeDoc, vatBasisOf, vatOf } from './vat';
 
 export interface Totals { net: number; vat: number; total: number; wht: number; cash: number }
 /** [role, debit, credit, context additions] in satang; the account behind each role comes from the posting profile (SP0 §5.5). */
-export type RolePosting = [AccountingRole, number, number, (Partial<PostingContext> & { partyName?: string })?][];
+export type RolePosting = [AccountingRole, number, number, (Partial<PostingContext> & { partyName?: string; partyId?: string })?][];
 type Rows = (t: Totals, d: Doc, st: MockState, companyId: string) => RolePosting;
 
 /** One row per document line for the net side so an item / category rule can pick that line's account (rows with the same account merge again). */
@@ -43,8 +43,8 @@ const expenseClaim: Rows = (t, d, st, co) => [...purchaseRows(d, st, co), ['Empl
 /** One row per allocation, under the TARGET's party: the AR / AP subledger of each customer / vendor stays right when one document settles several parties. */
 const perTarget = (d: Doc, st: MockState, role: 'AR' | 'AP' | 'EmployeePayable', types: DocType[], side: 'Dr' | 'Cr', obSide: 'AR' | 'AP' | 'EMP'): RolePosting =>
   (d.allocations ?? []).filter((a) => types.includes(a.targetType) && (a.targetType !== 'OB' || st.docs.find((x) => x.id === a.targetId)?.header.obSide === obSide)).map((a): RolePosting[number] => {
-    const n = toSatang(a.amount), name = st.docs.find((x) => x.id === a.targetId)?.party?.name;
-    return [role, side === 'Dr' ? n : 0, side === 'Cr' ? n : 0, name ? { partyName: name } : undefined];
+    const n = toSatang(a.amount), target = st.docs.find((x) => x.id === a.targetId), name = target?.party?.name;
+    return [role, side === 'Dr' ? n : 0, side === 'Cr' ? n : 0, name ? { partyName: name, ...(target?.header.partyId ? { partyId: target.header.partyId } : {}) } : undefined];
   });
 const mirror = (r: Rows): Rows => (t, d, st, co) => r(t, d, st, co).map(([role, dr, cr, c]) => [role, cr, dr, c] as RolePosting[number]);
 
@@ -97,22 +97,23 @@ export function ledgerFor(st: MockState, doc: Doc & { companyId?: string }): Jou
   if (!post && doc.type === 'DP') return withReversal(doc, dpEntryLines(st, companyId, doc)); // AC5: exactly the run's stored rows
   if (!post) return withReversal(doc, jvEntryLines(st, companyId, doc.lines));
   const partyName = doc.party?.name ?? st.parties.find((p) => p.id === doc.header.partyId)?.name;
-  if ((doc.type === 'TI' || doc.type === 'IV') && doc.header.disposal) return withReversal(doc, disposalEntryLines(st, companyId, doc.header.disposal, partyName)); // AC5: the sale of a fixed asset posts its frozen disposal entry, not revenue
+  if ((doc.type === 'TI' || doc.type === 'IV') && doc.header.disposal) return withReversal(doc, disposalEntryLines(st, companyId, doc.header.disposal, partyName, doc.header.partyId)); // AC5: the sale of a fixed asset posts its frozen disposal entry, not revenue
   const t: Totals = { net: toSatang(doc.totals.net), vat: toSatang(doc.totals.vat), total: toSatang(doc.totals.total), wht: toSatang(doc.totals.wht ?? '0.00'),
     cash: toSatang(doc.totals.cash ?? fromSatang(toSatang(doc.totals.total) - toSatang(doc.totals.wht ?? '0.00'))) };
-  const acc = new Map<string, { code: string; name: string; rule: string; net: number; party?: string; dims?: Record<string, string> }>();
+  const acc = new Map<string, { code: string; name: string; rule: string; net: number; party?: string; partyId?: string; dims?: Record<string, string> }>();
   for (const [role, dr, cr, extra] of post(t, doc, st, companyId)) {
     const r = resolveRole(st, role, { companyId, docType: doc.type, ...extra });
     const dims = { ...doc.header.dimensions, ...extra?.dimensions };
     const party = (role === 'AR' || role === 'AP' || role === 'EmployeePayable' || role === 'CustomerDeposit' || role === 'VendorPrepayment') ? (extra?.partyName ?? partyName) : undefined;
-    const key = `${r.code}|${r.rule}|${party ?? ''}|${JSON.stringify(dims)}`;
+    const partyId = party ? (extra?.partyName ? extra.partyId : doc.header.partyId) : undefined; // the id of the SAME party the name belongs to (an allocation names its target's party)
+    const key = `${r.code}|${r.rule}|${party ?? ''}|${partyId ?? ''}|${JSON.stringify(dims)}`;
     const prev = acc.get(key);
     // a negative side (e.g. a CN line with a negative VAT) is posted on the opposite side, never as a negative amount
-    acc.set(key, prev ? { ...prev, net: prev.net + dr - cr } : { ...r, net: dr - cr, party, ...(Object.keys(dims).length ? { dims } : {}) });
+    acc.set(key, prev ? { ...prev, net: prev.net + dr - cr } : { ...r, net: dr - cr, party, ...(partyId ? { partyId } : {}), ...(Object.keys(dims).length ? { dims } : {}) });
   }
   const lines: JournalLinePreview[] = [...acc.values()].filter((x) => x.net !== 0).map((x) => ({
     accountCode: x.code, accountName: x.name, debit: fromSatang(Math.max(x.net, 0)), credit: fromSatang(Math.max(-x.net, 0)), rule: x.rule,
-    ...(x.party ? { partyName: x.party } : {}), ...(x.dims ? { dimensions: x.dims } : {}),
+    ...(x.party ? { partyName: x.party } : {}), ...(x.partyId ? { partyId: x.partyId } : {}), ...(x.dims ? { dimensions: x.dims } : {}),
   }));
   return withReversal(doc, lines);
 }

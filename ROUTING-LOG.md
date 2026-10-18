@@ -49,3 +49,5 @@
 | 2026-10-18 | SP1c GPY consolidated gate (typecheck, lint, unit, build, Playwright --workers=1) | haiku-gate-runner | Tier 3 run-and-report |
 | 2026-10-18 | SP1c CI1: CI-only e2e reds (screens walk ERR_ABORTED/timeout, ti-loop F4 axe contrast) | sonnet-implementer (fresh) | blocks PR #14 merge; different area from payroll worker |
 | 2026-10-18 | SP1c RP1 implement (P&L, balance sheet, GL, dimension columns, comparatives) | sonnet-implementer (fresh) | default implementer; Opus review after (financial statements) |
+| 2026-10-18 | SP1c RP1 review (P&L, BS, GL, dimension columns, comparatives) | opus-reviewer | financial statements tie-outs; fresh reviewer |
+| 2026-10-18 | SP1c RP1a fix round (partyId on posted lines, honest tie-outs, TB dimension drill) | sonnet-implementer (warm, RP1 worker) | Opus REJECT on M1; warm re-review after |

@@ -24,6 +24,7 @@ export function balanceSheet(st: MockState, companyId: string, p: BsParams): Rep
   const mine = st.accounts.filter((a) => a.companyId === companyId);
 
   const accts: Acct[] = mine.filter((a) => !isPl(st, companyId, a.code) && cols.some((c) => (c.m.get(a.code) ?? 0) !== 0)).sort((a, b) => a.code.localeCompare(b.code)).map((a) => {
+    // [SP-R] a wrong-side balance (an overdrawn bank, a debit-balance payable) stays in its own section as a negative; reclassifying it for the DBD filing is on Ham's list
     const g = GROUP_OF[a.class], sgn = g === 'asset' ? 1 : -1;
     return { code: a.code, name: a.nameTh, group: g, ...(a.dbdLine ? { dbdLine: a.dbdLine } : {}), v: ext(cols.map((c) => sgn * (c.m.get(a.code) ?? 0))) };
   });
