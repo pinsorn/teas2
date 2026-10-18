@@ -129,3 +129,28 @@ describe('ruling 1: number gaps and duplicates', () => {
     expect(series(about(VAT, key))[0].cells.state).toBe('มีปัญหา');
   });
 });
+
+describe('RP3b R2-M2: the series month of a number is the month of the document at issue', () => {
+  const ME = { kind: 'user', id: 'u-1', name: 'x' } as const;
+  it('a renumbered document (number month is not its issue month) is one malformed row naming it, and no false gap rows in the other month', () => {
+    const d = st.docs.find((x) => x.number === 'TI-202607-0002')!;
+    d.number = 'TI-202609-0099';
+    const m = numberGaps(st, VAT, { year: '2026' });
+    const stray = m.rows.filter((r) => r.level === 1 && r.cells.state === 'เลขผิดรูปแบบ');
+    expect(stray).toHaveLength(1);
+    expect(stray[0].cells.detail).toContain(d.id);
+    expect(m.rows.filter((r) => r.cells.series?.includes('202609') && r.cells.state?.includes('เลขขาด'))).toEqual([]);
+    expect(m.rows.some((r) => r.level === 0 && /0099/.test(r.cells.detail ?? ''))).toBe(false);
+    expect(checkInvariants(st).some((v) => v.startsWith(`${d.id}: numbering`))).toBe(true);
+  });
+  it('a document revised across months keeps its number and is clean', async () => {
+    const { createDraft, issue, revise } = await import('../commands');
+    const dr = createDraft(st, NV, 'IV', { header: { partyId: 'nc-01', documentDate: '2026-10-11' }, lines: [{ id: 'l1', description: 'x', qty: '1', unit: 'u', unitPrice: '700', taxCode: 'EX' }] }, ME, 'k');
+    const iv = issue(st, dr.id, dr.version, ME);
+    revise(st, iv.id, { header: { ...iv.header, documentDate: '2026-08-03' }, lines: iv.lines }, st.docs.find((x) => x.id === iv.id)!.version, 'x', ME);
+    expect(st.docs.find((x) => x.id === iv.id)!.number).toBe(iv.number);
+    const m = numberGaps(st, NV, { year: '2026' });
+    expect(m.rows.filter((r) => r.cells.state === 'เลขผิดรูปแบบ')).toEqual([]);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+});

@@ -28,13 +28,15 @@ import { wtsOfPv } from './wht-certificates';
 type Stored = MockState['docs'][number];
 
 /** ONE reading of the numbers on documents (this numbering invariant and the RP3 gap audit both use it): per series key `${companyId}|${type}|${yyyy-mm}` the sequence numbers found and the documents holding them.
- *  A document with no number (a draft) holds none; an opening item's number is the old document's, so it is not a number of this series; a number that is not `TYPE-yyyymm-nnnn` of its own type is `malformed`. */
-export function numbersBySeries(docs: Stored[]): { groups: Map<string, { seq: number; doc: Stored }[]>; malformed: Stored[] } {
+ *  A document with no number (a draft) holds none; an opening item's number is the old document's, so it is not a number of this series; a number that is not `TYPE-yyyymm-nnnn` of its own type, or whose yyyymm is not the month of the document's date AT ISSUE (the revision-0 snapshot's; the current date when there is none), is `malformed`.
+ *  A revise may move a document across months and keeps its number: that is not malformed. */
+export function numbersBySeries(docs: Stored[], revisions: MockState['revisions'] = []): { groups: Map<string, { seq: number; doc: Stored }[]>; malformed: Stored[] } {
   const groups = new Map<string, { seq: number; doc: Stored }[]>(), malformed: Stored[] = [];
+  const issued = new Map(revisions.filter((r) => r.revision === 0).map((r) => [r.docId, r.snapshot.header.documentDate]));
   for (const d of docs) {
     if (!d.number || d.header.obBatchId) continue;
     const m = /^([A-Z]+)-(\d{4})(\d{2})-(\d{4})$/.exec(d.number);
-    if (!m || m[1] !== d.type) { malformed.push(d); continue; }
+    if (!m || m[1] !== d.type || `${m[2]}-${m[3]}` !== (issued.get(d.id) ?? d.header.documentDate).slice(0, 7)) { malformed.push(d); continue; }
     const k = `${d.companyId}|${d.type}|${m[2]}-${m[3]}`;
     groups.set(k, [...(groups.get(k) ?? []), { seq: Number(m[4]), doc: d }]);
   }
@@ -689,13 +691,18 @@ export function checkInvariants(st: MockState): string[] {
   out.push(...jvInvariants(st)); // 15. journal vouchers (AC1): no controlled account, the journal is the lines, reversals mirror, accruals net to zero
 
   // numbering: gap-free per company x type x month, and the series counter agrees
-  const { groups, malformed } = numbersBySeries(st.docs);
+  const { groups, malformed } = numbersBySeries(st.docs, st.revisions);
   for (const d of malformed) out.push(`${d.id}: numbering: "${d.number}" is not a ${d.type} number`);
   for (const k of seriesKeys(st, groups)) { // every series that has a counter or a document: the same set the number-gap report checks
     const sorted = (groups.get(k) ?? []).map((f) => f.seq).sort((x, y) => x - y);
     if (sorted.some((n, i) => n !== i + 1)) out.push(`${k}: numbering is not gap-free (${sorted.join(', ')})`);
     if ((st.series[k] ?? 0) !== sorted.length) out.push(`${k}: numbering counter ${st.series[k] ?? 0} but ${sorted.length} numbers issued`);
   }
+
+  // WHT rate rows are dated: one row per company x code x effectiveFrom (a second row of one date would never apply)
+  const rateRows = new Map<string, number>();
+  for (const t of st.whtTypes) rateRows.set(`${t.companyId} ${t.code} ${t.effectiveFrom}`, (rateRows.get(`${t.companyId} ${t.code} ${t.effectiveFrom}`) ?? 0) + 1);
+  for (const [k, n] of rateRows) if (n > 1) out.push(`wht: ${k} has ${n} rate rows`);
 
   // audit trail (RP3): append-only - the ids are unique, increasing and gap-free (a duplicated, reordered or middle-deleted entry breaks it). Time is a fact about the event, never judged here.
   // [SP2] This cannot see a deleted LAST entry or an edited entry: the backend needs a hash chain over (prevHash, id, at, actor, command, target, before, after, result) plus an external high-water mark.

@@ -58,3 +58,4 @@
 | 2026-10-18 | SP1c RP3 implement (number gaps, audit-log viewer, reopen history; RP2 minors) | sonnet-implementer (fresh) | new area; Opus review after (audit/compliance) |
 | 2026-10-18 | SP1c RP3 review (number gaps, audit viewer, append-only, reopen history) | opus-reviewer | audit/compliance diff; fresh reviewer |
 | 2026-10-18 | SP1c RP3a fix round (audit time clamp removed, malformed numbers, table focus scope, dated tax rate) | sonnet-implementer (warm, RP3 worker) | Opus REJECT (B1 falsified audit times); warm re-review after |
+| 2026-10-18 | SP1c RP3b fix (same-date rate change replaces; month-mismatched numbers) | sonnet-implementer (warm, RP3 worker) | Opus round 2 REJECT on two majors |

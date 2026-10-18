@@ -23,11 +23,11 @@ describe('ruling 2: audit entries carry ip, traceId and client', () => {
     expect(st.audit.length).toBeGreaterThan(200);
     st.audit.forEach((a, i) => { expect(a.ip).toBe('127.0.0.1'); expect(a.traceId).toBe(`trc-${i + 1}`); expect(a.client).toBe(a.actor.kind === 'agent' ? 'mcp' : 'web'); });
   });
-  it('an agent-authored entry is mcp; the state version is 54', () => {
+  it('an agent-authored entry is mcp; the state version is 55', () => {
     const agent: Actor = { kind: 'agent', id: 'ag-1', name: 'ผู้ช่วยบัญชี (AI)', ownerName: ME.name };
     logAudit(st, agent, VAT, 'x.y', 't');
     expect(st.audit.at(-1)).toMatchObject({ client: 'mcp', ip: '127.0.0.1', traceId: `trc-${st.audit.length}` });
-    expect(st.version).toBe(54);
+    expect(st.version).toBe(55);
   });
 });
 
@@ -196,5 +196,30 @@ describe('RP3a m1: a tax-table change is a NEW dated rate row', () => {
   it('the seed leaves the rate at 200 today (the revert is a later dated row)', () => {
     const payee = st.parties.find((p) => p.companyId === VAT && p.kind === 'vendor')!;
     expect(whtTypeOf(st, 'ADS', payee, '2026-10-14').rateBp).toBe(200);
+  });
+});
+
+describe('RP3b R2-M1: two tax-rate changes on one date', () => {
+  const rows = () => st.whtTypes.filter((t) => t.companyId === VAT && t.code === 'ADS');
+  it('replace the rate of that date: one row, the second rate in force, the audit says what was replaced', () => {
+    const payee = st.parties.find((p) => p.companyId === VAT && p.kind === 'vendor')!;
+    const n = rows().length;
+    changeTaxRate(st, ME, VAT, 'ADS', 500, '2026-10-01');
+    changeTaxRate(st, ME, VAT, 'ADS', 700, '2026-10-01');
+    expect(rows()).toHaveLength(n + 1);
+    expect(rows().filter((t) => t.effectiveFrom === '2026-10-01')).toHaveLength(1);
+    expect(whtTypeOf(st, 'ADS', payee, '2026-10-02').rateBp).toBe(700);
+    expect(whtTypeOf(st, 'ADS', payee, '2026-09-30').rateBp).toBe(200);
+    expect(st.audit.at(-1)).toMatchObject({ before: { rateBp: 500, effectiveFrom: '2026-10-01' }, after: { rateBp: 700, effectiveFrom: '2026-10-01' } });
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('two rows for one company x code x date are flagged (single fault)', () => {
+    const r = rows()[0];
+    st.whtTypes.push({ ...r, rateBp: 999 });
+    expect(checkInvariants(st).some((v) => v.includes('ADS') && v.includes('rate rows'))).toBe(true);
+  });
+  it('the seed change and its revert share one date: no window, rate 200 on every day', () => {
+    const payee = st.parties.find((p) => p.companyId === VAT && p.kind === 'vendor')!;
+    for (const d of ['2026-10-14', '2026-10-15', '2026-10-16', '2027-01-01']) expect(whtTypeOf(st, 'ADS', payee, d).rateBp, d).toBe(200);
   });
 });

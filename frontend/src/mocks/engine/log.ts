@@ -45,12 +45,14 @@ export function changePostingRule(st: MockState, actor: Actor, companyId: string
   logAudit(st, actor, companyId, 'posting.rule.update', `${r.role}:${r.level}:${r.key ?? ''}`, before, { ...before, accountCode });
 }
 /** Change the withholding rate (basis points) of one WHT type of the company from `effectiveFrom` (default today): a NEW dated rate row, like every rate table (`whtTypeOf` takes the latest row in force on the document's date),
- *  so a document dated before the change keeps the old rate. */
+ *  so a document dated before the change keeps the old rate; a change on a date that already has a row replaces that row's rate. */
 export function changeTaxRate(st: MockState, actor: Actor, companyId: string, code: string, rateBp: number, effectiveFrom: string = today()): void {
   const inForce = st.whtTypes.filter((x) => x.companyId === companyId && x.code === code && x.effectiveFrom <= effectiveFrom).sort((x, y) => y.effectiveFrom.localeCompare(x.effectiveFrom))[0];
   if (!inForce) throw new MockError(404, 'tax.type_not_found', 'ไม่พบประเภทภาษีหัก ณ ที่จ่าย');
-  st.whtTypes.push({ ...inForce, rateBp, effectiveFrom });
-  logAudit(st, actor, companyId, 'tax.table.update', code, { code, rateBp: inForce.rateBp, effectiveFrom: inForce.effectiveFrom }, { code, rateBp, effectiveFrom });
+  const before = { code, rateBp: inForce.rateBp, effectiveFrom: inForce.effectiveFrom };
+  if (inForce.effectiveFrom === effectiveFrom) inForce.rateBp = rateBp; // the date already has its row: a correction REPLACES it (a second row of one date would never apply)
+  else st.whtTypes.push({ ...inForce, rateBp, effectiveFrom });
+  logAudit(st, actor, companyId, 'tax.table.update', code, before, { code, rateBp, effectiveFrom });
 }
 
 /** Changed leaves of two JSON-ish values as dotted paths, text on both sides (null = absent); same `val` as the document diff. A value that is not an object compares as one path "". */
