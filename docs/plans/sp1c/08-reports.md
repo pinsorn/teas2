@@ -108,4 +108,4 @@ tax-table changes so the viewer has content), messages, `screens.ts`.
 - [x] Consolidated gate green; production build / staging.
 - [x] Send Ham: statements by dimension with comparatives and drill-down; tie-outs on every AR / AP / asset report;
   aging basis choice (TEAS 1 used document date — Appendix B); number-gap audit over every series; audit viewer.
-- [ ] AskUserQuestion "Reports approve?" — approve / approve with changes / rework. Record in `STATUS.md`.
+- [x] AskUserQuestion "Reports approve?" — approve / approve with changes / rework. Record in `STATUS.md`.
