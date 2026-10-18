@@ -87,7 +87,7 @@ export function updateTemplate(st: MockState, actor: Actor, companyId: string, t
   const t = type as DocType, rows = (st.printTemplates ??= []), at = rows.findIndex((x) => x.companyId === companyId && x.type === t), cur = rows[at];
   if (v.version !== (cur?.version ?? 1)) throw new MockError(409, 'record.version_conflict', 'แม่แบบนี้ถูกแก้ไขโดยผู้อื่นแล้ว โหลดข้อมูลล่าสุดก่อนบันทึก');
   for (const k of ['showLogo', 'showStamp', 'showSignature'] as const) if (typeof v[k] !== 'boolean') throw new MockError(422, 'record.invalid', 'ข้อมูลแม่แบบไม่ถูกต้อง');
-  const labels = v.signatureLabels ?? cur?.signatureLabels; // absent = keep what is stored (a Save of the toggles never pins the defaults)
+  const labels = 'signatureLabels' in v ? v.signatureLabels : cur?.signatureLabels; // absent = keep what is stored (a Save of the toggles never pins the defaults)
   if (labels !== undefined && (!Array.isArray(labels) || labels.length < 1 || labels.length > 4 || new Set(labels).size !== labels.length || labels.some((l) => !SIGNATURE_LABELS.includes(l as string)))) {
     throw new MockError(422, 'template.bad_label', 'ชื่อผู้ลงนามต้องเลือกจากรายการที่กำหนด (1–4 ช่อง ไม่ซ้ำกัน)');
   }

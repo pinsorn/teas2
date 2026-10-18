@@ -219,6 +219,7 @@ describe('ST4 images and templates on the paper', () => {
     expect(code(() => updateTemplate(st, me, VAT, 'TI', { ...ok, version: 7 }))).toBe('record.version_conflict');
     expect(code(() => updateTemplate(st, me, VAT, 'TI', { ...ok, signatureLabels: ['ผู้ยิ่งใหญ่'] }))).toBe('template.bad_label');
     expect(code(() => updateTemplate(st, me, VAT, 'TI', { ...ok, signatureLabels: ['ผู้รับเงิน', 'ผู้รับเงิน'] }))).toBe('template.bad_label');
+    expect(code(() => updateTemplate(st, me, VAT, 'TI', { ...ok, signatureLabels: null }))).toBe('template.bad_label'); // null is refused; an absent key keeps the stored labels
     expect(code(() => updateTemplate(st, me, VAT, 'FA', ok))).toBe('template.unknown_type');
     expect(st.printTemplates ?? []).toEqual([]);
     expect(st.audit.some((a) => a.command === 'template.update')).toBe(false);

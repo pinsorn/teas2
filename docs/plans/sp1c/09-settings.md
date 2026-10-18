@@ -48,12 +48,12 @@
   (warning only — self-approval is a company setting, D-36). Mock: custom roles are assignable; the mock toolbar's role
   switcher still offers only the three system roles (custom roles are visible, not simulated).
 
-- [ ] **Step 1: Failing tests** — fiscal year locked once a period is closed (seed: locked, exit shown); last-admin
+- [x] **Step 1: Failing tests** — fiscal year locked once a period is closed (seed: locked, exit shown); last-admin
   refusal; invite link shown once; permission matrix lists every catalog code exactly once; agent actor refused on a
   settings write. e2e: `screenContract` company (`both`, forbiddenRole accountant), users (`both`, forbiddenRole
   accountant), roles (`both`, forbiddenRole operator).
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(settings): company profile, users and roles`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(settings): company profile, users and roles`.
 
 ---
 
@@ -85,13 +85,13 @@ settingsDimensions → `settings.manage`), permissions (`ledger.posting.manage` 
   in document numbers. Engine: issuing a document whose posting lines hit an account with a `required` rule and no
   value → `doc.incomplete` "บัญชี <code> ต้องระบุ<มิติ>"; forbidden → refused likewise.
 
-- [ ] **Step 1: Failing tests** — class mismatch refused; default rule cannot be deleted; preview shows the winning
+- [x] **Step 1: Failing tests** — class mismatch refused; default rule cannot be deleted; preview shows the winning
   level; a required-dimension account blocks issue with the message and an exit (set the dimension on the header);
   a fifth dimension type refused. e2e: `screenContract` posting page (`both`, forbiddenRole operator), dimensions
   (`both`, forbiddenRole accountant); flow add an item-level Revenue rule for SV-02 → 4200 → TI preview shows the rule.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS**; invariants `[]`.
-- [ ] **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(settings): posting profiles, dimensions and expense categories`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS**; invariants `[]`.
+- [x] **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(settings): posting profiles, dimensions and expense categories`.
 
 ---
 
@@ -133,13 +133,13 @@ messages, `screens.ts`.
   two-line signature block without an authorised-signatory line), the employee 50 ทวิ (PY3) and the WT 50 ทวิ (TX4) —
   move them onto the shared header / signature block or snapshot them the same way.
 
-- [ ] **Step 1: Failing tests** — rate change creates a new effective row and the PV on a date before it keeps the old
+- [x] **Step 1: Failing tests** — rate change creates a new effective row and the PV on a date before it keeps the old
   rate; numbering format without `{MM}` on a monthly series refused; a change to an in-use series applies next period;
   approval rule change alters `submit` behaviour; template toggles change the paper model; an issued TI keeps the old
   logo / signature after a new upload while a new TI shows the new one; a draft prints no signature or stamp. e2e: `screenContract` for the
   four pages (`both`; forbiddenRole operator for tax, accountant for numbering / approvals / templates).
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(settings): tax settings, numbering series, approval policy and templates`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(settings): tax settings, numbering series, approval policy and templates`.
 
 ---
 

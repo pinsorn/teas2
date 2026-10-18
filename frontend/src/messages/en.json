@@ -1582,7 +1582,7 @@
         "showStamp": "Show the company stamp",
         "showSignature": "Show the signature lines and the issuer's signature",
         "labels": "Signer names",
-        "labelsHint": "Pick 1 to 4 lines, in the order picked. The issuer's signature sits on the {line} line",
+        "labelsHint": "Pick 1 to 4 lines, in the order picked. The issuer's signature sits on the {line} line; if you drop that line, no signature prints",
         "labelOf": "Signature line {label}",
         "save": "Save",
         "saved": "Saved",
