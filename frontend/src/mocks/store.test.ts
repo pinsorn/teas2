@@ -46,7 +46,7 @@ describe('mock store', () => {
     const old = { ...seed(), version: 5, items: [] as unknown[] };
     localStorage.setItem('teas2.mock.state.v5', JSON.stringify(old));
     const s = loadState();
-    expect(s.version).toBe(49);
+    expect(s.version).toBe(50);
     expect(s.items.some((i) => i.id === 'EXP-01')).toBe(true);
     expect(s.parties.some((p) => p.id === 'pv-12')).toBe(true);
   });

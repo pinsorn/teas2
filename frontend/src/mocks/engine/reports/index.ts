@@ -5,17 +5,25 @@ import type { MockState } from '../../store';
 import { today } from '../log';
 import { generalJournal } from '../journal';
 import { assetRegister } from './asset-register';
+import { balanceSheet } from './balance-sheet';
 import { bankReconciliation } from './bank-reconciliation';
+import { generalLedger } from './general-ledger';
 import { missingWhtCert } from './missing-wht-cert';
+import { profitLoss } from './profit-loss';
 import { taxSummary } from './tax-summary';
 import { trialBalance } from './trial-balance';
 import { vatInputRegister } from './vat-input-register';
 import { vatOutputRegister } from './vat-output-register';
 import { whtReceivable } from './wht-receivable';
 
+/** The screen's selects send a word for "no comparative" / "by class" (a select cannot be blank-labelled); the engine's own value for both is empty. */
+const plain = (v?: string) => (v === 'none' || v === 'class' ? '' : v);
 /** Report kinds the mock engine can compute so far (the rest answer 404 report.not_built until their RP task). */
 const BUILDERS: Partial<Record<ReportKind, (st: MockState, companyId: string, p: Record<string, string>, perms: string[]) => ReportModel>> = {
   'trial-balance': (st, c, p) => trialBalance(st, c, { ...p, asOf: p.asOf || today() }),
+  'profit-loss': (st, c, p) => profitLoss(st, c, { ...p, compare: plain(p.compare), format: plain(p.format), from: p.from || `${today().slice(0, 4)}-01-01`, to: p.to || today() }),
+  'balance-sheet': (st, c, p) => balanceSheet(st, c, { ...p, compare: plain(p.compare), format: plain(p.format), asOf: p.asOf || today() }),
+  'general-ledger': (st, c, p) => generalLedger(st, c, p),
   'general-journal': (st, c, p) => generalJournal(st, c, { from: p.from, to: p.to, account: p.account?.trim(), source: p.source }),
   'asset-register': (st, c, p) => assetRegister(st, c, { ...p, asOf: p.asOf || today() }),
   'bank-reconciliation': (st, c, p) => bankReconciliation(st, c, { account: p.account ?? '', to: p.to || today() }),
@@ -49,5 +57,5 @@ export function reportCsv(m: ReportModel, locale: Locale = 'th'): string {
   const label = m.columns.findIndex((c) => !c.kind || c.kind === 'text');
   const body = m.rows.map((r) => m.columns.map((c, i) => (!r.cells[c.key] && i === label && (r.kind === 'total' || r.kind === 'subtotal')
     ? cell(msg(locale, 'reports.total')) : cell(c.kind === 'status' ? statusText(r.chips, locale) : r.cells[c.key] ?? '', c.kind === 'money'))));
-  return `${BOM}${[m.columns.map((c) => cell(msg(locale, c.labelKey))), ...body].map((l) => l.join(',')).join('\r\n')}\r\n`;
+  return `${BOM}${[m.columns.map((c) => cell(c.label ?? msg(locale, c.labelKey))), ...body].map((l) => l.join(',')).join('\r\n')}\r\n`;
 }

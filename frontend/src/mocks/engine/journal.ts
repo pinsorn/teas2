@@ -249,9 +249,9 @@ export function jvInvariants(st: MockState): string[] {
 
 // ---------------------------------------------------------------- the general journal
 
-interface Source { type: string; label: string; href?: string; entries: JournalEntryPreview[] }
+export interface Source { type: string; label: string; href?: string; entries: JournalEntryPreview[] }
 /** Every journal entry of the company with where it came from: documents (incl. JV), the reconciliation's own journals and settlement records. */
-function sources(st: MockState, companyId: string): Source[] {
+export function sources(st: MockState, companyId: string): Source[] {
   const out: Source[] = [];
   const mine = new Map(st.docs.filter((d) => d.companyId === companyId).map((d) => [d.id, d]));
   for (const j of st.journals) {

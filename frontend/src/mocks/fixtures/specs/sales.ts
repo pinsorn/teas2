@@ -74,13 +74,13 @@ export const SALES_SPECS: SeedSpec[] = [
     lines: [line('iv-3', 1, 'ข้าวสารหอมมะลิ 5 กก.', '30', 'ถุง', '185.00', 'EX'), line('iv-3', 2, 'น้ำพริกเผา', '12', 'ขวด', '55.00', 'EX')] },
   { id: 'iv-4', type: 'IV', companyId: NV, date: '2026-10-05', partyId: 'nc-01', status: 'issued', header: due('2026-10-20'),
     lines: [line('iv-4', 1, 'บริการจัดเลี้ยงงานเลี้ยงรุ่น', '10', 'โต๊ะ', '300.00', 'EX')] },
-  { id: 'iv-p1', type: 'IV', companyId: NV, date: '2026-09-20', partyId: 'nc-02', status: 'issued', header: due('2026-10-05'), // 8,000.00, 3,000.00 received, overdue
+  { id: 'iv-p1', type: 'IV', companyId: NV, date: '2026-09-20', partyId: 'nc-02', status: 'issued', header: { ...due('2026-10-05'), dimensions: { project: 'P-A' } }, // 8,000.00, 3,000.00 received, overdue
     lines: [line('iv-p1', 1, 'ค่าอาหารกลางวันนักเรียน (ภาคเรียน)', '2', 'งวด', '4000.00', 'EX')] },
-  { id: 'iv-p2', type: 'IV', companyId: NV, date: '2026-09-22', partyId: 'nc-04', status: 'issued', header: due('2026-10-07'), // 6,000.00, 2,500.00 received, overdue
+  { id: 'iv-p2', type: 'IV', companyId: NV, date: '2026-09-22', partyId: 'nc-04', status: 'issued', header: { ...due('2026-10-07'), dimensions: { project: 'P-B' } }, // 6,000.00, 2,500.00 received, overdue
     lines: [line('iv-p2', 1, 'ค่าเช่าแผงตลาดประจำเดือน', '1', 'เดือน', '6000.00', 'EX')] },
   pay('rc-ivp1', 'nc-02', '2026-09-25', 'iv-p1', '3000.00'),
   pay('rc-ivp2', 'nc-04', '2026-09-28', 'iv-p2', '2500.00'),
-  { id: 'iv-s1', type: 'IV', companyId: NV, date: '2026-09-18', partyId: 'nc-05', status: 'issued', header: due('2026-10-03'),
+  { id: 'iv-s1', type: 'IV', companyId: NV, date: '2026-09-18', partyId: 'nc-05', status: 'issued', header: { ...due('2026-10-03'), dimensions: { project: 'P-A' } }, // RP1: three invoices carry a project, so the reports have dimension columns to show
     lines: [line('iv-s1', 1, 'เมล็ดกาแฟคั่ว 1 กก.', '5', 'ถุง', '400.00', 'EX')] },
   pay('rc-ivs1', 'nc-05', '2026-09-24', 'iv-s1', '2000.00'),
   { id: 'iv-s2', type: 'IV', companyId: NV, date: '2026-09-19', partyId: 'nc-02', status: 'issued', header: due('2026-10-04'),

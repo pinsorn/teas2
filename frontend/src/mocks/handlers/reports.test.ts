@@ -27,8 +27,24 @@ describe('GET /reports/:kind', () => {
     expect(f.status).toBe(403);
     expect((await f.json()).detail).toContain('report.read');
     setSettings({ role: 'accountant' });
-    expect((await get('/reports/profit-loss')).status).toBe(404);
+    expect((await get('/reports/ar-aging')).status).toBe(404);
     expect((await get('/reports/trial-balance?asOf=31-12-2099')).status).toBe(422);
+  });
+  it('RP1: the statements need report.read (operator 403), the GL needs its account (422), an account or party of another company is 404, CSV carries the dimension headers', async () => {
+    for (const p of ['/reports/profit-loss?from=2026-01-01&to=2026-12-31', '/reports/balance-sheet?asOf=2026-06-30', '/reports/general-ledger?account=1130']) {
+      expect((await get(p)).status, p).toBe(200);
+      setSettings({ role: 'operator' });
+      expect((await get(p)).status, p).toBe(403);
+      setSettings({ role: 'accountant' });
+    }
+    expect((await get('/reports/general-ledger')).status).toBe(422);
+    expect((await get('/reports/general-ledger?account=9999')).status).toBe(404);
+    expect((await get('/reports/general-ledger?account=1130&party=nc-01')).status).toBe(404); // the other company's customer
+    expect((await get('/reports/profit-loss?from=2026-01-01&to=2026-12-31&compare=none&format=class')).status).toBe(200); // the screen's words for "none" / "by class"
+    expect((await get('/reports/profit-loss?from=2026-12-31&to=2026-01-01')).status).toBe(422);
+    setSettings({ companyKey: 'nonvat' });
+    const csv = await (await get('/reports/profit-loss/export?from=2026-01-01&to=2026-12-31&groupBy=project')).text();
+    expect(csv.split(String.fromCharCode(13, 10))[0]).toBe('รหัสบัญชี,ชื่อบัญชี,P-A,P-B,ไม่ระบุ,รวม');
   });
   it('the toolbar "empty" state is a successful report with no rows', async () => {
     setSettings({ screenState: 'empty' });

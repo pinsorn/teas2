@@ -48,3 +48,4 @@
 | 2026-10-18 | SP1c PY3b fix (SSO wage base ceiling, v49, fp required) | sonnet-implementer (warm, PY3 worker) | Opus round 2 REJECT on one major; warm re-review after |
 | 2026-10-18 | SP1c GPY consolidated gate (typecheck, lint, unit, build, Playwright --workers=1) | haiku-gate-runner | Tier 3 run-and-report |
 | 2026-10-18 | SP1c CI1: CI-only e2e reds (screens walk ERR_ABORTED/timeout, ti-loop F4 axe contrast) | sonnet-implementer (fresh) | blocks PR #14 merge; different area from payroll worker |
+| 2026-10-18 | SP1c RP1 implement (P&L, balance sheet, GL, dimension columns, comparatives) | sonnet-implementer (fresh) | default implementer; Opus review after (financial statements) |

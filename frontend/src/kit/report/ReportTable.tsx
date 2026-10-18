@@ -27,7 +27,7 @@ export function ReportTable({ title, columns, rows }: { title: string; columns: 
     <Table aria-label={title}>
       <TableHeader>
         <TableRow>
-          {columns.map((c) => <TableHead key={c.key} className={cn(c.align === 'end' && 'text-end')}>{t(c.labelKey as never)}</TableHead>)}
+          {columns.map((c) => <TableHead key={c.key} className={cn(c.align === 'end' && 'text-end')}>{c.label ?? t(c.labelKey as never)}</TableHead>)}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -37,7 +37,7 @@ export function ReportTable({ title, columns, rows }: { title: string; columns: 
               const text = !r.cells[c.key] && ci === labelCol && (r.kind === 'total' || r.kind === 'subtotal') ? t('reports.total') : show(c, r.cells[c.key] ?? '');
               return (
                 <TableCell key={c.key} className={cn(c.align === 'end' && 'text-end tabular-nums', ci === 0 && INDENT[r.level])}>
-                  {c.kind === 'status' ? <Chips chips={r.chips ?? []} /> : r.href && ci === 0 ? <Link href={r.href} className="text-primary underline underline-offset-2">{text}</Link> : text}
+                  {c.kind === 'status' ? <Chips chips={r.chips ?? []} /> : (r.links?.[c.key] ?? (ci === 0 ? r.href : undefined)) && text ? <Link href={(r.links?.[c.key] ?? r.href)!} className="text-primary underline underline-offset-2">{text}</Link> : text}
                 </TableCell>
               );
             })}
