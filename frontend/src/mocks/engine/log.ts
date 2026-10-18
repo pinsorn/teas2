@@ -24,10 +24,6 @@ export function withFixedClock<T>(iso: string, fn: () => T): T {
 export function logActivity(st: MockState, docId: string, actor: Actor, action: string, detail?: string): void {
   const n = st.activity.filter((a) => a.docId === docId).length + 1;
   st.activity.push({ docId, id: `act-${docId}-${n}`, at: stamp(), actor, action, ...(detail ? { detail } : {}) });
-  if (action === 'issue' || action === 'revise') { // ST4 (I3): every path that issues or revises a document passes here, and the seller + the pictures are taken at that moment
-    const d = st.docs.find((x) => x.id === docId);
-    if (d) stampIssue(st, d, actor);
-  }
 }
 
 /** The one place an audit entry is written. RP3: the mock has one caller address and a deterministic trace id (the entry count), so the seed is stable; an agent's calls arrive over MCP, everything else from the web app. The trail is append-only: ids are unique and count up (invariant). Time is a fact about the event and is never adjusted. */
