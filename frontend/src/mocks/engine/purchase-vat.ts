@@ -1,12 +1,13 @@
 import { inputVatExpired } from '@/domain/claim-window';
 import type { FilingForm } from '@/domain/filings';
 import { isValidTin } from '@/domain/tin';
-import type { DocHeader, DocLine, DocType, VendorInvoice } from '@/domain/types';
+import type { Allocation, DocHeader, DocLine, DocType, VendorInvoice } from '@/domain/types';
 import { type ExpenseCategory } from '../fixtures/expense-categories';
 import { categoriesOf } from './posting';
 import type { MockState } from '../store';
 import { MockError } from './log';
 import { RATE_BP, vatOf } from './vat';
+import { whtInactiveProblem } from './wht';
 
 /** Input VAT rules of the vendor documents (PB, and the notes PCN / PDN that adjust one). [SP-R] - the statute references are the cited sections of the Revenue Code. */
 export const isVendorBill = (t: DocType): boolean => t === 'PB' || t === 'PCN' || t === 'PDN';
@@ -122,7 +123,9 @@ export function issueVendorStatus(st: MockState, companyId: string, type: DocTyp
 /** Every command-time input VAT rule of a PB / PCN / PDN, first violation wins (undefined = fine): the vendor can only charge VAT when registered (ม.82/5, judged on the status recorded
  *  with the document, else the party master now), the category exists, the vendor invoice is not dated after the bill, the claim period is inside D .. V+6 (R1-I1; an expired window is not
  *  refused, the VAT is forfeited) - and a PCN has none (I2). Judged on the TAX CODE, not on the computed VAT, so a zero-priced line cannot slip through. */
-export function purchaseProblem(st: MockState, companyId: string, type: DocType, body: { header: DocHeader; lines: DocLine[] }, before?: { lines: DocLine[] }): MockError | undefined {
+export function purchaseProblem(st: MockState, companyId: string, type: DocType, body: { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] }, before?: { lines: DocLine[]; allocations?: Allocation[] }): MockError | undefined {
+  const inactive = whtInactiveProblem(st, companyId, body, before); // ST3: a deactivated WHT type is refused where it is introduced, on any document
+  if (inactive) return inactive;
   if (type === 'EX') return expenseClaimProblem(st, companyId, body);
   if (!isVendorBill(type)) return undefined;
   const h = body.header;

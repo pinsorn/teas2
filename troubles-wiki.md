@@ -213,3 +213,9 @@ Entry format — terse, greppable by symptom:
 - **Root cause:** not a race: one test navigates every index card (~180 gotos); the slow runner needs more than its 120s budget, and the timeout aborts whichever goto is in flight.
 - **Fix:** the walk is split into chunks of 15 cards (one generated test per chunk, from `SCREENS`), so each stays well under its own timeout however large the index grows.
 - **Seen:** 2026-10-18, SP1c group 07 CI
+
+## Vitest: "Class extends value undefined is not a constructor" in engine/company.ts after numbering.ts gained an import
+- **Symptom:** many suites (store, payroll, periods, ...) fail at import with `TypeError: Class extends value undefined` at `company.ts` (`class FieldErrors extends MockError`), stack through `numbering.ts` and `fixtures/documents.ts`.
+- **Root cause:** import cycle `fixtures/documents.ts -> engine/numbering.ts -> engine/company.ts -> engine/log.ts -> fixtures/documents.ts` (log.ts reads `ANCHOR` from documents.ts). When log.ts is the entry, company.ts evaluates `extends MockError` before log.ts has defined it. `numbering.ts` is imported by the seed fixtures, so it may import `log.ts` (cycle is harmless: only used inside functions) but never `company.ts` or anything that extends a class at module load.
+- **Fix:** numbering.ts keeps its own two-line agent refusal instead of importing `refuseAgent` from company.ts.
+- **Seen:** 2026-10-19, SP1c ST3

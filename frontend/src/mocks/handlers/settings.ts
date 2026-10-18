@@ -1,7 +1,10 @@
 import { HttpResponse, http } from 'msw';
 import type { Actor } from '@/domain/types';
 import { FieldErrors, companySettings, refuseAgent, updateCompany, type CompanySection } from '../engine/company';
-import { MockError } from '../engine/log';
+import { approvalsView, setSelfApproval, setTolerance, updateApprovalRule } from '../engine/approval';
+import { MockError, changeTaxRate, today } from '../engine/log';
+import { listNumbering, previewNumbering, updateNumbering } from '../engine/numbering';
+import { requestVatChange, setWhtActive, taxSettings } from '../engine/wht';
 import { AGENT, USER } from '../fixtures/documents';
 import { createRole, deleteRole, listRoles, updateRole } from '../records/roles';
 import { createDimensionType, createDimensionValue, deleteDimensionType, deleteDimensionValue, dimensionsView, listAccountRules, setAccountRules, updateDimensionType, updateDimensionValue } from '../records/dimensions';
@@ -25,7 +28,7 @@ const bodyOf = async (req: Request): Promise<Record<string, unknown>> => {
 };
 
 /** Gate order: screen state, permission, then the command; a MockError becomes problem+json (a FieldErrors carries `fieldErrors`). A write is persisted only when it succeeded. */
-async function guarded(kind: 'list' | 'item', perm: 'settings.manage' | 'users.manage' | 'ledger.posting.manage' | null, run: (c: ReturnType<typeof ctx>) => Response | Promise<Response>) {
+async function guarded(kind: 'list' | 'item', perm: 'settings.manage' | 'users.manage' | 'ledger.posting.manage' | 'tax.settings.manage' | null, run: (c: ReturnType<typeof ctx>) => Response | Promise<Response>) {
   const gate = await screenGate(kind);
   if (gate) return gate;
   try {
@@ -42,6 +45,30 @@ const write = (c: ReturnType<typeof ctx>, value: object, status = 200) => { pers
 const own = (c: ReturnType<typeof ctx>, id: unknown) => { if (id !== c.company.id) throw new MockError(404, 'company.not_found', 'ไม่พบบริษัท'); };
 
 export const settingsHandlers = [
+  // ---- ST3 tax (tax.settings.manage: accountant + admin). A rate change is the RP3 dated-rate command: one path, never an edit of a row. ----
+  http.get('*/bff/v1/settings/tax', () => guarded('item', 'tax.settings.manage', (c) => HttpResponse.json(taxSettings(c.st, c.company.id)))),
+  http.post('*/bff/v1/settings/tax/wht-types/:code/rate', ({ request, params }) => guarded('item', 'tax.settings.manage', async (c) => {
+    const actor = actorOf(request), b = await bodyOf(request), code = String(params.code);
+    if (typeof b.version !== 'number' || typeof b.rateBp !== 'number') throw new MockError(422, 'record.invalid', 'ต้องระบุอัตราและเวอร์ชันของประเภทภาษี');
+    if (b.effectiveFrom !== undefined && (typeof b.effectiveFrom !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(b.effectiveFrom))) throw new MockError(422, 'record.invalid', 'วันที่มีผลไม่ถูกต้อง');
+    changeTaxRate(c.st, actor, c.company.id, code, b.rateBp, (b.effectiveFrom as string | undefined) ?? today(), b.version);
+    return write(c, taxSettings(c.st, c.company.id).whtTypes.find((t) => t.code === code)!);
+  })),
+  http.post('*/bff/v1/settings/tax/wht-types/:code/active', ({ request, params }) => guarded('item', 'tax.settings.manage', async (c) => { const a = actorOf(request); return write(c, setWhtActive(c.st, a, c.company.id, String(params.code), await bodyOf(request))); })),
+  http.post('*/bff/v1/settings/tax/vat-request', ({ request }) => guarded('item', 'tax.settings.manage', async (c) => { const a = actorOf(request); return write(c, requestVatChange(c.st, a, c.company.id, await bodyOf(request)), 201); })),
+
+  // ---- ST3 numbering and approvals (settings.manage). The preview is the server's own formatting (nothing is saved). ----
+  http.get('*/bff/v1/settings/numbering', () => guarded('list', 'settings.manage', (c) => HttpResponse.json({ items: listNumbering(c.st, c.company.id) }))),
+  http.post('*/bff/v1/settings/numbering/preview', ({ request }) => guarded('item', 'settings.manage', async (c) => { const b = await bodyOf(request); return HttpResponse.json(previewNumbering(c.st, c.company.id, String(b.docType), b)); })),
+  http.put('*/bff/v1/settings/numbering/:type', ({ request, params }) => guarded('item', 'settings.manage', async (c) => {
+    const a = actorOf(request), r = updateNumbering(c.st, a, c.company.id, String(params.type), await bodyOf(request));
+    return write(c, { ...r.row, ...(r.notice ? { notice: r.notice } : {}) });
+  })),
+  http.get('*/bff/v1/settings/approvals', () => guarded('list', 'settings.manage', (c) => HttpResponse.json(approvalsView(c.st, c.company.id)))),
+  http.put('*/bff/v1/settings/approvals/self-approval', ({ request }) => guarded('item', 'settings.manage', async (c) => { const a = actorOf(request); return write(c, setSelfApproval(c.st, a, c.company.id, await bodyOf(request))); })),
+  http.put('*/bff/v1/settings/approvals/tolerance', ({ request }) => guarded('item', 'settings.manage', async (c) => { const a = actorOf(request); return write(c, setTolerance(c.st, a, c.company.id, await bodyOf(request))); })),
+  http.put('*/bff/v1/settings/approvals/:type', ({ request, params }) => guarded('item', 'settings.manage', async (c) => { const a = actorOf(request); return write(c, updateApprovalRule(c.st, a, c.company.id, String(params.type), await bodyOf(request))); })),
+
   // ---- company (settings.manage) ----
   http.get('*/bff/v1/settings/companies/:id', ({ params }) => guarded('item', 'settings.manage', (c) => { own(c, params.id); return HttpResponse.json(companySettings(c.st, c.company.id)); })),
   http.put('*/bff/v1/settings/companies/:id/:section', ({ request, params }) => guarded('item', 'settings.manage', async (c) => {

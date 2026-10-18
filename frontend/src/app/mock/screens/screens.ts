@@ -231,5 +231,8 @@ export const SCREENS: Screen[] = [
   { name: 'settingsRoles', route: '/settings/roles?role=admin', company: 'both', states: true },
   { name: 'settingsPosting', route: '/settings/posting?role=accountant', company: 'both', states: true }, // ST2: the accountant's (ledger.posting.manage); the operator is forbidden
   { name: 'settingsDimensions', route: '/settings/dimensions?role=admin', company: 'both', states: true }, // ST2: settings.manage; the accountant is forbidden
+  { name: 'settingsTax', route: '/settings/tax?role=accountant', company: 'both', states: true }, // ST3: tax.settings.manage (accountant + admin); the operator is forbidden
+  { name: 'settingsNumbering', route: '/settings/numbering?role=admin', company: 'both', states: true }, // ST3: settings.manage; the accountant is forbidden
+  { name: 'settingsApprovals', route: '/settings/approvals?role=admin', company: 'both', states: true },
   { name: 'styleGuide', route: '/style-guide', company: 'both', states: false },
 ];

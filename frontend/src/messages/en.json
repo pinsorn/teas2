@@ -1523,6 +1523,55 @@
         "rule": { "optional": "Optional", "required": "Required", "forbidden": "Forbidden" }
       }
     },
+    "tax": {
+      "title": "Tax",
+      "lead": "The VAT status and rate are system rules that administrators do not set. A withholding rate changes by adding a new dated rate; the old rate is never edited.",
+      "vat": {
+        "title": "Value added tax (VAT)", "lead": "View only. A registration change is a request with an effective date.",
+        "status": "Status", "registered": "Registered for VAT", "notRegistered": "Not registered for VAT", "rate": "Standard rate", "source": "Source",
+        "requests": "VAT status change requests", "pending": "Pending", "requestRegister": "Request to register for VAT from {date}", "requestDeregister": "Request to deregister from VAT from {date}", "by": "requested by {name}",
+        "dateRegister": "Register for VAT from", "dateDeregister": "Deregister from VAT from", "requestRegisterButton": "Request VAT registration", "requestDeregisterButton": "Request VAT deregistration",
+        "failed": "Could not send the request. Try again.", "requestNote": "A request does not change the company's status in the system until status changes are enabled."
+      },
+      "wht": {
+        "title": "Withholding tax types", "lead": "Changing a rate adds a new row effective from the date given. Documents dated before it keep the old rate.",
+        "col": { "code": "Code", "name": "Name", "income": "Income type", "rate": "Current rate", "status": "Status", "actions": "Actions" },
+        "active": "Active", "inactive": "Inactive", "change": "Change rate", "changeOf": "Change the rate of {name}", "history": "Rate history", "historyButtonOf": "Rate history of {name}", "historyOf": "Rate history of {name}",
+        "deactivate": "Deactivate", "activate": "Activate", "deactivateOf": "Deactivate {name}", "activateOf": "Activate {name}",
+        "freeze": "An inactive type is not offered for new lines. Documents that already carry it keep working.",
+        "failed": "Could not save. Try again.", "from": "Effective from", "rate": "Rate",
+        "form": { "title": "Change the rate of {name}", "current": "Current rate {rate} (the old row is not edited; a new row is added)", "newRate": "New rate (%)", "from": "Effective from", "fromHint": "Leave empty for today", "rateInvalid": "Enter the rate as a number from 0 to 100" }
+      },
+      "codes": { "title": "Tax codes", "lead": "View only.", "col": { "code": "Code", "name": "Name", "rate": "Rate" } }
+    },
+    "numbering": {
+      "title": "Document numbers",
+      "lead": "Set the prefix, counting scope (monthly or yearly), branch and format of the numbers of each document type.",
+      "table": "Number formats by document type",
+      "col": { "type": "Document type", "prefix": "Prefix", "scope": "Counting", "format": "Format", "next": "Next number", "actions": "Actions" },
+      "scope": { "monthly": "Monthly", "yearly": "Yearly" },
+      "edit": "Edit", "editOf": "Edit the number format of {name}",
+      "frozen": "A format is frozen per period: the first number of a period keeps the format in force, so a change applies from the next period that has no numbers yet. Numbers already issued never change.",
+      "preview": { "label": "First number under this format", "failed": "No preview", "fromNext": "Starts with period {period} (the current period already has numbers)", "fromNow": "Starts with period {period}", "wait": "Building the preview" },
+      "form": {
+        "title": "Number format of {name}", "prefix": "Prefix", "scope": "Counting", "monthly": "Monthly (restarts every month)", "yearly": "Yearly (restarts every year)", "branch": "Branch (optional)", "format": "Format",
+        "tokens": "Available tokens: {list}", "ruleMonthly": "Monthly needs {mm}, a year ({yyyy} or {yy}) and the counter {counter}", "ruleYearly": "Yearly needs a year ({yyyy} or {yy}), no {mm} and the counter {counter}"
+      }
+    },
+    "approvals": {
+      "title": "Approvals",
+      "lead": "Set which document types need approval before they are issued, with one threshold per type. A change applies to documents submitted or issued from now on; a document already submitted or issued keeps the policy it was under.",
+      "rules": {
+        "title": "Approval policy", "lead": "Approval is needed when the total is above the threshold. Leave it empty for every amount.",
+        "col": { "type": "Document type", "enabled": "Needs approval", "min": "Threshold (THB)", "actions": "Actions" },
+        "enabledOf": "{name} needs approval", "minOf": "Threshold of {name}", "minPlaceholder": "Every amount", "minHint": "Approval needed above this amount", "saveOf": "Save {name}", "save": "Save", "saved": "Saved", "failed": "Could not save. Try again."
+      },
+      "self": { "title": "Approving your own document", "lead": "Applies to every document type of the company.", "label": "The creator may approve their own document", "save": "Save", "saved": "Saved", "failed": "Could not save. Try again." },
+      "tolerance": {
+        "title": "Settlement difference tolerance", "lead": "The largest difference a settlement or small write-off may absorb (THB, including bank fees).", "rounding": "Rounding (THB)", "smallWriteOff": "Small write-off (THB)",
+        "save": "Save", "saved": "Saved", "failed": "Could not save. Try again.", "frozen": "A settlement keeps the tolerance in force when it was made. A change applies to new settlements only."
+      }
+    },
     "common": {
       "save": "Save",
       "saving": "Saving",
@@ -1864,6 +1913,7 @@
     "report_arap_read": "Read receivables, payables and sales / purchase summaries",
     "tax_read": "View tax filings and VAT registers",
     "tax_filing_preview": "Preview tax filings",
-    "tax_filing_finalize": "Finalize tax filings"
+    "tax_filing_finalize": "Finalize tax filings",
+    "tax_settings_manage": "Manage tax settings (withholding rates)"
   }
 }

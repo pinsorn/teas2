@@ -188,7 +188,8 @@ export function postSettlement(st: MockState, companyId: string, req: SettleRequ
     ...(diff ? { difference: { role: diff.role, amount: fromSatang(diff.amount) } } : {}), status: 'posted', journal: [entry],
     ...(typeof req.reason === 'string' && req.reason.trim() ? { reason: req.reason.trim() } : {}), createdBy: actor, postedAt: entry.postedAt!,
   };
-  st.settlements.push(rec);
+  const tol = st.settlementTolerance.find((x) => x.companyId === companyId);
+  st.settlements.push({ ...rec, tolerance: { rounding: tol?.rounding ?? '0.00', smallWriteOff: tol?.smallWriteOff ?? '0.00' } }); // FN3 M-4: the tolerance in force now stays with the settlement
   for (const l of [...src.legs, ...tgt.legs]) st.links.push({ companyId, from: id, to: l.docId, kind: 'settles', amount: l.amount, active: true });
   touch(st, [...src.legs, ...tgt.legs]);
   for (const l of [...src.legs, ...tgt.legs]) logActivity(st, l.docId, actor, 'settlement', `${settlementLabel(id)} · ${l.amount}`);

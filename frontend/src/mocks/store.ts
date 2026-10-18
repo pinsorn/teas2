@@ -14,6 +14,9 @@ import type { DimTypeRow, DimValueRow, ExpenseCategoryRow, PostingRule } from '.
 import type { BankAccount } from './fixtures/bank-accounts';
 import type { CompanyAccount } from './fixtures/coa';
 import type { CompanyWhtType } from './fixtures/wht-types';
+import type { NumberingConfig } from './engine/numbering';
+import type { ApprovalSnapshot } from './engine/approval';
+import type { VatRequest } from './engine/wht';
 import { SEED_SPECS, seedAudit } from './fixtures';
 import { seedAssets } from './fixtures/specs/assets';
 import { seedSchedules } from './fixtures/specs/schedules';
@@ -24,7 +27,7 @@ import { getSettings } from './settings';
 import { seedBankStatements } from './fixtures/statements';
 
 export interface MockState {
-  version: 59;
+  version: 60;
   companies: Company[];
   /** ST1: the people of each company (memberships with a name, role, position, signature) and its custom roles; the three system roles are code (mocks/permissions.ts). */
   staff: StaffMember[];
@@ -34,7 +37,8 @@ export interface MockState {
   parties: (PartySummary & { companyId: string; active?: boolean; version?: number })[];
   /** `version` (default 1) is the master record's. */
   items: (ItemSummary & { companyId: string; version?: number })[];
-  docs: (Doc & { companyId: string })[];
+  /** ST3: `policy` = the approval policy that applied when the document was submitted / issued (frozen; absent = a draft or an engine-made document, judged by the live policy). */
+  docs: (Doc & { companyId: string; policy?: ApprovalSnapshot })[];
   links: (ChainEdge & { companyId: string })[];
   activity: (ActivityEntry & { docId: string })[];
   revisions: (Revision & { docId: string })[];
@@ -51,7 +55,8 @@ export interface MockState {
   /** FN2: journals the reconciliation wrote (fee / rounding difference, inline journal, seeded opening balance); no document behind them. */
   bankJournals: BankJournal[];
   /** FN3: settlement records (deposits / prepayments applied, netting, write-offs; D-13). Each carries its own journal and its frozen legs; its links are `settles` links whose `from` is the record id. */
-  settlements: SettlementRecord[];
+  /** ST3 (FN3 M-4): `tolerance` = the company's tolerance when the settlement was made (frozen; absent = judged by the live one). */
+  settlements: (SettlementRecord & { tolerance?: { rounding: Money; smallWriteOff: Money } })[];
   /** AC4: recurring templates and prepaid / deferred amortisation schedules (frozen at creation; a run posts a system JV or makes a draft). */
   schedules: ScheduleRecord[];
   /** AC6: the year-end closing entries (one live per company-year; a reopen keeps the record and reverses its entry). Each carries its own journal and its frozen lines. */
@@ -63,16 +68,18 @@ export interface MockState {
   /** TX3a: the corporate income tax year data per company and fiscal year (paid-up capital, prior losses, user adjustments, the ภ.ง.ด.51 estimate). */
   citYears: (CitYearData & { companyId: string })[];
   /** FN3: per company, the largest difference a settlement may absorb: satang rounding, and a small write-off (also the bank fee) [SP-R]. */
-  settlementTolerance: { companyId: string; rounding: Money; smallWriteOff: Money }[];
+  settlementTolerance: { companyId: string; rounding: Money; smallWriteOff: Money; version?: number }[];
   /** [SP-R] mock WHT types per company (fixtures/wht-types.ts). */
   whtTypes: CompanyWhtType[];
+  /** ST3: per company and document type the numbering config (absent = the default `{PREFIX}-{YYYY}{MM}-{####}`, monthly); `seriesFormats` = the format stored on a series key by its first number (absent = the default); `vatRequests` = dated, pending requests to change VAT registration (the mock never flips the flag). */
+  numbering?: NumberingConfig[]; seriesFormats?: Record<string, string>; vatRequests?: VatRequest[];
   audit: AuditEntry[];
   /** Attachment METADATA only. The bytes live under their own localStorage key `teas2.mock.att.<id>` (engine/attachments.ts): they must never be part of this blob, whose save swallows quota errors. */
   attachments: (Omit<Attachment, 'dataUrl'> & { companyId: string })[];
   /** Print log of issued documents; `printCount` on a read is derived from it. `copy` = printed as สำเนา. */
   prints: { docId: string; at: string; by: string; copy: boolean; /** WT only: the paper as printed the first time (I7); every later print shows this. */ paper?: PaperModel }[];
   /** Approval rules per company and document type (§7.6, fixtures/approval-policy.ts; ST3 edits them). */
-  approvalPolicies: ApprovalPolicy[];
+  approvalPolicies: (ApprovalPolicy & { version?: number })[];
   series: Record<string, number>;
   /** `companyId|type|Idempotency-Key` -> draft id. */
   idempotency?: Record<string, string>;
@@ -110,7 +117,7 @@ export const seed = (): MockState => buildSeedState(getSettings().role);
 export function loadState(): MockState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 59) return s; }
+    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 60) return s; }
   } catch { /* fall through to a fresh seed */ }
   return seed();
 }

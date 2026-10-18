@@ -3,7 +3,7 @@ import type {
 } from '@/domain/types';
 import { ADJUSTS, CLASS, CONVERSIONS, DOC_TYPES, GROUPS, LIVE, SETTLES, carriesBalance, isTypeAvailable } from '@/domain/doc-types';
 import type { MockState } from '../store';
-import { approvalRequired, refuseSelfApproval, refuseUnapprovedIssue, reviseNeedsApproval, submit } from './approval';
+import { approvalRequired, policySnapshot, refuseSelfApproval, refuseUnapprovedIssue, reviseNeedsApproval, submit } from './approval';
 import { dropAttachmentsOf } from './attachments';
 import { consumed, fmtQ, q4 } from './chain';
 import { ledgerFor, reversalOf } from './ledger';
@@ -12,7 +12,8 @@ import { afterRevision, refuseClosed, refuseRejected, withAcceptedStamp } from '
 import { MockError, diffBody, isPinned, logActivity, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
 import { adjustSnapshot, hasSnapshot, isNote, noteHeader, noteMissing, noteProblem, withNoteVat } from './notes';
-import { SeriesAllocator } from './numbering';
+import { allocateNumber } from './numbering';
+import { whtInactiveProblem } from './wht';
 import { freezePayroll, obPayrollProblem, payrollMissing, payrollProblem, prCalc, prSlips, prTotals, refuseLaterRun, slipLine, totalsOfSlips } from './payroll';
 import { refuseObLocked, refuseReconciled, refuseSettled } from './locks';
 import { refuseScheduleNote, refuseScheduleSource } from './schedules';
@@ -116,12 +117,7 @@ export const newId = (st: MockState, type: DocType) => {
   while (st.docs.some((d) => d.id === `doc-${type.toLowerCase()}-${n}`)) n++;
   return `doc-${type.toLowerCase()}-${n}`;
 };
-export const allocate = (st: MockState, companyId: string, type: DocType, date: IsoDate) => {
-  const a = new SeriesAllocator(st.series);
-  const n = a.next(companyId, type, date);
-  st.series = a.toJSON();
-  return n;
-};
+export const allocate = allocateNumber;
 export const setJournal = (st: MockState, docId: string, preview: JournalPreview) => {
   const j = st.journals.find((x) => x.docId === docId);
   if (j) j.preview = preview; else if (preview.entries.length) st.journals.push({ docId, preview });
@@ -459,7 +455,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   const totals = totalsOf(st, d.companyId, d.type, body);
   refuseDimensions(st, d.companyId, { ...d, header: body.header, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), totals }); // ST2: the company's own tags and the account rules (required / forbidden), judged BEFORE the number is taken: a refusal writes nothing
   const next: Stored = {
-    ...d, header: body.header, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), ...(body.opening ? { opening: body.opening } : {}), ...(body.payroll ? { payroll: body.payroll } : {}), number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', totals, party: partyOf(st, d.companyId, d.header.partyId),
+    ...d, header: body.header, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), ...(body.opening ? { opening: body.opening } : {}), ...(body.payroll ? { payroll: body.payroll } : {}), number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', policy: d.policy ?? policySnapshot(st, d.companyId, d.type), totals, party: partyOf(st, d.companyId, d.header.partyId),
     version: d.version + 1, issuedAt: stamp(), ...(hasOut(d.type) ? { outstanding: totals.total } : {}),
     ...(opts?.approver ? { approval: { submittedBy: d.approval?.submittedBy ?? actor, submittedAt: d.approval?.submittedAt ?? stamp(), approvedBy: opts.approver, approvedAt: stamp(), amount: payoutOf(st, d.companyId, { ...d, ...body, totals }) } } : {}),
   };
@@ -583,6 +579,8 @@ function refuseFrozenByNotes(st: MockState, d: Stored, body: Body): void {
 /** Everything that makes a revision of a PB / PCN / PDN unacceptable, judged before anything is written (also for the correction plan, which must not offer what would fail).
  *  A note keeps the bill it adjusts; its lines, cap and VAT are judged as at issue, the note itself not counting among its predecessors. */
 export function refuseUnrevisablePurchase(st: MockState, d: Stored, body: Body): void {
+  const wp = whtInactiveProblem(st, d.companyId, body, d); // ST3: a deactivated WHT type is not introduced by a revise (the lines it already carries stay)
+  if (wp) throw wp;
   if (ADJUSTS[d.type] === 'PB') {
     if (body.header.refDocId !== d.header.refDocId) throw new MockError(422, 'note.ref_locked', 'เปลี่ยนบันทึกซื้อที่อ้างอิงไม่ได้ ให้ยกเลิกเอกสารนี้แล้วบันทึกใหม่');
     const np = noteProblem(st, d.companyId, d.type, body, d.id);
@@ -685,13 +683,13 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   const reapprove = reviseNeedsApproval(st, d, payout, fin.allocations); // C1: more money than was approved needs an approver in the same command
   if (reapprove) {
     if (!opts?.approver) throw approvalOnRevise();
-    refuseSelfApproval(st, { ...d, moneyBy: actor }, opts.approver); // the person making this change is now the one who set the money
+    refuseSelfApproval(st, { ...d, policy: undefined, moneyBy: actor }, opts.approver); // ST3: a re-approval of more money is a NEW approval act: the live self-approval setting applies to it (and is frozen on the document below) // the person making this change is now the one who set the money
   }
   const next: Stored = {
     ...rest, header: fin.header, lines: fin.lines, totals, party: fin.header.partyId === d.header.partyId && filingLock(st, d) ? d.party : partyOf(st, d.companyId, fin.header.partyId), // M4: a filed document keeps the party as filed
     revision: d.revision + 1, version: d.version + 1, ...(fin.allocations ? { allocations: fin.allocations } : {}), ...(fin.whtFrozen ? { whtFrozen: fin.whtFrozen } : {}), ...(fin.opening ? { opening: fin.opening } : {}), ...(fin.payroll ? { payroll: fin.payroll } : {}),
     ...(moneyChanged(d, totals.total, fin) ? { moneyBy: actor } : {}),
-    ...(reapprove ? { approval: { submittedBy: actor, submittedAt: stamp(), approvedBy: opts!.approver, approvedAt: stamp(), amount: payout } } : {}),
+    ...(reapprove ? { approval: { submittedBy: actor, submittedAt: stamp(), approvedBy: opts!.approver, approvedAt: stamp(), amount: payout }, policy: policySnapshot(st, d.companyId, d.type) } : {}),
   };
   const marks = afterRevision(d); // a quotation's customer answer is void once it is revised
   if (marks) next.marks = marks; else delete next.marks;
@@ -761,7 +759,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   refuseDimensions(st, old.companyId, { ...old, header: body.header, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), totals }, old); // ST2: as the plan judged it, before the new number is taken
   const at = stamp();
   const created: Stored = {
-    companyId: old.companyId, id: newId(st, old.type), type: old.type, number: allocate(st, old.companyId, old.type, body.header.documentDate),
+    companyId: old.companyId, id: newId(st, old.type), type: old.type, number: allocate(st, old.companyId, old.type, body.header.documentDate), policy: policySnapshot(st, old.companyId, old.type),
     status: 'issued', correctionClass: old.correctionClass, revision: 0, version: 1, header: body.header,
     party: partyOf(st, old.companyId, body.header.partyId), lines: body.lines, totals, locks: [], createdBy: actor, issuedAt: at, replacesId: old.id,
     ...(hasOut(old.type) ? { outstanding: totals.total } : {}), ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}),

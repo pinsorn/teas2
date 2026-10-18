@@ -3,7 +3,7 @@ import type { ReportModel, ReportRow } from '@/domain/reports';
 import type { DocType } from '@/domain/types';
 import type { MockState } from '../../store';
 import { numbersBySeries, seriesKeys } from '../invariants';
-import { formatDocNumber } from '../numbering';
+import { formatByTemplate, periodOfKey, templateOfKey } from '../numbering';
 
 export interface GapParams { year?: string; month?: string; type?: string; onlyProblems?: string }
 
@@ -11,18 +11,18 @@ export interface GapParams { year?: string; month?: string; type?: string; onlyP
  *  Per series, against the counter: a GAP is a number in 1..max(counter, highest used) that sits on no document; a DUPLICATE is one number on two or more documents (all named); a counter BEHIND is lower than the highest number used.
  *  A cancelled or replaced document keeps its number: it is listed with its reason / the document that replaced it and is never a gap. The parsing is the numbering invariant's own (`numbersBySeries`). */
 export function numberGaps(st: MockState, companyId: string, p: GapParams = {}): ReportModel {
-  const { groups, malformed } = numbersBySeries(st.docs.filter((d) => d.companyId === companyId), st.revisions);
+  const { groups, malformed } = numbersBySeries(st, st.docs.filter((d) => d.companyId === companyId));
   const type = p.type?.trim().toUpperCase(), month = p.month?.trim() ? String(Number(p.month)).padStart(2, '0') : '', year = p.year?.trim();
   const keys = seriesKeys(st, groups, companyId)
-    .map((k) => ({ k, type: k.split('|')[1] as DocType, month: k.split('|')[2] }))
-    .filter((s) => (!type || s.type === type) && (!year || s.month.startsWith(`${year}-`)) && (!month || s.month.endsWith(`-${month}`)))
+    .map((k) => ({ k, type: k.split('|')[1] as DocType, month: periodOfKey(k) })) // the period is a month (yyyy-mm) or, for a yearly series, a year (yyyy)
+    .filter((s) => (!type || s.type === type) && (!year || s.month.startsWith(year)) && (!month || (s.month.length === 7 && s.month.endsWith(`-${month}`))))
     .sort((a, b) => a.month.localeCompare(b.month) || a.type.localeCompare(b.type));
   const rows: ReportRow[] = [];
   let bad = 0;
   for (const s of keys) {
     const found = groups.get(s.k) ?? [], counter = st.series[s.k] ?? 0, max = Math.max(0, ...found.map((f) => f.seq));
     const at = (n: number) => found.filter((f) => f.seq === n).map((f) => f.doc);
-    const name = (n: number) => formatDocNumber(s.type, `${s.month}-01`, n);
+    const name = (n: number) => formatByTemplate(templateOfKey(st, s.k), s.month, n); // the key's own stored format
     const kids: ReportRow[] = [];
     let gaps = 0, dups = 0;
     for (let n = 1; n <= Math.max(counter, max); n++) {

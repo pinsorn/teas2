@@ -1,10 +1,11 @@
-import type { IsoDate, PartySummary, WhtLine, WhtMode } from '@/domain/types';
+import type { Actor, Allocation, DocLine, IsoDate, PartySummary, WhtLine, WhtMode } from '@/domain/types';
 import type { MockState } from '../store';
-import { MockError } from './log';
+import { refuseAgent } from './company';
+import { MockError, logAudit, stamp, today } from './log';
 import { divRoundHalfAway, fromSatang } from './money';
 
 /** Mock WHT reference data. Every rate is a `[SP-R]` fixture (fixtures/wht-types.ts), never "the rule". */
-export interface WhtType { code: string; nameTh: string; rateBp: number; incomeType: string; pnd2?: boolean; pnd54?: boolean; effectiveFrom: IsoDate }
+export interface WhtType { code: string; nameTh: string; rateBp: number; incomeType: string; pnd2?: boolean; pnd54?: boolean; effectiveFrom: IsoDate; /** ST3: false = not offered for new lines (kept on every row of the code); absent = active. `version` of the TYPE = the highest over its rows. */ active?: boolean; version?: number }
 
 /** The return the payee's tax falls on: pnd54 -> PND54; pnd2 && individual -> PND2; individual -> PND3; else PND53. */
 export function formFor(t: WhtType, payee: PartySummary): WhtLine['form'] {
@@ -51,4 +52,67 @@ export function computeWht(lines: { net: number; whtTypeCode?: string }[], mode:
     out.push({ code, nameTh: t.nameTh, form: formFor(t, payee), base: fromSatang(Number(base)), rate: rateText(t.rateBp), tax: fromSatang(Number(lineTax)), income: fromSatang(Number(income)), net: fromSatang(Number(net)) });
   }
   return { lines: out, tax: Number(tax), expense: Number(expense), cashDelta: Number(cashDelta) };
+}
+
+// ---- ST3 tax settings. A rate is never edited: "change the rate" is the RP3 dated-rate command (log.ts changeTaxRate), RateHistory shows every row. All writes are audited, versioned and refused for an agent.
+export interface VatRequest { id: string; companyId: string; register: boolean; effectiveFrom: IsoDate; status: 'pending'; requestedBy: string; requestedAt: string }
+const pct = (bp: number) => rateText(bp);
+const rowsOf = (st: MockState, companyId: string, code: string) => st.whtTypes.filter((t) => t.companyId === companyId && t.code === code);
+export const whtTypeVersion = (st: MockState, companyId: string, code: string): number => Math.max(1, ...rowsOf(st, companyId, code).map((t) => t.version ?? 1));
+const conflict = () => new MockError(409, 'record.version_conflict', 'ประเภทภาษีนี้ถูกแก้ไขโดยผู้อื่นแล้ว โหลดข้อมูลใหม่ก่อนบันทึก');
+
+export interface TaxSettingsView {
+  vat: { registered: boolean; rate: string; source: string; requests: VatRequest[] };
+  taxCodes: { code: string; nameTh: string; rate: string }[];
+  whtTypes: { code: string; nameTh: string; incomeType: string; active: boolean; version: number; rate: string; inUse: boolean; rows: { effectiveFrom: IsoDate; rateBp: number; rate: string }[] }[];
+}
+export function taxSettings(st: MockState, companyId: string): TaxSettingsView {
+  const co = st.companies.find((c) => c.id === companyId)!, codes = [...new Set(st.whtTypes.filter((t) => t.companyId === companyId).map((t) => t.code))];
+  const carried = (code: string) => st.docs.some((d) => d.companyId === companyId && (d.lines.some((l) => l.whtTypeCode === code) || (d.allocations ?? []).some((a) => a.whtTypeCode === code)));
+  return {
+    vat: { registered: co.vatRegistered, rate: '7%', source: 'อ้างอิง [SP-R] — ข้อกำหนดภาษีของระบบ ผู้ดูแลระบบไม่กำหนดเอง', requests: (st.vatRequests ?? []).filter((r) => r.companyId === companyId) },
+    taxCodes: [{ code: 'S7', nameTh: 'ภาษีมูลค่าเพิ่ม 7%', rate: '7%' }, { code: 'Z0', nameTh: 'ภาษีมูลค่าเพิ่มอัตราศูนย์', rate: '0%' }, { code: 'EX', nameTh: 'ไม่มี VAT / ยกเว้น', rate: '-' }],
+    whtTypes: codes.map((code) => {
+      const rows = rowsOf(st, companyId, code).sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom)), now = [...rows].reverse().find((r) => r.effectiveFrom <= today()) ?? rows[0];
+      return { code, nameTh: rows[0].nameTh, incomeType: rows[0].incomeType, active: rows[0].active !== false, version: whtTypeVersion(st, companyId, code), rate: pct(now.rateBp), inUse: carried(code), rows: rows.map((r) => ({ effectiveFrom: r.effectiveFrom, rateBp: r.rateBp, rate: pct(r.rateBp) })) };
+    }),
+  };
+}
+
+export function setWhtActive(st: MockState, actor: Actor, companyId: string, code: string, b: Record<string, unknown>): TaxSettingsView['whtTypes'][number] {
+  refuseAgent(actor);
+  const rows = rowsOf(st, companyId, code);
+  if (!rows.length) throw new MockError(404, 'tax.type_not_found', 'ไม่พบประเภทภาษีหัก ณ ที่จ่าย');
+  if (b.version !== whtTypeVersion(st, companyId, code)) throw conflict();
+  if (typeof b.active !== 'boolean') throw new MockError(422, 'record.invalid', 'ต้องระบุว่าเปิดหรือปิดใช้งาน');
+  const v = whtTypeVersion(st, companyId, code) + 1, before = rows[0].active !== false;
+  for (const r of rows) { r.active = b.active; r.version = v; }
+  logAudit(st, actor, companyId, 'tax.wht.active', code, { active: before }, { active: b.active });
+  return taxSettings(st, companyId).whtTypes.find((t) => t.code === code)!;
+}
+
+/** "Introduced" rule (as ST2 categories): a deactivated type is refused on a line / allocation that is new or changed; a document that already carries it (\`before\`, the stored one) keeps working. */
+export function whtInactiveProblem(st: MockState, companyId: string, body: { lines: DocLine[]; allocations?: Allocation[] }, before?: { lines: DocLine[]; allocations?: Allocation[] }): MockError | undefined {
+  const off = new Set(st.whtTypes.filter((t) => t.companyId === companyId && t.active === false).map((t) => t.code));
+  if (!off.size) return undefined;
+  const hit = [
+    ...body.lines.filter((l) => l.whtTypeCode && off.has(l.whtTypeCode) && !before?.lines.some((b) => b.id === l.id && b.whtTypeCode === l.whtTypeCode)).map((l) => l.whtTypeCode!),
+    ...(body.allocations ?? []).filter((a) => a.whtTypeCode && off.has(a.whtTypeCode) && !before?.allocations?.some((b) => b.targetId === a.targetId && b.whtTypeCode === a.whtTypeCode)).map((a) => a.whtTypeCode!),
+  ][0];
+  return hit ? new MockError(422, 'wht.type_inactive', 'ประเภทภาษีหัก ณ ที่จ่าย “' + hit + '” ปิดใช้งานแล้ว ทางออก: เลือกประเภทอื่น หรือเปิดใช้งานประเภทนี้ในหน้าตั้งค่าภาษี') : undefined;
+}
+
+/** A dated REQUEST to change the VAT registration (the switch itself is SP4: the mock never flips the company's flag). One pending request at a time. */
+export function requestVatChange(st: MockState, actor: Actor, companyId: string, b: Record<string, unknown>): VatRequest {
+  refuseAgent(actor);
+  const co = st.companies.find((c) => c.id === companyId)!, date = typeof b.effectiveFrom === 'string' ? b.effectiveFrom : '';
+  if (typeof b.register !== 'boolean') throw new MockError(422, 'record.invalid', 'ต้องระบุว่าขอจดทะเบียนหรือขอยกเลิกการจดทะเบียน VAT');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) throw new MockError(422, 'record.invalid', 'ต้องระบุวันที่มีผล');
+  if (date < today()) throw new MockError(422, 'tax.vat_date_past', 'วันที่มีผลต้องเป็นวันนี้หรืออนาคต');
+  if (b.register === co.vatRegistered) throw new MockError(422, 'tax.vat_no_change', co.vatRegistered ? 'บริษัทจดทะเบียน VAT อยู่แล้ว' : 'บริษัทยังไม่ได้จดทะเบียน VAT');
+  if ((st.vatRequests ?? []).some((r) => r.companyId === companyId && r.status === 'pending')) throw new MockError(409, 'tax.vat_request_pending', 'มีคำขอเปลี่ยนสถานะ VAT ที่รอดำเนินการอยู่แล้ว');
+  const r: VatRequest = { id: 'vatreq-' + ((st.vatRequests ?? []).length + 1), companyId, register: b.register, effectiveFrom: date, status: 'pending', requestedBy: actor.name, requestedAt: stamp() };
+  (st.vatRequests ??= []).push(r);
+  logAudit(st, actor, companyId, 'tax.vat_request', r.id, { registered: co.vatRegistered }, { register: r.register, effectiveFrom: date });
+  return r;
 }
