@@ -189,7 +189,7 @@ function payslipPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
   });
   return {
     titleTh: 'ใบจ่ายเงินเดือน', titleEn: 'PAYSLIP', copyLabel: copy ? 'สำเนา' : 'ต้นฉบับ', number: d.number ?? '-', documentDate: d.header.documentDate, ...(d.header.reference ? { reference: d.header.reference } : {}),
-    seller: { name: co.legalNameTh, nameEn: co.legalNameEn, address: co.address, phone: co.phone, taxId: co.taxId, branchLabel: branchLabel(co.branchCode) }, buyer: { name: '-', address: '' },
+    seller: d.sellerSnapshot ?? { name: co.legalNameTh, nameEn: co.legalNameEn, address: co.address, phone: co.phone, taxId: co.taxId, branchLabel: branchLabel(co.branchCode) }, buyer: { name: '-', address: '' }, // I3 (ST1a M2): a past payslip keeps the employer it was issued under
     lines: [], totals: d.totals, signatures: ['ผู้จ่ายเงิน', 'ผู้รับเงิน'], payslips,
     ...(d.status === 'cancelled' ? { voidMark: { label: 'ยกเลิก', note: d.cancel?.reasonText } } : {}),
   };

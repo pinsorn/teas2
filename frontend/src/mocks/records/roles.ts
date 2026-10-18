@@ -2,7 +2,7 @@ import { PERMISSIONS } from '@/domain/permissions';
 import type { Actor, DocType, RoleRow } from '@/domain/types';
 import { FieldErrors, refuseAgent } from '../engine/company';
 import { MockError, logAudit } from '../engine/log';
-import { PERMISSIONS_BY_ROLE, SYSTEM_ROLES, isSystemRole } from '../permissions';
+import { PERMISSIONS_BY_ROLE, SYSTEM_ROLES, isSystemRole, permissionsOf } from '../permissions';
 import type { MockState } from '../store';
 
 /** The three system roles, read-only (code, not data); their names are the toolbar's. */
@@ -56,6 +56,12 @@ export function updateRole(st: MockState, actor: Actor, companyId: string, id: s
   if (v.version !== r.version) throw new MockError(409, 'record.version_conflict', 'ข้อมูลนี้ถูกแก้ไขโดยผู้อื่นแล้ว โหลดข้อมูลใหม่ก่อนบันทึก');
   const before = shape(listRoles(st, companyId).find((x) => x.id === id));
   const clean = validate(st, companyId, { name: v.name ?? r.name, description: 'description' in v ? v.description : r.description, permissions: v.permissions ?? r.permissions }, id);
+  if (r.permissions.includes('users.manage') && !clean.permissions.includes('users.manage')) { // ST1a B1: taking users.manage off a role demotes everyone who holds it
+    const real = (m: MockState['staff'][number]) => m.companyId === companyId && m.active && !m.invitePending;
+    const holders = st.staff.filter((m) => real(m) && m.roleId === id);
+    if (holders.length && !st.staff.some((m) => real(m) && m.roleId !== id && permissionsOf(st, companyId, m.roleId).includes('users.manage'))) throw new MockError(409, 'user.last_admin', 'ผู้ดูแลระบบคนสุดท้ายของบริษัท ถอนสิทธิ์จัดการผู้ใช้ไม่ได้ ทางออก: เพิ่มผู้ดูแลอีกคนก่อน');
+    if (holders.some((m) => m.userId && m.userId === actor.id)) throw new MockError(409, 'user.last_admin', 'ถอนสิทธิ์จัดการผู้ใช้ของบทบาทที่ตัวเองใช้อยู่ไม่ได้ ให้ผู้ดูแลอีกคนทำให้');
+  }
   r.name = clean.name; r.permissions = clean.permissions; r.version += 1;
   if (clean.description) r.description = clean.description; else delete r.description;
   const out = listRoles(st, companyId).find((x) => x.id === id)!;

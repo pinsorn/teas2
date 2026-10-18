@@ -92,7 +92,7 @@ export function finalizeFiling(st: MockState, companyId: string, form: FilingFor
     : isPayroll(form) ? (form === 'PND1' ? pnd1Snapshot : form === 'PND1A' ? pnd1aSnapshot : ssoSnapshot)(st, companyId, period)
     : form === 'PP36' ? pp36Snapshot(st, companyId, period) : pndSnapshot(st, companyId, form as PndForm, period);
   const tieOuts = built ? m.tieOuts : form === 'PP36' ? [tie('filing.tie.pp36Gl', boxOf(m.boxes, 'vat'), pp36Gl(st, companyId, period, (snap as ReturnType<typeof pp36Snapshot>).journal ?? []))] : m.tieOuts;
-  st.filings.push({ fp: 0, companyId, form, period, status: 'finalized', company: { taxId: co.taxId, branchCode: co.branchCode, legalNameTh: co.legalNameTh, ...(isPayroll(form) && co.ssoEmployerAccountNo ? { ssoEmployerAccountNo: co.ssoEmployerAccountNo } : {}) }, boxes: m.boxes, tieOuts, ...snap,
+  st.filings.push({ fp: 0, companyId, form, period, status: 'finalized', company: { taxId: co.taxId, branchCode: co.branchCode, legalNameTh: co.legalNameTh, address: co.address, ...(co.legalNameEn ? { legalNameEn: co.legalNameEn } : {}), ...(co.phone ? { phone: co.phone } : {}), ...(isPayroll(form) && co.ssoEmployerAccountNo ? { ssoEmployerAccountNo: co.ssoEmployerAccountNo } : {}) }, boxes: m.boxes, tieOuts, ...snap,
     finalizedAt: stamp(), finalizedBy: actor.name, dueDate: m.dueDate });
   const added = st.filings[st.filings.length - 1];
   added.fp = fpOf(added); // PY3a M1 (fp: 0 is only the placeholder of the object literal)

@@ -110,12 +110,11 @@ export function employeeCertificates(st: MockState, companyId: string, year: str
   if (!YEAR.test(year)) throw fail(422, 'filing.bad_period', 'ปีต้องอยู่ในรูปแบบ ปปปป');
   const f = st.filings.find((x) => x.companyId === companyId && x.form === 'PND1A' && x.period === year);
   if (!f?.payroll) throw fail(409, 'filing.not_finalized', 'ยืนยัน ภ.ง.ด.1ก ก่อนจึงจะออกหนังสือรับรองการหักภาษี ณ ที่จ่ายของพนักงานได้');
-  const co = st.companies.find((c) => c.id === companyId)!;
   return f.payroll.rows.map((r, i) => {
     const p = st.parties.find((x) => x.id === r.employeeId && x.companyId === companyId), tax = r.pit ?? '0.00';
     return {
       titleTh: 'หนังสือรับรองการหักภาษี ณ ที่จ่าย', titleEn: 'WITHHOLDING TAX CERTIFICATE', copyLabel: 'ต้นฉบับ', number: `${Number(year) + 543}-${String(i + 1).padStart(3, '0')}`, documentDate: f.finalizedAt.slice(0, 10), reference: `ภ.ง.ด.1ก ปี ${Number(year) + 543}`,
-      seller: { name: f.company.legalNameTh, nameEn: co.legalNameEn, address: co.address, phone: co.phone, taxId: f.company.taxId, branchLabel: branchLabel(f.company.branchCode) },
+      seller: { name: f.company.legalNameTh, nameEn: f.company.legalNameEn, address: f.company.address ?? '', phone: f.company.phone, taxId: f.company.taxId, branchLabel: branchLabel(f.company.branchCode) },
       buyer: { name: r.name, address: p?.address ?? '', taxId: r.nationalId },
       partyLabel: 'ผู้ถูกหักภาษี ณ ที่จ่าย', lines: [], totals: { gross: r.income, discount: '0.00', net: r.income, vat: '0.00', total: r.income, amountInWords: bahtText(r.income) }, signatures: ['ผู้จ่ายเงิน', 'ผู้มีอำนาจลงนาม'],
       certificate: { form: 'PND1A', incomeType: '40(1) เงินเดือน ค่าจ้าง', incomeLabel: 'เงินเดือน ค่าจ้าง เบี้ยเลี้ยง โบนัส ฯลฯ', paidOn: `${year}-12-31`, income: r.income, tax, taxInWords: bahtText(tax), condition: 'withhold', ssoPaid: r.sso },

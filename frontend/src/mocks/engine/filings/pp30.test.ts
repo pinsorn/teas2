@@ -538,7 +538,7 @@ describe('M1: the lock is per form', () => {
 describe('M2: the company is frozen on the filing', () => {
   it('the text file and the model read the company as it was at finalize, not the master now', () => {
     const co = st.companies.find((c) => c.id === CO)!;
-    const was = { taxId: co.taxId, branchCode: co.branchCode, legalNameTh: co.legalNameTh };
+    const was = { taxId: co.taxId, branchCode: co.branchCode, legalNameTh: co.legalNameTh, address: co.address, legalNameEn: co.legalNameEn, phone: co.phone }; // ST1a M2: every form freezes the payer's address, English name and phone too
     const txt = exportFilingText(st, CO, 'PP30', '2026-08');
     co.taxId = '0105500000019'; co.branchCode = '00009'; co.legalNameTh = 'ชื่อใหม่ จำกัด';
     expect(exportFilingText(st, CO, 'PP30', '2026-08')).toBe(txt);

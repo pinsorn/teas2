@@ -24,7 +24,7 @@ import { getSettings } from './settings';
 import { seedBankStatements } from './fixtures/statements';
 
 export interface MockState {
-  version: 57;
+  version: 58;
   companies: Company[];
   /** ST1: the people of each company (memberships with a name, role, position, signature) and its custom roles; the three system roles are code (mocks/permissions.ts). */
   staff: StaffMember[];
@@ -75,7 +75,7 @@ export interface MockState {
   /** `companyId|type|Idempotency-Key` -> draft id. */
   idempotency?: Record<string, string>;
   /** Correction plans awaiting execution (single use). */
-  plans?: Record<string, { docId: string; proposed: { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] }; role: Role; plan: CorrectionPlan }>;
+  plans?: Record<string, { docId: string; proposed: { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] }; role: Role | string[]; plan: CorrectionPlan }>;
 }
 
 const KEY = 'teas2.mock.state.v26';
@@ -108,7 +108,7 @@ export const seed = (): MockState => buildSeedState(getSettings().role);
 export function loadState(): MockState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 57) return s; }
+    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 58) return s; }
   } catch { /* fall through to a fresh seed */ }
   return seed();
 }

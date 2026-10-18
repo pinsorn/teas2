@@ -9,6 +9,7 @@ import { withFixedClock } from '../log';
 import { obPayrollProblem } from '../payroll';
 import { checkInvariants } from '../invariants';
 import { toSatang } from '../money';
+import { updateCompany } from '../company';
 import { exportFilingText, filingHistory, finalizeFiling, getFiling } from './index';
 import { employeeCertificates, yearRows } from './pnd1a';
 
@@ -170,6 +171,19 @@ describe('ruling 8: the annual 50 ทวิ for employees comes from the finaliz
     st.filings.find((f) => f.form === 'PND1A')!.company.legalNameTh = 'บริษัท ที่ยื่นไว้ จำกัด';
     st.companies.find((c) => c.id === NV)!.legalNameTh = 'บริษัท ชื่อใหม่ จำกัด';
     expect(employeeCertificates(st, NV, '2025')[0].seller.name).toBe('บริษัท ที่ยื่นไว้ จำกัด');
+  });
+  it('ST1a M2: editing the registered address, English name and phone through the company page moves nothing on a finalized year (the file freezes them; the fingerprint covers them)', () => {
+    file1a(NV, '2025');
+    const before = employeeCertificates(st, NV, '2025')[0].seller;
+    const co = st.companies.find((c) => c.id === NV)!;
+    updateCompany(st, me, NV, 'identity', { legalNameTh: co.legalNameTh, legalNameEn: 'New English Name Co.', taxId: co.taxId, branchCode: co.branchCode, address: 'ที่อยู่ใหม่ 99', confirm: true });
+    updateCompany(st, me, NV, 'contact', { phone: '02-999-9999' });
+    expect(employeeCertificates(st, NV, '2025')[0].seller).toEqual(before);
+    expect(before.address).toBe('215 หมู่ 4 ตำบลบางกระสอ อำเภอเมืองนนทบุรี จังหวัดนนทบุรี 11000');
+    expect(stored(NV, '2025').company).toMatchObject({ address: before.address, legalNameEn: before.nameEn, phone: before.phone });
+    expect(checkInvariants(st)).toEqual([]);
+    stored(NV, '2025').company.address = 'tampered';
+    expect(found(/fingerprint/)).toBe(true); // the frozen address is covered
   });
   const call = (p: string) => fetch(`http://localhost/bff/v1${p}`);
   it('over the wire: payroll.read reads; the operator is forbidden; another company has none of this company\'s', async () => {

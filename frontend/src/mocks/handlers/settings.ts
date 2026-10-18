@@ -1,15 +1,20 @@
 import { HttpResponse, http } from 'msw';
 import type { Actor } from '@/domain/types';
-import { FieldErrors, companySettings, updateCompany, type CompanySection } from '../engine/company';
+import { FieldErrors, companySettings, refuseAgent, updateCompany, type CompanySection } from '../engine/company';
 import { MockError } from '../engine/log';
 import { AGENT, USER } from '../fixtures/documents';
 import { createRole, deleteRole, listRoles, updateRole } from '../records/roles';
-import { inviteUser, listUsers, resetLink, setUserActive, updateUser } from '../records/users';
+import { acceptInvite, inviteUser, listUsers, resetLink, setUserActive, updateUser } from '../records/users';
 import { ctx, forbidden, persist, problem, screenGate } from './common';
 
 /** An agent's calls reach the mock with this header (over MCP in the real system); everything from the web app is the signed-in user. */
 export const ACTOR_HEADER = 'x-teas-actor';
-const actorOf = (req: Request): Actor => (req.headers.get(ACTOR_HEADER) === 'agent' ? AGENT : USER);
+/** ST1a m7: a write refuses an agent BEFORE its body is read or validated (403, never a 422 that leaks the shape). */
+const actorOf = (req: Request): Actor => {
+  const a = req.headers.get(ACTOR_HEADER) === 'agent' ? AGENT : USER;
+  if (req.method !== 'GET') refuseAgent(a);
+  return a;
+};
 const bodyOf = async (req: Request): Promise<Record<string, unknown>> => {
   const b: unknown = await req.json().catch(() => undefined);
   if (!b || typeof b !== 'object' || Array.isArray(b)) throw new MockError(422, 'record.invalid', 'ข้อมูลไม่ถูกต้อง');
@@ -49,10 +54,12 @@ export const settingsHandlers = [
   })),
   http.put('*/bff/v1/settings/users/:id', ({ request, params }) => guarded('item', 'users.manage', async (c) => write(c, updateUser(c.st, actorOf(request), c.company.id, String(params.id), await bodyOf(request))))),
   http.post('*/bff/v1/settings/users/:id/active', ({ request, params }) => guarded('item', 'users.manage', async (c) => {
+    const actor = actorOf(request);
     const b = await bodyOf(request);
     if (typeof b.active !== 'boolean') throw new MockError(422, 'record.invalid', 'ต้องระบุสถานะใช้งาน');
-    return write(c, setUserActive(c.st, actorOf(request), c.company.id, String(params.id), b.active, b.version));
+    return write(c, setUserActive(c.st, actor, c.company.id, String(params.id), b.active, b.version));
   })),
+  http.post('*/bff/v1/settings/users/:id/accept', ({ request, params }) => guarded('item', 'users.manage', (c) => write(c, acceptInvite(c.st, actorOf(request), c.company.id, String(params.id))))), // ST1a M1: the mock's "invite accepted"
   http.post('*/bff/v1/settings/users/:id/reset-link', ({ request, params }) => guarded('item', 'users.manage', (c) => write(c, { link: resetLink(c.st, actorOf(request), c.company.id, String(params.id)) }))),
 
   // ---- roles (users.manage) ----

@@ -23,11 +23,11 @@ describe('ruling 2: audit entries carry ip, traceId and client', () => {
     expect(st.audit.length).toBeGreaterThan(200);
     st.audit.forEach((a, i) => { expect(a.ip).toBe('127.0.0.1'); expect(a.traceId).toBe(`trc-${i + 1}`); expect(a.client).toBe(a.actor.kind === 'agent' ? 'mcp' : 'web'); });
   });
-  it('an agent-authored entry is mcp; the state version is 57', () => {
+  it('an agent-authored entry is mcp; the state version is 58', () => {
     const agent: Actor = { kind: 'agent', id: 'ag-1', name: 'ผู้ช่วยบัญชี (AI)', ownerName: ME.name };
     logAudit(st, agent, VAT, 'x.y', 't');
     expect(st.audit.at(-1)).toMatchObject({ client: 'mcp', ip: '127.0.0.1', traceId: `trc-${st.audit.length}` });
-    expect(st.version).toBe(57);
+    expect(st.version).toBe(58);
   });
 });
 

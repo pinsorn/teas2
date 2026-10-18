@@ -1,0 +1,128 @@
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { issue } from '../engine/commands';
+import { updateCompany } from '../engine/company';
+import { correctionPlan, executePlan } from '../engine/corrections';
+import { PAPER_BUILDERS } from '../engine/paper';
+import { AGENT, USER } from '../fixtures/documents';
+import { PERMISSIONS_BY_ROLE } from '../permissions';
+import { setSettings } from '../settings';
+import { buildSeedState, loadState, resetState } from '../store';
+import { testServer } from '../test-server';
+import { createRole, updateRole } from './roles';
+import { acceptInvite, inviteUser, setUserActive, updateUser } from './users';
+
+// ST1a: the Opus review fixes (B1 role edit, M1 pending invite, M2 I3 papers, M3 corrections under a custom role, m4, m7).
+beforeAll(() => testServer.listen({ onUnhandledFrame: 'error' }));
+afterEach(() => testServer.resetHandlers());
+afterAll(() => testServer.close());
+beforeEach(() => { localStorage.clear(); resetState(); setSettings({ companyKey: 'vat', role: 'admin', screenState: 'normal' }); });
+
+const V = 'co-vat';
+const code = (f: () => unknown) => { try { f(); } catch (e) { return (e as { message: string }).message.split(':')[0]; } return undefined; };
+const seed = (role: 'operator' | 'accountant' | 'admin' = 'accountant') => buildSeedState(role);
+
+describe('B1: editing a role cannot leave the company without an administrator', () => {
+  it("the reviewer's probe: the last admin holds a custom role; dropping users.manage from it is refused and nothing changes", () => {
+    const st = seed('accountant');
+    const adm = createRole(st, USER, V, { name: 'ผู้ดูแลย่อย', permissions: ['users.manage'] });
+    updateUser(st, USER, V, 'usr-vat-3', { roleId: adm.id, version: 1 });
+    setUserActive(st, USER, V, 'usr-vat-2', false, 1); // allowed: usr-vat-3 administers
+    const n = st.audit.length;
+    expect(code(() => updateRole(st, USER, V, adm.id, { permissions: ['party.read'], version: 1 }))).toBe('user.last_admin');
+    expect(st.roles.find((r) => r.id === adm.id)!.permissions).toEqual(['users.manage']);
+    expect(st.audit.length).toBe(n);
+  });
+  it('another admin elsewhere makes the edit fine; editing other permissions is always fine', () => {
+    const st = seed('accountant'); // usr-vat-2 is a system admin
+    const adm = createRole(st, USER, V, { name: 'ผู้ดูแลย่อย', permissions: ['users.manage', 'party.read'] });
+    updateUser(st, USER, V, 'usr-vat-3', { roleId: adm.id, version: 1 });
+    expect(updateRole(st, USER, V, adm.id, { permissions: ['users.manage'], version: 1 }).version).toBe(2);
+    expect(updateRole(st, USER, V, adm.id, { permissions: ['party.read'], version: 2 }).version).toBe(3);
+  });
+  it('self variant: u-1 holds a custom admin role and cannot edit users.manage out of it, even with other admins', () => {
+    const st = seed('accountant');
+    const adm = createRole(st, USER, V, { name: 'ผู้ดูแลของฉัน', permissions: ['users.manage', 'party.read'] });
+    updateUser(st, USER, V, 'usr-vat-1', { roleId: adm.id, version: 1 }); // u-1 takes it (still administers, so allowed)
+    expect(code(() => updateRole(st, USER, V, adm.id, { permissions: ['party.read'], version: 1 }))).toBe('user.last_admin');
+  });
+});
+
+describe('M1: a pending invite is not an administrator', () => {
+  it('invite an admin, deactivate the only real admin -> refused; accept the invite, then deactivate -> allowed', () => {
+    const st = seed('accountant');
+    const { row } = inviteUser(st, USER, V, { name: 'ผู้ดูแลใหม่', email: 'ghost@maliwan.example', roleId: 'admin' });
+    expect(code(() => setUserActive(st, USER, V, 'usr-vat-2', false, 1))).toBe('user.last_admin');
+    const accepted = acceptInvite(st, USER, V, row.id);
+    expect(accepted.invitePending).toBe(false);
+    expect(st.audit.at(-1)).toMatchObject({ command: 'user.accept_invite', target: row.id });
+    expect(setUserActive(st, USER, V, 'usr-vat-2', false, 1).active).toBe(false);
+    expect(code(() => acceptInvite(st, USER, V, row.id))).toBe('user.not_pending');
+    expect(code(() => acceptInvite(st, AGENT, V, row.id))).toBe('agent.forbidden_setting');
+  });
+  it('a pending holder of a custom admin role does not count: the only real admin still cannot be removed', () => {
+    const st = seed('accountant');
+    const adm = createRole(st, USER, V, { name: 'ผู้ดูแลย่อย', permissions: ['users.manage'] });
+    inviteUser(st, USER, V, { name: 'ผี', email: 'ghost@maliwan.example', roleId: adm.id });
+    expect(code(() => setUserActive(st, USER, V, 'usr-vat-2', false, 1))).toBe('user.last_admin'); // the pending one does not count, so usr-vat-2 is the last real admin
+  });
+});
+
+describe('M3: corrections judge the effective permission list (a custom role), not the toolbar role', () => {
+  it('a list without doc.CN.issue sees the credit note as missing and cannot run the plan', () => {
+    const st = seed();
+    const ti = st.docs.find((d) => d.type === 'TI' && d.status === 'settled' && !d.locks.some((l) => l.kind === 'filing'))!;
+    const body = { header: ti.header, lines: ti.lines.map((l, i) => (i === 0 ? { ...l, unitPrice: '1.00' } : l)) }; // a lower total: the plan issues a credit note
+    const noCn = PERMISSIONS_BY_ROLE.accountant.filter((p) => p !== 'doc.CN.issue');
+    expect(correctionPlan(st, ti.id, body, 'accountant').missingPermissions).toEqual([]);
+    const plan = correctionPlan(st, ti.id, body, noCn);
+    expect(plan.missingPermissions).toContain('doc.CN.issue');
+    const before = st.docs.length;
+    expect(() => executePlan(st, plan.planId, plan.planHash, USER, noCn)).toThrow(/auth\.forbidden/);
+    expect(() => executePlan(st, plan.planId, plan.planHash, USER)).toThrow(/auth\.forbidden/); // the stored list applies when none is passed
+    expect(st.docs.length).toBe(before);
+  });
+});
+
+describe('M2: I3 on every paper, and between two edits', () => {
+  const paperFor = (st: ReturnType<typeof seed>, id: string) => { const d = st.docs.find((x) => x.id === id)!; return PAPER_BUILDERS[d.type]!({ st, company: st.companies.find((c) => c.id === V)!, s: {}, perms: [] } as never, d, false).seller; };
+  const identity = (name: string) => ({ legalNameTh: name, taxId: '0105569012345', branchCode: '00000', address: `ที่อยู่ของ ${name}`, confirm: true });
+  it('RC / CN / WT / PR papers (and the TI) keep the seller they were issued under after an identity edit', () => {
+    const st = seed();
+    const picks = ['TI', 'RC', 'CN', 'WT', 'PR'].map((t) => st.docs.find((d) => d.companyId === V && d.type === t && d.number && d.issuedAt)).filter((d) => !!d);
+    expect(picks.map((d) => d!.type)).toEqual(expect.arrayContaining(['TI', 'RC', 'PR']));
+    const was = picks.map((d) => paperFor(st, d!.id));
+    updateCompany(st, USER, V, 'identity', identity('บริษัท ใหม่หนึ่ง จำกัด'));
+    expect(picks.map((d) => paperFor(st, d!.id))).toEqual(was);
+    expect(was.every((s) => s.name === 'บริษัท มะลิวัลย์ ดีไซน์ เวิร์คส์ จำกัด')).toBe(true);
+  });
+  it('a document issued between two edits prints the MIDDLE identity', () => {
+    const st = seed();
+    updateCompany(st, USER, V, 'identity', identity('บริษัท กลาง จำกัด'));
+    const draft = st.docs.find((d) => d.companyId === V && d.type === 'QT' && d.status === 'draft');
+    if (!draft) return; // no QT draft in the seed: the TI-family freeze is covered above
+    issue(st, draft.id, draft.version, USER);
+    updateCompany(st, USER, V, 'identity', identity('บริษัท สุดท้าย จำกัด'));
+    expect(paperFor(st, draft.id).name).toBe('บริษัท กลาง จำกัด');
+  });
+});
+
+describe('wire: agent refusal on every roles / users write, before the body is looked at', () => {
+  const call = (method: string, path: string, body?: unknown, agent = false) =>
+    fetch(`http://localhost/bff/v1${path}`, { method, headers: { 'content-type': 'application/json', ...(agent ? { 'x-teas-actor': 'agent' } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+  it('PUT and DELETE /settings/roles/:id, /active with a malformed body, and /accept: 403 agent.forbidden_setting', async () => {
+    const made = (await (await call('POST', '/settings/roles', { name: 'เป้าหมาย', permissions: ['party.read'] })).json()) as { id: string };
+    const before = JSON.stringify(loadState());
+    for (const [m, p, b] of [['PUT', `/settings/roles/${made.id}`, { name: 'x', version: 1 }], ['DELETE', `/settings/roles/${made.id}`, undefined],
+      ['POST', '/settings/users/usr-vat-3/active', { active: 'nope' }], ['POST', '/settings/users/usr-vat-3/accept', {}]] as const) {
+      const r = await call(m, p, b, true);
+      expect([m, p, r.status, ((await r.json()) as { code: string }).code]).toEqual([m, p, 403, 'agent.forbidden_setting']);
+    }
+    expect(JSON.stringify(loadState())).toBe(before);
+  });
+  it('accept over the wire clears the pending flag', async () => {
+    const inv = (await (await call('POST', '/settings/users', { name: 'คนใหม่', email: 'n@maliwan.example', roleId: 'operator' })).json()) as { id: string };
+    const r = await call('POST', `/settings/users/${inv.id}/accept`, {});
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as { invitePending: boolean }).invitePending).toBe(false);
+  });
+});

@@ -61,3 +61,5 @@
 | 2026-10-18 | SP1c RP3b fix (same-date rate change replaces; month-mismatched numbers) | sonnet-implementer (warm, RP3 worker) | Opus round 2 REJECT on two majors |
 | 2026-10-18 | SP1c GRP consolidated gate (typecheck, lint, unit, build, Playwright --workers=1) | haiku-gate-runner | Tier 3 run-and-report |
 | 2026-10-18 | SP1c ST1 implement (company settings, users, roles) | sonnet-implementer (fresh) | default implementer; Opus review after (auth/permissions) |
+| 2026-10-18 | SP1c ST1 review (company settings, users, roles) | opus-reviewer | auth/permissions + identity snapshot; fresh reviewer |
+| 2026-10-18 | SP1c ST1a fix round (role edit last-admin, pending invites, payslip/50 tawi frozen seller, corrections effective perms) | sonnet-implementer (warm, ST1 worker) | Opus REJECT (B1 last admin via role edit); warm re-review after |

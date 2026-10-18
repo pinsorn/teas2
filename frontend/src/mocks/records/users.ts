@@ -1,6 +1,6 @@
 import type { Actor, StaffMember, UserRow } from '@/domain/types';
 import { FieldErrors, imageError, refuseAgent } from '../engine/company';
-import { MockError, logAudit } from '../engine/log';
+import { MockError, logAudit, stamp } from '../engine/log';
 import { isSystemRole, permissionsOf } from '../permissions';
 import type { MockState } from '../store';
 import { SYSTEM_ROLE_NAMES } from './roles';
@@ -28,8 +28,9 @@ export const listUsers = (st: MockState, companyId: string): UserRow[] => st.sta
 /** The last administrator of a company cannot be deactivated or moved to a role that cannot manage users; nor can a user do that to themselves (ruling 6, one code). */
 function keepAnAdmin(st: MockState, actor: Actor, m: StaffMember, nextActive: boolean, nextRoleId: string): void {
   const stays = nextActive && permissionsOf(st, m.companyId, nextRoleId).includes('users.manage');
-  if (!(m.active && holdsAdmin(st, m)) || stays) return;
-  const others = st.staff.some((x) => x.companyId === m.companyId && x.id !== m.id && x.active && holdsAdmin(st, x));
+  if (!(m.active && !m.invitePending && holdsAdmin(st, m)) || stays) return;
+  // a pending invite is not an administrator yet (its link may be lost or expired): only an accepted, active member counts (ST1a M1)
+  const others = st.staff.some((x) => x.companyId === m.companyId && x.id !== m.id && x.active && !x.invitePending && holdsAdmin(st, x));
   if (!others) throw new MockError(409, 'user.last_admin', 'ผู้ดูแลระบบคนสุดท้ายของบริษัท ปิดใช้งานหรือลดสิทธิ์ไม่ได้ ทางออก: เพิ่มผู้ดูแลอีกคนก่อน');
   if (m.userId && m.userId === actor.id) throw new MockError(409, 'user.last_admin', 'ปิดใช้งานหรือลดสิทธิ์ตัวเองจากผู้ดูแลระบบไม่ได้ ให้ผู้ดูแลอีกคนทำให้');
 }
@@ -95,4 +96,15 @@ export function resetLink(st: MockState, actor: Actor, companyId: string, id: st
   m.linkHash = hash(token);
   logAudit(st, actor, companyId, 'user.reset_link', m.id, undefined, { linkIssued: true });
   return `https://app.teas.example/reset/${token}`;
+}
+
+/** ST1a M1 "ยืนยันคำเชิญ": the mock's stand-in for the invited person following their link, so an invited administrator can become a real one. Audited like any change. */
+export function acceptInvite(st: MockState, actor: Actor, companyId: string, id: string): UserRow {
+  refuseAgent(actor);
+  const m = mine(st, companyId, id);
+  if (!m.invitePending) throw new MockError(409, 'user.not_pending', 'ผู้ใช้นี้รับคำเชิญแล้ว');
+  const before = shape(m);
+  m.invitePending = false; delete m.linkHash; m.lastLoginAt = stamp();
+  bump(st, actor, m, 'user.accept_invite', before);
+  return toRow(st, m);
 }
