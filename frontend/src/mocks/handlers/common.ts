@@ -13,9 +13,17 @@ export function ctx() {
   const st = loadState();
   const s = getSettings();
   const company = st.companies.find((c) => (s.companyKey === 'vat' ? c.vatRegistered : !c.vatRegistered))!;
-  // ST1b m5: u-1's row in the users list follows the toolbar role while she holds a system role (a custom role stays as assigned)
+  // ST1b m5 / r2-m1: u-1's row follows the toolbar role on READ only while she holds a system role (a custom role stays as assigned).
+  // The shown role is a view over the stored row: whatever is saved (JSON) is the stored role; a handler assigning her a role sets it for real.
   const me = st.staff.find((m) => m.companyId === company.id && m.userId === 'u-1');
-  if (me && isSystemRole(me.roleId)) me.roleId = s.role;
+  if (me && isSystemRole(me.roleId)) {
+    let stored: string = me.roleId, shown = true;
+    const row = Object.defineProperties({ ...me }, {
+      roleId: { enumerable: true, get: () => (shown ? s.role : stored), set: (v: string) => { stored = v; shown = false; } },
+      toJSON: { value: () => ({ ...row, roleId: stored }) },
+    });
+    st.staff = st.staff.map((m) => (m === me ? row : m));
+  }
   return { st, s, company, perms: effectivePermissions(st, company.id, s.role) };
 }
 

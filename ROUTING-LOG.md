@@ -65,3 +65,5 @@
 | 2026-10-18 | SP1c ST1a fix round (role edit last-admin, pending invites, payslip/50 tawi frozen seller, corrections effective perms) | sonnet-implementer (warm, ST1 worker) | Opus REJECT (B1 last admin via role edit); warm re-review after |
 | 2026-10-18 | SP1c ST1b (rest of ST1a after the cap stop) | sonnet-implementer (warm, ST1 worker) | same area; Opus re-review of ST1a+ST1b together |
 | 2026-10-18 | SP1c ST2 implement (posting rules, preview, dimensions + account rules, expense categories; ST1 carries) | sonnet-implementer (fresh) | new area (ST1 worker context large); Opus review after (ledger rules) |
+| 2026-10-18 | SP1c ST2 review (posting rules, preview, dimensions, account rules, expense categories) | opus-reviewer | ledger rules / money; fresh reviewer, read-only on commit a9668d8 |
+| 2026-10-18 | SP1c ST2a (ST1 carries r2-m1/m3/m4, reconcile dims from master, item-form categories) | sonnet-implementer (fresh) | ST2 worker stopped at cap; its context 466k — fresh is cheaper; parallel with read-only review |

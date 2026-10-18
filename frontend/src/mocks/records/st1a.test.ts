@@ -88,8 +88,13 @@ describe('M2: I3 on every paper, and between two edits', () => {
   const identity = (name: string) => ({ legalNameTh: name, taxId: '0105569012345', branchCode: '00000', address: `ที่อยู่ของ ${name}`, confirm: true });
   it('RC / CN / WT / PR papers (and the TI) keep the seller they were issued under after an identity edit', () => {
     const st = seed();
-    const picks = ['TI', 'RC', 'CN', 'WT', 'PR'].map((t) => st.docs.find((d) => d.companyId === V && d.type === t && d.number && d.issuedAt)).filter((d) => !!d);
-    expect(picks.map((d) => d!.type)).toEqual(expect.arrayContaining(['TI', 'RC', 'PR']));
+    const issuedOf = (t: string) => st.docs.find((d) => d.companyId === V && d.type === t && d.number && d.issuedAt);
+    // r2-m4: every paper kind is exercised - one the seed lacks is made in-test from an issued TI (never skipped)
+    const picks = ['TI', 'RC', 'CN', 'WT', 'PR'].map((t) => {
+      if (!issuedOf(t)) st.docs.push({ ...structuredClone(issuedOf('TI')!), id: `st1a-${t}`, type: t } as (typeof st.docs)[number]);
+      return issuedOf(t);
+    });
+    expect(picks.map((d) => d?.type)).toEqual(['TI', 'RC', 'CN', 'WT', 'PR']);
     const was = picks.map((d) => paperFor(st, d!.id));
     updateCompany(st, USER, V, 'identity', identity('บริษัท ใหม่หนึ่ง จำกัด'));
     expect(picks.map((d) => paperFor(st, d!.id))).toEqual(was);
@@ -99,10 +104,10 @@ describe('M2: I3 on every paper, and between two edits', () => {
     const st = seed();
     updateCompany(st, USER, V, 'identity', identity('บริษัท กลาง จำกัด'));
     const draft = st.docs.find((d) => d.companyId === V && d.type === 'QT' && d.status === 'draft');
-    if (!draft) return; // no QT draft in the seed: the TI-family freeze is covered above
-    issue(st, draft.id, draft.version, USER);
+    expect(draft, 'the seed holds a QT draft in co-vat').toBeTruthy();
+    issue(st, draft!.id, draft!.version, USER);
     updateCompany(st, USER, V, 'identity', identity('บริษัท สุดท้าย จำกัด'));
-    expect(paperFor(st, draft.id).name).toBe('บริษัท กลาง จำกัด');
+    expect(paperFor(st, draft!.id).name).toBe('บริษัท กลาง จำกัด');
   });
 });
 
@@ -124,5 +129,38 @@ describe('wire: agent refusal on every roles / users write, before the body is l
     const r = await call('POST', `/settings/users/${inv.id}/accept`, {});
     expect(r.status).toBe(200);
     expect(((await r.json()) as { invitePending: boolean }).invitePending).toBe(false);
+  });
+});
+
+describe('r2-m1: u-1 follows the toolbar role on READ only; the stored membership is never rewritten', () => {
+  const call = (method: string, path: string, body?: unknown) =>
+    fetch(`http://localhost/bff/v1${path}`, { method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const stored = () => loadState().staff.find((m) => m.companyId === V && m.userId === 'u-1')!.roleId;
+  it('a settings write under another toolbar role leaves the stored role; the users list and permissions follow the toolbar', async () => {
+    setSettings({ role: 'accountant' }); resetState();
+    expect(stored()).toBe('accountant');
+    setSettings({ role: 'admin' });
+    expect((await call('POST', '/settings/roles', { name: 'บทบาททดสอบ', permissions: ['party.read'] })).status).toBe(201);
+    expect(stored()).toBe('accountant');
+    const users = (await (await call('GET', '/settings/users')).json()) as { items: { id: string; roleId: string }[] };
+    expect(users.items.find((u) => u.id === 'usr-vat-1')!.roleId).toBe('admin');
+    expect(stored()).toBe('accountant');
+  });
+});
+
+describe('ST2a: the item form reads the company\'s editable expense categories', () => {
+  const call = (method: string, path: string, body?: unknown) =>
+    fetch(`http://localhost/bff/v1${path}`, { method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const item = { kind: 'good', code: 'ST2A-01', name: 'ของเบ็ดเตล็ด', unit: 'ชิ้น', unitPrice: '10', taxCode: 'S7', usageSales: false, usagePurchase: true };
+  it('a category added in settings is listed AND accepted on an item; before it exists the item is refused; another company does not see it', async () => {
+    setSettings({ role: 'accountant' });
+    expect((await call('POST', '/records/item', { ...item, expenseCategory: 'misc' })).status).toBe(422);
+    expect((await call('POST', '/settings/expense-categories', { code: 'misc', nameTh: 'เบ็ดเตล็ด', accountCode: '5140', recoverableVat: true })).status).toBe(201);
+    const list = (await (await call('GET', '/settings/expense-categories')).json()) as { items: { code: string }[] };
+    expect(list.items.map((c) => c.code)).toContain('misc');
+    const ok = await call('POST', '/records/item', { ...item, expenseCategory: 'misc' });
+    expect(ok.status).toBe(201);
+    setSettings({ companyKey: 'nonvat' });
+    expect((await call('POST', '/records/item', { ...item, code: 'ST2A-02', expenseCategory: 'misc' })).status).toBe(422);
   });
 });

@@ -11,7 +11,7 @@ import { docCash } from './locks';
 import { MockError, logActivity, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
 import { monthLabelTh } from './periods';
-import { resolveRole } from './posting';
+import { dimTypesOf, dimValuesOf, resolveRole } from './posting';
 import { formName } from './filings/pnd1';
 import { inForceTax, livePaymentOf, payableAccountOf, filingHref, taxDueOf } from './filings/payment';
 import { isCit } from './filings/cit';
@@ -357,9 +357,9 @@ export function post(st: MockState, companyId: string, lineId: string, req: Post
   const exit = controlExit(st, companyId, acc.code);
   if (exit) throw fail(422, 'ledger.control_account', `${acc.code} ${acc.nameTh} ลงรายการเองไม่ได้: ${exit}`);
   const dims = req.dimensions && Object.keys(req.dimensions).length ? req.dimensions : undefined;
-  if (dims) { // M4: only dimensions the company's documents already carry (there is no dimension master yet)
-    const known = new Set<string>();
-    for (const d of st.docs) if (d.companyId === companyId) for (const m of [d.header.dimensions, ...d.lines.map((x) => x.dimensions)]) for (const [k, v] of Object.entries(m ?? {})) known.add(`${k}|${v}`);
+  if (dims) { // M4 / ST2a: only the company's dimension MASTER (active values of its types) - never what documents happen to carry
+    const types = new Set(dimTypesOf(st, companyId).map((t) => t.key));
+    const known = new Set(dimValuesOf(st, companyId).filter((v) => v.active && types.has(v.typeKey)).map((v) => `${v.typeKey}|${v.code}`));
     const bad = Object.entries(dims).find(([k, v]) => !known.has(`${k}|${v}`));
     if (bad) throw fail(422, 'ledger.dimension_invalid', `มิติ ${bad[0]} = ${bad[1]} ไม่มีในมิติของบริษัทนี้`);
   }
