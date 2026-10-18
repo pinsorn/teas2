@@ -11,7 +11,7 @@ import { monthLabelTh } from './periods';
 import { cashBankId, freezeWht } from './settlement';
 type Ctx = ReturnType<typeof ctx>;
 
-const branchLabel = (code?: string) => (!code ? undefined : code === '00000' ? 'สำนักงานใหญ่ (00000)' : `สาขา ${code}`);
+export const branchLabel = (code?: string) => (!code ? undefined : code === '00000' ? 'สำนักงานใหญ่ (00000)' : `สาขา ${code}`);
 
 interface Look { titleTh: string; titleEn: string; signatures: string[]; dueLabel?: string }
 const LOOK: Partial<Record<DocType, Look>> = {
@@ -49,7 +49,7 @@ function paperOf(c: Ctx, d: Doc, copy: boolean): PaperModel {
   return {
     titleTh: look.titleTh, titleEn: look.titleEn, copyLabel: copy ? 'สำเนา' : 'ต้นฉบับ',
     number: d.number ?? '-', documentDate: d.header.documentDate, dueDate: d.header.dueDate, reference: d.header.reference,
-    seller: { name: co.legalNameTh, nameEn: co.legalNameEn, address: co.address, phone: co.phone, taxId: co.taxId, branchLabel: branchLabel(co.branchCode) },
+    seller: d.sellerSnapshot ?? { name: co.legalNameTh, nameEn: co.legalNameEn, address: co.address, phone: co.phone, taxId: co.taxId, branchLabel: branchLabel(co.branchCode) }, // I3: frozen when the company's identity was edited (ST1)
     buyer: { name: d.party?.name ?? '-', address: d.party?.address ?? '', taxId: d.party?.taxId, branchLabel: d.party?.taxId ? branchLabel(d.party.branchCode) : undefined },
     lines: d.lines.map((l, i) => ({ no: i + 1, description: l.description, qty: l.qty, unit: l.unit, unitPrice: l.unitPrice, amount: net.get(l.id) ?? '0.00', taxCode: l.taxCode, ...(l.discountPct ? { discountPct: l.discountPct } : {}) })),
     totals: d.totals, notes: d.header.notes, ...(co.vatRegistered ? { vatLines } : {}),
@@ -141,7 +141,7 @@ function certificatePaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
   const tax = d.header.whtTax ?? d.totals.wht ?? '0.00', income = d.totals.total;
   return {
     titleTh: look.titleTh, titleEn: look.titleEn, copyLabel: copy ? 'สำเนา' : 'ต้นฉบับ', number: d.number ?? '-', documentDate: d.header.documentDate, ...(pv?.number ? { reference: pv.number } : {}),
-    seller: { name: co.legalNameTh, nameEn: co.legalNameEn, address: co.address, phone: co.phone, taxId: co.taxId, branchLabel: branchLabel(co.branchCode) },
+    seller: d.sellerSnapshot ?? { name: co.legalNameTh, nameEn: co.legalNameEn, address: co.address, phone: co.phone, taxId: co.taxId, branchLabel: branchLabel(co.branchCode) },
     buyer: { name: d.party?.name ?? '-', address: d.party?.address ?? '', taxId: d.party?.taxId, branchLabel: d.party?.taxId ? branchLabel(d.party.branchCode) : undefined },
     partyLabel: 'ผู้ถูกหักภาษี ณ ที่จ่าย',
     lines: d.lines.map((l, i) => ({ no: i + 1, description: l.description, qty: l.qty, unit: l.unit, unitPrice: l.unitPrice, amount: l.unitPrice, taxCode: 'EX' as const })),

@@ -6,6 +6,7 @@ import { matchNavItem } from '@/app-shell/nav';
 import { descriptorByPath } from '@/descriptors';
 import { DocListPage } from '@/kit/pages/DocListPage';
 import { RecordListPage } from '@/kit/pages/RecordListPage';
+import { RolesPage, UsersPage } from '@/kit/settings/PeopleRoles';
 import { recordByPath } from '@/records';
 
 type P = PageProps<'/[group]/[slug]'>;
@@ -23,6 +24,8 @@ export default async function Page({ params }: P) {
   const path = await pathOf(params);
   const d = descriptorByPath(path);
   if (d) return <DocListPage type={d.type} />;
+  if (path === '/settings/users') return <UsersPage />; // ST1: custom pages (invite / reset links and roles are commands, not a form)
+  if (path === '/settings/roles') return <RolesPage />;
   const rec = recordByPath(path);
   if (rec) return <RecordListPage descriptor={rec} />;
   const hit = matchNavItem(path);

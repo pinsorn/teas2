@@ -60,3 +60,4 @@
 | 2026-10-18 | SP1c RP3a fix round (audit time clamp removed, malformed numbers, table focus scope, dated tax rate) | sonnet-implementer (warm, RP3 worker) | Opus REJECT (B1 falsified audit times); warm re-review after |
 | 2026-10-18 | SP1c RP3b fix (same-date rate change replaces; month-mismatched numbers) | sonnet-implementer (warm, RP3 worker) | Opus round 2 REJECT on two majors |
 | 2026-10-18 | SP1c GRP consolidated gate (typecheck, lint, unit, build, Playwright --workers=1) | haiku-gate-runner | Tier 3 run-and-report |
+| 2026-10-18 | SP1c ST1 implement (company settings, users, roles) | sonnet-implementer (fresh) | default implementer; Opus review after (auth/permissions) |

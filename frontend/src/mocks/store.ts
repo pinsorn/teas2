@@ -1,5 +1,5 @@
 import type {
-  ActivityEntry, Allocation, ApprovalPolicy, Attachment, AuditEntry, BankImport, BankJournal, BankLine, ChainEdge, Company, CorrectionPlan, Doc, DocHeader, DocLine, ItemSummary, JournalPreview, Membership, Money, PaperModel, PartySummary, PayrollPayment, Revision, Role, ScheduleRecord, SettlementRecord,
+  ActivityEntry, Allocation, ApprovalPolicy, Attachment, AuditEntry, BankImport, BankJournal, BankLine, ChainEdge, Company, CorrectionPlan, CustomRole, StaffMember, Doc, DocHeader, DocLine, ItemSummary, JournalPreview, Membership, Money, PaperModel, PartySummary, PayrollPayment, Revision, Role, ScheduleRecord, SettlementRecord,
 } from '@/domain/types';
 import { DOC_TYPES, LIVE } from '@/domain/doc-types';
 import { recomputeSettlement } from './engine/commands';
@@ -24,8 +24,11 @@ import { getSettings } from './settings';
 import { seedBankStatements } from './fixtures/statements';
 
 export interface MockState {
-  version: 56;
+  version: 57;
   companies: Company[];
+  /** ST1: the people of each company (memberships with a name, role, position, signature) and its custom roles; the three system roles are code (mocks/permissions.ts). */
+  staff: StaffMember[];
+  roles: CustomRole[];
   memberships: (Membership & { userId: string })[];
   /** `active` (default true) and `version` (default 1) are the master record's; documents keep their own party snapshot. */
   parties: (PartySummary & { companyId: string; active?: boolean; version?: number })[];
@@ -105,7 +108,7 @@ export const seed = (): MockState => buildSeedState(getSettings().role);
 export function loadState(): MockState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 56) return s; }
+    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 57) return s; }
   } catch { /* fall through to a fresh seed */ }
   return seed();
 }

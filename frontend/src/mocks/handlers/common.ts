@@ -1,6 +1,6 @@
 import { HttpResponse, delay } from 'msw';
 import type { ApiProblem } from '@/domain/types';
-import { PERMISSIONS_BY_ROLE } from '../permissions';
+import { effectivePermissions } from '../permissions';
 import { getSettings } from '../settings';
 import { MockError } from '../engine/log';
 import { loadState, saveState } from '../store';
@@ -13,7 +13,7 @@ export function ctx() {
   const st = loadState();
   const s = getSettings();
   const company = st.companies.find((c) => (s.companyKey === 'vat' ? c.vatRegistered : !c.vatRegistered))!;
-  return { st, s, company, perms: PERMISSIONS_BY_ROLE[s.role] };
+  return { st, s, company, perms: effectivePermissions(st, company.id, s.role) };
 }
 
 /** Applies the toolbar's screen state. Returns a response to short-circuit, or null to continue. */

@@ -259,6 +259,7 @@
       "items": "Products and services",
       "settingsCompany": "Company",
       "settingsUsers": "Users and permissions",
+      "settingsRoles": "Roles and permissions",
       "settingsPosting": "Posting",
       "settingsDimensions": "Dimensions",
       "settingsTax": "Tax",
@@ -475,7 +476,7 @@
       "dpNew": "Run depreciation",
       "periodClose": "Period and year close",
       "dpRun": "A posted depreciation run",
-      "employeesList": "Employees list", "employeeJoiner": "Employee (joins 15 Oct)", "prList": "Payroll runs list", "prNew": "New payroll run", "prDraft": "A draft payroll run", "prIssued": "An issued payroll run (the latest)", "prPaid": "A payroll run a later run builds on", "nprIssued": "A payroll run (non-VAT)",
+      "settingsCompany": "Settings: company profile", "settingsUsers": "Settings: users and permissions", "settingsRoles": "Settings: roles and permissions", "employeesList": "Employees list", "employeeJoiner": "Employee (joins 15 Oct)", "prList": "Payroll runs list", "prNew": "New payroll run", "prDraft": "A draft payroll run", "prIssued": "An issued payroll run (the latest)", "prPaid": "A payroll run a later run builds on", "nprIssued": "A payroll run (non-VAT)",
       "styleGuide": "Style guide"
     },
     "state": { "normal": "Normal", "empty": "Empty", "loading": "Loading", "error": "Error", "forbidden": "Forbidden", "locked": "Locked" },
@@ -1143,6 +1144,8 @@
     "item": { "title": "Items and services", "search": "Search code or name", "empty": "No items or services yet" },
     "bank-account": { "title": "Bank and cash accounts", "search": "Search account name or GL code", "empty": "No bank or cash accounts yet" },
     "employee": { "title": "Employees", "search": "Search by code, name or national ID", "empty": "No employees yet" },
+    "user": { "title": "User", "search": "Search by name or email", "empty": "No users yet" },
+    "role": { "title": "Role", "search": "Search roles", "empty": "No roles" },
     "schedule": { "title": "Recurring and amortisation", "search": "Search by name", "empty": "No recurring templates or amortisation schedules yet. Make one with “Make recurring” or “Amortise” on a document." },
     "account": { "title": "Chart of accounts", "search": "Search account code or name", "empty": "No accounts in the chart yet", "collapse": "Collapse {code}", "expand": "Expand {code}", "actions": "Actions" },
     "fields": {
@@ -1427,6 +1430,205 @@
       "gross": "Total income", "pit": "Withholding tax (s.50(1))", "sso": "Social security (employee)", "otherDeduction": "Other deductions", "ssoEmployer": "Social security (employer)", "net": "Net pay",
       "ytdTitle": "Year to date", "ytdIncome": "Income", "ytdPit": "Tax", "ytdSso": "Social security", "prorated": "Prorated {days}/{total} days",
       "note": "The s.50 bis certificate is issued once a year (PND.1 Kor)", "print": "Print payslip", "close": "Close"
+    }
+  },
+  "settings": {
+    "common": {
+      "save": "Save",
+      "saving": "Saving",
+      "saved": "Saved",
+      "failed": "Could not save. Try again.",
+      "cancel": "Cancel",
+      "copy": "Copy",
+      "copied": "Copied",
+      "close": "Close",
+      "empty": "–"
+    },
+    "company": {
+      "title": "Company profile",
+      "lead": "The details used on documents, tax returns and payroll. Each section saves on its own and is recorded in the audit log.",
+      "identity": {
+        "title": "Registered details",
+        "description": "Name, tax ID, branch and address as on the company certificate",
+        "edit": "Edit registered details",
+        "cancelEdit": "Cancel editing",
+        "vatStatus": "VAT status",
+        "vatYes": "VAT registered",
+        "vatNo": "Not VAT registered",
+        "vatNote": "VAT status is changed in the tax settings",
+        "confirmTitle": "Confirm editing the registered details",
+        "confirmBody": "Documents already issued and returns already filed keep the name, address and tax ID they were issued with (the snapshot taken when they were issued). New documents use the new details.",
+        "confirmAction": "Confirm and save"
+      },
+      "contact": {
+        "title": "Contact",
+        "description": "Trade name, phone, email and website shown on documents"
+      },
+      "payroll": {
+        "title": "Payroll and social security",
+        "description": "The 10-digit social security employer account, used on the SSO 1-10 return"
+      },
+      "fiscal": {
+        "title": "Fiscal year",
+        "description": "The month the fiscal year starts. Only the calendar year (starting in January) is supported for now.",
+        "locked": "Cannot be changed because a period is closed",
+        "lockedExit": "Ask the administrator to reopen the periods first",
+        "lockedLink": "Go to period close"
+      },
+      "images": {
+        "title": "Images",
+        "description": "The company logo and stamp (documents will use them once enabled in the document template settings)"
+      },
+      "notes": {
+        "title": "Default notes per document type",
+        "description": "A new document of each type starts with this note. Issued documents do not change."
+      },
+      "fields": {
+        "legalNameTh": "Legal name (Thai)",
+        "legalNameEn": "Legal name (English)",
+        "taxId": "Tax ID",
+        "branchCode": "Branch code",
+        "registrationNo": "Registration number",
+        "address": "Registered address",
+        "paidUpCapital": "Paid-up capital (THB)",
+        "tradeName": "Trade name",
+        "phone": "Phone",
+        "email": "Email",
+        "website": "Website",
+        "ssoEmployerAccountNo": "Employer account (social security)",
+        "fiscalYearStartMonth": "Fiscal year start month",
+        "logoDataUrl": "Logo",
+        "stampDataUrl": "Stamp"
+      },
+      "months": {
+        "1": "January",
+        "2": "February",
+        "3": "March",
+        "4": "April",
+        "5": "May",
+        "6": "June",
+        "7": "July",
+        "8": "August",
+        "9": "September",
+        "10": "October",
+        "11": "November",
+        "12": "December"
+      }
+    },
+    "image": {
+      "none": "No image",
+      "remove": "Remove",
+      "hint": "PNG, JPEG or WebP, up to 1 MB",
+      "hintSvg": "PNG, JPEG, WebP or SVG, up to 1 MB",
+      "type": "Only PNG, JPEG or WebP files are accepted",
+      "typeSvg": "Only PNG, JPEG, WebP or SVG files are accepted",
+      "size": "The file is larger than 1 MB",
+      "read": "Could not read the file"
+    },
+    "matrix": {
+      "all": "All",
+      "selectAll": "Grant everything under {name}",
+      "area": {
+        "party": "Customers and vendors",
+        "item": "Items",
+        "bank": "Banking",
+        "ledger": "General ledger",
+        "payroll": "Payroll returns",
+        "employee": "Employees",
+        "audit": "Audit",
+        "settings": "Settings",
+        "users": "Users",
+        "report": "Reports",
+        "tax": "Tax"
+      }
+    },
+    "users": {
+      "title": "Users and permissions",
+      "lead": "The members of this company and their roles. Every change is recorded in the audit log.",
+      "invite": "Invite a user",
+      "inviteTitle": "Invite a user",
+      "empty": "No users yet",
+      "edit": "Edit",
+      "columns": {
+        "name": "Name",
+        "email": "Email",
+        "role": "Role",
+        "position": "Position",
+        "status": "Status",
+        "lastLogin": "Last sign-in",
+        "actions": "Actions"
+      },
+      "status": {
+        "active": "Active",
+        "inactive": "Deactivated",
+        "pending": "Invite pending"
+      },
+      "never": "Never signed in",
+      "fields": {
+        "name": "Name",
+        "email": "Email",
+        "role": "Role",
+        "position": "Position",
+        "signature": "Signature"
+      },
+      "selectRole": "— Choose a role —",
+      "actions": {
+        "edit": "Edit {name}",
+        "resetShort": "Reset link",
+        "activateShort": "Activate",
+      "resetLink": "Issue a password reset link for {name}",
+        "deactivate": "Deactivate {name}",
+        "activate": "Activate {name}"
+      },
+      "link": {
+        "inviteLabel": "Invitation link (valid for 7 days)",
+        "resetLabel": "Password reset link (valid for 1 day)",
+        "once": "Shown once only. Copy it to the user now; after you close this it cannot be shown again (you can issue a new one).",
+        "copy": "Copy link",
+        "copied": "Copied",
+        "done": "Done",
+        "title": "Link for {name}"
+      },
+      "deactivateTitle": "Deactivate {name}?",
+      "deactivateBody": "The user can no longer sign in to this company. Their history is kept. You can activate them again.",
+      "cancelShort": "Cancel",
+      "deactivateAction": "Deactivate"
+    },
+    "roles": {
+      "title": "Roles and permissions",
+      "lead": "The three system roles cannot be edited. Copy one as a new role and adjust the permissions to the duties of each person.",
+      "empty": "No roles",
+      "create": "Add a role",
+      "createTitle": "Add a role",
+      "editTitle": "Edit the role",
+      "viewTitle": "Permissions of {name}",
+      "system": "System roles",
+      "custom": "Custom roles",
+      "copy": "Copy as a new role",
+      "copyName": "Copy of {name}",
+      "edit": "Edit",
+      "view": "View permissions",
+      "delete": "Delete",
+      "save": "Save role",
+      "columns": {
+        "name": "Role",
+        "description": "Description",
+        "permissions": "Permissions",
+        "users": "In use",
+        "actions": "Actions"
+      },
+      "inUse": "Has users",
+      "unused": "No users yet",
+      "fields": {
+        "name": "Role name",
+        "description": "Description"
+      },
+      "matrixLabel": "Role permissions",
+      "readOnlyNote": "A system role cannot be edited",
+      "deleteTitle": "Delete the role {name}?",
+      "deleteBody": "This cannot be undone. A role can be deleted only while no user holds it.",
+      "deleteAction": "Delete role",
+      "sod": "Caution: this role can both create and approve documents of type {types}, and the company has approval switched on for them. It can still be saved; this is only a warning (approving your own documents is a company setting)."
     }
   },
   "permissions": {

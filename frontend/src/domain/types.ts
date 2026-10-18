@@ -10,7 +10,20 @@ export type Role = 'operator' | 'accountant' | 'admin';
 export type TaxCode = 'S7' | 'Z0' | 'EX'; // standard 7 %, zero-rated, exempt
 
 export interface Company { id: string; legalNameTh: string; legalNameEn?: string; taxId: string; branchCode: string;
-  vatRegistered: boolean; address: string; phone?: string; /** ST1 (company settings): the SSO employer account, 10 digits; the สปส.1-10 cannot be filed without it (PY3) */ ssoEmployerAccountNo?: string }
+  vatRegistered: boolean; address: string; phone?: string; /** ST1 (company settings): the SSO employer account, 10 digits; the สปส.1-10 cannot be filed without it (PY3) */ ssoEmployerAccountNo?: string;
+  /** ST1: the rest of the company profile. `fiscalYearStartMonth` is stored but the engine only supports 1 (calendar year) [SP-R]: any other value is refused (company.fiscal_year_unsupported). */
+  fiscalYearStartMonth: number; registrationNo?: string; tradeName?: string; email?: string; website?: string; paidUpCapital?: Money;
+  /** Images as data URLs (png / jpeg / webp <= 1 MB; the logo may also be svg). Papers do not print them yet (the snapshot at issue is ST3). */ logoDataUrl?: string; stampDataUrl?: string;
+  /** The note a blank new document of the type starts with. */ defaultNotes?: Partial<Record<DocType, string>> }
+/** ST1: a person's membership of one company (the mock's users list). `roleId` is a system role (operator / accountant / admin) or a custom role's id. Only a hash of a one-time link is kept. */
+export interface StaffMember { id: string; companyId: string; userId?: string; name: string; email: string; roleId: string; position?: string; signatureDataUrl?: string; active: boolean; version: number;
+  lastLoginAt?: string; invitePending: boolean; linkHash?: string }
+export type CompanySettings = Company & { fiscalYearLocked: boolean };
+export type UserRow = Omit<StaffMember, 'linkHash' | 'userId'> & { roleName: string };
+export interface RoleRow { id: string; version: number; active: true; system: boolean; name: string; description?: string; permissions: string[]; inUse: boolean;
+  /** Document types whose approval is on in this company (the matrix is judged against them). */ approvalTypes: DocType[];
+  /** Separation of duties: types with approval on that this role can both create and approve. A warning only: self-approval is a company setting (D-36). */ sodTypes: DocType[] }
+export interface CustomRole { id: string; companyId: string; name: string; description?: string; permissions: string[]; version: number }
 export interface Membership { companyId: string; companyName: string; role: Role }
 export interface Me { userId: string; displayName: string; memberships: Membership[]; activeCompanyId: string;
   vatRegistered: boolean; permissions: string[];
@@ -132,7 +145,7 @@ export interface RemainingLine { lineId: string; description: string; unit: stri
 /** PV: the withholding as it was when the voucher was issued / last changed by its own save (C1) - the ledger, the certificates, the paper and the invariants read this, never today's bills.
  *  `bases`: per settled bill and WHT type the base this voucher took (I1: cumulative per bill; `full` = the bill was paid up by this voucher, `billBase` = the bill's base of this type at that moment (B_paidUp, only with `full`), `clamped` = a later credit would have made it negative, so 0). `expense` / `cashDelta` are the gross-up figures (signed). */
 export interface WhtFrozen { bases: { targetId: string; whtTypeCode: string; base: Money; clamped?: true; full?: true; billBase?: Money }[]; lines: WhtLine[]; expense: Money; cashDelta: Money }
-export interface Doc { id: string; type: DocType; number?: string; status: DocStatus; correctionClass: CorrectionClass;
+export interface Doc { id: string; type: DocType; /** ST1 (I3): the seller as printed, frozen when the company's legal identity is edited so an issued document keeps the name it was issued under. */ sellerSnapshot?: PaperParty; number?: string; status: DocStatus; correctionClass: CorrectionClass;
   revision: number; version: number; header: DocHeader; party?: PartySummary; lines: DocLine[]; totals: DocTotals;
   outstanding?: Money; locks: Lock[]; createdBy: Actor; issuedAt?: string; allocations?: Allocation[]; whtFrozen?: WhtFrozen; /** OB batch (AC3): the steps behind the trial balance. */ opening?: DocOpening; /** FA (AC5): the registered asset. */ asset?: AssetData; /** DP (AC5): the depreciation run's frozen rows. */ dp?: DpData; /** PR (PY1): the payroll run's frozen slips. */ payroll?: PayrollData;
   /** CN / DN (ม.86/10): the invoice's net, the correct value after this note, the difference and its VAT, taken when the note is issued; the paper prints these. Server-written. */

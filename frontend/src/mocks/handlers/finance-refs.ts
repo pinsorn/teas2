@@ -1,7 +1,6 @@
 import { HttpResponse, http } from 'msw';
 import type { WhtTypeRef } from '@/lib/api/endpoints';
 import { today } from '../engine/log';
-import { DEFAULT_NOTES } from '../fixtures/default-notes';
 import { ctx, forbidden, screenGate } from './common';
 
 /** Reference lists the receipt / payment editors pick from. Readable by whoever can read a receipt or a voucher (M1 moves the WHT types behind `/records/…`).
@@ -19,10 +18,10 @@ export const financeRefsHandlers = [
     return HttpResponse.json(st.whtTypes.filter((t) => t.companyId === company.id && t.effectiveFrom <= today() && !st.whtTypes.some((u) => u.companyId === t.companyId && u.code === t.code && u.effectiveFrom <= today() && u.effectiveFrom > t.effectiveFrom)) // the row in force today, one per code
       .map((t): WhtTypeRef => ({ code: t.code, nameTh: t.nameTh, rate: `${t.rateBp % 100 === 0 ? t.rateBp / 100 : (t.rateBp / 100).toFixed(2)}%`, incomeType: t.incomeType })));
   }),
-  // the notes a blank new document starts with, per type (ST1 edits them; here a fixture). Not company data: any signed-in user may read them.
+  // the notes a blank new document starts with, per type: the company's own (ST1 edits them on the company page). Any signed-in user may read them: a blank document needs them.
   http.get('*/bff/v1/settings/default-notes', async () => {
     const gate = await screenGate('item');
     if (gate) return gate;
-    return HttpResponse.json(DEFAULT_NOTES);
+    return HttpResponse.json(ctx().company.defaultNotes ?? {});
   }),
 ];

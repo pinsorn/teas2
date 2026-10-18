@@ -10,7 +10,12 @@
       "address": "88/12 ถนนประดิพัทธ์ แขวงพญาไท เขตพญาไท กรุงเทพมหานคร 10400",
       "phone": "02-000-1234",
       "ssoEmployerAccountNo": "1234567890",
-      "fiscalYearStartMonth": 1
+      "fiscalYearStartMonth": 1,
+      "registrationNo": "0105569012345",
+      "tradeName": "มะลิวัลย์ ดีไซน์",
+      "email": "accounts@maliwan.example",
+      "website": "https://maliwan.example",
+      "paidUpCapital": "1000000.00"
     },
     {
       "key": "nonvat",
@@ -21,7 +26,11 @@
       "vatRegistered": false,
       "address": "215 หมู่ 4 ตำบลบางกระสอ อำเภอเมืองนนทบุรี จังหวัดนนทบุรี 11000",
       "phone": "02-000-5678",
-      "fiscalYearStartMonth": 1
+      "fiscalYearStartMonth": 1,
+      "registrationNo": "0125569056784",
+      "tradeName": "บ้านต้นข้าว",
+      "email": "hello@baantonkhao.example",
+      "paidUpCapital": "500000.00"
     }
   ]
 }
