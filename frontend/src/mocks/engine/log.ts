@@ -26,10 +26,10 @@ export function logActivity(st: MockState, docId: string, actor: Actor, action: 
   st.activity.push({ docId, id: `act-${docId}-${n}`, at: stamp(), actor, action, ...(detail ? { detail } : {}) });
 }
 
-/** The one place an audit entry is written. RP3: the mock has one caller address and a deterministic trace id (the entry count), so the seed is stable; an agent's calls arrive over MCP, everything else from the web app. The trail is append-only: ids count up and the time never goes back (invariant). */
+/** The one place an audit entry is written. RP3: the mock has one caller address and a deterministic trace id (the entry count), so the seed is stable; an agent's calls arrive over MCP, everything else from the web app. The trail is append-only: ids are unique and count up (invariant). Time is a fact about the event and is never adjusted. */
 export function logAudit(st: MockState, actor: Actor, companyId: string, command: string, target?: string, before?: unknown, after?: unknown): void {
-  const n = st.audit.length + 1, now = stamp(), prev = st.audit.at(-1)?.at;
-  st.audit.push({ id: `aud-${n}`, at: prev && now < prev ? prev : now, // the trail only goes forward: a pinned (history) clock behind the last entry is written as that entry's instant
+  const n = st.audit.length + 1;
+  st.audit.push({ id: `aud-${n}`, at: stamp(), // the event's own time, never adjusted
     actor, companyId, command, target, before, after, result: 'ok', ip: '127.0.0.1', traceId: `trc-${n}`, client: actor.kind === 'agent' ? 'mcp' : 'web' });
 }
 
@@ -44,13 +44,13 @@ export function changePostingRule(st: MockState, actor: Actor, companyId: string
   r.accountCode = accountCode;
   logAudit(st, actor, companyId, 'posting.rule.update', `${r.role}:${r.level}:${r.key ?? ''}`, before, { ...before, accountCode });
 }
-/** Change the withholding rate (basis points) of one WHT type of the company; documents already issued keep the rate they froze. */
-export function changeTaxRate(st: MockState, actor: Actor, companyId: string, code: string, rateBp: number): void {
-  const t = st.whtTypes.find((x) => x.companyId === companyId && x.code === code);
-  if (!t) throw new MockError(404, 'tax.type_not_found', 'ไม่พบประเภทภาษีหัก ณ ที่จ่าย');
-  const before = { code, rateBp: t.rateBp };
-  t.rateBp = rateBp;
-  logAudit(st, actor, companyId, 'tax.table.update', code, before, { code, rateBp });
+/** Change the withholding rate (basis points) of one WHT type of the company from `effectiveFrom` (default today): a NEW dated rate row, like every rate table (`whtTypeOf` takes the latest row in force on the document's date),
+ *  so a document dated before the change keeps the old rate. */
+export function changeTaxRate(st: MockState, actor: Actor, companyId: string, code: string, rateBp: number, effectiveFrom: string = today()): void {
+  const inForce = st.whtTypes.filter((x) => x.companyId === companyId && x.code === code && x.effectiveFrom <= effectiveFrom).sort((x, y) => y.effectiveFrom.localeCompare(x.effectiveFrom))[0];
+  if (!inForce) throw new MockError(404, 'tax.type_not_found', 'ไม่พบประเภทภาษีหัก ณ ที่จ่าย');
+  st.whtTypes.push({ ...inForce, rateBp, effectiveFrom });
+  logAudit(st, actor, companyId, 'tax.table.update', code, { code, rateBp: inForce.rateBp, effectiveFrom: inForce.effectiveFrom }, { code, rateBp, effectiveFrom });
 }
 
 /** Changed leaves of two JSON-ish values as dotted paths, text on both sides (null = absent); same `val` as the document diff. A value that is not an object compares as one path "". */

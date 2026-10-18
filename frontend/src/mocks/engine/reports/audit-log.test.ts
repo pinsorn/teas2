@@ -3,7 +3,9 @@ import type { Actor } from '@/domain/types';
 import { buildSeedState, type MockState } from '../../store';
 import { closePeriod, closeYear, reopenPeriod, reopenYear } from '../close';
 import { checkInvariants } from '../invariants';
-import { logAudit } from '../log';
+import { changeTaxRate, logAudit, withFixedClock } from '../log';
+import { whtTypeOf } from '../wht';
+import { numberGaps } from './number-gaps';
 import { auditLog, reopenHistory } from './audit-log';
 import { buildReport, reportCsv } from './index';
 
@@ -21,11 +23,11 @@ describe('ruling 2: audit entries carry ip, traceId and client', () => {
     expect(st.audit.length).toBeGreaterThan(200);
     st.audit.forEach((a, i) => { expect(a.ip).toBe('127.0.0.1'); expect(a.traceId).toBe(`trc-${i + 1}`); expect(a.client).toBe(a.actor.kind === 'agent' ? 'mcp' : 'web'); });
   });
-  it('an agent-authored entry is mcp; the state version is 53', () => {
+  it('an agent-authored entry is mcp; the state version is 54', () => {
     const agent: Actor = { kind: 'agent', id: 'ag-1', name: 'ผู้ช่วยบัญชี (AI)', ownerName: ME.name };
     logAudit(st, agent, VAT, 'x.y', 't');
     expect(st.audit.at(-1)).toMatchObject({ client: 'mcp', ip: '127.0.0.1', traceId: `trc-${st.audit.length}` });
-    expect(st.version).toBe(53);
+    expect(st.version).toBe(54);
   });
 });
 
@@ -99,13 +101,13 @@ describe('ruling 3: the audit-log viewer', () => {
 });
 
 describe('ruling 3: append-only - no endpoint edits an entry, and an invariant says so', () => {
-  it('the seed holds it (ids unique and increasing, timestamps non-decreasing)', () => {
+  it('the seed holds it (ids unique, increasing and gap-free); the seed trail is also in time order', () => {
     expect(checkInvariants(st).filter((v) => /audit/.test(v))).toEqual([]);
     for (let i = 1; i < st.audit.length; i++) expect(st.audit[i].at >= st.audit[i - 1].at).toBe(true);
   });
   it('a duplicated id is flagged', () => { st.audit[10].id = st.audit[9].id; expect(checkInvariants(st).some((v) => /audit.*id/.test(v))).toBe(true); });
   it('a reordered id is flagged', () => { [st.audit[10].id, st.audit[11].id] = [st.audit[11].id, st.audit[10].id]; expect(checkInvariants(st).some((v) => /audit.*id/.test(v))).toBe(true); });
-  it('a back-dated timestamp is flagged', () => { st.audit[50].at = '2020-01-01T00:00:00.000Z'; expect(checkInvariants(st).some((v) => /audit.*timestamp/.test(v))).toBe(true); });
+  it('time is a fact about the event: a back-dated entry is NOT an invariant violation (the ids are the order)', () => { st.audit[50].at = '2020-01-01T00:00:00.000Z'; expect(checkInvariants(st).filter((v) => /audit/.test(v))).toEqual([]); });
   it('a deleted entry in the middle is flagged (the ids no longer count up)', () => { st.audit.splice(20, 1); expect(checkInvariants(st).some((v) => /audit.*id/.test(v))).toBe(true); });
 });
 
@@ -122,5 +124,77 @@ describe('ruling 5: reopen history', () => {
     expect(m.rows.map((r) => [r.cells.scope, r.cells.period, r.cells.reason, r.cells.actor]).sort()).toEqual([
       ['ปีบัญชี', '2568', 'ปรับปรุงยอดสิ้นปี', ME.name], ['งวด', '2026-07', 'พบรายการตกหล่น', ME.name]].sort());
     expect(reopenHistory(st, NV, {}).rows).toHaveLength(0);
+  });
+});
+
+describe('RP3a B1: an entry carries the time of its event, never an adjusted one', () => {
+  it('every doc.issue entry is at its document issue time; every filing.finalize at the filing finalizedAt', () => {
+    let n = 0;
+    for (const a of st.audit.filter((x) => x.command === 'doc.issue')) {
+      const d = st.docs.find((x) => x.id === a.target);
+      if (!d?.issuedAt) continue;
+      n++;
+      expect(Math.abs(Date.parse(a.at) - Date.parse(d.issuedAt)), `${a.target}: ${a.at} vs ${d.issuedAt}`).toBeLessThan(300_000);
+    }
+    expect(n).toBeGreaterThan(50);
+    for (const f of st.filings) {
+      const a = st.audit.find((x) => x.command === 'filing.finalize' && x.companyId === f.companyId && x.target === `${f.form} ${f.period}`);
+      if (a && f.finalizedAt) expect(Math.abs(Date.parse(a.at) - Date.parse(f.finalizedAt)), `${f.form} ${f.period}`).toBeLessThan(300_000);
+    }
+  });
+  it('doc-jv-227 issue is in July; the viewer on that July day returns it', () => {
+    const a = st.audit.find((x) => x.command === 'doc.issue' && x.target === 'doc-jv-227')!;
+    expect(a.at.startsWith('2026-07-28')).toBe(true);
+    const m = auditLog(st, a.companyId, { from: '2026-07-28', to: '2026-07-28' });
+    expect(m.rows.some((r) => r.level === 0 && r.cells.id === a.id)).toBe(true);
+  });
+  it('an event under an earlier pinned clock keeps its own time, and the invariants stay clean', () => {
+    withFixedClock('2026-07-01T03:00:00.000Z', () => logAudit(st, ME, VAT, 'x.history', 't'));
+    expect(st.audit.at(-1)!.at).toBe('2026-07-01T03:00:00.000Z');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+});
+
+describe('RP3a M1 + m2: numbers that do not parse, and counters with no documents', () => {
+  const problems = (m: ReturnType<typeof numberGaps>) => m.rows.filter((r) => r.level === 1 && r.cells.state === 'เลขผิดรูปแบบ');
+  it('a document with a garbage number is a named problem row (id, number, type), not only a false gap', () => {
+    st.docs.find((x) => x.id === 'ti-007')!.number = 'GARBAGE-1';
+    const r = problems(numberGaps(st, VAT, { onlyProblems: 'true' }));
+    expect(r).toHaveLength(1);
+    expect(r[0].cells.detail).toContain('ti-007'); expect(r[0].cells.detail).toContain('GARBAGE-1'); expect(r[0].cells.detail).toContain('TI');
+    expect(r[0].href).toMatch(/ti-007/);
+  });
+  it('a TI carrying an IV-series number shows as malformed (it never reaches the IV duplicate check)', () => {
+    st.docs.find((x) => x.id === 'ti-007')!.number = 'IV-202610-0003';
+    expect(problems(numberGaps(st, VAT, {})).map((r) => r.cells.series)).toEqual(['IV-202610-0003']);
+    expect(checkInvariants(st).some((v) => v.includes('ti-007') && v.includes('numbering'))).toBe(true);
+  });
+  it('the malformed row honours the filters (type, month of the document)', () => {
+    st.docs.find((x) => x.id === 'ti-007')!.number = 'GARBAGE-1';
+    expect(problems(numberGaps(st, VAT, { type: 'RC' }))).toHaveLength(0);
+    expect(problems(numberGaps(st, VAT, { year: '2026', month: '10', type: 'TI' }))).toHaveLength(1);
+  });
+  it('a counter whose documents are all gone is flagged by the invariant, as the report does', () => {
+    const key = Object.keys(st.series).find((k) => k.startsWith(`${VAT}|SO|`) || k.startsWith(`${VAT}|QT|`))!;
+    const [, type, month] = key.split('|');
+    st.docs = st.docs.filter((d) => !(d.companyId === VAT && d.type === type && d.number?.startsWith(`${type}-${month.replace('-', '')}-`)));
+    expect(checkInvariants(st).some((v) => v.includes(key) && v.includes('numbering'))).toBe(true);
+  });
+});
+
+describe('RP3a m1: a tax-table change is a NEW dated rate row', () => {
+  it('a document dated before the change keeps the old rate; after it, the new one; the audit entry names the dates', () => {
+    const payee = st.parties.find((p) => p.companyId === VAT && p.kind === 'vendor')!;
+    const rows = st.whtTypes.filter((t) => t.companyId === VAT && t.code === 'ADS').length;
+    changeTaxRate(st, ME, VAT, 'ADS', 300, '2026-10-01');
+    expect(st.whtTypes.filter((t) => t.companyId === VAT && t.code === 'ADS')).toHaveLength(rows + 1);
+    expect(whtTypeOf(st, 'ADS', payee, '2026-09-15').rateBp).toBe(200);
+    expect(whtTypeOf(st, 'ADS', payee, '2026-10-02').rateBp).toBe(300);
+    expect(st.audit.at(-1)).toMatchObject({ command: 'tax.table.update', before: { rateBp: 200 }, after: { rateBp: 300, effectiveFrom: '2026-10-01' } });
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('the seed leaves the rate at 200 today (the revert is a later dated row)', () => {
+    const payee = st.parties.find((p) => p.companyId === VAT && p.kind === 'vendor')!;
+    expect(whtTypeOf(st, 'ADS', payee, '2026-10-14').rateBp).toBe(200);
   });
 });

@@ -50,6 +50,10 @@ const itemKinds = (st: MockState, companyId: string) => {
   add(code('AP'), { types: ['PB'], ob: 'AP', dr: false, what: 'PB / OB AP item' }); add(code('VendorPrepayment'), { types: ['PV'], ob: 'PRE', dr: true, what: 'PV / OB PRE item' });
   return kinds;
 };
+/** Every series key of the state: those with documents holding numbers and those with a counter (a counter whose documents are gone is still a series). The invariant and the RP3 gap report both ask this one function. */
+export const seriesKeys = (st: MockState, groups: Map<string, unknown>, companyId?: string): string[] =>
+  [...new Set([...groups.keys(), ...Object.keys(st.series)])].filter((k) => !companyId || k.startsWith(`${companyId}|`));
+
 /** 23. every line on a control account (AR / AP / customer deposit / vendor prepayment) carries a party and names an open item of its own company whose type fits the account and whose party is the line's (the party it has, or had in an earlier
  *  revision: an invoice nobody has paid may change customer, and its first entries keep the first one).
  *  24. every item's tagged balance over ALL dates is its stored balance (outstanding for an invoice / bill, what is unapplied for a receipt / voucher, the amount of an opening deposit / prepayment; 0 when it is not live). */
@@ -687,17 +691,15 @@ export function checkInvariants(st: MockState): string[] {
   // numbering: gap-free per company x type x month, and the series counter agrees
   const { groups, malformed } = numbersBySeries(st.docs);
   for (const d of malformed) out.push(`${d.id}: numbering: "${d.number}" is not a ${d.type} number`);
-  for (const [k, found] of groups) {
-    const sorted = found.map((f) => f.seq).sort((x, y) => x - y);
+  for (const k of seriesKeys(st, groups)) { // every series that has a counter or a document: the same set the number-gap report checks
+    const sorted = (groups.get(k) ?? []).map((f) => f.seq).sort((x, y) => x - y);
     if (sorted.some((n, i) => n !== i + 1)) out.push(`${k}: numbering is not gap-free (${sorted.join(', ')})`);
     if ((st.series[k] ?? 0) !== sorted.length) out.push(`${k}: numbering counter ${st.series[k] ?? 0} but ${sorted.length} numbers issued`);
   }
 
-  // audit trail (RP3): append-only - ids are unique and count up, timestamps never go back (a deleted, reordered or back-dated entry breaks one)
-  st.audit.forEach((a, i) => {
-    if (a.id !== `aud-${i + 1}`) out.push(`audit: entry ${i + 1} has id ${a.id}, expected aud-${i + 1} (ids must be unique and increasing)`);
-    if (i && a.at < st.audit[i - 1].at) out.push(`audit: ${a.id} timestamp ${a.at} is before the previous entry's ${st.audit[i - 1].at}`);
-  });
+  // audit trail (RP3): append-only - the ids are unique, increasing and gap-free (a duplicated, reordered or middle-deleted entry breaks it). Time is a fact about the event, never judged here.
+  // [SP2] This cannot see a deleted LAST entry or an edited entry: the backend needs a hash chain over (prevHash, id, at, actor, command, target, before, after, result) plus an external high-water mark.
+  st.audit.forEach((a, i) => { if (a.id !== `aud-${i + 1}`) out.push(`audit: entry ${i + 1} has id ${a.id}, expected aud-${i + 1} (ids must be unique and increasing)`); });
 
   // locks: the period lock is derived at read time, never stored (one function: derivedLocks)
   for (const d of st.docs as Doc[]) if (d.locks.some((l) => l.kind === 'period')) out.push(`${d.id}: stored period lock (derived at read time only)`);

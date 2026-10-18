@@ -24,6 +24,8 @@ export function ReportTable({ title, columns, rows }: { title: string; columns: 
   const labelCol = columns.findIndex((c) => !c.kind || c.kind === 'text'); // a total / subtotal row names itself here
   const show = (c: ReportColumn, v: string) => (!v ? '' : c.kind === 'money' ? formatMoney(v) : c.kind === 'date' ? formatDateBE(v) : v);
   return (
+    // a report can be wider than the page: its scroll region is a named region the keyboard can reach (axe scrollable-region-focusable); the shared Table container below then does not scroll itself
+    <div role="region" aria-label={title} tabIndex={0} className="overflow-x-auto [&_[data-slot=table-container]]:overflow-visible">
     <Table aria-label={title}>
       <TableHeader>
         <TableRow>
@@ -45,5 +47,6 @@ export function ReportTable({ title, columns, rows }: { title: string; columns: 
         ))}
       </TableBody>
     </Table>
+    </div>
   );
 }

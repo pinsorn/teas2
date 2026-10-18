@@ -107,8 +107,12 @@ test('reopen history: empty until a month is reopened; then the reopen is listed
 test('r2-m2: the party picker shows the name of an id in the URL even when the list does not hold it', async ({ page }) => {
   await page.route('**/bff/v1/parties*', (route) => route.fulfill({ json: { items: [] } })); // the list (first 200) has nobody
   await page.goto('/reports/receivables-payables?tab=cs&party=pc-10&from=2026-01-01&to=2026-10-14');
-  await expect(page.getByRole('combobox', { name: /ลูกค้า/ })).not.toHaveValue('pc-10');
-  await expect(page.getByRole('combobox', { name: /ลูกค้า/ })).toHaveValue(/\S/);
+  const box = page.getByRole('combobox', { name: /ลูกค้า/ });
+  await expect(box).toHaveValue(/\S/);
+  const name = (await api<{ name: string }>(page, '/records/customer/pc-10')).json.name; // the master record's own name
+  expect(name).toMatch(/\S/);
+  expect(name).not.toBe('pc-10');
+  await expect(box).toHaveValue(name);
 });
 
 test('390 px: each tab fits the page width (the table scrolls inside itself, the page does not)', async ({ page }) => {
