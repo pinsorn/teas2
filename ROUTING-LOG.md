@@ -80,3 +80,4 @@
 | 2026-10-19 | SP1c ST3b (WHT row in use by frozen rate; numbering existing-number ambiguity) | sonnet-implementer (warm, ST3 worker) | Opus r2 REJECT R2-B1; parallel with ST4 (disjoint files, no e2e) |
 | 2026-10-19 | SP1c ST4 review (templates + paper snapshot at issue) | opus-reviewer (fresh) | freeze rule on papers |
 | 2026-10-19 | SP1c ST4a fix round (signature only on issuer line, stamp never on counterparty line, issueLook invariant, PR labels, stamp independent, 50 tawi actor) | sonnet-implementer (warm, ST4 worker) | Opus REJECT ST4 (M1) |
+| 2026-10-19 | SP1c GST consolidated gate (typecheck, lint, unit, build, Playwright --workers=1) | haiku-gate-runner | Tier 3 run-and-report |

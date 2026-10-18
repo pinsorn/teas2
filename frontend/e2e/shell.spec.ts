@@ -68,7 +68,7 @@ test('home title and a not-built route', async ({ page }) => {
   await expect(page).toHaveTitle('งานของฉัน · TEAS 2');
   await page.getByRole('button', { name: 'โหมดตัวอย่าง' }).click(); // every non-settings route is built; settings needs settings.manage (admin)
   await page.getByLabel('บทบาท').selectOption('admin');
-  await page.goto('/settings/posting'); // ST1 built the company, users and roles pages; posting is ST2
+  await page.goto('/settings/connect'); // group 09 built every settings page but connect (group 10)
   await expect(page.getByText('ส่วนนี้ยังไม่เปิดใช้งาน')).toBeVisible();
   expect(await serious(page)).toEqual([]);
   await page.goto('/nope/nothing');
