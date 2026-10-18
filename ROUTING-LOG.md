@@ -73,3 +73,4 @@
 | 2026-10-19 | SP1c ST2 round-3 review (ST2c) | opus-reviewer (warm, ST2 reviewer) | postedAccount freeze + N2 |
 | 2026-10-19 | SP1c ST2e (correction plan sameBody uses sameLines) | sonnet-implementer (warm) | Opus R4 APPROVE minor |
 | 2026-10-19 | SP1c ST3 implement (tax / numbering / approvals + policy + tolerance snapshots) | sonnet-implementer (fresh) | new area; Opus review after (numbering / approvals) |
+| 2026-10-19 | SP1c ST3 review (numbering frozen format, approval / tolerance snapshots, WHT) | opus-reviewer (fresh) | numbering / approvals / tax compliance |
