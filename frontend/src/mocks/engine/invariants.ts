@@ -14,6 +14,7 @@ import type { FilingBox } from '@/domain/filings';
 import { obInvariants } from './opening';
 import { payDocs, payrollInvariants } from './payroll';
 import { appliedOf, docCash, toleranceOf } from './locks';
+import { revisionInForce } from './reports/as-of';
 import { unappliedOf } from './settlement-records';
 import { payoutOf, resolvedBankId } from './settlement';
 import { consumed, q4 } from './chain';
@@ -25,6 +26,20 @@ import { computeDoc, vatBasisOf } from './vat';
 import { wtsOfPv } from './wht-certificates';
 
 type Stored = MockState['docs'][number];
+
+/** ONE reading of the numbers on documents (this numbering invariant and the RP3 gap audit both use it): per series key `${companyId}|${type}|${yyyy-mm}` the sequence numbers found and the documents holding them.
+ *  A document with no number (a draft) holds none; an opening item's number is the old document's, so it is not a number of this series; a number that is not `TYPE-yyyymm-nnnn` of its own type is `malformed`. */
+export function numbersBySeries(docs: Stored[]): { groups: Map<string, { seq: number; doc: Stored }[]>; malformed: Stored[] } {
+  const groups = new Map<string, { seq: number; doc: Stored }[]>(), malformed: Stored[] = [];
+  for (const d of docs) {
+    if (!d.number || d.header.obBatchId) continue;
+    const m = /^([A-Z]+)-(\d{4})(\d{2})-(\d{4})$/.exec(d.number);
+    if (!m || m[1] !== d.type) { malformed.push(d); continue; }
+    const k = `${d.companyId}|${d.type}|${m[2]}-${m[3]}`;
+    groups.set(k, [...(groups.get(k) ?? []), { seq: Number(m[4]), doc: d }]);
+  }
+  return { groups, malformed };
+}
 
 /** RP2a, the open items the aging reads: which account holds which kind of item (the roles resolve to 1130 / 2140 / 2110 / 1140 in the seed). */
 const itemKinds = (st: MockState, companyId: string) => {
@@ -44,12 +59,20 @@ function openItemInvariants(st: MockState): string[] {
     const kinds = itemKinds(st, c.id), docs = new Map(st.docs.filter((d) => d.companyId === c.id).map((d) => [d.id, d]));
     const fits = (d: Stored, k: { types: string[]; ob: string }) => k.types.includes(d.type) || (d.type === 'OB' && d.header.obSide === k.ob);
     const tagged = new Map<string, number>(); // `${code}|${item id}` -> debit - credit
+    /** RP3 r2-m1: the party the item had on the entry's date (the revision in force then; an opening item: the batch's revision in force). A line in ANOTHER document's entry (a receipt, a voucher, a settlement) must carry that one, not any party the item ever had;
+     *  the item's own entries keep the looser reading (its first entries keep the first customer), and an item with no revision in force on that date is judged by the loose reading too. */
+    const partyOk = (d: Stored, partyId: string, date: string, own: boolean): boolean => {
+      const ever = d.header.partyId === partyId || st.revisions.some((r) => r.docId === d.id && r.snapshot.header.partyId === partyId);
+      if (own) return ever;
+      const inForce = d.header.obBatchId ? revisionInForce(st, d.header.obBatchId, date)?.opening?.openItems.find((i) => i.id === d.id)?.partyId : revisionInForce(st, d.id, date)?.header.partyId;
+      return inForce ? inForce === partyId : ever;
+    };
     for (const s of sources(st, c.id)) for (const e of s.entries) for (const l of e.lines) {
       const k = kinds.get(l.accountCode);
       if (!k) continue;
       const d = l.openItemId ? docs.get(l.openItemId) : undefined;
       if (!l.partyId || !l.openItemId) out.push(`${s.label}: ${l.accountCode} line has no open item`);
-      else if (!d || !fits(d, k) || !(d.header.partyId === l.partyId || st.revisions.some((r) => r.docId === d.id && r.snapshot.header.partyId === l.partyId))) out.push(`${s.label}: ${l.accountCode} line names ${l.openItemId}, not a ${k.what} of party ${l.partyId}`);
+      else if (!d || !fits(d, k) || !partyOk(d, l.partyId, e.date, s.docId === d.id)) out.push(`${s.label}: ${l.accountCode} line names ${l.openItemId}, not a ${k.what} of party ${l.partyId}`);
       if (l.openItemId) tagged.set(`${l.accountCode}|${l.openItemId}`, (tagged.get(`${l.accountCode}|${l.openItemId}`) ?? 0) + toSatang(l.debit) - toSatang(l.credit));
     }
     for (const [code, k] of kinds) for (const d of docs.values()) {
@@ -662,19 +685,19 @@ export function checkInvariants(st: MockState): string[] {
   out.push(...jvInvariants(st)); // 15. journal vouchers (AC1): no controlled account, the journal is the lines, reversals mirror, accruals net to zero
 
   // numbering: gap-free per company x type x month, and the series counter agrees
-  const groups = new Map<string, number[]>();
-  for (const d of st.docs) {
-    if (!d.number || d.header.obBatchId) continue; // an opening item's number is the old document's, printed '(ยกมา)'
-    const m = /^([A-Z]+)-(\d{4})(\d{2})-(\d{4})$/.exec(d.number);
-    if (!m || m[1] !== d.type) { out.push(`${d.id}: numbering: "${d.number}" is not a ${d.type} number`); continue; }
-    const k = `${d.companyId}|${d.type}|${m[2]}-${m[3]}`;
-    groups.set(k, [...(groups.get(k) ?? []), Number(m[4])]);
-  }
-  for (const [k, seqs] of groups) {
-    const sorted = [...seqs].sort((x, y) => x - y);
+  const { groups, malformed } = numbersBySeries(st.docs);
+  for (const d of malformed) out.push(`${d.id}: numbering: "${d.number}" is not a ${d.type} number`);
+  for (const [k, found] of groups) {
+    const sorted = found.map((f) => f.seq).sort((x, y) => x - y);
     if (sorted.some((n, i) => n !== i + 1)) out.push(`${k}: numbering is not gap-free (${sorted.join(', ')})`);
     if ((st.series[k] ?? 0) !== sorted.length) out.push(`${k}: numbering counter ${st.series[k] ?? 0} but ${sorted.length} numbers issued`);
   }
+
+  // audit trail (RP3): append-only - ids are unique and count up, timestamps never go back (a deleted, reordered or back-dated entry breaks one)
+  st.audit.forEach((a, i) => {
+    if (a.id !== `aud-${i + 1}`) out.push(`audit: entry ${i + 1} has id ${a.id}, expected aud-${i + 1} (ids must be unique and increasing)`);
+    if (i && a.at < st.audit[i - 1].at) out.push(`audit: ${a.id} timestamp ${a.at} is before the previous entry's ${st.audit[i - 1].at}`);
+  });
 
   // locks: the period lock is derived at read time, never stored (one function: derivedLocks)
   for (const d of st.docs as Doc[]) if (d.locks.some((l) => l.kind === 'period')) out.push(`${d.id}: stored period lock (derived at read time only)`);

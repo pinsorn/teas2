@@ -212,7 +212,8 @@ export interface ActivityEntry{ id: string; at: string; actor: Actor; action: st
 export interface FieldChange { path: string; before: string | null; after: string | null }
 export interface Revision { revision: number; at: string; actor: Actor; reason?: string; snapshot: Doc; diff: FieldChange[] }
 export interface AuditEntry { id: string; at: string; actor: Actor; companyId: string; command: string; target?: string;
-  before?: unknown; after?: unknown; result: 'ok' | 'rejected' }
+  before?: unknown; after?: unknown; result: 'ok' | 'rejected';
+  /** RP3: where the call came from; optional because an entry written before they existed has none. */ ip?: string; traceId?: string; client?: 'web' | 'mcp' | 'api' }
 
 export interface JournalLinePreview { accountCode: string; accountName: string; debit: Money; credit: Money;
   partyName?: string; /** RP1a: the party's id at posting (the name above is the snapshot the documents show); a line without it is never matched by id. */ partyId?: string;

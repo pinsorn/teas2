@@ -7,11 +7,13 @@ import { generalJournal } from '../journal';
 import { apAging } from './ap-aging';
 import { arAging } from './ar-aging';
 import { assetRegister } from './asset-register';
+import { auditLog, reopenHistory } from './audit-log';
 import { balanceSheet } from './balance-sheet';
 import { bankReconciliation } from './bank-reconciliation';
 import { customerStatement } from './customer-statement';
 import { generalLedger } from './general-ledger';
 import { missingWhtCert } from './missing-wht-cert';
+import { numberGaps } from './number-gaps';
 import { outstandingPo } from './outstanding-po';
 import { profitLoss } from './profit-loss';
 import { purchaseSummary } from './purchase-summary';
@@ -39,6 +41,7 @@ const BUILDERS: Partial<Record<ReportKind, (st: MockState, companyId: string, p:
   'wht-receivable': (st, c, p) => whtReceivable(st, c, { asOf: p.asOf || today() }),
   'missing-wht-cert': (st, c) => missingWhtCert(st, c),
   'tax-summary': (st, c, p, perms) => taxSummary(st, c, p, perms.includes('tax.filing.preview')), // an unfiled month is the filing's preview, with the same right
+  'number-gaps': (st, c, p) => numberGaps(st, c, p), 'audit-log': (st, c, p) => auditLog(st, c, p), 'reopen-history': (st, c, p) => reopenHistory(st, c, p),
   'vat-output-register': vatOutputRegister,
   'vat-input-register': vatInputRegister,
 };

@@ -27,7 +27,7 @@ describe('GET /reports/:kind', () => {
     expect(f.status).toBe(403);
     expect((await f.json()).detail).toContain('report.read');
     setSettings({ role: 'accountant' });
-    expect((await get('/reports/number-gaps')).status).toBe(404);
+    expect((await get('/reports/no-such-report')).status).toBe(404);
     expect((await get('/reports/trial-balance?asOf=31-12-2099')).status).toBe(422);
   });
   it('RP1: the statements need report.read (operator 403), the GL needs its account (422), an account or party of another company is 404, CSV carries the dimension headers', async () => {

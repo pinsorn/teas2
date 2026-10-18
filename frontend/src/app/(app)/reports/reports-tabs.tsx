@@ -18,8 +18,10 @@ const party = (partyKind: 'customer' | 'vendor'): ReportParamSpec => ({ key: 'pa
 const groupBy = (values: string[]): ReportParamSpec => ({ key: 'groupBy', kind: 'select', labelKey: 'reports.summary.groupBy', required: true, options: opt('groupBy', values) });
 const dimension: ReportParamSpec = { key: 'dimension', kind: 'dimension', labelKey: 'reports.dimensionType' };
 const range = { from: '@yearStart', to: '@today' };
+const text = (key: string): ReportParamSpec => ({ key, kind: 'text', labelKey: `reports.audit.params.${key}` });
+const num = (key: string): ReportParamSpec => ({ key, kind: 'year', labelKey: `reports.audit.params.${key}` });
 
-/** The two report pages of RP2: aging and statements (report.arap.read) and the sales / purchase summaries, outstanding POs and the asset register. The server computes every figure and its tie-out to the ledger. */
+/** The report pages of RP2 (aging and statements, report.arap.read; sales / purchase summaries, outstanding POs, the asset register) and RP3 (the number check, the audit log and the reopen history, audit.read). The server computes every figure and its tie-out to the ledger. */
 const PAGES = {
   arap: {
     title: 'nav.items.receivablesPayables', label: 'reports.tabs.labelArap',
@@ -28,6 +30,14 @@ const PAGES = {
       { key: 'ap', kind: 'ap-aging', params: [asOf, basis], defaults: { asOf: '@today', basis: 'due' } },
       { key: 'cs', kind: 'customer-statement', params: [party('customer'), from, to], defaults: range },
       { key: 'vl', kind: 'vendor-ledger', params: [party('vendor'), from, to], defaults: range },
+    ] as ReportTab[],
+  },
+  audit: {
+    title: 'nav.items.auditReport', label: 'reports.tabs.labelAudit',
+    tabs: [
+      { key: 'gaps', kind: 'number-gaps', params: [num('year'), num('month'), text('type'), { key: 'onlyProblems', kind: 'bool', labelKey: 'reports.audit.params.onlyProblems' }], defaults: { year: '@year' } },
+      { key: 'log', kind: 'audit-log', params: [{ ...from, required: false }, { ...to, required: false }, text('actor'), text('command'), text('target')], defaults: {} },
+      { key: 'reopen', kind: 'reopen-history', params: [], defaults: {} },
     ] as ReportTab[],
   },
   sp: {
@@ -49,7 +59,7 @@ export function ReportTabs({ page }: { page: keyof typeof PAGES }) {
   const today = me?.businessDate ?? '', yearStart = today ? `${today.slice(0, 4)}-01-01` : '';
   const { title, label, tabs } = PAGES[page];
   const tab = tabs.find((x) => x.key === search.get('tab')) ?? tabs[0];
-  const fill = (d: Record<string, string> = {}) => Object.fromEntries(Object.entries(d).map(([k, v]) => [k, v === '@today' ? today : v === '@yearStart' ? yearStart : v]));
+  const fill = (d: Record<string, string> = {}) => Object.fromEntries(Object.entries(d).map(([k, v]) => [k, v === '@today' ? today : v === '@yearStart' ? yearStart : v === '@year' ? today.slice(0, 4) : v]));
   return (
     <div className="grid gap-4">
       <h1 className="text-title font-semibold">{t(title as never)}</h1>

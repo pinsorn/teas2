@@ -14,7 +14,7 @@ import type { PostingRule } from './engine/posting';
 import type { BankAccount } from './fixtures/bank-accounts';
 import type { CompanyAccount } from './fixtures/coa';
 import type { CompanyWhtType } from './fixtures/wht-types';
-import { SEED_SPECS } from './fixtures';
+import { SEED_SPECS, seedAudit } from './fixtures';
 import { seedAssets } from './fixtures/specs/assets';
 import { seedSchedules } from './fixtures/specs/schedules';
 import { runSeed } from './fixtures/seed-runner';
@@ -24,7 +24,7 @@ import { getSettings } from './settings';
 import { seedBankStatements } from './fixtures/statements';
 
 export interface MockState {
-  version: 52;
+  version: 53;
   companies: Company[];
   memberships: (Membership & { userId: string })[];
   /** `active` (default true) and `version` (default 1) are the master record's; documents keep their own party snapshot. */
@@ -96,6 +96,7 @@ export function buildSeedState(role: Role = 'accountant'): MockState {
   for (const d of s.docs) if (d.issuedAt && !d.header.bankSnapshot) d.header = withBankSnapshot(s, d.companyId, d.type, d.header); // seeded receipts / vouchers entered directly: freeze the account they print, like an issued one (I3)
   seedBankStatements(s); // FN1: the September statements, imported through the same engine the upload uses
   seedFilings(s); // TX1: the ภ.พ.30 of 2026-07 and 2026-08 are filed (last: they lock the documents they took)
+  seedAudit(s); // RP3: the trail in time order, then logins, switches, a posting-rule and a tax-table change
   return s;
 }
 
@@ -104,7 +105,7 @@ export const seed = (): MockState => buildSeedState(getSettings().role);
 export function loadState(): MockState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 52) return s; }
+    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 53) return s; }
   } catch { /* fall through to a fresh seed */ }
   return seed();
 }

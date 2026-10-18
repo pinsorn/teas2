@@ -312,3 +312,25 @@ describe('RP2a m1: the statement description never prints the posting rule', () 
     expect(m.tieOuts!.map((t) => t.diff)).toEqual(['0.00', '0.00']);
   });
 });
+
+describe('RP3 r2-m1: invariant 23 judges a control line by the party in force on its entry date', () => {
+  const setup = () => {
+    const d = createDraft(st, NV, 'IV', { header: { partyId: 'nc-01', documentDate: '2026-10-09' }, lines: L1('800') }, ME, 'k-r2m1');
+    const iv = issue(st, d.id, d.version, ME);
+    revise(st, iv.id, { header: { ...iv.header, partyId: 'nc-02' }, lines: iv.lines }, iv.version, 'x', ME); // the invoice changes customer: nc-01 -> nc-02
+    const rd = createDraft(st, NV, 'RC', { header: { partyId: 'nc-02', documentDate: '2026-10-12', bankAccountId: st.bankAccounts.find((x) => x.companyId === NV)!.id }, lines: [], allocations: [{ targetId: iv.id, targetType: 'IV', amount: '300.00' }] }, ME, 'k-r2m1-rc');
+    return { iv, rc: issue(st, rd.id, rd.version, ME) };
+  };
+  it('the invoice that changed customer stays green (its first entries keep nc-01, the receipt line carries nc-02)', () => {
+    const { iv } = setup();
+    expect(checkInvariants(st)).toEqual([]);
+    expect(doc(iv.id).header.partyId).toBe('nc-02');
+  });
+  it('a later receipt line tagged with the invoice\'s OLD customer is flagged', () => {
+    const { iv, rc } = setup();
+    const line = st.journals.find((j) => j.docId === rc.id)!.preview.entries.flatMap((e) => e.lines).find((l) => l.openItemId === iv.id)!;
+    expect(line.partyId).toBe('nc-02');
+    line.partyId = 'nc-01';
+    expect(checkInvariants(st).filter((v) => v.includes(iv.id) && v.includes('nc-01'))).toHaveLength(1);
+  });
+});

@@ -13,14 +13,14 @@ import { endpoints } from '@/lib/api/endpoints';
 const INPUT_TYPE = { date: 'date', month: 'month', year: 'number' } as const;
 const SELECT = 'h-9 rounded-md border border-input bg-background px-2 text-body';
 
-/** A party parameter is found by typing (the type-ahead of the document editor, no quick-create) and carries the party's ID (a name is not an identity). The id already in the URL shows the party's name once the list has it
- *  (the parties endpoint matches name / code / tax id, not the id, so the list is the lookup); a party the list does not hold (a deactivated one) shows its id. */
+/** A party parameter is found by typing (the type-ahead of the document editor, no quick-create) and carries the party's ID (a name is not an identity). The id already in the URL shows the party's NAME: it is fetched by id (the master record), never looked up in a page of the list,
+ *  so a party beyond the first 200 shows its name too; a party the record store does not hold (another company's, deleted) shows its id. */
 function PartyPick({ value, kind, onChange }: { value: string; kind: 'customer' | 'vendor'; onChange: (v: string) => void }) {
   const { me } = useMe();
   const companyId = me?.activeCompanyId ?? '';
-  const known = useQuery({ queryKey: [companyId, 'report-parties', kind], enabled: !!companyId && !!value, queryFn: () => endpoints.searchParties({ kind, limit: 200 }) });
-  if (value && !known.isFetched) return null; // the name of the id in the URL is on its way: the box is filled once, when it appears
-  const shown = value ? known.data?.items.find((p) => p.id === value) ?? ({ id: value, kind, code: '', name: value, vatRegistered: false, paymentTermDays: 0, entityKind: 'juristic' } as PartySummary) : undefined;
+  const known = useQuery({ queryKey: [companyId, 'report-party', kind, value], enabled: !!companyId && !!value, retry: false, queryFn: () => endpoints.getRecord(kind, value) });
+  if (value && known.isLoading) return null; // the name of the id in the URL is on its way: the box is filled once, when it appears
+  const shown = value ? ({ id: value, kind, code: String(known.data?.code ?? ''), name: String(known.data?.name ?? value), vatRegistered: false, paymentTermDays: 0, entityKind: 'juristic' } as PartySummary) : undefined;
   return <PartyField kind={kind} value={shown} search={(q) => endpoints.searchParties({ kind, q, limit: 20 }).then((p) => p.items)} onPick={(p) => onChange(p.id)} onClear={() => onChange('')} />;
 }
 
