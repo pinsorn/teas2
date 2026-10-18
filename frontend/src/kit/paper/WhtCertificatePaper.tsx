@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @next/next/no-img-element -- data URLs printed on paper: nothing to optimise */
 import type { PaperModel } from '@/domain/types';
 import { formatDateBE, formatMoney } from '@/lib/format';
 import { Paper, PaperPage } from './Paper';
@@ -54,6 +55,7 @@ function Party({ title, name, taxId, address, kind }: { title: string; name: str
 
 function Sheet({ m, copy }: { m: PaperModel; copy: number }) {
   const c = m.certificate!, row = rowOfIncome(c.incomeType, c.form);
+  const ok = (src?: string) => !!src?.startsWith('data:image/'), signed = ok(m.images?.signature) && !!m.issuer?.signatureAt, stamped = ok(m.images?.stamp); // ST4: the form is fixed - one payer line and the seal box; a missing picture leaves them as printed
   return (
     <PaperPage stamp={m.voidMark}>
       <div className="paper-rd-copy">{COPIES[copy]}</div>
@@ -90,7 +92,7 @@ function Sheet({ m, copy }: { m: PaperModel; copy: number }) {
         <div className="paper-rd-box paper-rd-warn"><b>คำเตือน</b> ผู้มีหน้าที่ออกหนังสือรับรองการหักภาษี ณ ที่จ่าย ฝ่าฝืนไม่ปฏิบัติตามมาตรา 50 ทวิ แห่งประมวลรัษฎากร ต้องรับโทษทางอาญาตามมาตรา 35 แห่งประมวลรัษฎากร</div>
         <div className="paper-rd-box paper-rd-sign">
           <p>ขอรับรองว่าข้อความและตัวเลขดังกล่าวข้างต้นถูกต้องตรงกับความจริงทุกประการ</p>
-          <div className="paper-rd-signrow"><div><div className="paper-rd-sigline">ลงชื่อ ................................................ ผู้จ่ายเงิน</div><div className="paper-rd-date" data-field="issued">{formatDateBE(m.documentDate)}<br />(วัน เดือน ปี ที่ออกหนังสือรับรองฯ)</div></div><div className="paper-rd-seal">ประทับตรา<br />นิติบุคคล<br />(ถ้ามี)</div></div>
+          <div className="paper-rd-signrow"><div><div className="paper-rd-sigline" style={{ position: 'relative' }}>{signed ? <img src={m.images!.signature} alt="" style={{ position: 'absolute', left: '22mm', bottom: 2, height: '9mm', maxWidth: '45mm', objectFit: 'contain' }} /> : null}ลงชื่อ ................................................ ผู้จ่ายเงิน</div>{signed && m.issuer?.name ? <div style={{ fontSize: '0.9em', textAlign: 'center' }}>({m.issuer.name}){m.issuer.position ? ` ${m.issuer.position}` : ''}</div> : null}<div className="paper-rd-date" data-field="issued">{formatDateBE(m.documentDate)}<br />(วัน เดือน ปี ที่ออกหนังสือรับรองฯ)</div></div><div className="paper-rd-seal" style={stamped ? { border: 0 } : undefined}>{stamped ? <img src={m.images!.stamp} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} /> : <>ประทับตรา<br />นิติบุคคล<br />(ถ้ามี)</>}</div></div>
         </div>
       </div>
       <p className="paper-rd-note">หมายเหตุ เลขประจำตัวผู้เสียภาษีอากร (13 หลัก)* หมายถึง 1. กรณีบุคคลธรรมดา ให้ใช้เลขประจำตัวประชาชนของกรมการปกครอง 2. กรณีนิติบุคคล ให้ใช้เลขทะเบียนนิติบุคคลของกรมพัฒนาธุรกิจการค้า 3. กรณีอื่น ๆ นอกเหนือจาก 1. และ 2. ให้ใช้เลขประจำตัวผู้เสียภาษีอากร (13 หลัก) ของกรมสรรพากร</p>

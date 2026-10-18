@@ -1,11 +1,12 @@
 import type {
-  ActivityEntry, Allocation, ApprovalPolicy, Attachment, AuditEntry, BankImport, BankJournal, BankLine, ChainEdge, Company, CorrectionPlan, CustomRole, StaffMember, Doc, DocHeader, DocLine, ItemSummary, JournalPreview, Membership, Money, PaperModel, PartySummary, PayrollPayment, Revision, Role, ScheduleRecord, SettlementRecord,
+  ActivityEntry, Allocation, ApprovalPolicy, Attachment, AuditEntry, BankImport, BankJournal, BankLine, ChainEdge, Company, CorrectionPlan, CustomRole, StaffMember, Doc, DocHeader, DocLine, ItemSummary, JournalPreview, Membership, Money, PaperModel, PartySummary, PayrollPayment, PrintTemplate, Revision, Role, ScheduleRecord, SettlementRecord,
 } from '@/domain/types';
 import { DOC_TYPES, LIVE } from '@/domain/doc-types';
 import { recomputeSettlement } from './engine/commands';
 import { ledgerFor } from './engine/ledger';
 import { withBankSnapshot } from './engine/settlement';
 import { adjustSnapshot, hasSnapshot } from './engine/notes';
+import { stampIssue } from './engine/look';
 import type { CitYearData } from '@/domain/filings';
 import type { YearClose } from './engine/close';
 import { type Filing, seedFilings } from './engine/filings';
@@ -27,7 +28,11 @@ import { getSettings } from './settings';
 import { seedBankStatements } from './fixtures/statements';
 
 export interface MockState {
-  version: 60;
+  version: 61;
+  /** ST4: every picture an issued document or a finalized return refers to, kept once (hash -> data URL) and never removed. ABSENT until the first issue that has one. */
+  images?: Record<string, string>;
+  /** ST4: the print options a company changed per document type; ABSENT = the defaults (every image and line on, the type's own labels). */
+  printTemplates?: PrintTemplate[];
   companies: Company[];
   /** ST1: the people of each company (memberships with a name, role, position, signature) and its custom roles; the three system roles are code (mocks/permissions.ts). */
   staff: StaffMember[];
@@ -106,6 +111,7 @@ export function buildSeedState(role: Role = 'accountant'): MockState {
   seedSchedules(s); // AC4: recurring templates and the insurance amortisation (3 runs), after the bill they come from
   seedAssets(s); // AC5: fixed assets, depreciation runs and the sale of one asset, after every bill / opening balance they come from
   for (const d of s.docs) if (d.issuedAt && !d.header.bankSnapshot) d.header = withBankSnapshot(s, d.companyId, d.type, d.header); // seeded receipts / vouchers entered directly: freeze the account they print, like an issued one (I3)
+  for (const d of s.docs) if (!['draft', 'pending', 'approved'].includes(d.status) && !d.sellerSnapshot) stampIssue(s, d, d.createdBy); // ST4 (I3): a seeded issued paper keeps the seller and the pictures it would have been issued with (the engine-made ones were stamped when they were issued)
   seedBankStatements(s); // FN1: the September statements, imported through the same engine the upload uses
   seedFilings(s); // TX1: the ภ.พ.30 of 2026-07 and 2026-08 are filed (last: they lock the documents they took)
   seedAudit(s); // RP3: the trail in time order, then logins, switches, a posting-rule and a tax-table change
@@ -117,7 +123,7 @@ export const seed = (): MockState => buildSeedState(getSettings().role);
 export function loadState(): MockState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 60) return s; }
+    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 61) return s; }
   } catch { /* fall through to a fresh seed */ }
   return seed();
 }

@@ -147,7 +147,7 @@ export interface RemainingLine { lineId: string; description: string; unit: stri
 /** PV: the withholding as it was when the voucher was issued / last changed by its own save (C1) - the ledger, the certificates, the paper and the invariants read this, never today's bills.
  *  `bases`: per settled bill and WHT type the base this voucher took (I1: cumulative per bill; `full` = the bill was paid up by this voucher, `billBase` = the bill's base of this type at that moment (B_paidUp, only with `full`), `clamped` = a later credit would have made it negative, so 0). `expense` / `cashDelta` are the gross-up figures (signed). */
 export interface WhtFrozen { bases: { targetId: string; whtTypeCode: string; base: Money; clamped?: true; full?: true; billBase?: Money }[]; lines: WhtLine[]; expense: Money; cashDelta: Money }
-export interface Doc { id: string; type: DocType; /** ST1 (I3): the seller as printed, frozen when the company's legal identity is edited so an issued document keeps the name it was issued under. */ sellerSnapshot?: PaperParty; number?: string; status: DocStatus; correctionClass: CorrectionClass;
+export interface Doc { id: string; type: DocType; /** ST1 (I3): the seller as printed, frozen when the company's legal identity is edited so an issued document keeps the name it was issued under. */ sellerSnapshot?: PaperParty; /** ST4 (I3): the logo, stamp and the issuer's signature as they were at issue (and at every revise): references into `MockState.images`, never the pictures. */ issueLook?: IssueLook; number?: string; status: DocStatus; correctionClass: CorrectionClass;
   revision: number; version: number; header: DocHeader; party?: PartySummary; lines: DocLine[]; totals: DocTotals;
   outstanding?: Money; locks: Lock[]; createdBy: Actor; issuedAt?: string; allocations?: Allocation[]; whtFrozen?: WhtFrozen; /** OB batch (AC3): the steps behind the trial balance. */ opening?: DocOpening; /** FA (AC5): the registered asset. */ asset?: AssetData; /** DP (AC5): the depreciation run's frozen rows. */ dp?: DpData; /** PR (PY1): the payroll run's frozen slips. */ payroll?: PayrollData;
   /** CN / DN (ม.86/10): the invoice's net, the correct value after this note, the difference and its VAT, taken when the note is issued; the paper prints these. Server-written. */
@@ -271,6 +271,10 @@ export interface ApiProblem { type?: string; title: string; status: number; code
 export interface PayslipPaperModel { employeeId: string; name: string; nationalId?: string; period: string; payDate: IsoDate; proratedDays?: number; daysInMonth: number;
   income: { label: string; amount: Money }[]; deductions: { label: string; amount: Money }[]; gross: Money; totalDeductions: Money; net: Money; netInWords: string; ssoEmployer: Money;
   ytd: { income: Money; pit: Money; sso: Money }; note: string }
+/** ST4: what an issued paper shows of the company and the issuer, by reference (a hash into `MockState.images`); the issuer's name and position are copied. */
+export interface IssueLook { logo?: string; stamp?: string; signature?: string; issuerName?: string; issuerPosition?: string }
+/** ST4: the print options of one document type (a display option read at print time; it never changes a frozen figure). */
+export interface PrintTemplate { companyId: string; type: DocType; showLogo: boolean; showStamp: boolean; showSignature: boolean; /** absent = the type's own labels */ signatureLabels?: string[]; version: number }
 /** Printed party block. phone / nameEn are optional extras for the seller header. */
 export interface PaperParty { name: string; nameEn?: string; address: string; phone?: string; taxId?: string; branchLabel?: string }
 /** Everything the printed document shows, ready-made by the server: the paper never computes tax or totals. */
@@ -300,6 +304,8 @@ export interface PaperModel {
   /** PR (PY2): one payslip per employee, all read from the run's frozen slips (the paper computes nothing). */ payslips?: PayslipPaperModel[];
   voidMark?: { label: string; note?: string }; // cancelled / replaced originals: diagonal stamp on every page
   signatures: string[];                        // ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม']
+  /** ST4: the pictures (data URLs; a stored model keeps hashes until the template is applied) and who signed, on which line. An image is absent when the template hides it, the company has none or the document is a draft. */
+  images?: { logo?: string; stamp?: string; signature?: string }; issuer?: { name?: string; position?: string; signatureAt?: string; stampAt?: string }
 }
 
 /** AC6 period close. A checklist item as the server states it (read-only); `note` marks a check that waits for a later group (filings: TX1). */

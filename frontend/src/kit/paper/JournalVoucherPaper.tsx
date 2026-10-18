@@ -2,11 +2,11 @@
 import type { PaperModel } from '@/domain/types';
 import { formatDateBE, formatMoney } from '@/lib/format';
 import { Paper, PaperPage } from './Paper';
+import { LogoMark, SigBlocks } from './TaxInvoicePaper';
 
 // A journal voucher is an internal accounting record: its labels stay Thai whatever the UI language is, so they are not in messages.
 const L = { phone: 'โทร', taxId: 'เลขประจำตัวผู้เสียภาษี', no: 'เลขที่', date: 'วันที่', ref: 'เลขที่อ้างอิง', seq: 'ลำดับ', account: 'บัญชี', desc: 'คำอธิบาย', debit: 'เดบิต', credit: 'เครดิต', total: 'รวม', words: 'จำนวนเงินรวม (ตัวอักษร)', notes: 'หมายเหตุ', baht: 'บาท' };
 const PER_PAGE = 22; // account lines on a sheet (a long voucher continues on the next one)
-const mark = (name: string) => name.replace(/^(บริษัท|ห้างหุ้นส่วนจำกัด|ห้างหุ้นส่วนสามัญ|หจก\.|บจก\.)\s*/, '').charAt(0);
 
 /** ใบสำคัญทั่วไป: the account lines (account, note, debit, credit) with the server's two totals, then the signatures ผู้จัดทำ / ผู้ตรวจ / ผู้อนุมัติ. Nothing is summed here. */
 export function JournalVoucherPaper({ model: m }: { model: PaperModel }) {
@@ -21,7 +21,7 @@ export function JournalVoucherPaper({ model: m }: { model: PaperModel }) {
             <header>
               <div className="paper-hd">
                 <div className="paper-seller">
-                  <div className="paper-logo" aria-hidden="true">{mark(s.name)}</div>
+                  <LogoMark m={m} />
                   <div>
                     <h2>{s.name}</h2>
                     {s.nameEn ? <div className="paper-name-en">{s.nameEn}</div> : null}
@@ -74,7 +74,7 @@ export function JournalVoucherPaper({ model: m }: { model: PaperModel }) {
                   <div />
                 </div>
                 <div className="paper-sign">
-                  {m.signatures.map((x) => <div className="paper-sig" key={x}><div className="line" /><div className="who">{x}</div><div className="date">{L.date} <i /></div></div>)}
+                  <SigBlocks m={m} date={L.date} />
                 </div>
               </footer>
             ) : null}

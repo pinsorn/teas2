@@ -1,8 +1,11 @@
 import { HttpResponse, http } from 'msw';
-import type { Actor } from '@/domain/types';
+import type { Actor, Doc, DocType } from '@/domain/types';
 import { FieldErrors, companySettings, refuseAgent, updateCompany, type CompanySection } from '../engine/company';
 import { approvalsView, setSelfApproval, setTolerance, updateApprovalRule } from '../engine/approval';
-import { MockError, changeTaxRate, today } from '../engine/log';
+import { bahtText } from '../engine/bahtText';
+import { MockError, changeTaxRate, stamp, today } from '../engine/log';
+import { PRINT_TYPES, sellerOf, snapshotLook, templatesView, updateTemplate } from '../engine/look';
+import { DEFAULT_SIGNATURES, PAPER_BUILDERS } from '../engine/paper';
 import { listNumbering, previewNumbering, updateNumbering } from '../engine/numbering';
 import { requestVatChange, setWhtActive, taxSettings } from '../engine/wht';
 import { AGENT, USER } from '../fixtures/documents';
@@ -42,6 +45,20 @@ async function guarded(kind: 'list' | 'item', perm: 'settings.manage' | 'users.m
   }
 }
 const write = (c: ReturnType<typeof ctx>, value: object, status = 200) => { persist(c.st); return HttpResponse.json(value, { status }); };
+/** ST4: the sample document a template previews on - the type's REAL paper is built from it (no second renderer), as if the signed-in user issued it now. */
+function sampleDoc(c: ReturnType<typeof ctx>, type: DocType): Doc {
+  const vat = c.company.vatRegistered, unit = '1000.00', v = vat && type !== 'RC' && type !== 'PV' && type !== 'EX' && type !== 'PR' ? '70.00' : '0.00', total = (Number(unit) + Number(v)).toFixed(2);
+  const codes = c.st.accounts.filter((a) => a.companyId === c.company.id).slice(0, 2).map((a) => a.code);
+  const lines = type === 'JV' ? [{ id: 's1', description: 'รายการตัวอย่าง', qty: '1', unit: '', unitPrice: '0.00', taxCode: 'EX' as const, accountCode: codes[0], debit: unit, credit: '0.00' }, { id: 's2', description: 'รายการตัวอย่าง', qty: '1', unit: '', unitPrice: '0.00', taxCode: 'EX' as const, accountCode: codes[1], debit: '0.00', credit: unit }]
+    : [{ id: 's1', description: 'รายการตัวอย่าง', qty: '1', unit: 'งาน', unitPrice: unit, taxCode: vat && v !== '0.00' ? 'S7' as const : 'EX' as const }];
+  const slip = { employeeId: 'sample', name: 'พนักงาน ตัวอย่าง', month: today().slice(0, 7), items: {}, salaryPaid: '30000.00', daysInMonth: 30, pit: '0.00', sso: '750.00', otherDeduction: '0.00', gross: '30000.00', net: '29250.00', ssoEmployer: '750.00', ytdIncome: '30000.00', ytdPit: '0.00', ytdSso: '750.00', employee: { nationalId: '1234567890123' } };
+  return { id: 'sample', type, status: 'issued', correctionClass: 'T', revision: 0, version: 1, number: `${type}-ตัวอย่าง`, locks: [], createdBy: USER, issuedAt: stamp(),
+    header: { documentDate: today(), notes: 'หมายเหตุตัวอย่าง', ...(type === 'WT' ? { whtForm: 'PND53' as const, whtTax: '30.00', whtIncomeType: '40(2)' } : {}) },
+    party: { id: 'sample', kind: 'customer', entityKind: 'juristic', code: '', name: 'ลูกค้าตัวอย่าง จำกัด', address: '99 ถนนตัวอย่าง กรุงเทพมหานคร', taxId: '0105551234567', branchCode: '00000', vatRegistered: true, paymentTermDays: 30 },
+    lines, totals: { gross: unit, discount: '0.00', net: unit, vat: v, total, ...(type === 'WT' ? { wht: '30.00' } : {}), amountInWords: bahtText(total) },
+    ...(type === 'PR' ? { payroll: { month: today().slice(0, 7), slips: [slip] } as never } : {}),
+    sellerSnapshot: sellerOf(c.company), issueLook: snapshotLook(c.st, c.company.id, USER) };
+}
 const own = (c: ReturnType<typeof ctx>, id: unknown) => { if (id !== c.company.id) throw new MockError(404, 'company.not_found', 'ไม่พบบริษัท'); };
 
 export const settingsHandlers = [
@@ -68,6 +85,15 @@ export const settingsHandlers = [
   http.put('*/bff/v1/settings/approvals/self-approval', ({ request }) => guarded('item', 'settings.manage', async (c) => { const a = actorOf(request); return write(c, setSelfApproval(c.st, a, c.company.id, await bodyOf(request))); })),
   http.put('*/bff/v1/settings/approvals/tolerance', ({ request }) => guarded('item', 'settings.manage', async (c) => { const a = actorOf(request); return write(c, setTolerance(c.st, a, c.company.id, await bodyOf(request))); })),
   http.put('*/bff/v1/settings/approvals/:type', ({ request, params }) => guarded('item', 'settings.manage', async (c) => { const a = actorOf(request); return write(c, updateApprovalRule(c.st, a, c.company.id, String(params.type), await bodyOf(request))); })),
+
+  // ---- ST4 document templates (settings.manage): per printable type the print options; the preview is the type's real paper built from a sample document ----
+  http.get('*/bff/v1/settings/templates', () => guarded('list', 'settings.manage', (c) => HttpResponse.json(templatesView(c.st, c.company.id, DEFAULT_SIGNATURES())))),
+  http.get('*/bff/v1/settings/templates/:type/preview', ({ params }) => guarded('item', 'settings.manage', (c) => {
+    const type = String(params.type) as DocType;
+    if (!PRINT_TYPES.includes(type)) throw new MockError(404, 'template.unknown_type', 'ไม่รู้จักประเภทเอกสารนี้');
+    return HttpResponse.json(PAPER_BUILDERS[type]!(c, sampleDoc(c, type), false));
+  })),
+  http.put('*/bff/v1/settings/templates/:type', ({ request, params }) => guarded('item', 'settings.manage', async (c) => { const a = actorOf(request); updateTemplate(c.st, a, c.company.id, String(params.type), await bodyOf(request)); return write(c, templatesView(c.st, c.company.id, DEFAULT_SIGNATURES())); })),
 
   // ---- company (settings.manage) ----
   http.get('*/bff/v1/settings/companies/:id', ({ params }) => guarded('item', 'settings.manage', (c) => { own(c, params.id); return HttpResponse.json(companySettings(c.st, c.company.id)); })),

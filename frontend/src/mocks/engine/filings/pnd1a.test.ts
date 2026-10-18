@@ -185,6 +185,20 @@ describe('ruling 8: the annual 50 ทวิ for employees comes from the finaliz
     stored(NV, '2025').company.address = 'tampered';
     expect(found(/fingerprint/)).toBe(true); // the frozen address is covered
   });
+  it('ST4: the employees\' 50 ทวิ print the logo, stamp and signature the return was finalized with - a later upload moves nothing; the invariant names a lost picture', () => {
+    const PIC = (c: string) => `data:image/png;base64,${c.repeat(8)}`;
+    const co = st.companies.find((c) => c.id === NV)!, staff = st.staff.find((m) => m.companyId === NV && m.userId === 'u-1')!;
+    co.logoDataUrl = PIC('A'); co.stampDataUrl = PIC('B'); staff.signatureDataUrl = PIC('C');
+    file1a(NV, '2025');
+    co.logoDataUrl = PIC('X'); co.stampDataUrl = PIC('Y'); staff.signatureDataUrl = PIC('Z'); staff.active = false;
+    const m = employeeCertificates(st, NV, '2025')[0];
+    expect(m.images).toEqual({ logo: PIC('A'), stamp: PIC('B'), signature: PIC('C') });
+    expect(m.issuer).toMatchObject({ name: staff.name, signatureAt: 'ผู้จ่ายเงิน' });
+    expect(checkInvariants(st)).toEqual([]);
+    const ref = (stored(NV, '2025') as unknown as { look: { signature: string } }).look.signature;
+    delete st.images![ref];
+    expect(found(/signature it was finalized with/)).toBe(true);
+  });
   const call = (p: string) => fetch(`http://localhost/bff/v1${p}`);
   it('over the wire: payroll.read reads; the operator is forbidden; another company has none of this company\'s', async () => {
     setSettings({ companyKey: 'nonvat', role: 'accountant', screenState: 'normal' });

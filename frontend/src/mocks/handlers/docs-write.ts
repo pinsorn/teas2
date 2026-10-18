@@ -2,7 +2,7 @@ import { DOC_TYPES, isTypeAvailable } from '@/domain/doc-types';
 import { HttpResponse, http } from 'msw';
 import type { Actor, AttachmentCategory, DocHeader, DocType, MarkKey, Qty } from '@/domain/types';
 import { addAttachment, discardAttachment, listAttachments, markPrinted, removeAttachment } from '../engine/attachments';
-import { PAPER_BUILDERS } from '../engine/paper';
+import { PAPER_BUILDERS, PAPER_RAW } from '../engine/paper';
 import { buildChain } from '../engine/chain';
 import { approve, sendBack } from '../engine/approval';
 import { type Body, keepOmitted, unavailableTh, approveAndIssue, cancel, compute, convert, createDraft, deleteDraft, issue, publicDoc, submitForApproval, updateDraft } from '../engine/commands';
@@ -327,7 +327,7 @@ export const docsWriteHandlers = [
     const body = (await request.json().catch(() => ({}))) as { copy?: boolean; employee?: string };
     const c = ctx(); // the body was awaited: read the state again so two quick prints (two tabs) see each other and only one is the original
     const doc = own(c, t, params.id);
-    const r = markPrinted(c.st, doc, body.copy === true, ACTOR, t === 'WT' && PAPER_BUILDERS.WT && !['draft', 'pending', 'approved'].includes(doc.status) ? PAPER_BUILDERS.WT(c, publicDoc(doc), false) : undefined, body.employee); // 50 tawi: frozen at the first print (I7); PY3 m2: `employee` = one payslip of a run (not the run's print)
+    const r = markPrinted(c.st, doc, body.copy === true, ACTOR, t === 'WT' && PAPER_RAW.WT && !['draft', 'pending', 'approved'].includes(doc.status) ? PAPER_RAW.WT(c, publicDoc(doc), false) : undefined, body.employee); // 50 tawi: frozen at the first print (I7); PY3 m2: `employee` = one payslip of a run (not the run's print)
     done(c);
     return HttpResponse.json(r);
   })),

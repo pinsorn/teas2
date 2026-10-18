@@ -1572,6 +1572,31 @@
         "save": "Save", "saved": "Saved", "failed": "Could not save. Try again.", "frozen": "A settlement keeps the tolerance in force when it was made. A change applies to new settlements only."
       }
     },
+    "templates": {
+      "title": "Document templates",
+      "lead": "Choose, per document type, whether the logo, the company stamp and the signature lines are shown and which signer names are used. These options apply when printing only; they never change the figures or data of a document already issued.",
+      "types": "Document types",
+      "notesLink": "The default note of each type is set on the company page",
+      "editor": {
+        "showLogo": "Show the company logo",
+        "showStamp": "Show the company stamp",
+        "showSignature": "Show the signature lines and the issuer's signature",
+        "labels": "Signer names",
+        "labelsHint": "Pick 1 to 4 lines, in the order picked. The issuer's signature sits on the {line} line",
+        "labelOf": "Signature line {label}",
+        "save": "Save",
+        "saved": "Saved",
+        "failed": "Could not save. Try again.",
+        "tooFew": "Pick at least one signer name",
+        "conflict": "This template was changed by someone else. The latest has been loaded; check it and save again."
+      },
+      "preview": {
+        "title": "Print preview",
+        "note": "The preview is the real paper built from a sample document. It updates after you save.",
+        "loading": "Loading the preview",
+        "failed": "Could not show the preview"
+      }
+    },
     "common": {
       "save": "Save",
       "saving": "Saving",

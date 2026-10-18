@@ -1,8 +1,10 @@
 import { LIVE } from '@/domain/doc-types';
 import type { FilingBlocker, FilingBox, FilingModel } from '@/domain/filings';
-import type { PaperModel } from '@/domain/types';
+import type { IssueLook, PaperModel } from '@/domain/types';
 import type { MockState } from '../../store';
+import { USER } from '../../fixtures/documents';
 import { bahtText } from '../bahtText';
+import { finishPaper, snapshotLook } from '../look';
 import { MockError, today } from '../log';
 import { fromSatang, toSatang } from '../money';
 import { monthLabelTh } from '../periods';
@@ -76,9 +78,10 @@ export function pnd1aModel(st: MockState, companyId: string, year: string): Fili
   const warnings: string[] = [];
   return { form: 'PND1A', period: year, status: 'draft', boxes, tieOuts: ties(months, rows, boxes), blockers, warnings, attachment: pnd1aAttachment(rows), version: fnv(JSON.stringify([months.map((f) => f.period), rows])), dueDate: due(year), exports: ['rdprep-txt', 'pdf'] };
 }
-export const pnd1aSnapshot = (st: MockState, companyId: string, year: string): Pick<Filing, 'payroll' | 'docs' | 'carryIn' | 'pp36'> => {
+/** ST4: the finalize also freezes the logo, the stamp and the signer's signature the employees' 50 ทวิ print (references into `st.images`; beside the company as filed, NOT part of its fingerprint). A finalize is a signed-in user's act. */
+export const pnd1aSnapshot = (st: MockState, companyId: string, year: string): Pick<Filing, 'payroll' | 'docs' | 'carryIn' | 'pp36'> & { look: IssueLook } => {
   const months = monthsOf(st, companyId, year);
-  return { payroll: { runs: [], rows: yearRows(months, obOf(st, companyId, year)), months: months.map((f) => f.period) }, docs: [], carryIn: '0.00', pp36: '0.00' };
+  return { payroll: { runs: [], rows: yearRows(months, obOf(st, companyId, year)), months: months.map((f) => f.period) }, docs: [], carryIn: '0.00', pp36: '0.00', look: snapshotLook(st, companyId, USER) };
 };
 
 /** Ruling 5: the stored months are exactly the finalized ภ.ง.ด.1 of the year; each row is its stored opening part + Σ those months' stored rows; the boxes are Σ rows; 1ก Σ = opening + Σ months. */
@@ -110,6 +113,7 @@ export function employeeCertificates(st: MockState, companyId: string, year: str
   if (!YEAR.test(year)) throw fail(422, 'filing.bad_period', 'ปีต้องอยู่ในรูปแบบ ปปปป');
   const f = st.filings.find((x) => x.companyId === companyId && x.form === 'PND1A' && x.period === year);
   if (!f?.payroll) throw fail(409, 'filing.not_finalized', 'ยืนยัน ภ.ง.ด.1ก ก่อนจึงจะออกหนังสือรับรองการหักภาษี ณ ที่จ่ายของพนักงานได้');
+  const look = (f as Filing & { look?: IssueLook }).look ?? {};
   return f.payroll.rows.map((r, i) => {
     const p = st.parties.find((x) => x.id === r.employeeId && x.companyId === companyId), tax = r.pit ?? '0.00';
     return {
@@ -118,6 +122,7 @@ export function employeeCertificates(st: MockState, companyId: string, year: str
       buyer: { name: r.name, address: p?.address ?? '', taxId: r.nationalId },
       partyLabel: 'ผู้ถูกหักภาษี ณ ที่จ่าย', lines: [], totals: { gross: r.income, discount: '0.00', net: r.income, vat: '0.00', total: r.income, amountInWords: bahtText(r.income) }, signatures: ['ผู้จ่ายเงิน', 'ผู้มีอำนาจลงนาม'],
       certificate: { form: 'PND1A', incomeType: '40(1) เงินเดือน ค่าจ้าง', incomeLabel: 'เงินเดือน ค่าจ้าง เบี้ยเลี้ยง โบนัส ฯลฯ', paidOn: `${year}-12-31`, income: r.income, tax, taxInWords: bahtText(tax), condition: 'withhold', ssoPaid: r.sso },
+      images: { ...(look.logo ? { logo: look.logo } : {}), ...(look.stamp ? { stamp: look.stamp } : {}), ...(look.signature ? { signature: look.signature } : {}) }, issuer: { ...(look.issuerName ? { name: look.issuerName } : {}), ...(look.issuerPosition ? { position: look.issuerPosition } : {}) },
     } as PaperModel;
-  });
+  }).map((m) => finishPaper(st, companyId, 'WT', m)); // the 50 ทวิ template's options (ST4); the pictures are the ones the return was finalized with
 }

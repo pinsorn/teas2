@@ -24,6 +24,33 @@ interface Metrics { rows: number[]; head: number; thead: number; pg: number; foo
 
 const qtyOf = (q: string) => (q.includes('.') ? q.replace(/0+$/, '').replace(/\.$/, '') : q);
 const mark = (name: string) => name.replace(/^(บริษัท|ห้างหุ้นส่วนจำกัด|ห้างหุ้นส่วนสามัญ|หจก\.|บจก\.)\s*/, '').charAt(0);
+/** ST4: the company logo replaces the text mark when the model carries one (a data URL; anything else - or no picture - keeps the mark: never a broken image). */
+export function LogoMark({ m, height = '17mm', cls = 'paper-logo' }: { m: PaperModel; height?: string; cls?: string }) {
+  const src = m.images?.logo;
+  // eslint-disable-next-line @next/next/no-img-element -- a data URL printed on paper: nothing to optimise or lazy-load
+  return src?.startsWith('data:image/') ? <img src={src} alt="" style={{ height, maxWidth: '45mm', objectFit: 'contain', flex: 'none' }} /> : <div className={cls} aria-hidden="true">{mark(m.seller.name)}</div>;
+}
+/** ST4: the signature lines. The issuer's signature sits ON the line of the role that issued the document (name and position under it); the company stamp sits beside the authorised-signatory line. A missing picture leaves the empty line. `date` adds the date row of the sales papers. */
+export function SigBlocks({ m, box = 'paper-sig', date }: { m: PaperModel; box?: string; date?: string }) {
+  const im = m.images, who = m.issuer;
+  // eslint-disable-next-line @next/next/no-img-element -- a data URL printed on paper
+  const img = (src: string | undefined, style: React.CSSProperties) => (src?.startsWith('data:image/') ? <img src={src} alt="" style={{ position: 'absolute', objectFit: 'contain', ...style }} /> : null);
+  return (
+    <>
+      {m.signatures.map((s) => (
+        <div className={box} key={s}>
+          <div className="line" style={{ position: 'relative' }}>
+            {s === who?.signatureAt ? img(im?.signature, { left: '50%', bottom: 2, transform: 'translateX(-50%)', maxHeight: '95%', maxWidth: '75%' }) : null}
+            {s === who?.stampAt ? img(im?.stamp, { right: 0, bottom: 0, height: '15mm', maxWidth: '24mm', opacity: 0.9 }) : null}
+          </div>
+          <div className="who">{s}</div>
+          {s === who?.signatureAt && im?.signature && who?.name ? <div style={{ fontSize: '0.9em' }}>({who.name}){who.position ? <><br />{who.position}</> : null}</div> : null}
+          {date ? <div className="date">{date} <i /></div> : null}
+        </div>
+      ))}
+    </>
+  );
+}
 const partyIds = (p: PaperParty) => [p.taxId ? `${L.taxId} ${p.taxId}` : '', p.branchLabel ?? ''].filter(Boolean).join(' · ');
 
 function Head({ m }: { m: PaperModel }) {
@@ -32,7 +59,7 @@ function Head({ m }: { m: PaperModel }) {
     <header data-probe="head">
       <div className="paper-hd">
         <div className="paper-seller">
-          <div className="paper-logo" aria-hidden="true">{mark(s.name)}</div>
+          <LogoMark m={m} />
           <div>
             <h2>{s.name}</h2>
             {s.nameEn ? <div className="paper-name-en">{s.nameEn}</div> : null}
@@ -144,7 +171,7 @@ function Foot({ m, receipt, voucher }: { m: PaperModel; receipt?: boolean; vouch
         </div>
       </div>
       <div className="paper-sign">
-        {m.signatures.map((s) => <div className="paper-sig" key={s}><div className="line" /><div className="who">{s}</div><div className="date">{L.date} <i /></div></div>)}
+        <SigBlocks m={m} date={L.date} />
       </div>
     </footer>
   );

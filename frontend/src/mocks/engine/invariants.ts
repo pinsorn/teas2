@@ -25,6 +25,7 @@ import { dimTypesOf, dimValuesOf, resolveRole } from './posting';
 import { claimPeriodOf, exForfeited, forfeitedOf, isRecoverable } from './purchase-vat';
 import { computeDoc, vatBasisOf } from './vat';
 import { wtsOfPv } from './wht-certificates';
+import { lookInvariants } from './look';
 
 type Stored = MockState['docs'][number];
 
@@ -726,6 +727,8 @@ export function checkInvariants(st: MockState): string[] {
   // audit trail (RP3): append-only - the ids are unique, increasing and gap-free (a duplicated, reordered or middle-deleted entry breaks it). Time is a fact about the event, never judged here.
   // [SP2] This cannot see a deleted LAST entry or an edited entry: the backend needs a hash chain over (prevHash, id, at, actor, command, target, before, after, result) plus an external high-water mark.
   st.audit.forEach((a, i) => { if (a.id !== `aud-${i + 1}`) out.push(`audit: entry ${i + 1} has id ${a.id}, expected aud-${i + 1} (ids must be unique and increasing)`); });
+
+  lookInvariants(st, out); // ST4: every issued paper has its seller snapshot and its pictures resolve
 
   // locks: the period lock is derived at read time, never stored (one function: derivedLocks)
   for (const d of st.docs as Doc[]) if (d.locks.some((l) => l.kind === 'period')) out.push(`${d.id}: stored period lock (derived at read time only)`);

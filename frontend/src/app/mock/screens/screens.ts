@@ -234,5 +234,6 @@ export const SCREENS: Screen[] = [
   { name: 'settingsTax', route: '/settings/tax?role=accountant', company: 'both', states: true }, // ST3: tax.settings.manage (accountant + admin); the operator is forbidden
   { name: 'settingsNumbering', route: '/settings/numbering?role=admin', company: 'both', states: true }, // ST3: settings.manage; the accountant is forbidden
   { name: 'settingsApprovals', route: '/settings/approvals?role=admin', company: 'both', states: true },
+  { name: 'settingsTemplates', route: '/settings/templates?role=admin', company: 'both', states: true },
   { name: 'styleGuide', route: '/style-guide', company: 'both', states: false },
 ];

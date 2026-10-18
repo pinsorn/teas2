@@ -4,6 +4,7 @@ import type { ctx } from '../handlers/common';
 import { reasonTh } from '../fixtures/reason-codes';
 import { bahtText } from './bahtText';
 import { compute } from './commands';
+import { branchLabel, finishPaper } from './look';
 import { jvBalance, jvEntryLines, nextMonthStart } from './journal';
 import { fromSatang, toSatang } from './money';
 import { notesUpTo } from './notes';
@@ -11,7 +12,16 @@ import { monthLabelTh } from './periods';
 import { cashBankId, freezeWht } from './settlement';
 type Ctx = ReturnType<typeof ctx>;
 
-export const branchLabel = (code?: string) => (!code ? undefined : code === '00000' ? 'สำนักงานใหญ่ (00000)' : `สาขา ${code}`);
+export { branchLabel };
+
+/** ST4: the pictures and the signer a paper prints, as raw references. An issued document refers to what it was issued with (hashes into `st.images`); a draft prints the live logo only - no signature and no stamp, nobody has issued it. */
+function lookOf(c: Ctx, d: Doc): Pick<PaperModel, 'images' | 'issuer'> {
+  if (['draft', 'pending', 'approved'].includes(d.status)) return c.company.logoDataUrl ? { images: { logo: c.company.logoDataUrl } } : {};
+  const l = d.issueLook ?? {};
+  return { images: { ...(l.logo ? { logo: l.logo } : {}), ...(l.stamp ? { stamp: l.stamp } : {}), ...(l.signature ? { signature: l.signature } : {}) }, issuer: { ...(l.issuerName ? { name: l.issuerName } : {}), ...(l.issuerPosition ? { position: l.issuerPosition } : {}) } };
+}
+/** The signature labels a type prints when its template sets none (the page offers these as the starting point). */
+export const DEFAULT_SIGNATURES = (): Partial<Record<DocType, string[]>> => Object.fromEntries(Object.entries(LOOK).map(([t, l]) => [t, l!.signatures]));
 
 interface Look { titleTh: string; titleEn: string; signatures: string[]; dueLabel?: string }
 const LOOK: Partial<Record<DocType, Look>> = {
@@ -58,7 +68,7 @@ function paperOf(c: Ctx, d: Doc, copy: boolean): PaperModel {
     ...(old ? { replacementNote: `ยกเลิกและออกแทนฉบับเดิม เลขที่ ${old.number ?? '-'} ลงวันที่ ${formatDateBE(old.header.documentDate)}` } : {}),
     ...(d.status === 'replaced' ? { voidMark: { label: 'ถูกแทนที่', note: nw?.number ? `ออกแทนด้วยเลขที่ ${nw.number}` : undefined } }
       : d.status === 'cancelled' ? { voidMark: { label: 'ยกเลิก', note: d.cancel?.reasonText } } : {}),
-    signatures: look.signatures,
+    signatures: look.signatures, ...lookOf(c, d),
   };
 }
 
@@ -145,7 +155,7 @@ function certificatePaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
     buyer: { name: d.party?.name ?? '-', address: d.party?.address ?? '', taxId: d.party?.taxId, branchLabel: d.party?.taxId ? branchLabel(d.party.branchCode) : undefined },
     partyLabel: 'ผู้ถูกหักภาษี ณ ที่จ่าย',
     lines: d.lines.map((l, i) => ({ no: i + 1, description: l.description, qty: l.qty, unit: l.unit, unitPrice: l.unitPrice, amount: l.unitPrice, taxCode: 'EX' as const })),
-    totals: d.totals, signatures: look.signatures,
+    totals: d.totals, signatures: look.signatures, ...lookOf(c, d),
     certificate: { form: d.header.whtForm ?? 'PND53', incomeType: d.header.whtIncomeType ?? '', incomeLabel: d.lines[0]?.description ?? '', paidOn: d.header.documentDate, income, tax, taxInWords: bahtText(tax),
       condition: mode === 'grossup_always' ? 'forever' : mode === 'grossup_once' ? 'once' : 'withhold', ...(pv?.number ? { voucher: pv.number } : {}) },
     ...stampOf(),
@@ -190,9 +200,12 @@ function payslipPaper(c: Ctx, d: Doc, copy: boolean): PaperModel {
   return {
     titleTh: 'ใบจ่ายเงินเดือน', titleEn: 'PAYSLIP', copyLabel: copy ? 'สำเนา' : 'ต้นฉบับ', number: d.number ?? '-', documentDate: d.header.documentDate, ...(d.header.reference ? { reference: d.header.reference } : {}),
     seller: d.sellerSnapshot ?? { name: co.legalNameTh, nameEn: co.legalNameEn, address: co.address, phone: co.phone, taxId: co.taxId, branchLabel: branchLabel(co.branchCode) }, buyer: { name: '-', address: '' }, // I3 (ST1a M2): a past payslip keeps the employer it was issued under
-    lines: [], totals: d.totals, signatures: ['ผู้จ่ายเงิน', 'ผู้รับเงิน'], payslips,
+    lines: [], totals: d.totals, signatures: ['ผู้จ่ายเงิน', 'ผู้รับเงิน'], payslips, ...lookOf(c, d),
     ...(d.status === 'cancelled' ? { voidMark: { label: 'ยกเลิก', note: d.cancel?.reasonText } } : {}),
   };
 }
 
-export const PAPER_BUILDERS: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf, QT: paperOf, SO: paperOf, DO: paperOf, IV: paperOf, BL: billingPaper, RC: receiptPaper, CN: adjustmentPaper, DN: adjustmentPaper, PO: paperOf, PV: voucherPaper, EX: claimPaper, JV: journalPaper, WT: certificatePaper, PR: payslipPaper };
+/** The builders as the paper itself is built: before the template is applied (the stored 50 ทวิ keeps this form, I7). */
+export const PAPER_RAW: Partial<Record<DocType, (c: Ctx, d: Doc, copy: boolean) => PaperModel>> = { TI: paperOf, QT: paperOf, SO: paperOf, DO: paperOf, IV: paperOf, BL: billingPaper, RC: receiptPaper, CN: adjustmentPaper, DN: adjustmentPaper, PO: paperOf, PV: voucherPaper, EX: claimPaper, JV: journalPaper, WT: certificatePaper, PR: payslipPaper };
+/** What the routes serve: the raw paper with the company's print options for the type applied (ST4: logo / stamp / signature lines on or off, the signature labels) and the pictures looked up. */
+export const PAPER_BUILDERS: typeof PAPER_RAW = Object.fromEntries(Object.entries(PAPER_RAW).map(([t, b]) => [t, (c: Ctx, d: Doc, copy: boolean) => finishPaper(c.st, c.company.id, t as DocType, b!(c, d, copy))]));
