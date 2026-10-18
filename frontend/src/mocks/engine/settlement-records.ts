@@ -77,28 +77,28 @@ function legs(st: MockState, companyId: string, side: 'source' | 'target', list:
 
 const sum = (xs: SettlementLeg[]) => xs.reduce((n, l) => n + toSatang(l.amount), 0);
 
-type Row = { role: AccountingRole; dr: number; cr: number; party?: string; partyId?: string };
+type Row = { role: AccountingRole; dr: number; cr: number; party?: string; partyId?: string; item?: string };
 /** The journal rows of a settlement (§5.11): the postings of the task, one row per leg under its own party name. */
 function rowsOf(kind: SettlementKind, sources: SettlementLeg[], targets: SettlementLeg[], diff: { role: SettlementDifferenceRole; amount: number } | undefined, payableTargets: boolean): Row[] {
   const rows: Row[] = [];
   const d = diff?.amount ?? 0;
   if (kind === 'apply_deposit') {
-    for (const s of sources) rows.push({ role: 'CustomerDeposit', dr: toSatang(s.amount), cr: 0, party: s.partyName, partyId: s.partyId });
+    for (const s of sources) rows.push({ role: 'CustomerDeposit', dr: toSatang(s.amount), cr: 0, party: s.partyName, partyId: s.partyId, item: s.docId });
     if (diff) rows.push({ role: diff.role, dr: d, cr: 0 });
-    for (const t of targets) rows.push({ role: 'AR', dr: 0, cr: toSatang(t.amount), party: t.partyName, partyId: t.partyId });
+    for (const t of targets) rows.push({ role: 'AR', dr: 0, cr: toSatang(t.amount), party: t.partyName, partyId: t.partyId, item: t.docId });
   } else if (kind === 'apply_prepayment') {
-    for (const t of targets) rows.push({ role: 'AP', dr: toSatang(t.amount), cr: 0, party: t.partyName, partyId: t.partyId });
-    for (const s of sources) rows.push({ role: 'VendorPrepayment', dr: 0, cr: toSatang(s.amount), party: s.partyName, partyId: s.partyId });
+    for (const t of targets) rows.push({ role: 'AP', dr: toSatang(t.amount), cr: 0, party: t.partyName, partyId: t.partyId, item: t.docId });
+    for (const s of sources) rows.push({ role: 'VendorPrepayment', dr: 0, cr: toSatang(s.amount), party: s.partyName, partyId: s.partyId, item: s.docId });
     if (diff) rows.push({ role: diff.role, dr: 0, cr: d });
   } else if (kind === 'netting') {
-    for (const s of sources) rows.push({ role: 'AP', dr: toSatang(s.amount), cr: 0, party: s.partyName, partyId: s.partyId });
-    for (const t of targets) rows.push({ role: 'AR', dr: 0, cr: toSatang(t.amount), party: t.partyName, partyId: t.partyId });
+    for (const s of sources) rows.push({ role: 'AP', dr: toSatang(s.amount), cr: 0, party: s.partyName, partyId: s.partyId, item: s.docId });
+    for (const t of targets) rows.push({ role: 'AR', dr: 0, cr: toSatang(t.amount), party: t.partyName, partyId: t.partyId, item: t.docId });
   } else if (payableTargets) { // a payable written off: we owe less, the difference is ours
-    for (const t of targets) rows.push({ role: 'AP', dr: toSatang(t.amount), cr: 0, party: t.partyName, partyId: t.partyId });
+    for (const t of targets) rows.push({ role: 'AP', dr: toSatang(t.amount), cr: 0, party: t.partyName, partyId: t.partyId, item: t.docId });
     rows.push({ role: diff!.role, dr: 0, cr: d });
   } else { // a receivable written off: the difference is a cost
     rows.push({ role: diff!.role, dr: d, cr: 0 });
-    for (const t of targets) rows.push({ role: 'AR', dr: 0, cr: toSatang(t.amount), party: t.partyName, partyId: t.partyId });
+    for (const t of targets) rows.push({ role: 'AR', dr: 0, cr: toSatang(t.amount), party: t.partyName, partyId: t.partyId, item: t.docId });
   }
   return rows;
 }
@@ -106,14 +106,14 @@ function rowsOf(kind: SettlementKind, sources: SettlementLeg[], targets: Settlem
 const RULE_TH: Record<SettlementKind, string> = { apply_deposit: 'ใช้เงินมัดจำ', apply_prepayment: 'ใช้เงินจ่ายล่วงหน้า', netting: 'หักกลบ', write_off: 'ตัดส่วนต่าง' };
 
 function journalOf(st: MockState, companyId: string, id: string, kind: SettlementKind, date: IsoDate, rows: Row[]): JournalEntryPreview {
-  const acc = new Map<string, { code: string; name: string; rule: string; net: number; party?: string; partyId?: string }>();
+  const acc = new Map<string, { code: string; name: string; rule: string; net: number; party?: string; partyId?: string; item?: string }>();
   for (const r of rows) {
     const res = resolveRole(st, r.role, { companyId, docType: 'JV' });
-    const key = `${res.code}|${r.party ?? ''}|${r.partyId ?? ''}`, prev = acc.get(key);
-    acc.set(key, prev ? { ...prev, net: prev.net + r.dr - r.cr } : { code: res.code, name: res.name, rule: `${res.rule} (${RULE_TH[kind]} ${settlementLabel(id)})`, net: r.dr - r.cr, party: r.party, partyId: r.partyId });
+    const key = `${res.code}|${r.party ?? ''}|${r.partyId ?? ''}|${r.item ?? ''}`, prev = acc.get(key);
+    acc.set(key, prev ? { ...prev, net: prev.net + r.dr - r.cr } : { code: res.code, name: res.name, rule: `${res.rule} (${RULE_TH[kind]} ${settlementLabel(id)})`, net: r.dr - r.cr, party: r.party, partyId: r.partyId, item: r.item });
   }
   const lines = [...acc.values()].filter((x) => x.net !== 0).map((x) => ({
-    accountCode: x.code, accountName: x.name, debit: fromSatang(Math.max(x.net, 0)), credit: fromSatang(Math.max(-x.net, 0)), rule: x.rule, ...(x.party ? { partyName: x.party } : {}), ...(x.partyId ? { partyId: x.partyId } : {}),
+    accountCode: x.code, accountName: x.name, debit: fromSatang(Math.max(x.net, 0)), credit: fromSatang(Math.max(-x.net, 0)), rule: x.rule, ...(x.party ? { partyName: x.party } : {}), ...(x.partyId ? { partyId: x.partyId } : {}), ...(x.item ? { openItemId: x.item } : {}),
   }));
   const dr = lines.reduce((n, l) => n + toSatang(l.debit), 0), cr = lines.reduce((n, l) => n + toSatang(l.credit), 0);
   if (!lines.length || dr !== cr) throw fail(500, 'engine.invariant', 'รายการบัญชีของการหักกลบไม่สมดุล');

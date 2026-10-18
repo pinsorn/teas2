@@ -74,6 +74,21 @@ describe('ruling 5: outstanding purchase orders', () => {
     expect(lines(outstandingPo(st, VAT, { asOf: today() }), num('po-1'))[0].cells.remaining).toBe('9');
     expect(billed('2026-10-13')).toEqual(['0', '0', '0']); // the bill is dated today
   });
+  it('RP2a m4: a bill dated before the date and cancelled after it still counts on the date, until its reversal; the report says what it reads as of now', () => {
+    const po = st.docs.find((d) => d.id === 'po-1')!;
+    const billed = (asOf: string) => lines(outstandingPo(st, VAT, { asOf }), num('po-1')).map((r) => r.cells.billed);
+    const draft = convert(st, po.id, 'PB', [{ sourceLineId: po.lines[0].id, qty: '3' }], ME);
+    st.docs.find((d) => d.id === draft.id)!.header.documentDate = '2026-10-13'; // a bill of an earlier day (setup only)
+    const pb = issue(st, draft.id, draft.version, ME);
+    expect(billed('2026-10-12')).toEqual(['0', '0', '0']);
+    expect(billed('2026-10-13')).toEqual(['3', '0', '0']);
+    cancel(st, pb.id, pb.version, 'other', 'ทดสอบ', ME); // reversed today
+    const dayBefore = new Date(Date.parse(`${today()}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+    expect(billed('2026-10-13')).toEqual(['3', '0', '0']); // the cancel does not reach back
+    expect(billed(dayBefore)).toEqual(['3', '0', '0']);
+    expect(billed(today())).toEqual(['0', '0', '0']); // gone on the day of its reversal
+    expect(outstandingPo(st, VAT, { asOf: today() }).notes?.join(' ')).toContain('ปัจจุบัน');
+  });
   it('refusals and model', () => {
     expect(err(() => outstandingPo(st, VAT, { asOf: '2026-02-30' }))).toMatchObject({ status: 422 });
     expect(err(() => outstandingPo(st, VAT, { overdueOnly: 'maybe' }))).toMatchObject({ status: 422 });

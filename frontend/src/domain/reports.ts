@@ -1,5 +1,10 @@
 import type { IsoDate, Money } from './types';
 
+const ARAP_KINDS = ['ar-aging', 'ap-aging', 'customer-statement', 'vendor-ledger', 'sales-summary', 'purchase-summary', 'outstanding-po'];
+/** The permission a report needs. RP2: receivables / payables and the sales / purchase summaries are the accountant's and the admin's (`report.arap.read`); the operator has neither. The asset register stays `report.read`; the general journal is the ledger itself; the VAT registers and the withholding lists are the tax area's. */
+export const reportPermission = (kind: string): string =>
+  kind === 'general-journal' ? 'ledger.read' : kind.startsWith('vat-') || kind === 'tax-summary' || kind === 'wht-receivable' || kind === 'missing-wht-cert' ? 'tax.read' : ARAP_KINDS.includes(kind) ? 'report.arap.read' : 'report.read';
+
 /** A report is a server-computed model (D-28): the frontend lays it out and never sums. */
 export type ReportKind = 'trial-balance' | 'profit-loss' | 'balance-sheet' | 'general-ledger' | 'ar-aging' | 'ap-aging'
   | 'customer-statement' | 'vendor-ledger' | 'sales-summary' | 'purchase-summary' | 'outstanding-po' | 'vat-output-register'

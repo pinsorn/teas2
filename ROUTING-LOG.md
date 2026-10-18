@@ -52,3 +52,6 @@
 | 2026-10-18 | SP1c RP1 review (P&L, BS, GL, dimension columns, comparatives) | opus-reviewer | financial statements tie-outs; fresh reviewer |
 | 2026-10-18 | SP1c RP1a fix round (partyId on posted lines, honest tie-outs, TB dimension drill) | sonnet-implementer (warm, RP1 worker) | Opus REJECT on M1; warm re-review after |
 | 2026-10-18 | SP1c RP2 implement (AR/AP aging, statements, summaries, outstanding PO, asset register tab) | sonnet-implementer (fresh) | new area (RP1 worker context large); Opus review after |
+| 2026-10-18 | SP1c RP2 review (aging as-of, tie-outs by partyId, statements, summaries, PO, asset register) | opus-reviewer | money reports with GL tie-outs; fresh reviewer |
+| 2026-10-18 | SP1c RP2a design (item-tagged AR/AP control lines, journal-derived as-of aging) | opus-designer | posting-core change after Opus REJECT (B1/M1/M2); footgun zone -> Opus design, Sonnet implements |
+| 2026-10-18 | SP1c RP2a implement (from task-RP2a-design.md) | sonnet-implementer (fresh) | spec airtight, Opus-designed; RP2 worker context too large to stay warm; Opus re-review after |

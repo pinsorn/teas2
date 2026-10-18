@@ -18,26 +18,31 @@ describe('RP2 ruling 8a: every posted line that names a party carries that party
   it('a line with a name and no id is exactly one finding (single-fault tamper)', () => {
     const l = line();
     delete l.partyId;
-    const found = checkInvariants(st);
-    expect(found).toHaveLength(1);
-    expect(found[0]).toContain('carries no partyId');
-    expect(found[0]).toContain(l.accountCode);
+    const found = checkInvariants(st); // RP2a: the line is on a control account, so invariant 23 names it too (two judges, one fault)
+    expect(found).toHaveLength(2);
+    expect(found.filter((f) => f.includes('carries no partyId') && f.includes(l.accountCode))).toHaveLength(1);
+    expect(found.filter((f) => f.includes('has no open item'))).toHaveLength(1);
   });
   it('an id of another company\'s party is exactly one finding', () => {
     const l = line();
     l.partyId = st.parties.find((p) => p.companyId !== st.parties.find((x) => x.id === l.partyId)!.companyId)!.id;
     const found = checkInvariants(st);
-    expect(found).toHaveLength(1);
-    expect(found[0]).toContain('not a party of this company');
+    expect(found).toHaveLength(2); // RP2a: + invariant 23 (the item belongs to another party)
+    expect(found.filter((f) => f.includes('not a party of this company'))).toHaveLength(1);
+    expect(found.filter((f) => f.includes('not a ') && f.includes('of party'))).toHaveLength(1);
   });
   it('an id that is no party at all is exactly one finding', () => {
     line().partyId = 'pc-nobody';
-    expect(checkInvariants(st)).toHaveLength(1);
+    const found = checkInvariants(st);
+    expect(found).toHaveLength(2); // RP2a: + invariant 23
+    expect(found.filter((f) => f.includes('pc-nobody'))).toHaveLength(2);
   });
   it('a settlement record\'s and a bank journal\'s lines are judged too', () => {
     const l = st.settlements[0].journal[0].lines.find((x) => x.partyName)!;
     delete l.partyId;
-    expect(checkInvariants(st)).toHaveLength(1);
+    const found = checkInvariants(st);
+    expect(found).toHaveLength(2); // RP2a: + invariant 23
+    expect(found.filter((f) => f.includes('carries no partyId'))).toHaveLength(1);
   });
 });
 

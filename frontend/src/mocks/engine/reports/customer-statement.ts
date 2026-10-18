@@ -1,5 +1,7 @@
 import type { ReportModel, TieOut } from '@/domain/reports';
+import type { JournalEntryPreview, JournalLinePreview } from '@/domain/types';
 import type { MockState } from '../../store';
+import type { Source } from '../journal';
 import { MockError, today } from '../log';
 import { fromSatang, toSatang } from '../money';
 import { resolveRole } from '../posting';
@@ -23,7 +25,12 @@ export function partyStatement(side: StatementSide, st: MockState, companyId: st
   const to = p.to ? needDate('to', p.to) : today(), from = p.from ? needDate('from', p.from) : `${to.slice(0, 4)}-01-01`;
   if (from > to) throw badParam('วันที่เริ่มต้นต้องไม่หลังวันที่สิ้นสุด');
   const code = resolveRole(st, side, { companyId, docType: 'JV' }).code;
-  const gl = generalLedger(st, companyId, { account: code, party: id, from, to });
+  // RP2a m1: the description never prints the posting rule; it names the item a line settles when that is not the document itself
+  const describe = ({ s, e, l }: { s: Source; e: JournalEntryPreview; l: JournalLinePreview }) => [
+    l.openItemId && l.openItemId !== s.docId ? `อ้างอิง ${st.docs.find((d) => d.id === l.openItemId)?.number ?? l.openItemId}` : '',
+    e.kind === 'reversal' ? 'ยกเลิกรายการ' : e.kind === 'correction' ? 'แก้ไขรายการ' : '',
+  ].filter(Boolean).join(' · ');
+  const gl = generalLedger(st, companyId, { account: code, party: id, from, to }, { describe });
   const s = side === 'AR' ? 1 : -1; // the ledger's debit - credit in the statement's own sign (a payable reads credit-positive)
   const books = (d: string) => s * (balancesByParty(st, companyId, code, d).get(id) ?? 0);
   const rows = gl.rows;

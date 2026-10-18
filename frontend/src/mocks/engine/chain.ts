@@ -14,13 +14,14 @@ export const q4 = (q: Qty): number => {
 export const fmtQ = (n: number): Qty => `${Math.trunc(n / 10000)}.${String(n % 10000).padStart(4, '0')}`.replace(/\.?0+$/, '');
 
 /** Quantity of `line` (of `src`) already taken by active conversions (drafts included: they reserve quantity). */
-export function consumed(st: MockState, src: Doc, line: DocLine, only?: (target: Doc) => boolean): number {
-  const idx = src.lines.findIndex((l) => l.id === line.id);
+export function consumed(st: MockState, src: Doc, line: DocLine, only?: (target: Doc) => boolean, opts?: { /** RP2a m4: walk the conversions that are no longer active too (a report as of a past date); `only` decides, a target counts once */ inactive?: boolean }): number {
+  const idx = src.lines.findIndex((l) => l.id === line.id), seen = new Set<string>();
   let sum = 0;
   for (const e of st.links) {
-    if (e.kind !== 'converted_from' || e.to !== src.id || !e.active) continue;
+    if (e.kind !== 'converted_from' || e.to !== src.id || (!e.active && !opts?.inactive)) continue;
     const t = st.docs.find((d) => d.id === e.from);
-    if (!t || (only && !only(t))) continue;
+    if (!t || (only && !only(t)) || (opts?.inactive && seen.has(t.id))) continue;
+    seen.add(t.id);
     const byRef = t.lines.some((l) => l.sourceLineId); // seeded chains carry no per-line reference: match by position
     t.lines.forEach((tl, i) => { if (byRef ? tl.sourceLineId === line.id : i === idx) sum += q4(tl.qty); });
   }

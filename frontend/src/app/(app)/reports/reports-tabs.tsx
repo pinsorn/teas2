@@ -53,7 +53,7 @@ export function ReportTabs({ page }: { page: keyof typeof PAGES }) {
   return (
     <div className="grid gap-4">
       <h1 className="text-title font-semibold">{t(title as never)}</h1>
-      <Tabs value={tab.key} onValueChange={(v) => { const u = new URLSearchParams(search.toString()); u.set('tab', v); router.replace(`?${u}`); }}>
+      <Tabs value={tab.key} onValueChange={(v) => { const u = new URLSearchParams(search.toString()); if (v !== tab.key) u.delete('party'); /* a customer id is no vendor id: the party belongs to its tab (the aging drill link sets tab and party together) */ u.set('tab', v); router.replace(`?${u}`); }}>
         <TabsList aria-label={t(label as never)} className="h-auto max-w-full flex-wrap justify-start">
           {tabs.map((x) => <TabsTrigger key={x.key} value={x.key}>{t(`reports.tabs.${x.key}` as never)}</TabsTrigger>)}
         </TabsList>

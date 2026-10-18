@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { useCompanyEpoch } from '@/app-shell/useCompanyEpoch';
 import { useMe } from '@/app-shell/useMe';
 import { Button } from '@/components/ui/button';
-import type { ReportKind, ReportParamSpec } from '@/domain/reports';
+import { type ReportKind, type ReportParamSpec, reportPermission } from '@/domain/reports';
 import { ApiError } from '@/lib/api/client';
 import { endpoints } from '@/lib/api/endpoints';
 import { formatDateBE, formatMoney } from '@/lib/format';
@@ -91,7 +91,7 @@ function Inner({ kind, params: specs, defaults, exportable = true }: ReportViewP
   else if (q.isError && !q.data) {
     const e = q.error;
     body = e instanceof ApiError && e.problem.status === 403
-      ? <ForbiddenState detail={e.problem.detail} permission="report.read" />
+      ? <ForbiddenState detail={e.problem.detail} permission={reportPermission(kind)} />
       : <ErrorState error={e} onRetry={() => void q.refetch()} />;
   } else if (!q.data) body = <LoadingState />;
   else {

@@ -3,7 +3,7 @@ import type { DocType, WhtLine, WhtMode } from '@/domain/types';
 import type { Doc, JournalEntryPreview } from '@/domain/types';
 import type { MockState } from '../store';
 import { approvalRequired } from './approval';
-import { jvInvariants } from './journal';
+import { jvInvariants, sources } from './journal';
 import { assetInvariants } from './assets';
 import { scheduleInvariants } from './schedules';
 import { closeInvariants } from './close';
@@ -14,6 +14,7 @@ import type { FilingBox } from '@/domain/filings';
 import { obInvariants } from './opening';
 import { payDocs, payrollInvariants } from './payroll';
 import { appliedOf, docCash, toleranceOf } from './locks';
+import { unappliedOf } from './settlement-records';
 import { payoutOf, resolvedBankId } from './settlement';
 import { consumed, q4 } from './chain';
 import { companyEntries } from './ledger';
@@ -24,6 +25,43 @@ import { computeDoc, vatBasisOf } from './vat';
 import { wtsOfPv } from './wht-certificates';
 
 type Stored = MockState['docs'][number];
+
+/** RP2a, the open items the aging reads: which account holds which kind of item (the roles resolve to 1130 / 2140 / 2110 / 1140 in the seed). */
+const itemKinds = (st: MockState, companyId: string) => {
+  const code = (role: 'AR' | 'AP' | 'CustomerDeposit' | 'VendorPrepayment') => { try { return resolveRole(st, role, { companyId, docType: 'JV' }).code; } catch { return undefined; } }; // a broken chart is judged by the account checks, not here
+  const kinds = new Map<string, { types: string[]; ob: string; dr: boolean; what: string }>();
+  const add = (c: string | undefined, k: { types: string[]; ob: string; dr: boolean; what: string }) => { if (c) kinds.set(c, k); };
+  add(code('AR'), { types: ['TI', 'IV'], ob: 'AR', dr: true, what: 'TI / IV / OB AR item' }); add(code('CustomerDeposit'), { types: ['RC'], ob: 'DEP', dr: false, what: 'RC / OB DEP item' });
+  add(code('AP'), { types: ['PB'], ob: 'AP', dr: false, what: 'PB / OB AP item' }); add(code('VendorPrepayment'), { types: ['PV'], ob: 'PRE', dr: true, what: 'PV / OB PRE item' });
+  return kinds;
+};
+/** 23. every line on a control account (AR / AP / customer deposit / vendor prepayment) carries a party and names an open item of its own company whose type fits the account and whose party is the line's (the party it has, or had in an earlier
+ *  revision: an invoice nobody has paid may change customer, and its first entries keep the first one).
+ *  24. every item's tagged balance over ALL dates is its stored balance (outstanding for an invoice / bill, what is unapplied for a receipt / voucher, the amount of an opening deposit / prepayment; 0 when it is not live). */
+function openItemInvariants(st: MockState): string[] {
+  const out: string[] = [];
+  for (const c of st.companies) {
+    const kinds = itemKinds(st, c.id), docs = new Map(st.docs.filter((d) => d.companyId === c.id).map((d) => [d.id, d]));
+    const fits = (d: Stored, k: { types: string[]; ob: string }) => k.types.includes(d.type) || (d.type === 'OB' && d.header.obSide === k.ob);
+    const tagged = new Map<string, number>(); // `${code}|${item id}` -> debit - credit
+    for (const s of sources(st, c.id)) for (const e of s.entries) for (const l of e.lines) {
+      const k = kinds.get(l.accountCode);
+      if (!k) continue;
+      const d = l.openItemId ? docs.get(l.openItemId) : undefined;
+      if (!l.partyId || !l.openItemId) out.push(`${s.label}: ${l.accountCode} line has no open item`);
+      else if (!d || !fits(d, k) || !(d.header.partyId === l.partyId || st.revisions.some((r) => r.docId === d.id && r.snapshot.header.partyId === l.partyId))) out.push(`${s.label}: ${l.accountCode} line names ${l.openItemId}, not a ${k.what} of party ${l.partyId}`);
+      if (l.openItemId) tagged.set(`${l.accountCode}|${l.openItemId}`, (tagged.get(`${l.accountCode}|${l.openItemId}`) ?? 0) + toSatang(l.debit) - toSatang(l.credit));
+    }
+    for (const [code, k] of kinds) for (const d of docs.values()) {
+      if (!fits(d, k)) continue;
+      const j = (k.dr ? 1 : -1) * (tagged.get(`${code}|${d.id}`) ?? 0), live = LIVE.includes(d.status);
+      const dep = k.ob === 'DEP' || k.ob === 'PRE';
+      const want = !live ? 0 : d.type === 'RC' || d.type === 'PV' ? unappliedOf(st, d) : dep ? toSatang(d.totals.total) : toSatang(d.outstanding ?? d.totals.total);
+      if (j !== want) out.push(`${d.id}: open item journal ${j} but its stored balance is ${want}`);
+    }
+  }
+  return out;
+}
 
 /** Expected outstanding and status of a live document, from the active links alone (SP0 §7.11); independent of `recomputeSettlement`. */
 function expectedBalance(st: MockState, d: Stored) {
@@ -620,6 +658,7 @@ export function checkInvariants(st: MockState): string[] {
   for (const c of st.companies) for (const e of companyEntries(st, c.id)) for (const l of e.lines) {
     if (l.partyName && !(l.partyId && st.parties.some((p) => p.id === l.partyId && p.companyId === c.id))) out.push(`${c.id}: journal line on ${l.accountCode} for "${l.partyName}" ${l.partyId ? `carries partyId ${l.partyId}, which is not a party of this company` : 'carries no partyId'}`);
   }
+  out.push(...openItemInvariants(st)); // 23 + 24. RP2a: every control line names its open item, and every item's tagged balance is its stored balance
   out.push(...jvInvariants(st)); // 15. journal vouchers (AC1): no controlled account, the journal is the lines, reversals mirror, accruals net to zero
 
   // numbering: gap-free per company x type x month, and the series counter agrees

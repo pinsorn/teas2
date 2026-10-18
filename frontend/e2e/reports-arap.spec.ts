@@ -31,9 +31,9 @@ test('receivables aging: five buckets, deposits apart, ties to the ledger; a par
   await shot(page, 'arap-ar-desktop');
   const m = await api<Model>(page, '/reports/ar-aging?asOf=2026-10-14');
   expect(m.status).toBe(200);
-  expect(m.json.tieOuts.map((t) => t.diff)).toEqual(['0.00', '0.00', '0.00', '0.00']);
+  expect(m.json.tieOuts.map((t) => t.diff)).toEqual(['0.00', '0.00', '0.00', '0.00', '0.00', '0.00']); // RP2a: + the two "no open item" lines
   const row = table.getByRole('row').filter({ hasText: 'C10' }).first();
-  const total = (await row.getByRole('cell').nth(9).innerText()).trim(); // "รวมค้าง" of the party
+  const total = (await row.getByRole('cell').nth(10).innerText()).trim(); // "รวมค้าง" of the party (after the credit column)
   await row.getByRole('link').first().click();
   await expect(page).toHaveURL(/tab=cs&party=pc-\d+&to=2026-10-14/);
   const stmt = page.getByRole('table', { name: 'ใบแสดงรายการบัญชีลูกหนี้ (Statement)' });
@@ -59,7 +59,7 @@ test('payables aging mirrors it, with prepayments apart', async ({ page }) => {
   await expect(table).toBeVisible();
   await expect(table.getByRole('columnheader', { name: 'เงินจ่ายล่วงหน้า (แยกต่างหาก)' })).toBeVisible();
   const m = await api<Model>(page, '/reports/ap-aging?asOf=2026-10-14');
-  expect(m.json.tieOuts.map((t) => t.diff)).toEqual(['0.00', '0.00', '0.00', '0.00']);
+  expect(m.json.tieOuts.map((t) => t.diff)).toEqual(['0.00', '0.00', '0.00', '0.00', '0.00', '0.00']); // RP2a: + the two "no open item" lines
   await shot(page, 'arap-ap-desktop');
 });
 
@@ -67,8 +67,8 @@ test('customer statement: pick the customer from the list (the id goes in the UR
   await page.goto(`${AP}?tab=cs&from=2026-01-01&to=2026-10-14`);
   await expect(page.getByRole('table', { name: 'ใบแสดงรายการบัญชีลูกหนี้ (Statement)' })).toHaveCount(0); // the party is required: nothing is asked before it is chosen
   const pick = page.getByRole('combobox', { name: /ลูกค้า/ });
-  await expect(pick.locator('option')).not.toHaveCount(1); // the company's customers arrived
-  await pick.selectOption({ value: 'pc-10' });
+  await pick.fill('C10'); // RP2a m5: found by typing, no 200-row list
+  await page.getByRole('listbox').getByRole('option', { name: /C10/ }).click();
   await expect(page).toHaveURL(/party=pc-\d+/);
   const stmt = page.getByRole('table', { name: 'ใบแสดงรายการบัญชีลูกหนี้ (Statement)' });
   await expect(stmt).toBeVisible();

@@ -1,7 +1,8 @@
 import type { ReportModel, ReportRow } from '@/domain/reports';
 import { GROUP_OF } from '@/records/accounts';
 import type { MockState } from '../../store';
-import { sources } from '../journal';
+import type { JournalEntryPreview, JournalLinePreview } from '@/domain/types';
+import { type Source, sources } from '../journal';
 import { MockError } from '../log';
 import { fromSatang, toSatang } from '../money';
 import { badParam, needDate } from './statement-lines';
@@ -11,7 +12,7 @@ export interface GlParams { account?: string; from?: string; to?: string; party?
 
 /** ReportModel `general-ledger`: one account's lines in date order with a running balance computed here (never by the grid), framed by the opening (every entry before `from`, closing entries included) and the closing.
  *  Shown on the account's natural side (debit for assets and expenses, credit for the rest). A party / dimension filter filters the opening the same way. The party parameter is a party ID (the page picker sends it): matched by the id on the posted line (a line posted before RP1a has none and is never matched by a party filter), so a rename or a same-named party changes nothing. A live view of the GL, nothing frozen. */
-export function generalLedger(st: MockState, companyId: string, p: GlParams): ReportModel {
+export function generalLedger(st: MockState, companyId: string, p: GlParams, opts?: { /** RP2a m1: the description cell of a line (default: its posting rule) */ describe?: (x: { s: Source; e: JournalEntryPreview; l: JournalLinePreview }) => string }): ReportModel {
   const code = p.account?.trim() ?? '';
   if (!code) throw badParam('ต้องระบุบัญชี');
   const account = st.accounts.find((a) => a.companyId === companyId && a.code === code);
@@ -39,7 +40,7 @@ export function generalLedger(st: MockState, companyId: string, p: GlParams): Re
     const d = toSatang(l.debit), c = toSatang(l.credit);
     run += natural * (d - c); dr += d; cr += c;
     const kind = e.kind === 'reversal' ? ' (กลับรายการ)' : e.kind === 'correction' ? ' (แก้ไข)' : '';
-    return { level: 0, kind: 'row', cells: { date: e.date, doc: s.label, desc: `${l.rule}${kind}`, party: l.partyName ?? '', debit: d ? l.debit : '', credit: c ? l.credit : '', balance: fromSatang(run) },
+    return { level: 0, kind: 'row', cells: { date: e.date, doc: s.label, desc: opts?.describe ? opts.describe({ s, e, l }) : `${l.rule}${kind}`, party: l.partyName ?? '', debit: d ? l.debit : '', credit: c ? l.credit : '', balance: fromSatang(run) },
       ...(s.href ? { links: { doc: s.href } } : {}) };
   });
   const blank = { date: '', doc: '', party: '', debit: '', credit: '' };

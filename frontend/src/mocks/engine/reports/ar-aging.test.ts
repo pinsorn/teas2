@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { ReportModel } from '@/domain/reports';
-import type { Actor, Doc } from '@/domain/types';
+import type { Actor, Doc, DocLine } from '@/domain/types';
 import { buildSeedState, type MockState } from '../../store';
 import { cancel, createDraft, issue, revise } from '../commands';
 import { correctionPlan, executePlan } from '../corrections';
+import { checkInvariants } from '../invariants';
 import { companyEntries } from '../ledger';
 import { today } from '../log';
 import { toSatang } from '../money';
@@ -44,9 +45,9 @@ describe('ruling 2: tie-out of the aging to the ledger', () => {
     const m = arAging(st, VAT, { asOf: today() });
     const t = total(m);
     expect(toSatang(t.total)).toBe(groups(m).reduce((n, g) => n + toSatang(g.cells.total), 0));
-    expect(toSatang(t.total)).toBe(['b0', 'b1', 'b2', 'b3', 'b4'].reduce((n, b) => n + toSatang(t[b]), 0));
+    expect(toSatang(t.total)).toBe(['b0', 'b1', 'b2', 'b3', 'b4', 'credit'].reduce((n, b) => n + toSatang(t[b]), 0));
     expect(groups(m).filter((g) => ['b0', 'b1', 'b2', 'b3', 'b4', 'deposit', 'gl'].every((k) => toSatang(g.cells[k]) === 0))).toEqual([]);
-    expect(m.tieOuts!.map((x) => x.labelKey)).toEqual(['reports.arap.arTie', 'reports.arap.arTieNoParty', 'reports.arap.arTieDep', 'reports.arap.arTieDepNoParty']);
+    expect(m.tieOuts!.map((x) => x.labelKey)).toEqual(['reports.arap.arTie', 'reports.arap.arTieNoParty', 'reports.arap.arTieNoItem', 'reports.arap.arTieDep', 'reports.arap.arTieDepNoParty', 'reports.arap.arTieDepNoItem']);
   });
   it('a balance on 1130 / 2140 with no party is its own tie-out line, not hidden and not spread over a party', () => {
     // a defensive line: no command can post it (a JV on a control account is refused, an opening balance posts per party), so the books are tampered with directly
@@ -173,6 +174,25 @@ describe('ruling 2: true as-of (what was outstanding then, from the links in for
   });
 });
 
+describe('RP2a m2: an item below zero is a credit balance, never a bucket', () => {
+  it('a paid invoice and then a credit note: the row sits in the credit column, the party total is Σ buckets + credit, and the books tie', () => {
+    const td = createDraft(st, VAT, 'TI', { header: { partyId: 'pc-04', documentDate: '2026-10-01', dueDate: '2026-10-31' }, lines: [{ id: 'l1', description: 'x', qty: '1', unit: 'งาน', unitPrice: '1000', taxCode: 'S7' }] }, ME, 'k-m2-ti');
+    const ti = issue(st, td.id, td.version, ME);
+    const rd = createDraft(st, VAT, 'RC', { header: { partyId: 'pc-04', documentDate: '2026-10-05' }, lines: [], allocations: [{ targetId: ti.id, targetType: 'TI', amount: '1070.00' }] }, ME, 'k-m2-rc');
+    issue(st, rd.id, rd.version, ME);
+    const nd = createDraft(st, VAT, 'CN', { header: { documentDate: '2026-10-08', refDocId: ti.id, reasonCode: 'DISCOUNT' }, lines: [{ id: 'n1', description: 'x', qty: '1', unit: 'งาน', unitPrice: '300', taxCode: 'S7', sourceLineId: 'l1' }] }, ME, 'k-m2-cn');
+    issue(st, nd.id, nd.version, ME);
+    const m = arAging(st, VAT, { asOf: today() });
+    const row = items(m).find((r) => r.cells.party === ti.number)!;
+    expect(row.cells).toMatchObject({ credit: '-321.00', total: '-321.00', b0: '', b1: '', b2: '', b3: '', b4: '' });
+    const g = groups(m).find((x) => x.cells.party.startsWith('C04'))!;
+    expect(toSatang(g.cells.total)).toBe(['b0', 'b1', 'b2', 'b3', 'b4', 'credit'].reduce((n, k) => n + toSatang(g.cells[k]), 0));
+    expect(g.cells.credit).toBe('-321.00');
+    noDiff(m); noDiff(arAging(st, VAT, { asOf: '2026-10-07' }));
+    expect(checkInvariants(st)).toEqual([]);
+  });
+});
+
 describe('ruling 2: deposits are a separate negative column', () => {
   it('a customer with a deposit has it beside the buckets, never netted: total = Σ buckets, the deposit is its own figure and ties to 2140', () => {
     const m = arAging(st, VAT, { asOf: today() });
@@ -183,7 +203,7 @@ describe('ruling 2: deposits are a separate negative column', () => {
   it('the payable side mirrors with prepayments (1140): the vendor with a prepayment has a negative column that ties', () => {
     const m = apAging(st, VAT, { asOf: today() });
     expect(groups(m).find((x) => x.cells.party.startsWith('V05'))!.cells).toMatchObject({ total: '1070.00', deposit: '-3000.00', depDiff: '0.00' });
-    expect(m.tieOuts!.map((x) => x.labelKey)).toEqual(['reports.arap.apTie', 'reports.arap.apTieNoParty', 'reports.arap.apTieDep', 'reports.arap.apTieDepNoParty']);
+    expect(m.tieOuts!.map((x) => x.labelKey)).toEqual(['reports.arap.apTie', 'reports.arap.apTieNoParty', 'reports.arap.apTieNoItem', 'reports.arap.apTieDep', 'reports.arap.apTieDepNoParty', 'reports.arap.apTieDepNoItem']);
   });
 });
 
@@ -217,7 +237,80 @@ describe('the report model', () => {
   it('columns, kind and the default date', () => {
     const m = agingReport('AR', st, VAT, {});
     expect(m).toMatchObject({ kind: 'ar-aging', asOf: today(), params: { asOf: today(), basis: 'due' } });
-    expect(m.columns.map((c) => c.key)).toEqual(['party', 'docDate', 'dueDate', 'days', 'b0', 'b1', 'b2', 'b3', 'b4', 'total', 'deposit', 'gl', 'diff', 'depDiff']);
+    expect(m.columns.map((c) => c.key)).toEqual(['party', 'docDate', 'dueDate', 'days', 'b0', 'b1', 'b2', 'b3', 'b4', 'credit', 'total', 'deposit', 'gl', 'diff', 'depDiff']);
     expect(apAging(st, VAT, {}).kind).toBe('ap-aging');
+  });
+});
+
+// ---------------------------------------------------------------- RP2a: the as-of outstanding is READ FROM THE JOURNAL (open-item tags)
+const L1 = (price: string): DocLine[] => [{ id: 'l1', description: 'x', qty: '1', unit: 'งาน', unitPrice: price, taxCode: 'EX' }];
+const mk = (co: string, type: 'PB' | 'IV', party: string, date: string, price: string, key: string, extra: object = {}) => {
+  const d = createDraft(st, co, type, { header: { partyId: party, documentDate: date, ...(type === 'PB' ? { vendorDocNumber: key, vendorDocDate: date } : {}), ...extra }, lines: L1(price) }, ME, key);
+  return issue(st, d.id, d.version, ME);
+};
+const closeThrough = (co: string, month: string) => { for (const p of st.periods.filter((x) => x.companyId === co && x.month <= month)) { p.status = 'closed'; (p as { closedAt?: string }).closedAt = '2099-01-01T00:00:00Z'; } };
+const sweep = (co: string, side: 'AR' | 'AP', label: string) => {
+  const f = side === 'AR' ? arAging : apAging;
+  const dates = new Set<string>(['2025-01-01', today()]);
+  for (const e of companyEntries(st, co)) { dates.add(e.date); dates.add(addDays(e.date, -1)); }
+  for (const d of dates) if (d >= '2025-01-01') noDiff(f(st, co, { asOf: d }), `${label} ${co} ${side} ${d}`);
+};
+
+describe('RP2a T1 (B1): a voucher revised across two bills and then cancelled', () => {
+  it('each bill reads its own history on every date and the books tie', () => {
+    const a = mk(NV, 'PB', 'nv-01', '2026-10-02', '1000', 'rp-a'), b = mk(NV, 'PB', 'nv-01', '2026-10-02', '1000', 'rp-b');
+    const pvd = createDraft(st, NV, 'PV', { header: { partyId: 'nv-01', documentDate: '2026-10-05', bankAccountId: st.bankAccounts.find((x) => x.companyId === NV)!.id }, lines: [], allocations: [{ targetId: a.id, targetType: 'PB', amount: '500.00' }, { targetId: b.id, targetType: 'PB', amount: '500.00' }] }, ME, 'rp-pv');
+    const pv = issue(st, pvd.id, pvd.version, ME);
+    const rv = revise(st, pv.id, { header: pv.header, lines: [], allocations: [{ targetId: b.id, targetType: 'PB', amount: '1000.00' }] }, pv.version, 'x', ME);
+    cancel(st, rv.id, rv.version, 'other', 'ทดสอบ', ME);
+    const t = today(), before = addDays(t, -1);
+    const at = (n: string, d: string) => where(apAging(st, NV, { asOf: d }), n)?.amount;
+    for (const d of ['2026-10-02', '2026-10-04', '2026-10-05', '2026-10-10', before, t]) expect(at(a.number!, d), `A ${d}`).toBe('1000.00');
+    expect([at(b.number!, '2026-10-02'), at(b.number!, '2026-10-04')]).toEqual(['1000.00', '1000.00']);
+    for (const d of ['2026-10-05', '2026-10-10', before]) expect(at(b.number!, d), `B ${d}`).toBeUndefined();
+    expect(at(b.number!, t)).toBe('1000.00');
+    for (const d of ['2026-10-01', '2026-10-02', '2026-10-04', '2026-10-05', '2026-10-06', before, t]) noDiff(apAging(st, NV, { asOf: d }), d);
+    sweep(NV, 'AP', 'T1');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+});
+
+describe('RP2a T2 (M1): a revise that moves the document date', () => {
+  it('(a) a bill moved later is absent until the new date, then present with the new date', () => {
+    const pb = mk(NV, 'PB', 'nv-01', '2026-10-08', '6000', 'rp-m1'), co = NV;
+    revise(st, pb.id, { header: { ...pb.header, documentDate: '2026-10-11' }, lines: pb.lines }, pb.version, 'x', ME);
+    const f = (d: string) => items(apAging(st, co, { asOf: d })).find((r) => r.cells.party === pb.number);
+    for (const d of ['2026-10-07', '2026-10-08', '2026-10-10']) expect(f(d), d).toBeUndefined();
+    for (const d of ['2026-10-11', today()]) expect(f(d)?.cells.docDate, d).toBe('2026-10-11');
+    for (const d of ['2026-10-07', '2026-10-08', '2026-10-09', '2026-10-10', '2026-10-11', '2026-10-12']) noDiff(apAging(st, co, { asOf: d }), d);
+    sweep(co, 'AP', 'T2a');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('(b) an invoice moved later', () => {
+    const iv = doc('IV-202610-0002');
+    revise(st, iv.id, { header: { ...iv.header, documentDate: '2026-10-05' }, lines: iv.lines }, iv.version, 'x', ME);
+    const f = (d: string) => items(arAging(st, NV, { asOf: d })).find((r) => r.cells.party === 'IV-202610-0002');
+    for (const d of ['2026-10-02', '2026-10-03', '2026-10-04']) expect(f(d), d).toBeUndefined();
+    expect(f('2026-10-05')?.cells.docDate).toBe('2026-10-05');
+    for (const d of ['2026-10-01', '2026-10-02', '2026-10-04', '2026-10-05', '2026-10-06']) noDiff(arAging(st, NV, { asOf: d }), d);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+});
+
+describe('RP2a T3 (M2): a revise in a closed month posts late and the dates before it are the original ones', () => {
+  it('(a) the row shows the pre-revise total with the revision-0 dates until the first open date', () => {
+    const iv = doc('IV-202609-0003'), total0 = iv.totals.total;
+    const pre = (d: string) => items(arAging(st, NV, { asOf: d })).find((x) => x.cells.party === 'IV-202609-0003')?.cells;
+    const before = { '2026-09-20': pre('2026-09-20')!, '2026-09-30': pre('2026-09-30')! }; // what the books say before the revise (a receipt may have paid part of it)
+    closeThrough(NV, '2026-09');
+    const r = revise(st, iv.id, { header: iv.header, lines: iv.lines.map((l, i) => (i === 0 ? { ...l, unitPrice: String(Number(l.unitPrice) - 1) } : l)) }, iv.version, 'x', ME);
+    expect(r.totals.total).not.toBe(total0);
+    const f = (d: string) => items(arAging(st, NV, { asOf: d })).find((x) => x.cells.party === 'IV-202609-0003')?.cells;
+    for (const d of ['2026-09-20', '2026-09-30'] as const) expect(f(d), d).toEqual(before[d]); // unchanged by a revise posted late
+    expect(toSatang(before['2026-09-20'].total)).toBe(toSatang(total0));
+    expect(toSatang(f('2026-10-01')!.total)).toBe(toSatang(f('2026-09-30')!.total) + toSatang(r.totals.total) - toSatang(total0));
+    for (const d of ['2026-09-19', '2026-09-20', '2026-09-30', '2026-10-01', today()]) noDiff(arAging(st, NV, { asOf: d }), d);
+    sweep(NV, 'AR', 'T3a');
+    expect(checkInvariants(st)).toEqual([]);
   });
 });
