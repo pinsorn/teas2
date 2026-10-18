@@ -99,14 +99,14 @@ export function ledgerFor(st: MockState, doc: Doc & { companyId?: string }): Jou
   if (!companyId) throw new MockError(500, 'engine.invariant', 'ledgerFor: document has no company');
   if (!post && doc.type === 'OB') return withReversal(doc, obEntryLines(st, companyId, doc)); // AC3: the steps, per party, plus the 3900 plug
   if (!post && doc.type === 'DP') return withReversal(doc, dpEntryLines(st, companyId, doc)); // AC5: exactly the run's stored rows
-  if (!post) return withReversal(doc, jvEntryLines(st, companyId, doc.lines));
-  const partyName = doc.party?.name ?? st.parties.find((p) => p.id === doc.header.partyId)?.name;
+  if (!post) return withReversal(doc, jvEntryLines(st, companyId, doc.lines, doc.header.dimensions));
+  const partyName = doc.party?.name ?? st.parties.find((p) => p.id === doc.header.partyId)?.name, group = st.parties.find((p) => p.id === doc.header.partyId && p.companyId === companyId)?.partyGroup;
   if ((doc.type === 'TI' || doc.type === 'IV') && doc.header.disposal) return withReversal(doc, disposalEntryLines(st, companyId, doc.header.disposal, partyName, doc.header.partyId, doc.id)); // AC5: the sale of a fixed asset posts its frozen disposal entry, not revenue
   const t: Totals = { net: toSatang(doc.totals.net), vat: toSatang(doc.totals.vat), total: toSatang(doc.totals.total), wht: toSatang(doc.totals.wht ?? '0.00'),
     cash: toSatang(doc.totals.cash ?? fromSatang(toSatang(doc.totals.total) - toSatang(doc.totals.wht ?? '0.00'))) };
   const acc = new Map<string, { code: string; name: string; rule: string; net: number; party?: string; partyId?: string; openItemId?: string; dims?: Record<string, string> }>();
   for (const [role, dr, cr, extra] of post(t, doc, st, companyId)) {
-    const r = resolveRole(st, role, { companyId, docType: doc.type, ...extra });
+    const r = resolveRole(st, role, { companyId, docType: doc.type, ...(group ? { partyGroup: group } : {}), ...extra }); // ST2: a rule at the party-group level applies to that group's documents
     const dims = { ...doc.header.dimensions, ...extra?.dimensions };
     const party = (role === 'AR' || role === 'AP' || role === 'EmployeePayable' || role === 'CustomerDeposit' || role === 'VendorPrepayment') ? (extra?.partyName ?? partyName) : undefined;
     const partyId = party ? (extra?.partyName ? extra.partyId : doc.header.partyId) : undefined; // the id of the SAME party the name belongs to (an allocation names its target's party)

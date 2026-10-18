@@ -10,7 +10,7 @@ import type { CitYearData } from '@/domain/filings';
 import type { YearClose } from './engine/close';
 import { type Filing, seedFilings } from './engine/filings';
 import type { Period } from './engine/periods';
-import type { PostingRule } from './engine/posting';
+import type { DimTypeRow, DimValueRow, ExpenseCategoryRow, PostingRule } from './engine/posting';
 import type { BankAccount } from './fixtures/bank-accounts';
 import type { CompanyAccount } from './fixtures/coa';
 import type { CompanyWhtType } from './fixtures/wht-types';
@@ -41,6 +41,8 @@ export interface MockState {
   journals: { docId: string; preview: JournalPreview }[];
   accounts: CompanyAccount[];
   postingRules: PostingRule[];
+  /** ST2: the editable masters. ABSENT = the seed's (engine/posting.ts reads them through `categoriesOf` / `dimTypesOf` / `dimValuesOf`); the first write copies them in, so the seed and the state version are unchanged. */
+  expenseCategories?: ExpenseCategoryRow[]; dimensionTypes?: DimTypeRow[]; dimensionValues?: DimValueRow[];
   periods: Period[];
   bankAccounts: BankAccount[];
   /** FN1: imported statements and their lines (the raw file is an attachment whose `docId` is the import id). Importing posts nothing. */

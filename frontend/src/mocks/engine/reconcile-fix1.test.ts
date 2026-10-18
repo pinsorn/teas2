@@ -240,7 +240,7 @@ describe('minors', () => {
   });
   it('M7: a plan built before a match and executed after is refused with the reconciled reason, not plan-stale', () => {
     const rc = st.docs.find((d) => d.id === 'rc-013')!;
-    const plan = correctionPlan(st, rc.id, { header: { ...rc.header, dimensions: { project: 'P-NEW' } }, lines: rc.lines, allocations: rc.allocations }, 'accountant');
+    const plan = correctionPlan(st, rc.id, { header: { ...rc.header, dimensions: { project: 'P-B' } }, lines: rc.lines, allocations: rc.allocations }, 'accountant');
     expect(plan.steps.length).toBeGreaterThan(0);
     match(st, CO, 'bi-001-003', { docIds: ['rc-013'] }, ME);
     const e = err(() => executePlan(st, plan.planId, plan.planHash, ME, 'accountant'));

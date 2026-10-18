@@ -7,7 +7,7 @@ import { approvalRequired, refuseSelfApproval, refuseUnapprovedIssue, reviseNeed
 import { dropAttachmentsOf } from './attachments';
 import { consumed, fmtQ, q4 } from './chain';
 import { ledgerFor, reversalOf } from './ledger';
-import { beforeJvCancel, journalProblem, jvBalance, jvCalc, jvMissing, jvTotals, postAutoReversal, refuseJvRevise, syncAutoReversal } from './journal';
+import { beforeJvCancel, dimensionProblems, journalProblem, jvBalance, jvCalc, jvMissing, jvTotals, postAutoReversal, refuseDimensions, refuseJvRevise, syncAutoReversal } from './journal';
 import { afterRevision, refuseClosed, refuseRejected, withAcceptedStamp } from './marks';
 import { MockError, diffBody, isPinned, logActivity, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
@@ -310,6 +310,7 @@ export function compute(st: MockState, companyId: string, type: DocType, raw: Bo
   refuseDisposalNote(st, type, body.header);
   const np = noteProblem(st, companyId, type, body, opts?.docId);
   if (np) missing.push({ field: 'lines', message: np.title }); // the cap, the invoice's lines: shown before issue
+  missing.push(...dimensionProblems(st, companyId, doc, own0 && LIVE.includes(own0.status) ? own0 : undefined)); // ST2: the dimension rules, shown before issue with their exit
   const jp = type === 'OB' ? obProblem(st, companyId, body, opts?.docId) : journalProblem(st, companyId, type, body); // JV: the account and auto-reverse rules; OB: cut-off, steps and sub-ledger ties - shown before issue too
   if (jp) missing.push({ field: 'lines', message: jp.title, code: jp.code });
   const opp = type === 'OB' ? obPayrollProblem(st, companyId, own0 && LIVE.includes(own0.status) ? own0 : undefined, body) : undefined; // PY1a: an opening balance a payroll run builds on - shown before issue too
@@ -445,6 +446,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   if (GROUPS[d.type]) body = { ...body, allocations: cleanAllocations(st, d.companyId, d.type, body.allocations) }; // BL: each target's outstanding AS OF ISSUE, server-read
   body = withNoteVat(st, d.companyId, d.type, body); // a CN / DN keeps the VAT its lines carry at issue
   const totals = totalsOf(st, d.companyId, d.type, body);
+  refuseDimensions(st, d.companyId, { ...d, header: body.header, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), totals }); // ST2: the company's own tags and the account rules (required / forbidden), judged BEFORE the number is taken: a refusal writes nothing
   const next: Stored = {
     ...d, header: body.header, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), ...(body.opening ? { opening: body.opening } : {}), ...(body.payroll ? { payroll: body.payroll } : {}), number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', totals, party: partyOf(st, d.companyId, d.header.partyId),
     version: d.version + 1, issuedAt: stamp(), ...(hasOut(d.type) ? { outstanding: totals.total } : {}),
@@ -681,6 +683,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   };
   const marks = afterRevision(d); // a quotation's customer answer is void once it is revised
   if (marks) next.marks = marks; else delete next.marks;
+  refuseDimensions(st, d.companyId, next, d); // ST2: only a fault this revision INTRODUCES (a rule made stricter later never blocks an old document)
   put(st, next);
   if (isNote(d.type)) { // the note's one adjusts link carries its total: a revised note moves the bill's outstanding with it
     st.links = st.links.map((l) => (l.active && l.kind === 'adjusts' && l.from === id ? { ...l, amount: next.totals.total } : l));
@@ -741,6 +744,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   if (dated && totals.total !== old.totals.total) {
     throw new MockError(422, 'doc.reissue_total_changed', 'ออกใหม่ต้องใช้ยอดเดิม ยอดต่างต้องใช้ใบลดหนี้/ใบเพิ่มหนี้');
   }
+  refuseDimensions(st, old.companyId, { ...old, header: body.header, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), totals }, old); // ST2: as the plan judged it, before the new number is taken
   const at = stamp();
   const created: Stored = {
     companyId: old.companyId, id: newId(st, old.type), type: old.type, number: allocate(st, old.companyId, old.type, body.header.documentDate),

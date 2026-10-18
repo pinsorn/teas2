@@ -20,7 +20,7 @@ import { payoutOf, resolvedBankId } from './settlement';
 import { consumed, q4 } from './chain';
 import { companyEntries } from './ledger';
 import { divRoundHalfAway, fromSatang, toSatang } from './money';
-import { resolveRole } from './posting';
+import { dimTypesOf, dimValuesOf, resolveRole } from './posting';
 import { claimPeriodOf, exForfeited, forfeitedOf, isRecoverable } from './purchase-vat';
 import { computeDoc, vatBasisOf } from './vat';
 import { wtsOfPv } from './wht-certificates';
@@ -686,6 +686,13 @@ export function checkInvariants(st: MockState): string[] {
   // 22. RP2 (ruling 8a): a posted line that names a party carries that party's id, and the party is of the same company (every party report matches by id)
   for (const c of st.companies) for (const e of companyEntries(st, c.id)) for (const l of e.lines) {
     if (l.partyName && !(l.partyId && st.parties.some((p) => p.id === l.partyId && p.companyId === c.id))) out.push(`${c.id}: journal line on ${l.accountCode} for "${l.partyName}" ${l.partyId ? `carries partyId ${l.partyId}, which is not a party of this company` : 'carries no partyId'}`);
+  }
+  // 25. ST2 (ruling 4): a dimension tag on a posted line names a type AND a value of THAT company - active or not (a closed value stays on the entries that carry it). Account rules are NOT judged here: a rule made stricter later never turns an issued entry red.
+  for (const c of st.companies) {
+    const types = new Set(dimTypesOf(st, c.id).map((t) => t.key)), values = new Set(dimValuesOf(st, c.id).map((v) => `${v.typeKey}|${v.code}`));
+    for (const e of companyEntries(st, c.id)) for (const l of e.lines) for (const [k, v] of Object.entries(l.dimensions ?? {})) {
+      if (!types.has(k) || !values.has(`${k}|${v}`)) out.push(`${c.id}: journal line on ${l.accountCode} carries dimension ${k} = ${v}, which is not a type / value of the company`);
+    }
   }
   out.push(...openItemInvariants(st)); // 23 + 24. RP2a: every control line names its open item, and every item's tagged balance is its stored balance
   out.push(...jvInvariants(st)); // 15. journal vouchers (AC1): no controlled account, the journal is the lines, reversals mirror, accruals net to zero

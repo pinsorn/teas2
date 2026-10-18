@@ -1,5 +1,5 @@
 import { DESCRIPTORS, docViewHref } from '@/descriptors';
-import { LIVE } from '@/domain/doc-types';
+import { ADJUSTS, LIVE } from '@/domain/doc-types';
 import type { ReportModel, ReportRow } from '@/domain/reports';
 import type { Actor, DocHeader, DocLine, DocTotals, IsoDate, JournalEntryPreview, JournalLinePreview, Lock, MissingItem } from '@/domain/types';
 import { formatDateBE } from '@/lib/format';
@@ -8,6 +8,7 @@ import { bahtText } from './bahtText';
 import { allocate, cancel, correctionReversal, dateGuards, getDoc, newId, placed, publicDoc, put, setJournal } from './commands';
 import { ledgerFor } from './ledger';
 import { MockError, isPinned, logActivity, logAudit, stamp } from './log';
+import { dimTypesOf, dimValuesOf } from './posting';
 import { fromSatang, toSatang } from './money';
 import { firstOpenDate, isClosed, monthLabelTh, refuseClosedYearEntry } from './periods';
 import { formName } from './filings/pnd-wht';
@@ -31,16 +32,52 @@ const accountOf = (st: MockState, companyId: string, code: string) => st.account
 // ---------------------------------------------------------------- the lines
 
 /** The journal lines of a JV, verbatim and in order. */
-export function jvEntryLines(st: MockState, companyId: string, lines: DocLine[]): JournalLinePreview[] {
+export function jvEntryLines(st: MockState, companyId: string, lines: DocLine[], headerDims?: Record<string, string>): JournalLinePreview[] {
   return lines.filter((l) => isUsed(l) && !!l.accountCode).map((l) => {
     const party = l.partyId ? st.parties.find((p) => p.id === l.partyId && p.companyId === companyId)?.name : undefined;
     return {
       accountCode: l.accountCode!, accountName: accountOf(st, companyId, l.accountCode!)?.nameTh ?? l.accountCode!,
       debit: fromSatang(satOf(l.debit) || 0), credit: fromSatang(satOf(l.credit) || 0), rule: l.description.trim() ? `${JV_RULE}: ${l.description.trim()}` : JV_RULE,
-      ...(party ? { partyName: party, partyId: l.partyId! } : {}), ...(l.dimensions && Object.keys(l.dimensions).length ? { dimensions: l.dimensions } : {}),
+      ...(party ? { partyName: party, partyId: l.partyId! } : {}), ...(Object.keys({ ...headerDims, ...l.dimensions }).length ? { dimensions: { ...headerDims, ...l.dimensions } } : {}), // ST2: the header's dimensions are the lines' default (a line's own value wins)
     };
   });
 }
+// ---------------------------------------------------------------- ST2: dimensions - the company's own tags, and the account rules (required / forbidden)
+
+type Posting = Parameters<typeof ledgerFor>[1];
+const NO_DIMENSIONS = new Set(['OB', 'DP', 'PR', 'FA']); // these post exactly their own frozen rows: no editor puts a dimension on them
+/** What is wrong with the dimensions of a document as it would post (ruling 4 / 5), keyed so two readings of the same fault compare equal. */
+function dimensionFaults(st: MockState, companyId: string, d: Posting): Map<string, string> {
+  const out = new Map<string, string>();
+  if (NO_DIMENSIONS.has(d.type) || ADJUSTS[d.type]) return out; // a note is the mirror of the invoice / bill it adjusts: it inherits that posting
+  const types = new Map(dimTypesOf(st, companyId).map((t) => [t.key, t.nameTh])), values = dimValuesOf(st, companyId);
+  for (const m of [d.header.dimensions, ...d.lines.map((l) => l.dimensions)]) for (const [k, v] of Object.entries(m ?? {})) {
+    const value = values.find((x) => x.typeKey === k && x.code === v);
+    if (!types.has(k) || !value) out.set(`unknown|${k}|${v}`, `มิติ ${k} = ${v} ไม่มีในมิติของบริษัทนี้ ทางออก: เลือกค่ามิติจากรายการ`);
+    else if (!value.active) out.set(`inactive|${k}|${v}`, `ค่ามิติ ${types.get(k)} ${value.code} ${value.nameTh} ปิดใช้งานแล้ว ทางออก: เลือกค่าอื่น`);
+  }
+  let lines: JournalLinePreview[] = [];
+  try { lines = ledgerFor(st, { ...d, companyId }).entries[0]?.lines ?? []; } catch { return out; } // a half-filled document that does not resolve is judged by its own missing list
+  for (const l of lines) for (const [k, rule] of Object.entries(accountOf(st, companyId, l.accountCode)?.dimensionRules ?? {})) {
+    const name = types.get(k) ?? k, has = !!l.dimensions?.[k];
+    if (rule === 'required' && !has) out.set(`req|${l.accountCode}|${k}`, `บัญชี ${l.accountCode} ต้องระบุ${name} ทางออก: ระบุมิติที่หัวเอกสาร`);
+    if (rule === 'forbidden' && has) out.set(`forb|${l.accountCode}|${k}`, `บัญชี ${l.accountCode} ห้ามระบุ${name} ทางออก: เอา${name}ออกจากเอกสาร`);
+  }
+  return out;
+}
+/** Issue, revise, the correction plan and the editor's "what is missing" ask this one function. NOT retroactive: with `before` (the document as it stands) only a fault the change INTRODUCES counts, so a rule made stricter later never blocks a note edit on an old document. */
+export function dimensionProblems(st: MockState, companyId: string, doc: Posting, before?: Posting): MissingItem[] {
+  const now = dimensionFaults(st, companyId, doc);
+  if (!now.size) return [];
+  const old = before ? dimensionFaults(st, companyId, before) : new Map<string, string>();
+  return [...now].filter(([k]) => !old.has(k)).map(([, message]) => ({ field: 'header.dimensions', message, code: 'dimension.rule' }));
+}
+/** The refusal (422 `doc.incomplete`, the same code the other missing-field refusals carry). */
+export function refuseDimensions(st: MockState, companyId: string, doc: Posting, before?: Posting): void {
+  const m = dimensionProblems(st, companyId, doc, before);
+  if (m.length) throw new MockError(422, 'doc.incomplete', m.map((x) => x.message).join('; '));
+}
+
 /** Σ debit, Σ credit and their difference (satang, as the server states them; the grid never sums). */
 const sums = (lines: DocLine[]) => lines.filter(isUsed).reduce((a, l) => ({ dr: a.dr + (satOf(l.debit) || 0), cr: a.cr + (satOf(l.credit) || 0) }), { dr: 0, cr: 0 });
 export function jvBalance(lines: DocLine[]): { debit: string; credit: string; diff: string } {

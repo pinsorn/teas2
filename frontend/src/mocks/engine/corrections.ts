@@ -8,6 +8,7 @@ import type { MockState } from '../store';
 import {
   type Body, LIVE, approvalOnRevise, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, keepNoteLines, keepOmitted, markReplaced, refuseBelowSettled, refuseNonPositive, refusePartyChange, refuseUnissuableReceipt, refuseUnrevisablePurchase, reissue, revise, reviseBody, reviseNeedsApprover, stableJson, totalsOf,
 } from './commands';
+import { refuseDimensions } from './journal';
 import { obPayrollProblem, payrollProblem } from './payroll';
 import { refuseObLocked, refuseReconciled, refuseSettled } from './locks';
 import { filingLock, refuseFiled } from './filings';
@@ -104,6 +105,7 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Who):
   const sameBody = JSON.stringify({ header: d.header, lines: d.lines }) === JSON.stringify({ header: proposed.header, lines: proposed.lines })
     && (proposed.allocations === undefined || JSON.stringify(d.allocations ?? []) === JSON.stringify(proposed.allocations))
     && (proposed.opening === undefined || JSON.stringify(d.opening ?? null) === JSON.stringify(proposed.opening)); // AC3: the steps behind an opening balance are part of its body
+  if (!sameBody) refuseDimensions(st, d.companyId, { ...d, header: proposed.header, lines: proposed.lines, ...(proposed.allocations ? { allocations: proposed.allocations } : {}), totals: totalsOf(st, d.companyId, d.type, proposed, d.id) }, d); // ST2: the dimension rules, refused BEFORE a plan is shown (only what the change introduces)
   if (!sameBody && d.type === 'RC') refuseUnissuableReceipt(st, d, proposed); // a plan that could not be issued is never shown
   if (sameBody) {
     explanation = 'ไม่มีการเปลี่ยนแปลง';

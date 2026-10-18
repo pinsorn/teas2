@@ -11,6 +11,7 @@ const LEDGER = 'ledger.read';
 const TAX = 'tax.read';
 const SETTINGS = 'settings.manage';
 const USERS = 'users.manage';
+const POSTING = 'ledger.posting.manage';
 const BANK = 'bank.read';
 
 /** SP0 §9.1. Labels live in the messages under `nav.*`. */
@@ -72,7 +73,7 @@ export const NAV: NavGroup[] = [
     item('items', '/master/items', 'item.read'),
   ]),
   group('settings', ['company', 'users', 'roles', 'posting', 'dimensions', 'tax', 'numbering', 'approvals', 'templates', 'connect']
-    .map((s) => item(`settings${s[0].toUpperCase()}${s.slice(1)}`, `/settings/${s}`, s === 'users' || s === 'roles' ? USERS : SETTINGS))), // ST1: people and roles are the user administrator's
+    .map((s) => item(`settings${s[0].toUpperCase()}${s.slice(1)}`, `/settings/${s}`, s === 'users' || s === 'roles' ? USERS : s === 'posting' ? POSTING : SETTINGS))), // ST1: people and roles are the user administrator's; ST2: the posting rules are the accountant's
 ];
 
 export function visibleNav(nav: NavGroup[], ctx: { permissions: string[]; vatRegistered: boolean }): NavGroup[] {

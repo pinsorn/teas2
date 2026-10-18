@@ -1,20 +1,22 @@
 'use client';
-import { useQuery } from '@tanstack/react-query';
-import { Fragment, type Dispatch, type SetStateAction } from 'react';
+import { QueryClientContext, useQuery } from '@tanstack/react-query';
+import { Fragment, useContext, useState, type Dispatch, type SetStateAction } from 'react';
 import { useTranslations } from 'next-intl';
 import { useMe } from '@/app-shell/useMe';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { inputVatExpired } from '@/domain/claim-window';
 import type { HeaderFieldKey } from '@/domain/descriptors';
-import { ADJUSTS, REASON_CODES } from '@/domain/doc-types';
+import { ADJUSTS, DOC_TYPES, REASON_CODES } from '@/domain/doc-types';
 import { Checkbox } from '@/components/ui/checkbox';
 import type { DocHeader, DocType, WhtMode } from '@/domain/types';
 import { endpoints } from '@/lib/api/endpoints';
 import { formatDateBE } from '@/lib/format';
 import { qk } from '@/lib/query/keys';
+import { dimensionApi } from '@/records/dimensions';
 
 const selectCls = 'h-(--ctl-h) w-full rounded-lg border border-input bg-card px-3 text-body outline-none';
 const METHODS = ['transfer', 'cash', 'cheque'] as const;
@@ -39,6 +41,41 @@ function BankAccountField({ id, header, setHeader }: { id: string; header: DocHe
     </div>
   );
 }
+
+/** ST2 (SP0 §5.6): the dimensions of a document - the company's own types, each offering its ACTIVE values (a closed value stays shown where a document already has it). On the header they are the default of every line; on a line
+ *  ("ตามหัวเอกสาร" = no value of its own) a value overrides the header. Nothing is shown when the company has no type, or outside a query provider (a bare component test). */
+export function DimensionPicker(p: { ids: string; line?: number; value?: Record<string, string>; onChange: (next: Record<string, string>) => void; className?: string }) {
+  return useContext(QueryClientContext) ? <LivePicker {...p} /> : null;
+}
+function LivePicker({ ids, line, value, onChange, className }: Parameters<typeof DimensionPicker>[0]) {
+  const [open, setOpen] = useState(() => Object.keys(value ?? {}).length > 0); // closed until asked for (or the document already carries a value): most lines never need one
+  const t = useTranslations('docEditor.dimensions');
+  const { me } = useMe();
+  const q = useQuery({ queryKey: [me?.activeCompanyId ?? '', 'dimensions'], queryFn: dimensionApi.list, enabled: !!me, staleTime: 30_000 });
+  const types = q.data?.types ?? [];
+  if (!types.length) return null;
+  if (!open) return <div className={className}><Button type="button" variant="ghost" size="sm" aria-expanded={false} aria-label={line ? t('lineOpen', { n: line }) : undefined} onClick={() => setOpen(true)}>{t('set')}</Button></div>;
+  const set = (key: string, v: string) => { const next = { ...value }; if (v) next[key] = v; else delete next[key]; onChange(next); };
+  return (
+    <div role="group" aria-label={line ? t('lineGroup', { n: line }) : t('title')} className={`grid gap-2 sm:grid-cols-2 lg:grid-cols-4 ${className ?? ''}`}>
+      {types.map((ty) => {
+        const id = `${ids}-dim-${ty.key}`, cur = value?.[ty.key] ?? '';
+        return (
+          <div key={ty.key} className="grid gap-1">
+            {line ? <span aria-hidden className="text-small text-muted-foreground">{ty.nameTh}</span> : <Label htmlFor={id}>{ty.nameTh}</Label>}
+            <select id={id} aria-label={line ? t('lineLabel', { type: ty.nameTh, n: line }) : undefined} className={selectCls} value={cur} onChange={(e) => set(ty.key, e.target.value)}>
+              <option value="">{line ? t('inherit') : t('none')}</option>
+              {ty.values.filter((v) => v.active || v.code === cur).map((v) => <option key={v.code} value={v.code}>{v.active ? `${v.code} ${v.nameTh}` : `${v.code} ${v.nameTh} (${t('closed')})`}</option>)}
+              {cur && !ty.values.some((v) => v.code === cur) && <option value={cur}>{cur}</option>}
+            </select>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+/** The types whose entries a dimension can be put on: they post (so not a quotation), and are not a note (it inherits the invoice's posting) or a frozen-rows document. */
+const dimensionable = (type?: DocType): boolean => !!type && DOC_TYPES[type].ledger && !ADJUSTS[type] && !['OB', 'DP', 'PR', 'FA'].includes(type);
 
 /** A note: the document adjusted (the tax invoice of a CN / DN, the purchase bill of a PCN / PDN) - the server owns it (set by the "ออกใบลดหนี้" / "บันทึกใบลดหนี้จากผู้ขาย" button on that document), so it is shown, not edited. */
 function RefDocField({ id, refDocId, type }: { id: string; refDocId?: string; type?: DocType }) {
@@ -211,5 +248,10 @@ export function HeaderFields({ type, keys, ids, header, setHeader }: {
         return null;
     }
   };
-  return keys.map((key) => <Fragment key={key}>{field(key)}</Fragment>);
+  return (
+    <>
+      {keys.map((key) => <Fragment key={key}>{field(key)}</Fragment>)}
+      {dimensionable(type) ? <DimensionPicker ids={ids} value={header.dimensions} className="md:col-span-2" onChange={(next) => setHeader((h) => ({ ...h, dimensions: Object.keys(next).length || h.dimensions ? next : undefined }))} /> : null}
+    </>
+  );
 }
