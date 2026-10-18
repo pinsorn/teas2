@@ -360,3 +360,41 @@ describe('ST3 wire', () => {
     expect(s.version).toBe(2);
   });
 });
+
+describe('ST3b: R2-B1 (in use = what was frozen) and R2-m1 (a new key never orphans an issued number)', () => {
+  const svcRows = (st: MockState) => st.whtTypes.filter((t) => t.companyId === CO && t.code === 'SVC').map((t) => `${t.effectiveFrom}:${t.rateBp}`);
+  it('(a) a voucher revised out of the span keeps its frozen row: the replace is refused, invariants []', () => {
+    const st = buildSeedState();
+    changeTaxRate(st, me, CO, 'PROF', 650, '2026-10-10');
+    const d = pv(st, '10000.00', '2026-10-12', { whtTypeCode: 'PROF' }), i = issue(st, d.id, d.version, me);
+    revise(st, i.id, { header: { ...get(st, i.id).header, documentDate: '2026-10-05' }, lines: get(st, i.id).lines }, get(st, i.id).version, 'date', me);
+    expect(code(() => changeTaxRate(st, me, CO, 'PROF', 400, '2026-10-10'))).toBe('tax.rate_in_use');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('(b) a back-dated row that splits the span does not free the row the voucher froze', () => {
+    const st = buildSeedState();
+    changeTaxRate(st, me, CO, 'SVC', 500, '2026-10-10');
+    const d = pv(st, '10000.00', '2026-10-14', { whtTypeCode: 'SVC' }); issue(st, d.id, d.version, me);
+    changeTaxRate(st, me, CO, 'SVC', 600, '2026-10-12');
+    expect(code(() => changeTaxRate(st, me, CO, 'SVC', 400, '2026-10-10'))).toBe('tax.rate_in_use');
+    expect(svcRows(st)).toContain('2026-10-10:500');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('(c) a fresh RENT row nobody froze is replaceable even though seeded vouchers are dated inside its span', () => {
+    const st = buildSeedState();
+    changeTaxRate(st, me, CO, 'RENT', 700, '2026-10-10');
+    expect(code(() => changeTaxRate(st, me, CO, 'RENT', 650, '2026-10-10'))).toBeUndefined();
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('R2-m1: monthly -> yearly {PREFIX}{YY}{####} then a 2020 back-date is refused numbering.ambiguous, nothing written', () => {
+    const st = buildSeedState();
+    clearType(st, 'QT');
+    updateNumbering(st, me, CO, 'QT', { prefix: 'QT', scope: 'monthly', format: '{PREFIX}{YYYY}{MM}{####}', version: 1 } as never);
+    expect(qt(st, '2026-09-10').number).toBe('QT2026090001');
+    updateNumbering(st, me, CO, 'QT', { prefix: 'QT', scope: 'yearly', format: '{PREFIX}{YY}{####}', version: 2 } as never);
+    const before = JSON.stringify([st.series, st.seriesFormats]);
+    expect(code(() => qt(st, '2020-06-10'))).toBe('numbering.ambiguous');
+    expect(JSON.stringify([st.series, st.seriesFormats])).toBe(before);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+});

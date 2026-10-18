@@ -90,8 +90,12 @@ function templateForNew(st: MockState, cfg: NumberingConfig, key: string, scope:
 }
 /** Would the number `seq` of `key` under `tpl` parse back (one parser) to exactly its own key and sequence? */
 function parsesToOwnKey(st: MockState, companyId: string, type: DocType, key: string, tpl: string, seq: number): boolean {
-  const p = parseNumber({ ...st, seriesFormats: { ...(st.seriesFormats ?? {}), [key]: tpl } }, companyId, type, formatByTemplate(tpl, periodOfKey(key), seq));
-  return p?.key === key && p.seq === seq;
+  const withNew = { ...st, seriesFormats: { ...(st.seriesFormats ?? {}), [key]: tpl } };
+  const p = parseNumber(withNew, companyId, type, formatByTemplate(tpl, periodOfKey(key), seq));
+  if (p?.key !== key || p.seq !== seq) return false;
+  if (st.seriesFormats?.[key] === tpl) return true;
+  // ST3b R2-m1: storing a NEW key's format must not make a number already issued lose its one key
+  return st.docs.every((d) => d.companyId !== companyId || d.type !== type || !d.number || !parseNumber(st, companyId, type, d.number) || !!parseNumber(withNew, companyId, type, d.number));
 }
 const EXIT = 'ทางออก: แก้รูปแบบเลขที่ในหน้าตั้งค่าเลขที่เอกสาร (เช่น ใส่ตัวคั่นระหว่างปี เดือน และตัวนับ)';
 

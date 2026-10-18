@@ -24,6 +24,10 @@ export function withFixedClock<T>(iso: string, fn: () => T): T {
 export function logActivity(st: MockState, docId: string, actor: Actor, action: string, detail?: string): void {
   const n = st.activity.filter((a) => a.docId === docId).length + 1;
   st.activity.push({ docId, id: `act-${docId}-${n}`, at: stamp(), actor, action, ...(detail ? { detail } : {}) });
+  if (action === 'issue' || action === 'revise') { // ST4 (I3): every path that issues or revises a document passes here, and the seller + the pictures are taken at that moment
+    const d = st.docs.find((x) => x.id === docId);
+    if (d) stampIssue(st, d, actor);
+  }
 }
 
 /** The one place an audit entry is written. RP3: the mock has one caller address and a deterministic trace id (the entry count), so the seed is stable; an agent's calls arrive over MCP, everything else from the web app. The trail is append-only: ids are unique and count up (invariant). Time is a fact about the event and is never adjusted. */
@@ -57,8 +61,12 @@ export function changeTaxRate(st: MockState, actor: Actor, companyId: string, co
   const before = { code, rateBp: inForce.rateBp, effectiveFrom: inForce.effectiveFrom };
   if (inForce.effectiveFrom === effectiveFrom) { // ST3a B1: a row a live document froze / used is never changed (exit: a new row with a later date); an unused row may still be corrected
     const next = rows.map((x) => x.effectiveFrom).filter((d) => d > effectiveFrom).sort()[0];
-    const used = st.docs.some((d) => d.companyId === companyId && ['issued', 'partly_settled', 'settled'].includes(d.status) && d.header.documentDate >= effectiveFrom && (!next || d.header.documentDate < next)
-      && (d.header.whtTypeCode === code || d.lines.some((l) => l.whtTypeCode === code) || (d.allocations ?? []).some((a) => a.whtTypeCode === code) || !!d.whtFrozen?.lines.some((l) => l.code === code)));
+    // ST3b R2-B1: "in use" is what was FROZEN (a live document's frozen line of this code at this row's rate, no other row keeping that rate); the date span only judges live lines that froze nothing (a WT certificate copies its voucher's frozen rate, so it never decides)
+    const live = st.docs.filter((d) => d.companyId === companyId && ['issued', 'partly_settled', 'settled'].includes(d.status));
+    const rateKeptElsewhere = rows.some((x) => x !== inForce && x.rateBp === inForce.rateBp);
+    const used = (!rateKeptElsewhere && live.some((d) => d.whtFrozen?.lines.some((l) => l.code === code && Math.round(parseFloat(l.rate) * 100) === inForce.rateBp)))
+      || live.some((d) => d.type !== 'WT' && !d.whtFrozen?.lines.some((l) => l.code === code) && d.header.documentDate >= effectiveFrom && (!next || d.header.documentDate < next)
+        && (d.header.whtTypeCode === code || d.lines.some((l) => l.whtTypeCode === code) || (d.allocations ?? []).some((a) => a.whtTypeCode === code)));
     if (used) throw new MockError(409, 'tax.rate_in_use', 'อัตรานี้มีเอกสารใช้แล้ว ทางออก: เพิ่มอัตราใหม่ที่มีผลวันถัดไป');
   }
   if (inForce.effectiveFrom === effectiveFrom) { inForce.rateBp = rateBp; inForce.version = version + 1; } // the date already has its row: a correction REPLACES it (a second row of one date would never apply)

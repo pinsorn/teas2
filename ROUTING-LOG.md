@@ -75,3 +75,6 @@
 | 2026-10-19 | SP1c ST3 implement (tax / numbering / approvals + policy + tolerance snapshots) | sonnet-implementer (fresh) | new area; Opus review after (numbering / approvals) |
 | 2026-10-19 | SP1c ST3 review (numbering frozen format, approval / tolerance snapshots, WHT) | opus-reviewer (fresh) | numbering / approvals / tax compliance |
 | 2026-10-19 | SP1c ST3a fix round (WHT row in use, one scope per year + unambiguous parse, stricter revise approval, per-settlement tolerance) | sonnet-implementer (warm, ST3 worker) | Opus REJECT ST3 (B1, M1, M2) |
+| 2026-10-19 | SP1c ST3 round-2 review (ST3a) | opus-reviewer (warm, ST3 reviewer) | re-check B1 / M1 / M2 / m1 |
+| 2026-10-19 | SP1c ST4 implement (templates + seller / logo / signature / stamp frozen at issue on every paper) | sonnet-implementer (fresh) | new area; parallel with read-only review; Opus review after (freeze rule) |
+| 2026-10-19 | SP1c ST3b (WHT row in use by frozen rate; numbering existing-number ambiguity) | sonnet-implementer (warm, ST3 worker) | Opus r2 REJECT R2-B1; parallel with ST4 (disjoint files, no e2e) |
