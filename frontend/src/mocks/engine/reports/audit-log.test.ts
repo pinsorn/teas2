@@ -3,7 +3,7 @@ import type { Actor } from '@/domain/types';
 import { buildSeedState, type MockState } from '../../store';
 import { closePeriod, closeYear, reopenPeriod, reopenYear } from '../close';
 import { checkInvariants } from '../invariants';
-import { changeTaxRate, logAudit, withFixedClock } from '../log';
+import { changeTaxRate, logAudit, today, withFixedClock } from '../log';
 import { whtTypeOf } from '../wht';
 import { numberGaps } from './number-gaps';
 import { auditLog, reopenHistory } from './audit-log';
@@ -23,11 +23,11 @@ describe('ruling 2: audit entries carry ip, traceId and client', () => {
     expect(st.audit.length).toBeGreaterThan(200);
     st.audit.forEach((a, i) => { expect(a.ip).toBe('127.0.0.1'); expect(a.traceId).toBe(`trc-${i + 1}`); expect(a.client).toBe(a.actor.kind === 'agent' ? 'mcp' : 'web'); });
   });
-  it('an agent-authored entry is mcp; the state version is 55', () => {
+  it('an agent-authored entry is mcp; the state version is 56', () => {
     const agent: Actor = { kind: 'agent', id: 'ag-1', name: 'ผู้ช่วยบัญชี (AI)', ownerName: ME.name };
     logAudit(st, agent, VAT, 'x.y', 't');
     expect(st.audit.at(-1)).toMatchObject({ client: 'mcp', ip: '127.0.0.1', traceId: `trc-${st.audit.length}` });
-    expect(st.version).toBe(55);
+    expect(st.version).toBe(56);
   });
 });
 
@@ -222,4 +222,8 @@ describe('RP3b R2-M1: two tax-rate changes on one date', () => {
     const payee = st.parties.find((p) => p.companyId === VAT && p.kind === 'vendor')!;
     for (const d of ['2026-10-14', '2026-10-15', '2026-10-16', '2027-01-01']) expect(whtTypeOf(st, 'ADS', payee, d).rateBp, d).toBe(200);
   });
+});
+
+it('no seeded tax-rate row is dated after the mock today', () => {
+  expect(st.whtTypes.filter((t) => t.effectiveFrom > today())).toEqual([]);
 });

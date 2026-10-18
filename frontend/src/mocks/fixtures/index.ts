@@ -42,7 +42,7 @@ export function buildSeed(role: Role): MockState {
   const items = [...vatItems(), ...nonVatItems()];
   const { docs, links, activity, revisions, series } = buildDocs(parties, items);
   return {
-    version: 55,
+    version: 56,
     companies,
     memberships: companies.map((c) => ({ userId: 'u-1', companyId: c.id, companyName: c.legalNameTh, role: c.vatRegistered ? role : 'operator' })),
     parties, items, docs, links, activity, revisions, journals: [], bankImports: [], bankLines: [], bankJournals: [], settlements: [], schedules: [], yearCloses: [], filings: [], payrollPayments: [], citYears: citYearsSeed(), settlementTolerance: companies.map((c) => ({ companyId: c.id, rounding: '1.00', smallWriteOff: '100.00' })), audit: [], series, attachments: [], prints: [],
@@ -67,7 +67,7 @@ export function seedAudit(st: MockState): void {
     const rule = { role: 'Expense', level: 'category', key: 'advertising' } as const;
     changePostingRule(st, USER, 'co-vat', rule, '5110');
     changePostingRule(st, USER, 'co-vat', rule, '5130');
-    changeTaxRate(st, USER, 'co-vat', 'ADS', 300, '2026-10-15'); // one date for the change and its revert: the revert REPLACES the row, so no day ever has 3%
-    changeTaxRate(st, USER, 'co-vat', 'ADS', 200, '2026-10-15');
+    changeTaxRate(st, USER, 'co-vat', 'ADS', 300, '2026-10-14'); // dated on the mock's today (no future row); one date for the change and its revert: the revert REPLACES the row, so no day ever has 3%
+    changeTaxRate(st, USER, 'co-vat', 'ADS', 200, '2026-10-14');
   });
 }
