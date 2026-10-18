@@ -166,8 +166,9 @@ const rcHeaderKey = ({ notes: _n, reference: _r, bankSnapshot: _b, depositAmount
 
 /** Fiscal = changes who/when/how much is taxed; only those need a chain-aware correction on a T-class document.
  *  A receipt takes ONLY certificate numbers, notes and reference in place: any other change is a correction (M1). */
-/** Lines as the client knows them: the engine-set VAT of a CN / DN line is not part of what a caller can send back. */
-export const sameLines = (a: DocLine[], b: DocLine[]) => JSON.stringify(a.map(({ vatOverride, ...l }) => (void vatOverride, l))) === JSON.stringify(b.map(({ vatOverride, ...l }) => (void vatOverride, l)));
+/** Lines as the client knows them: the engine-set VAT of a CN / DN line and the frozen `postedAccount` (ST2c) are not part of what a caller can send back. */
+const clientLine = ({ vatOverride, postedAccount, ...l }: DocLine) => (void vatOverride, void postedAccount, l);
+export const sameLines = (a: DocLine[], b: DocLine[]) => JSON.stringify(a.map(clientLine)) === JSON.stringify(b.map(clientLine));
 /** A note whose lines are unchanged keeps its issued lines (and their VAT) and its price basis: an API caller cannot send the engine-set VAT back, and the VAT is never recomputed from today's siblings (F4). */
 export const keepNoteLines = (d: Doc, body: Body): Body =>
   isNote(d.type) && sameLines(body.lines, d.lines) ? { ...body, header: { ...body.header, ...(d.header.priceIncludesVat ? { priceIncludesVat: true } : {}) }, lines: d.lines } : body;

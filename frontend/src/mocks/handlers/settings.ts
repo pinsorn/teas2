@@ -57,12 +57,12 @@ export const settingsHandlers = [
     const { row, link } = inviteUser(c.st, actorOf(request), c.company.id, await bodyOf(request));
     return write(c, { ...row, link }, 201); // the only response that carries the link
   })),
-  http.put('*/bff/v1/settings/users/:id', ({ request, params }) => guarded('item', 'users.manage', async (c) => write(c, updateUser(c.st, actorOf(request), c.company.id, String(params.id), await bodyOf(request))))),
+  http.put('*/bff/v1/settings/users/:id', ({ request, params }) => guarded('item', 'users.manage', async (c) => write(c, updateUser(c.st, actorOf(request), c.company.id, String(params.id), await bodyOf(request), c.s.role)))),
   http.post('*/bff/v1/settings/users/:id/active', ({ request, params }) => guarded('item', 'users.manage', async (c) => {
     const actor = actorOf(request);
     const b = await bodyOf(request);
     if (typeof b.active !== 'boolean') throw new MockError(422, 'record.invalid', 'ต้องระบุสถานะใช้งาน');
-    return write(c, setUserActive(c.st, actor, c.company.id, String(params.id), b.active, b.version));
+    return write(c, setUserActive(c.st, actor, c.company.id, String(params.id), b.active, b.version, c.s.role));
   })),
   http.post('*/bff/v1/settings/users/:id/accept', ({ request, params }) => guarded('item', 'users.manage', (c) => write(c, acceptInvite(c.st, actorOf(request), c.company.id, String(params.id))))), // ST1a M1: the mock's "invite accepted"
   http.post('*/bff/v1/settings/users/:id/reset-link', ({ request, params }) => guarded('item', 'users.manage', (c) => write(c, { link: resetLink(c.st, actorOf(request), c.company.id, String(params.id)) }))),

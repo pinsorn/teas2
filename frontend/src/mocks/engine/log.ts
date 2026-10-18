@@ -80,7 +80,7 @@ export function diffBody(a: Body, b: Body): FieldChange[] {
     const la = a.lines.find((l) => l.id === id) as unknown as Record<string, unknown> | undefined;
     const lb = b.lines.find((l) => l.id === id) as unknown as Record<string, unknown> | undefined;
     if (!la || !lb) { push(`lines.${id}`, la?.description, lb?.description); continue; }
-    for (const k of keys(la, lb)) push(`lines.${id}.${k}`, la[k], lb[k]);
+    for (const k of keys(la, lb)) if (k !== 'postedAccount') push(`lines.${id}.${k}`, la[k], lb[k]); // engine-set (ST2c): never a client change
   }
   // settlement allocations, one path per target (a certificate number edit shows as allocations.<target>.certNumber)
   const aa = new Map((a.allocations ?? []).map((x) => [x.targetId, x as unknown as Record<string, unknown>]));

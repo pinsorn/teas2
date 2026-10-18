@@ -23,9 +23,11 @@ const toRow = (st: MockState, m: StaffMember): UserRow => { const { linkHash: _h
 const shape = (m: StaffMember) => ({ name: m.name, email: m.email, roleId: m.roleId, position: m.position, hasSignature: !!m.signatureDataUrl, active: m.active });
 const bump = (st: MockState, actor: Actor, m: StaffMember, command: string, before: ReturnType<typeof shape>) => { m.version += 1; logAudit(st, actor, m.companyId, command, m.id, before, shape(m)); };
 
+/** The row as shown: u-1 follows the toolbar role while she holds a system role (a COPY; the stored member is never touched). */
+const shown = (st: MockState, m: StaffMember, toolbarRole?: string): UserRow => toRow(st, toolbarRole && m.userId === 'u-1' && isSystemRole(m.roleId) ? { ...m, roleId: toolbarRole } : m);
 /** ST1b m5 / ST2c N2: u-1's row follows the toolbar role while she holds a system role - a mapped COPY made where the row is read; the stored staff is never touched (no view objects in state). */
 export const listUsers = (st: MockState, companyId: string, toolbarRole?: string): UserRow[] =>
-  st.staff.filter((m) => m.companyId === companyId).map((m) => toRow(st, toolbarRole && m.userId === 'u-1' && isSystemRole(m.roleId) ? { ...m, roleId: toolbarRole } : m));
+  st.staff.filter((m) => m.companyId === companyId).map((m) => shown(st, m, toolbarRole));
 
 /** The last administrator of a company cannot be deactivated or moved to a role that cannot manage users; nor can a user do that to themselves (ruling 6, one code). */
 function keepAnAdmin(st: MockState, actor: Actor, m: StaffMember, nextActive: boolean, nextRoleId: string): void {
@@ -58,7 +60,7 @@ export function inviteUser(st: MockState, actor: Actor, companyId: string, v: Va
   return { row: toRow(st, m), link: `https://app.teas.example/invite/${token}` };
 }
 
-export function updateUser(st: MockState, actor: Actor, companyId: string, id: string, v: Values): UserRow {
+export function updateUser(st: MockState, actor: Actor, companyId: string, id: string, v: Values, toolbarRole?: string): UserRow {
   refuseAgent(actor);
   const m = mine(st, companyId, id);
   if (v.version !== m.version) throw new MockError(409, 'record.version_conflict', 'ข้อมูลนี้ถูกแก้ไขโดยผู้อื่นแล้ว โหลดข้อมูลใหม่ก่อนบันทึก');
@@ -74,19 +76,19 @@ export function updateUser(st: MockState, actor: Actor, companyId: string, id: s
   if ('position' in v) { if (text(v.position)) m.position = text(v.position); else delete m.position; }
   if ('signatureDataUrl' in v) { if (v.signatureDataUrl) m.signatureDataUrl = v.signatureDataUrl as string; else delete m.signatureDataUrl; }
   bump(st, actor, m, 'user.update', before);
-  return toRow(st, m);
+  return shown(st, m, toolbarRole);
 }
 
-export function setUserActive(st: MockState, actor: Actor, companyId: string, id: string, active: boolean, version: unknown): UserRow {
+export function setUserActive(st: MockState, actor: Actor, companyId: string, id: string, active: boolean, version: unknown, toolbarRole?: string): UserRow {
   refuseAgent(actor);
   const m = mine(st, companyId, id);
   if (version !== m.version) throw new MockError(409, 'record.version_conflict', 'ข้อมูลนี้ถูกแก้ไขโดยผู้อื่นแล้ว โหลดข้อมูลใหม่ก่อนบันทึก');
-  if (m.active === active) return toRow(st, m);
+  if (m.active === active) return shown(st, m, toolbarRole);
   if (!active) keepAnAdmin(st, actor, m, false, m.roleId);
   const before = shape(m);
   m.active = active;
   bump(st, actor, m, active ? 'user.activate' : 'user.deactivate', before);
-  return toRow(st, m);
+  return shown(st, m, toolbarRole);
 }
 
 /** A password-reset link: shown once, replaced by the next one, kept only as a hash. */

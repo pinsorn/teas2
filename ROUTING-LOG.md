@@ -70,3 +70,4 @@
 | 2026-10-18 | SP1c ST2b fix round (control roles default-only, control account per role, schedules/asset register read stored posting, note tags, per-line revise) | sonnet-implementer (warm, ST2a worker) | Opus REJECT ST2 (B1-B4); warm Opus re-review after |
 | 2026-10-18 | SP1c ST2 round-2 review (ST2a + ST2b) | opus-reviewer (warm, ST2 reviewer) | re-check B1-B4 / M1-M3 + postedDebit amount heuristic |
 | 2026-10-18 | SP1c ST2c fix round (postedAccount frozen per line, no accessor in state) | sonnet-implementer (warm, ST2a worker) | Opus round-2 REJECT (N1 amount guess, N2 toolbar role persisted) |
+| 2026-10-19 | SP1c ST2 round-3 review (ST2c) | opus-reviewer (warm, ST2 reviewer) | postedAccount freeze + N2 |

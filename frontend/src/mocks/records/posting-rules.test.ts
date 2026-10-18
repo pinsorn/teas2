@@ -14,6 +14,7 @@ import { AGENT, USER } from '../fixtures/documents';
 import { setSettings } from '../settings';
 import { buildSeedState, loadState, resetState } from '../store';
 import { testServer } from '../test-server';
+import { listUsers, updateUser } from './users';
 import { createCategory, listCategories, updateCategory } from './expense-categories';
 import { createAmortisation, lineCapacity } from '../engine/schedules';
 import { CONTROL_ROLES, createPostingRule, deletePostingRule, listPostingRules, previewPosting, ruleId, updatePostingRule } from './posting-rules';
@@ -282,6 +283,56 @@ describe('ST2c N1: the account of a purchase line is FROZEN on the line - nothin
     revise(st, pb.id, { header: cur.header, lines: cur.lines.map((l) => ({ ...l, unitPrice: '1200.00' })) }, cur.version, 'แก้ราคา', USER);
     expect(posted()).toBe('5130');
     expect(checkInvariants(st)).toEqual([]);
+  });
+});
+
+describe('ST2d R3-M1: the engine-set postedAccount is not client content - a notes-only revise sent WITHOUT it is a notes-only revise', () => {
+  const strip = (ls: DocLine[]): DocLine[] => ls.map(({ postedAccount: _p, ...r }) => (void _p, r));
+  const notes = (st: ReturnType<typeof seed>, id: string, actor = USER) => {
+    const b = st.docs.find((x) => x.id === id)!;
+    return revise(st, id, { header: { ...b.header, notes: 'notes only' }, lines: strip(b.lines), allocations: b.allocations }, b.version, 'r', actor);
+  };
+  const settledPb = (st: ReturnType<typeof seed>) => st.docs.find((b) => b.companyId === V && b.type === 'PB' && b.number && b.status !== 'cancelled' && b.status !== 'replaced' && st.links.some((l) => l.active && l.kind === 'settles' && l.to === b.id))!;
+  it('a bill a PV settles: no pb.settled_locked; a bill a PCN adjusts: no pb.has_notes', () => {
+    const st = seed();
+    const pb = settledPb(st);
+    expect(pb, 'a settled PB in the seed').toBeTruthy();
+    expect(code(() => notes(st, pb.id))).toBeUndefined();
+    const adjusted = st.docs.find((b) => b.companyId === V && b.type === 'PB' && b.number && b.status !== 'cancelled' && b.status !== 'replaced' && st.links.some((l) => l.active && l.kind === 'adjusts' && l.to === b.id) );
+    expect(adjusted, 'a PB adjusted by a note').toBeTruthy();
+    expect(code(() => notes(st, adjusted!.id))).toBeUndefined();
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('a PV keeps moneyBy and its frozen WHT (even after the WHT rates move)', () => {
+    const st = seed();
+    const pv = st.docs.find((x) => x.companyId === V && x.type === 'PV' && x.number && x.status !== 'cancelled' && x.status !== 'replaced' && x.whtFrozen)!;
+    expect(pv, 'an issued PV with frozen WHT').toBeTruthy();
+    pv.moneyBy = USER; // the person who set the money
+    const moneyBy = JSON.stringify(pv.moneyBy), frozen = JSON.stringify(pv.whtFrozen);
+    for (const t of st.whtTypes) if (t.companyId === V) t.rateBp = 9900;
+    notes(st, pv.id, { kind: 'user', id: 'u-other', name: 'คนอื่น' });
+    const after = st.docs.find((x) => x.id === pv.id)!;
+    expect(JSON.stringify(after.moneyBy)).toBe(moneyBy);
+    expect(JSON.stringify(after.whtFrozen)).toBe(frozen);
+  });
+  it('r3 minor: updateUser returns u-1 as the list shows her (toolbar role), the stored role untouched', () => {
+    const st = seed();
+    const row = updateUser(st, USER, V, 'usr-vat-1', { name: 'สมศรี บัญชีดี', version: 1 }, 'operator');
+    expect(row.roleId).toBe('operator');
+    expect(st.staff.find((m) => m.id === 'usr-vat-1')!.roleId).toBe('accountant');
+    expect(listUsers(st, V, 'operator').find((u) => u.id === 'usr-vat-1')!.roleId).toBe('operator');
+  });
+  it('a PCN keeps its issued lines and VAT; the revision history never records postedAccount as a change', () => {
+    const st = seed();
+    const pcn = st.docs.find((x) => x.companyId === V && x.type === 'PCN' && x.status === 'issued')!;
+    expect(pcn, 'an issued PCN').toBeTruthy();
+    const before = JSON.stringify(pcn.lines), totals = JSON.stringify(pcn.totals);
+    notes(st, pcn.id);
+    const after = st.docs.find((x) => x.id === pcn.id)!;
+    expect(JSON.stringify(after.lines)).toBe(before);
+    expect(JSON.stringify(after.totals)).toBe(totals);
+    const rev = st.revisions.filter((r) => r.docId === pcn.id).at(-1)!;
+    expect(rev.diff.map((d) => d.path).filter((p) => p.endsWith('postedAccount'))).toEqual([]);
   });
 });
 
