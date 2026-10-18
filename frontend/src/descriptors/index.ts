@@ -16,6 +16,7 @@ import { purchaseBill } from './purchase-bill';
 import { purchaseCreditNote } from './purchase-credit-note';
 import { purchaseDebitNote } from './purchase-debit-note';
 import { paymentVoucher } from './payment-voucher';
+import { payrollRun } from './payroll-run';
 import { purchaseOrder } from './purchase-order';
 import { quotation } from './quotation';
 import { receipt } from './receipt';
@@ -23,7 +24,7 @@ import { salesOrder } from './sales-order';
 import { taxInvoice } from './tax-invoice';
 import { whtCertificate } from './wht-certificate';
 
-export const DESCRIPTORS: Partial<Record<DocType, DocDescriptor>> = { TI: taxInvoice, QT: quotation, SO: salesOrder, DO: deliveryOrder, IV: invoice, BL: billingStatement, RC: receipt, CN: creditNote, DN: debitNote, PO: purchaseOrder, PB: purchaseBill, PCN: purchaseCreditNote, PDN: purchaseDebitNote, PV: paymentVoucher, EX: expenseClaim, JV: journalVoucher, FA: fixedAsset, DP: depreciationRun, OB: openingBalance, WT: whtCertificate };
+export const DESCRIPTORS: Partial<Record<DocType, DocDescriptor>> = { TI: taxInvoice, QT: quotation, SO: salesOrder, DO: deliveryOrder, IV: invoice, BL: billingStatement, RC: receipt, CN: creditNote, DN: debitNote, PO: purchaseOrder, PB: purchaseBill, PCN: purchaseCreditNote, PDN: purchaseDebitNote, PV: paymentVoucher, EX: expenseClaim, JV: journalVoucher, FA: fixedAsset, DP: depreciationRun, OB: openingBalance, WT: whtCertificate, PR: payrollRun };
 export function descriptorByPath(path: string): DocDescriptor | undefined {
   return Object.values(DESCRIPTORS).find((d) => d.basePath === path);
 }

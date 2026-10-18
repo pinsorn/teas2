@@ -54,8 +54,8 @@ export const NAV: NavGroup[] = [
     item('taxForms', '/tax/forms', TAX),
   ]),
   group('payroll', [
-    item('employees', '/payroll/employees', 'payroll.read'),
-    item('payrollRuns', '/payroll/runs', 'payroll.read'),
+    item('employees', '/payroll/employees', 'employee.read'),
+    doc('payrollRuns', '/payroll/runs', 'PR'),
     item('payrollFilings', '/payroll/filings', 'payroll.read'),
   ]),
   group('reports', [

@@ -30,7 +30,7 @@
       "groupBody": "The whole document is added to a new billing statement (draft). Nothing is posted; choose more documents of this customer in the editor."
     },
     "actions": {
-      "submit": "Submit for approval", "approve": "Approve", "approveAndIssue": "Approve and issue", "sendBack": "Send back for changes", "whyPaid": "Paid in full, nothing left to pay",
+      "submit": "Submit for approval", "approve": "Approve", "approveAndIssue": "Approve and issue", "sendBack": "Send back for changes", "whyPaid": "Paid in full, nothing left to pay", "whyPayrollPaid": "Payroll is paid: unpay it before changing the run",
       "label": "Actions", "issueDraft": "Save and issue…", "edit": "Edit", "print": "Print", "copy": "Copy as new",
       "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "lockedReconciliation": "Cannot cancel ({reason}); use “Cancel match” in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyFinal": "This voucher is final (reversed, or itself a reversal), so it cannot be edited", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "receive": "Receive payment", "whyDisposalInvoice": "This invoice is the sale of a fixed asset: it cannot be edited and takes no credit / debit note. Exit: cancel it (the disposal is cancelled with it) and dispose of the asset again.",
       "whyInclusiveNote": "This invoice is priced VAT-inclusive, so a credit / debit note cannot be issued directly. Use Edit (a correction plan) instead.", "issueCn": "Issue credit note", "issueDn": "Issue debit note", "issuePcn": "Record vendor credit note", "issuePdn": "Record vendor debit note", "markDelivered": "Delivered", "markSent": "Mark as sent to vendor", "whyNothingRemaining": "Every line is already converted in full; there is nothing to close", "whyClosed": "The remainder is closed, so it cannot be converted; revise the document to reopen it", "makeRecurring": "Make recurring", "makeAmortisation": "Amortise", "needSchedulePermission": "Needs the {permission} permission"
@@ -46,7 +46,7 @@
     },
     "paper": { "notPrintable": "No paper form is available for this document type", "notIssued": "This document has not been issued, so it cannot be printed as a tax invoice. Issue it first.", "stub": "The document paper preview appears here", "snapshot": "Revision {n}" },
     "chain": {
-      "empty": "No related documents", "self": "This document", "inactive": "No longer in effect", "settlement": "Netting / deposit applied",
+      "empty": "No related documents", "self": "This document", "inactive": "No longer in effect", "settlement": "Netting / deposit applied", "payrollPayment": "Payroll payment",
       "rel": {
         "converted_from": { "out": "Converted from", "in": "Converted into" },
         "settles": { "out": "Settles", "in": "Settled by" },
@@ -70,7 +70,7 @@
     },
     "activity": {
       "empty": "No activity yet",
-      "action": { "submit": "Submitted for approval", "approve": "Approved", "send_back": "Sent back for changes", "create": "Created draft", "issue": "Issued", "settle": "Payment received", "cancel": "Cancelled", "revise": "Revised", "convert": "Converted", "accept": "Customer accepted", "reject": "Customer rejected", "deliver": "Delivered", "close": "Remainder closed", "send": "Sent to vendor", "settlement": "Netting / deposit applied", "settlement_reverse": "Settlement reversed", "reverse": "Reversed" }
+      "action": { "submit": "Submitted for approval", "approve": "Approved", "send_back": "Sent back for changes", "create": "Created draft", "issue": "Issued", "settle": "Payment received", "pay": "Payroll paid", "unpay": "Payroll payment reversed", "cancel": "Cancelled", "revise": "Revised", "convert": "Converted", "accept": "Customer accepted", "reject": "Customer rejected", "deliver": "Delivered", "close": "Remainder closed", "send": "Sent to vendor", "settlement": "Netting / deposit applied", "settlement_reverse": "Settlement reversed", "reverse": "Reversed" }
     },
     "revisions": {
       "empty": "No history yet", "first": "First issued version", "n": "Revision {n}", "view": "View this version", "hide": "Hide this version",
@@ -461,6 +461,7 @@
       "dpNew": "Run depreciation",
       "periodClose": "Period and year close",
       "dpRun": "A posted depreciation run",
+      "employeesList": "Employees list", "employeeJoiner": "Employee (joins 15 Oct)", "prList": "Payroll runs list", "prNew": "New payroll run", "prDraft": "A draft payroll run", "prIssued": "An issued payroll run (the latest)", "prPaid": "A payroll run a later run builds on", "nprIssued": "A payroll run (non-VAT)",
       "styleGuide": "Style guide"
     },
     "state": { "normal": "Normal", "empty": "Empty", "loading": "Loading", "error": "Error", "forbidden": "Forbidden", "locked": "Locked" },
@@ -621,6 +622,17 @@
     "autoReverse": "Reverse automatically (accrual)",
     "autoReverseHint": "The system posts the reversing entry on {date}, together with this voucher. Revising or cancelling this voucher takes the reversal with it.",
     "autoReverseHintNoDate": "The system posts the reversing entry on day 1 of the next month, together with this voucher.",
+    "payrollGrid": {
+      "title": "Employees in this run", "employee": "Employee", "employeeN": "Employee row {n}", "pick": "— Choose an employee —", "remove": "Remove employee row {n}", "add": "Add employee",
+      "empty": "No employees in this run yet. Press “Add employee”.", "prorated": "{days} days worked",
+      "hint": "Enter or Tab moves to the next cell  ·  salary starts from the employee record (the system prorates a joiner or leaver by calendar days)",
+      "pay": { "salary": "Salary", "overtime": "Overtime", "allowance": "Allowance", "bonus": "Bonus", "otherIncome": "Other income", "otherDeduction": "Other deduction" },
+      "server": { "gross": "Gross", "pit": "Tax withheld", "sso": "Social security", "net": "Net pay", "ytdIncome": "Income YTD", "ytdPit": "Tax YTD" },
+      "totals": { "title": "Run totals", "gross": "Gross pay", "pit": "Tax withheld (PND.1)", "sso": "Social security withheld", "ssoEmployer": "Social security (employer)", "net": "Net pay" },
+      "computing": "Computing…", "serverNote": "Every figure is computed by the system (sample tax and social-security tables). Type only income and deductions.",
+      "confirmBody": "Posts the salary cost, the tax and social security payable and the net pay payable for these totals. Each employee's figures are recorded as computed today and do not change if the employee record is edited later.",
+      "frozenNote": "These figures were computed when the run was issued, with the employee record and tax table {version} of that day. Later edits to either do not change them."
+    },
     "accountGrid": {
       "colAccount": "Account", "colDescription": "Description", "colDebit": "Debit", "colCredit": "Credit",
       "account": "Account of line {n}", "description": "Description of line {n}", "debit": "Debit of line {n}", "credit": "Credit of line {n}",
@@ -785,6 +797,7 @@
     "EX": {"title": "Expense claim", "issue": "Save and issue expense claim", "create": "Create expense claim", "empty": "No expense claims yet"},
     "PV": {"title": "Payment voucher", "issue": "Save and issue payment voucher", "create": "Create payment voucher", "empty": "No payment vouchers yet"},
     "JV": {"title": "Journal voucher", "issue": "Save and issue the journal voucher", "create": "Create journal voucher", "empty": "No journal vouchers yet"},
+    "PR": {"title": "Payroll runs", "issue": "Issue the payroll run", "create": "Create a payroll run", "empty": "No payroll runs yet"},
     "OB": {"title": "Opening balances", "issue": "Save and issue the opening balances", "create": "Set opening balances", "empty": "No opening balances yet"},
     "FA": {"title": "Fixed assets", "issue": "Register asset", "create": "Register an asset", "empty": "No assets registered yet"},
     "DP": {"title": "Depreciation runs", "issue": "Post depreciation", "create": "Run depreciation", "empty": "No depreciation run yet"},
@@ -1091,6 +1104,7 @@
     "vendor": { "title": "Vendors", "search": "Search code, name or tax ID", "empty": "No vendors yet" },
     "item": { "title": "Items and services", "search": "Search code or name", "empty": "No items or services yet" },
     "bank-account": { "title": "Bank and cash accounts", "search": "Search account name or GL code", "empty": "No bank or cash accounts yet" },
+    "employee": { "title": "Employees", "search": "Search by code, name or national ID", "empty": "No employees yet" },
     "schedule": { "title": "Recurring and amortisation", "search": "Search by name", "empty": "No recurring templates or amortisation schedules yet. Make one with “Make recurring” or “Amortise” on a document." },
     "account": { "title": "Chart of accounts", "search": "Search account code or name", "empty": "No accounts in the chart yet", "collapse": "Collapse {code}", "expand": "Expand {code}", "actions": "Actions" },
     "fields": {
@@ -1103,9 +1117,12 @@
       "usage": "Used for", "usageSales": "Use on sales documents", "usagePurchase": "Use on purchase documents", "expenseCategory": "Expense category",
       "accountNo": "Account number", "accountName": "Account name", "accountCode": "GL account", "bankKind": "Account type",
       "nameTh": "Account name (Thai)", "parent": "Parent header account", "postable": "Postable (not a header)", "accountClass": "Class", "subClass": "Sub-class", "dbdLine": "DBD statement line", "pnd50Box": "ภ.ง.ด.50 box", "dimensionRules": "Dimension rules",
+      "titleName": "Title", "firstName": "First name", "lastName": "Last name", "nationalId": "National ID", "startDate": "Start date", "endDate": "Leaving date", "salary": "Salary (THB / month)",
+      "ssoRegistered": "Registered with social security", "maritalStatus": "Marital status", "spouseHasIncome": "Spouse has income", "children": "Children", "otherAllowances": "Other yearly allowances (THB)",
       "scheduleName": "Name", "scheduleKind": "Kind", "scheduleFrequency": "Frequency", "nextRun": "Next run", "scheduleTotal": "Amount"
     },
     "options": {
+      "maritalStatus": { "single": "Single", "married": "Married" },
       "entityKind": { "individual": "Individual", "juristic": "Company", "foreign": "Foreign" },
       "partyGroup": { "general": "General", "major": "Key account", "government": "Government", "foreign": "Foreign" },
       "itemKind": { "good": "Goods", "service": "Service" },
@@ -1153,26 +1170,31 @@
   },
   "filing": {
     "title": "Form {form} for {month}",
-    "forms": { "PP30": "PP.30", "PP36": "PP.36", "PND2": "PND.2", "PND3": "PND.3", "PND53": "PND.53", "PND54": "PND.54" },
+    "forms": { "PP30": "PP.30", "PP36": "PP.36", "PND1": "PND.1", "PND1A": "PND.1 Kor", "SSO1-10": "SSO 1-10", "PND2": "PND.2", "PND3": "PND.3", "PND53": "PND.53", "PND54": "PND.54" },
     "period": "Tax month",
     "periodYear": "Fiscal year (CE)", "yearLabel": "Fiscal year {year}", "titleYear": "Form {form} for fiscal year {year}",
     "due": "Due {date}",
     "tabs": { "label": "VAT return and registers", "pp30": "PP.30", "output": "Output VAT register", "input": "Input VAT register" },
-    "filed": { "bodyCit": "Confirmed by {by} on {at}. The year data and reopening the fiscal year are now locked; to correct, file an additional return outside the system.", "bodyOther": "Confirmed by {by} on {at}. The documents in this return can no longer be edited; issue a new payment voucher in a later month.", "title": "Filed", "body": "Confirmed by {by} on {at}. The documents in this return can no longer have their figures edited; use a credit or debit note in a later month." },
+    "filed": { "bodyPayroll": "Confirmed by {by} on {at}. The payroll runs on this return cannot be revised or cancelled; correct them in the next run with other income / other deduction lines.", "bodyCit": "Confirmed by {by} on {at}. The year data and reopening the fiscal year are now locked; to correct, file an additional return outside the system.", "bodyOther": "Confirmed by {by} on {at}. The documents in this return can no longer be edited; issue a new payment voucher in a later month.", "title": "Filed", "body": "Confirmed by {by} on {at}. The documents in this return can no longer have their figures edited; use a credit or debit note in a later month." },
     "empty": { "title": "No tax entries in this period", "body": "There are no documents to show in this form for this month." },
     "boxes": { "title": "Boxes of the form", "count": "{n}", "code": "Box", "label": "Item", "amount": "Amount (baht)", "source": "Source", "open": "Open register" },
     "blockers": { "title": "Cannot be confirmed yet", "open": "Fix it" },
-    "finalize": { "titleYear": "Confirm form {form} for fiscal year {year}", "bodyCit": "Once confirmed the figures are stored; the year data cannot be edited and the fiscal year cannot be reopened. To correct, file an additional return outside the system.", "button": "Confirm filing (close the tax period)", "working": "Confirming", "back": "Back", "title": "Confirm form {form} for {month}", "bodyOther": "Once confirmed, the certificates and vouchers in this return can no longer be edited. Issue a new payment voucher in a later month.", "ack": "I understand that confirming books the VAT of this form on the last day of the month and that the vouchers in it can no longer be edited.",
+    "finalize": { "bodyPayroll": "Once confirmed, the payroll runs on this return can no longer be revised or cancelled, and no new run dated in this period can be issued. Correct them in the next run with other income / other deduction lines.", "titleYear": "Confirm form {form} for fiscal year {year}", "bodyCit": "Once confirmed the figures are stored; the year data cannot be edited and the fiscal year cannot be reopened. To correct, file an additional return outside the system.", "button": "Confirm filing (close the tax period)", "working": "Confirming", "back": "Back", "title": "Confirm form {form} for {month}", "bodyOther": "Once confirmed, the certificates and vouchers in this return can no longer be edited. Issue a new payment voucher in a later month.", "ack": "I understand that confirming books the VAT of this form on the last day of the month and that the vouchers in it can no longer be edited.",
       "body": "Once confirmed, the documents in this return can no longer have their figures edited. Use a credit or debit note in a later month.", "taxOut": "Output VAT (box 5)", "taxIn": "Input VAT (box 7)",
       "disabledBy": "Cannot confirm: {why}", "needPermission": "You need the right to finalize tax filings" },
     "attachment": { "title": "Attachment" },
-    "export": { "txt": "File for RD Prep (.txt)", "print": "Print the form", "failed": "Could not create the file. Try again." },
+    "export": { "txt": "File for RD Prep (.txt)", "sso": "Social security file (.txt, TIS-620)", "print": "Print the form", "failed": "Could not create the file. Try again." },
     "history": { "title": "Filed returns", "empty": "Nothing has been confirmed in the system yet", "period": "Tax month", "at": "Confirmed on", "by": "By", "net": "Net tax", "payable": "payable", "overpaid": "overpaid", "payment": "Payment", "paidOn": "Paid {date}", "unpaid": "Not paid" },
     "payment": { "title": "Paying the Revenue Department", "nothingDue": "No tax to pay", "due": "Tax to pay {amount} baht", "pay": "Pay tax", "needPermission": "Paying tax needs the bank reconciliation permission", "paid": "Paid on {date}", "extras": "Including other items (fees, surcharge) {amount} baht", "openLine": "Open the statement line", "reverse": "Cancel the payment", "reverseDesc": "Reverses the payment journal and puts the statement line back to unmatched.", "reason": "Reason", "back": "Back", "confirm": "Confirm", "working": "Saving…", "pickLine": "Pick the statement line that paid this tax", "exact": "Same amount as the tax", "noLines": "No outgoing statement line can pay this tax", "importFirst": "Import the bank statement first", "extraHalf": "Fill both the account and the amount of the extra row, or leave both empty", "extraTitle": "Other items in the same amount (optional)", "extraHint": "A bank fee, or the surcharge / penalty on the Revenue Department receipt, booked as expense to the account you pick.", "extraAccount": "Account", "extraAmount": "Amount (baht)", "extraNone": "None", "submit": "Pay tax", "failed": "Could not pay the tax. Try again." },
-    "tie": { "citGl": "Corporate income tax computed on the return {left} baht against the income tax booked {right} baht (book the tax with a journal voucher before closing the year)", "pndGl": "Tax withheld (all payees) {left} baht against the withholding tax payable account of this form {right} baht", "pp36Gl": "VAT to remit {left} baht against ledger 2152 VAT payable {right} baht", "reconciling": "Including the reconciling item", "outputGl": "Output VAT (box 5) {left} baht against ledger 2151 {right} baht", "inputGl": "Input VAT (box 7) {left} baht against ledger 1170 {right} baht",
+    "tie": { "pnd1Gl": "Tax withheld (all employees) {left} baht against ledger 2153 PIT payable posted by this month's payroll runs {right} baht", "pnd1Other": "Other movement on ledger 2153 this month, not from payroll runs, {left} baht (normally {right} baht)", "ssoGl": "Contributions (employee + employer) {left} baht against ledger 2160 SSO payable posted by this month's payroll runs {right} baht", "ssoOther": "Other movement on ledger 2160 this month, not from payroll runs, {left} baht (normally {right} baht)", "pnd1aMonths": "Tax for the year on the return {left} baht against the opening balance + the filed monthly PND.1 returns {right} baht", "citGl": "Corporate income tax computed on the return {left} baht against the income tax booked {right} baht (book the tax with a journal voucher before closing the year)", "pndGl": "Tax withheld (all payees) {left} baht against the withholding tax payable account of this form {right} baht", "pp36Gl": "VAT to remit {left} baht against ledger 2152 VAT payable {right} baht", "reconciling": "Including the reconciling item", "outputGl": "Output VAT (box 5) {left} baht against ledger 2151 {right} baht", "inputGl": "Input VAT (box 7) {left} baht against ledger 1170 {right} baht",
       "outputRegister": "Output VAT (box 5) {left} baht against the output register total {right} baht", "inputRegister": "Input VAT (box 7) {left} baht against the input register total {right} baht" },
     "reg": { "date": "Date", "number": "Number", "party": "Buyer / seller", "tin": "Tax ID", "branch": "Branch", "description": "Description",
       "base7": "Taxable value", "base0": "Zero-rated value", "baseEx": "Exempt value", "claimedBase": "Purchases with the right to claim", "vat": "VAT" }
+  },
+  "payrollFilings": {
+    "title": "PND.1 and SSO 1-10",
+    "tabs": { "label": "Payroll returns", "pnd1": "PND.1", "pnd1a": "PND.1 Kor (annual)", "sso": "SSO 1-10", "cert": "Annual 50 Tawi" },
+    "cert": { "year": "Year (CE)", "title": "Withholding tax certificates of the employees, year {year}", "lead": "Built from the rows confirmed in the PND.1 Kor of the year, one for every employee. Two copies each (one for the employee to attach, one to keep).", "empty": "No PND.1 Kor is confirmed for this year", "emptyBody": "Confirm the PND.1 Kor of the year first; then the employees' certificates can be issued.", "openForm": "Go to the PND.1 Kor", "name": "Employee", "nid": "National ID", "income": "Income 40(1)", "tax": "Tax withheld", "sso": "Social security paid", "print": "Print all certificates", "preview": "Print preview", "list": "Employees on the certificates" }
   },
   "periodClose": {
     "title": "Period and year close",
@@ -1351,6 +1373,24 @@
       "statuses": { "unmatched": "Unmatched", "matched": "Matched", "ignored": "Ignored", "posted": "Posted" }
     }
   },
+  "payrollPay": {
+    "action": "Pay payroll", "unpayAction": "Unpay",
+    "pay": {
+      "title": "Pay payroll {run}", "body": "The whole run is paid. The amount is the net total the system stored when the run was issued; a partial payment is not possible. If it is wrong, unpay and pay again.",
+      "amount": "Amount (net pay of the whole run)", "account": "Pay from", "choose": "Choose an account", "date": "Pay date", "dateHint": "Not before the run date ({date}), in an open accounting period",
+      "loading": "Loading accounts…", "noAccounts": "There is no active bank or cash account", "cancel": "Back", "submit": "Pay payroll", "submitting": "Saving…"
+    },
+    "unpay": {
+      "title": "Unpay payroll {run}", "body": "The payment is reversed in the books and the run goes back to “Issued”. The payslips do not change. Not possible while the payment is matched to a bank statement line (unmatch it first).",
+      "reason": "Reason", "cancel": "Back", "submit": "Unpay", "submitting": "Saving…"
+    },
+    "drawer": {
+      "open": "Payslip", "openFor": "Open the payslip of {name}", "title": "Payslip of {name}", "description": "Period {period} · every figure is from the slip stored when the run was issued",
+      "gross": "Total income", "pit": "Withholding tax (s.50(1))", "sso": "Social security (employee)", "otherDeduction": "Other deductions", "ssoEmployer": "Social security (employer)", "net": "Net pay",
+      "ytdTitle": "Year to date", "ytdIncome": "Income", "ytdPit": "Tax", "ytdSso": "Social security", "prorated": "Prorated {days}/{total} days",
+      "note": "The s.50 bis certificate is issued once a year (PND.1 Kor)", "print": "Print payslip", "close": "Close"
+    }
+  },
   "permissions": {
     "doc_QT_read": "Read quotation",
     "doc_QT_create": "Create quotation",
@@ -1464,6 +1504,7 @@
     "doc_PR_issue": "Issue payroll",
     "doc_PR_cancel": "Cancel payroll",
     "doc_PR_correct": "Correct payroll",
+    "doc_PR_pay": "Pay payroll and unpay",
     "doc_OB_read": "Read opening balance",
     "doc_OB_create": "Create opening balance",
     "doc_OB_issue": "Issue opening balance",
@@ -1482,6 +1523,8 @@
     "ledger_period_close": "Close accounting periods and the fiscal year",
     "ledger_period_reopen": "Reopen accounting periods and the fiscal year",
     "payroll_read": "Read payroll data",
+    "employee_read": "Read employees",
+    "employee_manage": "Manage employees",
     "audit_read": "Read audit trail",
     "settings_manage": "Manage settings",
     "users_manage": "Manage users",

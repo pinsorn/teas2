@@ -124,6 +124,8 @@ test('F4: a TI in a closed period shows the period lock with the retroactive-cor
   await expect(page.getByRole('link', { name: 'แก้ไข', exact: true })).toHaveAttribute('href', new RegExp(`/${id}/edit$`)); // SP0 7.5: a period lock never blocks a correction
   await banner.getByRole('button', { name: /แก้ไขย้อนหลัง/ }).click();
   await expect(page).toHaveURL(new RegExp(`/${id}/edit$`));
+  // the save button is disabled while the editor loads, then fades in (transition-all): axe on the half-faded enabled button is a contrast hit on a slow runner
+  await expect(page.getByRole('button', { name: 'บันทึกการแก้ไข' })).toBeEnabled();
   await axeClean(page);
 });
 

@@ -9,11 +9,14 @@ import { fromSatang, toSatang } from '../money';
 import { isClosed, monthLabelTh, refuseYearClosed } from '../periods';
 import { resolveRole } from '../posting';
 import { isFiledPeriod, openClaimMonth } from '../purchase-vat';
-import { type DocLike, type Filing, type Pp30Doc, PERIOD, boxOf, chainStart, getPp30, pp30Boxes, pp30Docs, pp30Model, pp30Netting, pp30RowOf, pp36VatOf, prevMonth, requireVat, tie } from './pp30';
+import { type DocLike, type Filing, type Pp30Doc, PERIOD, boxOf, chainStart, fnv, getPp30, pp30Boxes, pp30Docs, pp30Model, pp30Netting, pp30RowOf, pp36VatOf, prevMonth, requireVat, tie } from './pp30';
 import { CIT_FORMS, YEAR, citBuild, citInvariants, citSnapshotModel, isCit } from './cit';
 import { filingHref as filingHref0, paymentInvariants, paymentStateOf } from './payment';
-import { PND_FORMS, type PndForm, formName, isPnd, pndAttachment, pndModel, pndRows, pndSnapshot, wantedWhtRows, whtKey, whtRowOfWt } from './pnd-wht';
+import { PND_FORMS, type PndForm, isPnd, pndAttachment, pndModel, pndRows, pndSnapshot, wantedWhtRows, whtKey, whtRowOfWt } from './pnd-wht';
 import { lastDayOf, pp36Attachment, pp36Key, pp36Model, pp36RowOf, pp36Rows, pp36Snapshot, pp36Vat } from './pp36';
+import { deriveRows, formName, pnd1Attachment, pnd1Invariants, pnd1Model, pnd1Snapshot, runsOf } from './pnd1';
+import { YEAR as YEAR_RE, pnd1aAttachment, pnd1aInvariants, pnd1aModel, pnd1aSnapshot } from './pnd1a';
+import { ssoAttachment, ssoFileText, ssoInvariants, ssoModel, ssoSnapshot } from './sso';
 
 export { chainStart };
 export type { Filing };
@@ -25,21 +28,34 @@ const EXIT = 'ออกใบลดหนี้ / ใบเพิ่มหนี
 /** Ruling 2 (TX2): a voucher a ภ.ง.ด. / ภ.พ.36 took cannot be cancelled (so "cancel and reissue" is not a path); what works is a NEW voucher in the next open month for the part that was wrong. */
 const WHT_EXIT = 'ออกใบสำคัญจ่ายใหม่ในงวดถัดไปสำหรับส่วนที่ต้องแก้ (ใบสำคัญจ่ายนี้ยกเลิกหรือออกใหม่ไม่ได้ เพราะยื่นแบบแล้ว)';
 const isAnnex = (f: FilingForm) => f === 'PP36' || isPnd(f);
+/** PY3: the payroll returns (ภ.ง.ด.1 / สปส.1-10 by month, ภ.ง.ด.1ก by year); `isYear` = a form that names a calendar / fiscal year. */
+const isPayroll = (f: FilingForm) => f === 'PND1' || f === 'PND1A' || f === 'SSO1-10';
+const isYear = (f: FilingForm) => isCit(f) || f === 'PND1A';
+const PAYROLL_EXIT = 'แก้ไขในรอบถัดไป (รายได้อื่น / รายการหักอื่น)';
 const hrefOf = filingHref0;
 /** TX3a: the year forms name a fiscal year, the others a month. */
-const periodTh = (form: FilingForm, period: string) => (isCit(form) ? `ปีบัญชี ${Number(period) + 543}` : `เดือน ${monthLabelTh(period)}`);
+const periodTh = (form: FilingForm, period: string) => (isYear(form) ? `ปี ${Number(period) + 543}` : `เดือน ${monthLabelTh(period)}`);
 /** Which box states the tax of a form (the history's `net`). */
-const NET_BOX: Partial<Record<FilingForm, string>> = { PP30: '11', PND2: 'tax', PND3: 'tax', PND53: 'tax', PND54: 'tax', PP36: 'vat', PND50: 'net', PND51: 'tax' };
+const NET_BOX: Partial<Record<FilingForm, string>> = { PP30: '11', PND2: 'tax', PND3: 'tax', PND53: 'tax', PND54: 'tax', PP36: 'vat', PND50: 'net', PND51: 'tax', PND1: 'tax', PND1A: 'tax', 'SSO1-10': 'total' };
 
 const NOT_BUILT = () => fail(404, 'filing.not_available', 'ยังไม่มีแบบนี้ในระบบ');
 /** The frozen snapshot of a finalized ภ.ง.ด. / ภ.พ.36 as the model reads it (ruling 1: never recomputed). */
 const snapshotModel = (f: Filing): FilingModel => f.cit || f.pnd51 ? citSnapshotModel(f) : ({ form: f.form, period: f.period, status: 'finalized', boxes: f.boxes, tieOuts: f.tieOuts, blockers: [], warnings: [],
-  attachment: f.wht ? pndAttachment(f.wht) : pp36Attachment(f.p36 ?? []), finalizedAt: f.finalizedAt, finalizedBy: f.finalizedBy, company: f.company, version: 1, dueDate: f.dueDate, exports: f.form === 'PP36' || f.form === 'PND54' ? ['pdf'] : ['rdprep-txt', 'pdf'] });
+  attachment: f.payroll ? payrollAttachment(f) : f.wht ? pndAttachment(f.wht) : pp36Attachment(f.p36 ?? []), finalizedAt: f.finalizedAt, finalizedBy: f.finalizedBy, company: f.company, version: 1, dueDate: f.dueDate, exports: f.form === 'PP36' || f.form === 'PND54' ? ['pdf'] : ['rdprep-txt', 'pdf'] });
+/** PY3a M1: the fields of a finalized filing nothing else re-derives (the company as filed - SSO employer account included -, due date, period, form, who and when). */
+const fpOf = (f: Filing): number => fnv(JSON.stringify([f.company, f.dueDate, f.period, f.form, f.finalizedAt, f.finalizedBy]));
+const payrollAttachment = (f: Filing) => (f.form === 'SSO1-10' ? ssoAttachment(f.payroll!.rows) : f.form === 'PND1A' ? pnd1aAttachment(f.payroll!.rows) : pnd1Attachment(f.payroll!.rows));
 
 /** A form's filing for a period: the frozen snapshot once finalized (ruling 1: never recomputed), else the draft computed from the documents. */
 export function getFiling(st: MockState, companyId: string, form: FilingForm, period: string): FilingModel {
   if (form === 'PP30') { requireVat(st, companyId); const m = getPp30(st, companyId, period), f = filingOf(st, companyId, period); return f ? { ...m, payment: paymentStateOf(st, f) } : m; }
   if (isCit(form)) { const f = filingOf(st, companyId, period, form); return f ? snapshotModel(f) : citBuild(st, companyId, form, period).model; } // TX3a: ภ.ง.ด.50 / 51, period = the fiscal year, no payment (ruling 8: no CIT journal)
+  if (isPayroll(form)) { // PY3: ภ.ง.ด.1 / สปส.1-10 (a month) and ภ.ง.ด.1ก (a year, nothing to pay); every company has them
+    if (!(form === 'PND1A' ? YEAR_RE : PERIOD).test(period)) throw fail(422, 'filing.bad_period', form === 'PND1A' ? 'ปีต้องอยู่ในรูปแบบ ปปปป' : 'งวดต้องอยู่ในรูปแบบ ปปปป-ดด');
+    const f = filingOf(st, companyId, period, form);
+    if (f) return { ...snapshotModel(f), ...(form === 'PND1A' ? {} : { payment: paymentStateOf(st, f) }) };
+    return form === 'PND1' ? pnd1Model(st, companyId, period) : form === 'PND1A' ? pnd1aModel(st, companyId, period) : ssoModel(st, companyId, period);
+  }
   if (!isAnnex(form)) throw NOT_BUILT();
   if (!PERIOD.test(period)) throw fail(422, 'filing.bad_period', 'งวดต้องอยู่ในรูปแบบ ปปปป-ดด');
   const f = filingOf(st, companyId, period, form);
@@ -49,13 +65,13 @@ export function getFiling(st: MockState, companyId: string, form: FilingForm, pe
 
 /** Finalize (ยืนยันยื่นแบบ): one per company x form x period (I10); refused while a blocker stands and on a preview that went stale. Stores the boxes, the tie-outs and the exact list of documents with the figures each gave. */
 export function finalizeFiling(st: MockState, companyId: string, form: FilingForm, period: string, version: number, actor: Actor, ack = false): FilingModel {
-  if (form !== 'PP30' && !isAnnex(form) && !isCit(form)) throw NOT_BUILT();
+  if (form !== 'PP30' && !isAnnex(form) && !isCit(form) && !isPayroll(form)) throw NOT_BUILT();
   if (form === 'PP30') requireVat(st, companyId);
-  if (!isCit(form) && !PERIOD.test(period)) throw fail(422, 'filing.bad_period', 'งวดต้องอยู่ในรูปแบบ ปปปป-ดด');
+  if (!isYear(form) && !PERIOD.test(period)) throw fail(422, 'filing.bad_period', 'งวดต้องอยู่ในรูปแบบ ปปปป-ดด');
   const name = formName(form);
   if (filingOf(st, companyId, period, form)) throw fail(409, 'filing.already_finalized', `แบบ ${name} ${periodTh(form, period)} ยืนยันแล้ว`);
   const built = isCit(form) ? citBuild(st, companyId, form, period) : undefined;
-  const m = built ? built.model : form === 'PP30' ? pp30Model(st, companyId, period) : form === 'PP36' ? pp36Model(st, companyId, period) : pndModel(st, companyId, form as PndForm, period);
+  const m = built ? built.model : isPayroll(form) ? getFiling(st, companyId, form, period) : form === 'PP30' ? pp30Model(st, companyId, period) : form === 'PP36' ? pp36Model(st, companyId, period) : pndModel(st, companyId, form as PndForm, period);
   if (m.version !== version) throw fail(409, 'filing.stale', 'เอกสารในงวดนี้เปลี่ยนไปตั้งแต่ที่ดูตัวอย่าง โหลดใหม่แล้วตรวจอีกครั้ง');
   if (m.blockers.length) throw fail(422, 'filing.blocked', `ยืนยันแบบ ${name} ${periodTh(form, period)} ไม่ได้: ${m.blockers[0].labelTh}`);
   if (form === 'PP36' && !ack) throw fail(422, 'filing.ack_required', 'ต้องติ๊กรับทราบก่อนยืนยันยื่นแบบ ภ.พ.36'); // parity: the acknowledgement is mandatory
@@ -73,10 +89,13 @@ export function finalizeFiling(st: MockState, companyId: string, form: FilingFor
   const snap = built ? { docs: [], carryIn: '0.00', pp36: '0.00', ...(built.cit ? { cit: built.cit } : { pnd51: built.pnd51 }) }
     : form === 'PP30'
     ? { docs: pp30Docs(st, companyId, period), carryIn: prev ? prev.boxes.find((b) => b.code === '12')!.amount : '0.00', pp36: fromSatang(pp36VatOf(st, companyId, period)), journal: netting }
+    : isPayroll(form) ? (form === 'PND1' ? pnd1Snapshot : form === 'PND1A' ? pnd1aSnapshot : ssoSnapshot)(st, companyId, period)
     : form === 'PP36' ? pp36Snapshot(st, companyId, period) : pndSnapshot(st, companyId, form as PndForm, period);
   const tieOuts = built ? m.tieOuts : form === 'PP36' ? [tie('filing.tie.pp36Gl', boxOf(m.boxes, 'vat'), pp36Gl(st, companyId, period, (snap as ReturnType<typeof pp36Snapshot>).journal ?? []))] : m.tieOuts;
-  st.filings.push({ companyId, form, period, status: 'finalized', company: { taxId: co.taxId, branchCode: co.branchCode, legalNameTh: co.legalNameTh }, boxes: m.boxes, tieOuts, ...snap,
+  st.filings.push({ fp: 0, companyId, form, period, status: 'finalized', company: { taxId: co.taxId, branchCode: co.branchCode, legalNameTh: co.legalNameTh, ...(isPayroll(form) && co.ssoEmployerAccountNo ? { ssoEmployerAccountNo: co.ssoEmployerAccountNo } : {}) }, boxes: m.boxes, tieOuts, ...snap,
     finalizedAt: stamp(), finalizedBy: actor.name, dueDate: m.dueDate });
+  const added = st.filings[st.filings.length - 1];
+  added.fp = fpOf(added); // PY3a M1 (fp: 0 is only the placeholder of the object literal)
   logAudit(st, actor, companyId, 'filing.finalize', `${form} ${period}`, { status: 'draft' }, { status: 'finalized', net: boxOf(m.boxes, form === 'PP30' && boxOf(m.boxes, '12') > 0 ? '12' : NET_BOX[form]!) });
   return getFiling(st, companyId, form, period);
 }
@@ -94,7 +113,7 @@ function pp36Gl(st: MockState, companyId: string, period: string, entry: Journal
 export function filingHistory(st: MockState, companyId: string, form: FilingForm): FilingHistoryItem[] {
   return st.filings.filter((f) => f.companyId === companyId && f.form === form).sort((a, b) => b.period.localeCompare(a.period))
     .map((f) => { const net = boxOf(f.boxes, NET_BOX[f.form]!), cit = isCit(f.form); // a ภ.ง.ด.50 'net' is signed (negative = overpaid)
-      return { form: f.form, period: f.period, finalizedAt: f.finalizedAt, finalizedBy: f.finalizedBy, net: cit ? fromSatang(Math.abs(net)) : f.boxes.find((b) => b.code === (f.form === 'PP30' && boxOf(f.boxes, '12') > 0 ? '12' : NET_BOX[f.form]))!.amount, overpaid: cit ? net < 0 : f.form === 'PP30' && boxOf(f.boxes, '12') > 0, ...(cit ? {} : paymentItem(st, f)) }; });
+      return { form: f.form, period: f.period, finalizedAt: f.finalizedAt, finalizedBy: f.finalizedBy, net: cit ? fromSatang(Math.abs(net)) : f.boxes.find((b) => b.code === (f.form === 'PP30' && boxOf(f.boxes, '12') > 0 ? '12' : NET_BOX[f.form]))!.amount, overpaid: cit ? net < 0 : f.form === 'PP30' && boxOf(f.boxes, '12') > 0, ...(cit || f.form === 'PND1A' ? {} : paymentItem(st, f)) }; });
 }
 
 const paymentItem = (st: MockState, f: Filing) => { const p = paymentStateOf(st, f); return { payment: p.status, ...(p.paidOn ? { paidOn: p.paidOn } : {}) }; };
@@ -108,6 +127,8 @@ export function exportFilingText(st: MockState, companyId: string, form: FilingF
   const f = filingOf(st, companyId, period, form)!, co = f.company; // M2: who filed, as frozen at finalize
   const be = `${Number(period.slice(0, 4)) + 543}${period.slice(5, 7)}`;
   const head = `H|${form}|${co.taxId}|${co.branchCode}|${be}|${co.legalNameTh}`;
+  if (form === 'SSO1-10') return ssoFileText(f); // PY3 ruling 6: the SSO file, built from the stored rows only
+  if (f.payroll) return [head, ...f.payroll.rows.map((r, i) => `D|${i + 1}|${r.nationalId}|${r.name}|${r.income}|${r.pit ?? '0.00'}`), `T|${f.payroll.rows.length}|${m.boxes.find((b) => b.code === 'income')!.amount}|${m.boxes.find((b) => b.code === 'tax')!.amount}`, ''].join('\r\n');
   if (f.wht) return [head, ...f.wht.map((r, i) => `D|${i + 1}|${r.tin}|${r.partyName}|${r.date}|${r.incomeType}|${r.income}|${r.tax}|${r.rate}|${r.condition}`), `T|${f.wht.length}|${m.boxes.find((b) => b.code === 'income')!.amount}|${m.boxes.find((b) => b.code === 'tax')!.amount}`, ''].join('\r\n');
   return [head, ...m.boxes.map((b) => `D|${b.code}|${b.amount}`), `T|${m.boxes.length}`, ''].join('\r\n');
 }
@@ -115,21 +136,21 @@ export function exportFilingText(st: MockState, companyId: string, form: FilingF
 // ---------------------------------------------------------------- the filing lock (rulings 2 and 3)
 
 /** M1: the forms whose snapshot lists OUR documents, and how each is written. ภ.ง.ด. / ภ.พ.36 list vouchers and certificates and lock them under their own form. */
-const LOCKING: Partial<Record<FilingForm, string>> = { PP30: 'ภ.พ.30', PND2: 'ภ.ง.ด.2', PND3: 'ภ.ง.ด.3', PND53: 'ภ.ง.ด.53', PND54: 'ภ.ง.ด.54', PP36: 'ภ.พ.36' };
+const LOCKING: Partial<Record<FilingForm, string>> = { PP30: 'ภ.พ.30', PND2: 'ภ.ง.ด.2', PND3: 'ภ.ง.ด.3', PND53: 'ภ.ง.ด.53', PND54: 'ภ.ง.ด.54', PP36: 'ภ.พ.36', PND1: 'ภ.ง.ด.1', 'SSO1-10': 'สปส.1-10' }; // PY3 ruling 3: the payroll runs a ภ.ง.ด.1 / สปส.1-10 took (the ภ.ง.ด.1ก locks nothing of its own: it needs every month filed)
 /** Every finalized filing that took this document: a ภ.พ.30 row (live), a ภ.ง.ด. certificate row (the certificate itself, or the voucher that issued it), a ภ.พ.36 voucher row. */
 const inFilings = (st: MockState, d: { id?: string; companyId: string }): Filing[] => (d.id
-  ? st.filings.filter((f) => LOCKING[f.form] && f.companyId === d.companyId && ((f.form === 'PP30' && f.docs.some((x) => x.id === d.id && x.state === 'live')) || !!f.wht?.some((r) => r.id === d.id || r.pvId === d.id) || !!f.p36?.some((r) => r.id === d.id)))
+  ? st.filings.filter((f) => LOCKING[f.form] && f.companyId === d.companyId && ((f.form === 'PP30' && f.docs.some((x) => x.id === d.id && x.state === 'live')) || !!f.wht?.some((r) => r.id === d.id || r.pvId === d.id) || !!f.p36?.some((r) => r.id === d.id) || !!f.payroll?.runs.some((r) => r.id === d.id)))
   : []);
 /** A live document that fed a finalized filing reads with the filing lock (derived from the snapshot's list, never stored). */
 export function filingLock(st: MockState, d: { id?: string; companyId: string }): Lock | undefined {
   const f = inFilings(st, d)[0];
-  return f ? { kind: 'filing', reason: `${LOCKING[f.form]} เดือน ${monthLabelTh(f.period)} ยื่นแล้ว`, exits: [isAnnex(f.form) ? WHT_EXIT : EXIT], href: hrefOf(f.form, f.period) } : undefined;
+  return f ? { kind: 'filing', reason: `${LOCKING[f.form]} เดือน ${monthLabelTh(f.period)} ยื่นแล้ว`, exits: [f.payroll ? PAYROLL_EXIT : isAnnex(f.form) ? WHT_EXIT : EXIT], href: hrefOf(f.form, f.period) } : undefined;
 }
 /** What a filing took from a document and would notice moving: the date, the bases and VAT by tax code, the claim period, the vendor invoice date and forfeit flag, and the party's TIN and branch. Notes and paper-only fields stay free. */
 const took = (r: Pp30Doc) => JSON.stringify([r.date, r.base7, r.base0, r.baseEx, r.vat, r.claimPeriod ?? '', r.vendorDocDate ?? '', !!r.forfeit, r.tin ?? '', r.branch ?? '']);
 /** The body a revision / a correction plan / an issue would give the document (the WHT it freezes included, so plan and revise judge the same figures). */
 export type Next = { header: DocLike['header']; lines: DocLike['lines']; allocations?: DocLike['allocations']; whtFrozen?: DocLike['whtFrozen'] };
-const locked = (f: Filing, next?: unknown) => fail(409, 'filing.locked', `${LOCKING[f.form]} เดือน ${monthLabelTh(f.period)} ยื่นแล้ว — ${next
+const locked = (f: Filing, next?: unknown) => fail(409, 'filing.locked', f.payroll ? `${LOCKING[f.form]} เดือน ${monthLabelTh(f.period)} ยื่นแล้ว — ${next ? 'แก้ไขรอบเงินเดือนที่อยู่ในแบบนี้ไม่ได้' : 'ยกเลิกรอบเงินเดือนที่อยู่ในแบบนี้ไม่ได้'} ทางออก: ${PAYROLL_EXIT}` : `${LOCKING[f.form]} เดือน ${monthLabelTh(f.period)} ยื่นแล้ว — ${next
   ? (isAnnex(f.form) ? 'แก้ไขยอด ภาษีหัก ณ ที่จ่าย ประเภทเงินได้ ฟอร์ม วันที่จ่าย หรือผู้รับเงินและเลขประจำตัวผู้เสียภาษี/สาขา/ที่อยู่ไม่ได้' : 'แก้ไขยอด ภาษี รหัสภาษี วันที่ งวดที่ขอคืนภาษี ผู้ขาย/ลูกค้า หรือเลขประจำตัวผู้เสียภาษี/สาขาไม่ได้') : 'ยกเลิกหรือออกใหม่ไม่ได้'} ทางออก: ${isAnnex(f.form) ? WHT_EXIT : EXIT}`);
 const sameKeys = (a: string[], b: string[]) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
 
@@ -144,6 +165,8 @@ export function refuseFiled(st: MockState, d: DocLike, next?: Next): void {
       if (next.header.partyId !== d.header.partyId) throw locked(f, next);
       const was = f.docs.find((x) => x.id === d.id)!, will = pp30RowOf(st, { ...d, ...next });
       if (!will || took(will) !== took(was)) throw locked(f, next);
+    } else if (f.payroll) { // PY3 ruling 3: a run a payroll return took cannot be revised (any change) or cancelled; the exit is the next run's adjustment lines
+      throw locked(f, next);
     } else if (f.form === 'PP36') {
       const was = f.p36!.find((r) => r.id === d.id)!, will = pp36RowOf(st, { ...d, ...next });
       if (next.header.partyId !== d.header.partyId || !will || pp36Key(will) !== pp36Key(was)) throw locked(f, next);
@@ -165,6 +188,12 @@ export function refuseFiled(st: MockState, d: DocLike, next?: Next): void {
  *  TX2: a voucher is judged by the month of its payment date: a certificate in a form whose ภ.ง.ด. is finalized for that month, a `pnd36` line in a month whose ภ.พ.36 is finalized.
  *  \`d\` carries the header and lines it WOULD have (status live). Called from \`issue\` and, through \`refuseFiled\`, from revise and the correction plan. An additional return (ยื่นแบบเพิ่มเติม) is outside the system. */
 export function refuseIntoFiled(st: MockState, d: DocLike): void {
+  if (d.type === 'PR') { // PY3 ruling 3: a run is judged by the month of its pay date (and its year for the ภ.ง.ด.1ก)
+    const m = d.header.documentDate.slice(0, 7);
+    for (const form of ['PND1', 'SSO1-10'] as const) if (isFiledPeriod(st, d.companyId, m, form)) throw filedMonth(form, m);
+    if (isFiledPeriod(st, d.companyId, m.slice(0, 4), 'PND1A')) throw fail(409, 'filing.period_filed', `ภ.ง.ด.1ก ปี ${Number(m.slice(0, 4)) + 543} ยื่นแล้ว — ลงวันที่จ่ายในปีที่ยังไม่ยื่นไม่ได้`);
+    return;
+  }
   if (d.type === 'PV') {
     for (const r of wantedWhtRows(st, d, d)) if (isFiledPeriod(st, d.companyId, r.date.slice(0, 7), r.form as FilingForm)) throw filedMonth(r.form as FilingForm, r.date.slice(0, 7));
     refuseIntoPp36(st, d);
@@ -205,9 +234,11 @@ export function filingInvariants(st: MockState): string[] {
     if (seen.has(`${f.companyId}|${f.form}|${f.period}`)) out.push(`${w}: finalized twice`);
     seen.add(`${f.companyId}|${f.form}|${f.period}`);
     for (const t of f.tieOuts) if (sat(t.left) - sat(t.right) + (t.reconciling ?? []).reduce((n, r) => n + sat(r.amount), 0) !== sat(t.diff)) out.push(`${w}: tie-out ${t.labelKey} diff ${t.diff} is not left - right + reconciling`);
+    if (f.fp === undefined || f.fp !== fpOf(f)) out.push(`${w}: its fingerprint does not match the company as filed, the due date, the period or who filed it (the frozen snapshot was edited)`);
     if (f.form === 'PP30') ppInvariants(st, f, w, out);
     else if (isCit(f.form)) citInvariants(st, f, w, out);
     else if (f.wht) pndInvariants(st, f, w, out);
+    else if (f.payroll) { if (f.form === 'PND1') pnd1Invariants(st, f, w, out); else if (f.form === 'PND1A') pnd1aInvariants(st, f, w, out); else if (f.form === 'SSO1-10') ssoInvariants(st, f, w, out); else out.push(`${w}: not a payroll return`); }
     else pp36Invariants(st, f, w, out);
   }
   out.push(...paymentInvariants(st));
@@ -290,6 +321,8 @@ export function seedFilings(st: MockState): void {
   for (const [period, filed] of [['2026-07', '2026-08-14'], ['2026-08', '2026-09-14']]) {
     withFixedClock(`${filed}T10:00:00+07:00`, () => finalizeFiling(st, 'co-vat', 'PP30', period, pp30Model(st, 'co-vat', period).version, USER));
   }
+  withFixedClock('2026-09-07T10:00:00+07:00', () => finalizeFiling(st, 'co-vat', 'PND1', '2026-08', pnd1Model(st, 'co-vat', '2026-08').version, USER)); // PY3: the payroll returns of August (the PY3 fixtures); September stays a draft
+  withFixedClock('2026-09-15T10:00:00+07:00', () => finalizeFiling(st, 'co-vat', 'SSO1-10', '2026-08', ssoModel(st, 'co-vat', '2026-08').version, USER));
   for (const [period, filed] of [['2026-08', '2026-09-07'], ['2026-09', '2026-10-07']]) {
     for (const form of ['PND3', 'PND53'] as const) withFixedClock(`${filed}T10:00:00+07:00`, () => finalizeFiling(st, 'co-vat', form, period, pndModel(st, 'co-vat', form, period).version, USER));
   }
@@ -304,6 +337,8 @@ export function unfiledForms(st: MockState, companyId: string, month: string): F
   owed('PP30', !!st.companies.find((c) => c.id === companyId)?.vatRegistered);
   for (const f of PND_FORMS) owed(f, pndRows(st, companyId, f, month).length > 0);
   owed('PP36', pp36Rows(st, companyId, month).length > 0);
+  owed('PND1', runsOf(st, companyId, month).length > 0); // PY3a m-close: the payroll returns of a month with issued runs
+  owed('SSO1-10', deriveRows(runsOf(st, companyId, month), 'sso').length > 0);
   return out;
 }
 export const filingHref = hrefOf;

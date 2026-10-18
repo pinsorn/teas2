@@ -129,6 +129,9 @@ messages, `screens.ts`.
   they were at issue** — issuing snapshots logo / stamp / signature references onto the document (a later upload or a
   deleted user never changes an issued paper; revisions re-snapshot). Drafts print without signature and stamp. A
   template toggle off hides the image; a missing image keeps the empty line (never a broken image).
+  Scope includes papers built outside the shared header (PY2 review 2026-10-18): `PayslipPaper` (PR, own header and a
+  two-line signature block without an authorised-signatory line), the employee 50 ทวิ (PY3) and the WT 50 ทวิ (TX4) —
+  move them onto the shared header / signature block or snapshot them the same way.
 
 - [ ] **Step 1: Failing tests** — rate change creates a new effective row and the PV on a date before it keeps the old
   rate; numbering format without `{MM}` on a monthly series refused; a change to an in-use series applies next period;

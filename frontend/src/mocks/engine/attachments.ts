@@ -101,10 +101,13 @@ export const printCountOf = (st: MockState, docId: string): number => st.prints.
 
 /** The print action was used. The server decides what it was: the first print of a live document is the ต้นฉบับ, every later one a สำเนา whatever the caller asked.
  *  A cancelled / replaced document may be printed (the paper carries its void stamp) but that is logged as such and is never the original. */
-export function markPrinted(st: MockState, doc: Doc, copy: boolean, actor: Actor, paper?: PaperModel): { copy: boolean; printCount: number } {
+export function markPrinted(st: MockState, doc: Doc, copy: boolean, actor: Actor, paper?: PaperModel, employee?: string): { copy: boolean; printCount: number } {
   if (['draft', 'pending', 'approved'].includes(doc.status)) throw new MockError(409, 'doc.not_printable', 'เอกสารที่ยังไม่ได้ออกพิมพ์ไม่ได้ ต้องออกเอกสารก่อน');
   const dead = doc.status === 'cancelled' || doc.status === 'replaced';
   const asCopy = copy || dead || printCountOf(st, doc.id) > 0;
+  if (doc.type === 'PR' && employee) {
+    if (!doc.payroll?.slips.some((s) => s.employeeId === employee)) throw new MockError(404, 'payroll.employee_not_on_run', 'ไม่พบพนักงานคนนี้ในรอบเงินเดือนนี้'); // PY3a m-print
+    logActivity(st, doc.id, actor, 'พิมพ์ใบแจ้งเงินเดือนรายบุคคล', doc.payroll?.slips.find((s) => s.employeeId === employee)?.name); return { copy: asCopy, printCount: printCountOf(st, doc.id) }; } // PY3 m2: one slip is not the run's print: it never consumes the ต้นฉบับ of the run
   st.prints.push({ docId: doc.id, at: stamp(), by: actor.name, copy: asCopy, ...(paper && printCountOf(st, doc.id) === 0 ? { paper } : {}) }); // the first print freezes the paper it was given (WT, I7)
   logActivity(st, doc.id, actor, dead ? 'พิมพ์เอกสารที่ยกเลิกแล้ว' : asCopy ? 'พิมพ์สำเนา' : 'พิมพ์ต้นฉบับ');
   return { copy: asCopy, printCount: printCountOf(st, doc.id) };

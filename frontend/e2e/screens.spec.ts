@@ -1,19 +1,27 @@
 import { expect, test } from '@playwright/test';
+import { SCREENS } from '../src/app/mock/screens/screens';
 import { axeClean } from './helpers/axe';
 
-test('every built screen in the index opens without an error boundary', async ({ page }) => {
-  test.setTimeout(120_000); // one navigation per screen of the index: the index grows with every group
-  await page.goto('/mock/screens');
-  await expect(page.getByRole('heading', { level: 1 })).toBeVisible(); // the page mounts once the mock worker is ready
-  await expect(page.getByRole('link', { name: /^เปิด/ }).first()).toBeVisible();
-  const links = await page.getByRole('link', { name: /^เปิด/ }).evaluateAll((as) => as.map((a) => (a as HTMLAnchorElement).href));
-  expect(links.length).toBeGreaterThan(5);
-  for (const href of links) {
-    await page.goto(href);
-    await expect(page.getByRole('heading', { level: 1 }).first(), href).toBeVisible(); // it rendered (not just "no error yet")
-    await expect(page.getByText('Application error')).toHaveCount(0);
-  }
-});
+// One test per CHUNK of index cards: the index grows with every group, and a single test walking all of it hit its own timeout on the slow CI runner
+// (the timeout aborted a page.goto mid-flight: "net::ERR_ABORTED"). Chunks keep each test far below its limit however big the index gets.
+const CHUNK = 15;
+for (let from = 0; from < SCREENS.length; from += CHUNK) {
+  test(`every built screen in the index opens without an error boundary (${from + 1}-${Math.min(from + CHUNK, SCREENS.length)})`, async ({ page }) => {
+    await page.goto('/mock/screens');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible(); // the page mounts once the mock worker is ready
+    const cards = page.locator('#built + ul > li');
+    await expect(cards).toHaveCount(SCREENS.length);
+    const links: string[] = [];
+    for (let i = from; i < Math.min(from + CHUNK, SCREENS.length); i++) {
+      links.push((await cards.nth(i).getByRole('link', { name: /^เปิด/ }).evaluate((a) => (a as HTMLAnchorElement).href)));
+    }
+    for (const href of links) {
+      await page.goto(href);
+      await expect(page.getByRole('heading', { level: 1 }).first(), href).toBeVisible(); // it rendered (not just "no error yet")
+      await expect(page.getByText('Application error')).toHaveCount(0);
+    }
+  });
+}
 
 test('the index passes axe, lists the SP1c screens, and a ?state= link sets the toolbar state', async ({ page }) => {
   await page.goto('/mock/screens');

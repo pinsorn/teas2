@@ -4,6 +4,7 @@ import type { MockState } from '../../store';
 import { companyEntries } from '../ledger';
 import { MockError } from '../log';
 import { fromSatang, toSatang } from '../money';
+import { payDocs, payEntries } from '../payroll';
 import { cashSide } from '../reconcile';
 import { resolvedBankId } from '../settlement';
 
@@ -36,15 +37,15 @@ export function bankReconciliation(st: MockState, companyId: string, p: BankRecP
   const effectOn = (entries: { date: string; lines: { accountCode: string; debit: string; credit: string }[] }[]) =>
     entries.filter((e) => e.date <= to && (!goLive || e.date >= goLive)).reduce((n, e) => n + e.lines.filter((g) => g.accountCode === code).reduce((x, g) => x + toSatang(g.debit) - toSatang(g.credit), 0), 0);
   const lineSum = (pick: (l: (typeof st.bankLines)[number]) => boolean) => st.bankLines.filter((l) => l.companyId === companyId && l.accountId === bank.id && l.date <= to && pick(l)).reduce((n, l) => n + toSatang(l.amount), 0);
-  for (const d of st.docs) {
+  for (const d of [...st.docs, ...payDocs(st, companyId)]) { // PY2: a payroll payment is an outstanding payment until its line is matched, like a voucher
     const side = cashSide(d);
     if (d.companyId !== companyId || !side || (d.type === 'OB' && !LIVE.includes(d.status)) || resolvedBankId(st, companyId, d.type, d.header) !== bank.id) continue;
     // AC3: an in-transit item of the opening balance has no journal of its own: its effect is its amount once the batch's cut-off is on or before `to`
     const cutoff = d.type === 'OB' ? st.docs.find((x) => x.id === d.header.obBatchId)?.header.documentDate : undefined;
-    const effect = d.type === 'OB' ? (cutoff && cutoff <= to ? (side === 'RC' ? 1 : -1) * toSatang(d.totals.total) : 0) : effectOn(st.journals.find((x) => x.docId === d.id)?.preview.entries ?? []);
+    const effect = d.type === 'OB' ? (cutoff && cutoff <= to ? (side === 'RC' ? 1 : -1) * toSatang(d.totals.total) : 0) : effectOn(st.journals.find((x) => x.docId === d.id)?.preview.entries ?? payEntries(st, d.id) ?? []);
     const left = effect - (side === 'RC' ? 1 : -1) * (matchedBy.get(d.id) ?? 0);
     if (left === 0) continue;
-    const row: ReportRow = { level: 1, kind: 'row', cells: { item: `${side} ${d.number ?? d.id}${d.party?.name ? ` · ${d.party.name}` : ''}`, date: d.header.documentDate, amount: fromSatang(side === 'RC' ? left : -left) } };
+    const row: ReportRow = { level: 1, kind: 'row', cells: { item: `${st.payrollPayments.some((p) => p.id === d.id) ? '' : `${side} `}${d.number ?? d.id}${d.party?.name ? ` · ${d.party.name}` : ''}`, date: d.header.documentDate, amount: fromSatang(side === 'RC' ? left : -left) } };
     (side === 'RC' ? transit : outstanding).push({ row, sat: side === 'RC' ? left : -left });
   }
   for (const j of st.bankJournals) {

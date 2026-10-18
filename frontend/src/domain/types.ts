@@ -10,7 +10,7 @@ export type Role = 'operator' | 'accountant' | 'admin';
 export type TaxCode = 'S7' | 'Z0' | 'EX'; // standard 7 %, zero-rated, exempt
 
 export interface Company { id: string; legalNameTh: string; legalNameEn?: string; taxId: string; branchCode: string;
-  vatRegistered: boolean; address: string; phone?: string }
+  vatRegistered: boolean; address: string; phone?: string; /** ST1 (company settings): the SSO employer account, 10 digits; the สปส.1-10 cannot be filed without it (PY3) */ ssoEmployerAccountNo?: string }
 export interface Membership { companyId: string; companyName: string; role: Role }
 export interface Me { userId: string; displayName: string; memberships: Membership[]; activeCompanyId: string;
   vatRegistered: boolean; permissions: string[];
@@ -23,7 +23,10 @@ export interface PartySummary { id: string; kind: 'customer' | 'vendor' | 'emplo
   nameEn?: string; notes?: string; partyGroup?: string; contact?: { phone?: string; email?: string };
   /** Vendor remittance details. */ bankAccount?: { bankName?: string; accountNo?: string; accountName?: string };
   /** Foreign vendor registered under VAT-D (PP.36 not filed). */ vatDRegistered?: boolean;
-  /** FN3: the other side of a customer that is also a vendor (and back): netting (หักกลบ) is offered between the two. */ linkedPartyId?: string }
+  /** FN3: the other side of a customer that is also a vendor (and back): netting (หักกลบ) is offered between the two. */ linkedPartyId?: string;
+  /** Employee parties (PY1): the payroll master. The national ID is `taxId`, the bank details `bankAccount`; `name` is title + first + last name. */
+  payroll?: { titleName?: string; firstName: string; lastName: string; startDate: IsoDate; endDate?: IsoDate; salary: Money; ssoRegistered: boolean;
+    maritalStatus: 'single' | 'married'; spouseHasIncome: boolean; children: number; otherAllowances: Money } }
 export interface ItemSummary { id: string; code: string; name: string; kind: 'good' | 'service'; unit: string;
   unitPrice: Money; taxCode: TaxCode; whtTypeCode?: string;
   /** Where the item is offered: sales documents, purchase documents, or both. */ usage: { sales: boolean; purchase: boolean };
@@ -40,7 +43,30 @@ export interface DocLine { id: string; itemId?: string; description: string; qty
   /** EX line with VAT: the vendor's tax invoice behind it (ม.82/3, ม.86/4). Without all four details the line's VAT is cost (InputVatUnclaimed), never input VAT; with them the claim window of the invoice date applies, per line. */
   vendorInvoice?: VendorInvoice;
   /** JV line (AC1): the account, and ONE of debit / credit (the other '0.00'). The journal posts these verbatim. `partyId` only for an account that needs one (none today). */
-  accountCode?: string; debit?: Money; credit?: Money; partyId?: string }
+  accountCode?: string; debit?: Money; credit?: Money; partyId?: string;
+  /** PR line (PY1): the employee (a party of kind 'employee') and what is paid / withheld this run. Pay, PIT, SSO, net, YTD are the server's (`compute.payroll`), never typed. */
+  employeeId?: string; pay?: PayItems }
+/** What a payroll run pays one employee, typed by the accountant. `salary` is the full monthly salary (the server prorates a joiner / leaver); blank money = 0.00. */
+export interface PayItems { salary: Money; overtime?: Money; allowance?: Money; bonus?: Money; otherIncome?: Money; otherDeduction?: Money }
+/** One employee's payslip figures as the server computed them. */
+export interface PayslipLine { employeeId: string; name: string; gross: Money; pit: Money; sso: Money; ssoEmployer: Money;
+  otherDeduction: Money; net: Money; proratedDays?: number; ytdIncome: Money; ytdPit: Money }
+export interface PayrollTotals { gross: Money; pit: Money; sso: Money; ssoEmployer: Money; net: Money }
+/** [SP-R] the tax and social-security tables a slip was computed with (A.7). Frozen on every slip, so a later table change never touches an issued slip. */
+export interface PayrollTables { version: string; expenseRateBp: number; expenseCap: Money; personal: Money; spouse: Money; child: Money; ssoAllowanceCap: Money;
+  bands: { upTo?: Money; rateBp: number }[]; ssoRateBp: number; ssoFloor: Money; ssoCeiling: Money }
+/** The employee as the slip saw them (frozen at issue). */
+export interface EmployeeSnapshot { name: string; nationalId?: string; maritalStatus: 'single' | 'married'; spouseHasIncome: boolean; children: number; otherAllowances: Money;
+  ssoRegistered: boolean; salary: Money; startDate: IsoDate; endDate?: IsoDate }
+/** A frozen slip (CLAUDE.md freeze rule): everything it was computed from (`items`, `employee`, `tables`, the year-to-date `prior` it took, the SSO already withheld in the month, whether an earlier run of the month exists) and what came out. */
+export interface PayrollSlip extends PayslipLine { items: PayItems; employee: EmployeeSnapshot; tables: PayrollTables; month: string;
+  prior: { income: Money; pit: Money; sso: Money }; monthSso: Money; sameMonthPrior: boolean; salaryPaid: Money; daysInMonth: number; ytdSso: Money }
+/** PR, server-owned (never accepted from a caller): the run's frozen slips. */
+export interface PayrollData { month: string; slips: PayrollSlip[] }
+/** PY2: a payroll run paid out (whole run only). Frozen at pay: the run's stored net, the date, the account and its snapshot (the payment never re-reads the live account), who and when. A reversed (unpaid) payment stays as history; `journalId` is its bank journal (kind 'payroll'). */
+export interface PayrollPayment { id: string; companyId: string; runId: string; amount: Money; date: IsoDate; accountId: string;
+  account: { kind: 'bank' | 'cash'; bankName?: string; accountNo?: string; accountName: string; accountCode: string };
+  journalId: string; actor: Actor; at: string; reversed?: { at: string; by: Actor; reason: string; date: IsoDate } }
 /** The vendor's tax invoice an expense-claim line carries: who issued it (name, TIN), its number and its date. */
 export interface VendorInvoice { vendorName: string; vendorTin: string; number: string; date: IsoDate;
   /** The employee confirms it is a FULL tax invoice made out to the company (ม.86/4): only then is its VAT claimable; false or absent = cost. */ fullTaxInvoice?: boolean }
@@ -96,7 +122,7 @@ export interface ObCheck { debit: Money; credit: Money; plug: Money; plugSide: '
 export interface DocTotals { gross: Money; discount: Money; net: Money; vat: Money; total: Money; wht?: Money; cash?: Money;
   amountInWords: string }
 /** `href`: where an exit button goes when the exit is a page elsewhere (the reconciliation lock: the bank line). */
-export interface Lock { kind: 'period' | 'filing' | 'settlement' | 'reconciliation' | 'reversal' | 'schedule' | 'asset'; reason: string; exits: string[]; href?: string }
+export interface Lock { kind: 'period' | 'filing' | 'settlement' | 'reconciliation' | 'reversal' | 'schedule' | 'asset' | 'payroll'; reason: string; exits: string[]; href?: string }
 /** Document marks: facts about the document that are not status (customer accepted / rejected a QT, DO delivered, PO sent, SO closed). Never a revision. */
 export type MarkKey = 'accepted' | 'rejected' | 'delivered' | 'sent';
 export interface DocMarks { accepted?: { at: string; by: string }; rejected?: { at: string; by: string; reason: string };
@@ -108,7 +134,7 @@ export interface RemainingLine { lineId: string; description: string; unit: stri
 export interface WhtFrozen { bases: { targetId: string; whtTypeCode: string; base: Money; clamped?: true; full?: true; billBase?: Money }[]; lines: WhtLine[]; expense: Money; cashDelta: Money }
 export interface Doc { id: string; type: DocType; number?: string; status: DocStatus; correctionClass: CorrectionClass;
   revision: number; version: number; header: DocHeader; party?: PartySummary; lines: DocLine[]; totals: DocTotals;
-  outstanding?: Money; locks: Lock[]; createdBy: Actor; issuedAt?: string; allocations?: Allocation[]; whtFrozen?: WhtFrozen; /** OB batch (AC3): the steps behind the trial balance. */ opening?: DocOpening; /** FA (AC5): the registered asset. */ asset?: AssetData; /** DP (AC5): the depreciation run's frozen rows. */ dp?: DpData;
+  outstanding?: Money; locks: Lock[]; createdBy: Actor; issuedAt?: string; allocations?: Allocation[]; whtFrozen?: WhtFrozen; /** OB batch (AC3): the steps behind the trial balance. */ opening?: DocOpening; /** FA (AC5): the registered asset. */ asset?: AssetData; /** DP (AC5): the depreciation run's frozen rows. */ dp?: DpData; /** PR (PY1): the payroll run's frozen slips. */ payroll?: PayrollData;
   /** CN / DN (ม.86/10): the invoice's net, the correct value after this note, the difference and its VAT, taken when the note is issued; the paper prints these. Server-written. */
   adjustSnapshot?: { originalNet: Money; correctNet: Money; diffNet: Money; vat: Money };
   cancel?: { reasonCode: string; reasonText: string; at: string }; replacedById?: string; replacesId?: string; marks?: DocMarks;
@@ -139,7 +165,7 @@ export interface BankLine { id: string; accountId: string; importId: string; dat
   /** Matched to a transfer journal between two own accounts (instead of documents): `side` is this line's own side of it. */ transfer?: { journalId: string; side: 'out' | 'in' };
   /** TX2c: posted by a tax payment (derived at read) */ taxPayment?: { form: FilingForm; period: string; journalId: string; href: string } }
 /** A journal the reconciliation wrote (no document behind it): the fee / rounding difference of a match, an inline journal of a statement line, or the seeded opening balance. A reversal is appended, an entry is never edited. */
-export interface BankJournal { id: string; companyId: string; accountId: string; lineId?: string; kind: 'fee' | 'inline' | 'opening' | 'transfer' | 'tax'; label: string; entries: JournalEntryPreview[];
+export interface BankJournal { id: string; companyId: string; accountId: string; lineId?: string; kind: 'fee' | 'inline' | 'opening' | 'transfer' | 'tax' | 'payroll'; label: string; entries: JournalEntryPreview[];
   /** TX2c: a tax payment - the finalized return it pays and the tax it paid, frozen at payment */ filing?: { form: FilingForm; period: string; amount: Money };
   /** A transfer: the account on the other side (the journal is Dr receiving / Cr paying, `accountId` is the one whose line made it). */ otherAccountId?: string; /** every statement line ever matched to a transfer (for the history of a reversal) */ lineIds?: string[] }
 export interface BankImport { id: string; accountId: string; fileName: string; format: 'kbiz-csv' | 'kplus-pdf'; from: IsoDate; to: IsoDate;
@@ -150,8 +176,8 @@ export interface DocSummary { id: string; type: DocType; number?: string; status
 export interface Page<T> { items: T[]; nextCursor?: string; total?: number }
 
 export type LinkKind = 'converted_from' | 'settles' | 'adjusts' | 'groups' | 'replaces' | 'issues';
-/** `type` 'STL' = a settlement record (FN3), not a document: `number` is its id, `status` follows it (posted = issued, reversed = cancelled). */
-export interface ChainNode { id: string; type: DocType | 'STL'; number?: string; status: DocStatus; total: Money; progress?: string }
+/** `type` 'PRP' = the payment of a payroll run (PY3 m3); 'STL' = a settlement record (FN3), not a document: `number` is its id, `status` follows it (posted = issued, reversed = cancelled). */
+export interface ChainNode { id: string; type: DocType | 'STL' | 'PRP'; number?: string; status: DocStatus; total: Money; progress?: string }
 /** `from` = the document whose command created the link (DO→SO converted_from, RC→TI settles, CN→TI adjusts,
  *  BL→TI groups, new TI→old TI replaces, PV→WT issues); `to` = the document it refers to. */
 export interface ChainEdge { from: string; to: string; kind: LinkKind; amount?: Money; qty?: Qty; active: boolean; wht?: Money }
@@ -203,7 +229,8 @@ export interface ComputeResult { lines: { id: string; net: Money; vat: Money; to
   missing: MissingItem[]; /** Omitted without ledger.read (D-09). */ journal?: JournalPreview; whtLines?: WhtLine[];
   /** JV: the server's Σ debit, Σ credit and their difference (the grid shows these, it never sums). */ balance?: { debit: Money; credit: Money; diff: Money }; /** OB: the sub-ledger ties and the 3900 plug. */ opening?: ObCheck;
   /** The approval policy needs this document approved before it can be issued (server-decided on the computed total, §7.6). */ approvalRequired?: boolean;
-  allocation?: { allocated: Money; unallocated: Money; suggestedWht: { targetId: string; wht: Money; whtTypeCode?: string }[] } }
+  allocation?: { allocated: Money; unallocated: Money; suggestedWht: { targetId: string; wht: Money; whtTypeCode?: string }[] };
+  /** PR: one slip per employee row and the run totals, as the server computed them (the grid shows these, it never computes). */ payroll?: { slips: PayslipLine[]; totals: PayrollTotals } }
 
 export interface CorrectionNote { type: 'CN' | 'DN'; fullCredit: boolean; priceIncludesVat: boolean;
   lines: DocLine[]; total: Money;
@@ -222,6 +249,10 @@ export interface SearchHit { kind: 'doc' | 'party' | 'page'; id: string; label: 
 export interface ApiProblem { type?: string; title: string; status: number; code: string; detail?: string;
   traceId?: string; fieldErrors?: Record<string, string[]> }
 
+/** One payslip as printed (PY2): income items, deductions, net and its words, year to date - ready-made by the server from the frozen slip. `nationalId` is masked (last four digits only). */
+export interface PayslipPaperModel { employeeId: string; name: string; nationalId?: string; period: string; payDate: IsoDate; proratedDays?: number; daysInMonth: number;
+  income: { label: string; amount: Money }[]; deductions: { label: string; amount: Money }[]; gross: Money; totalDeductions: Money; net: Money; netInWords: string; ssoEmployer: Money;
+  ytd: { income: Money; pit: Money; sso: Money }; note: string }
 /** Printed party block. phone / nameEn are optional extras for the seller header. */
 export interface PaperParty { name: string; nameEn?: string; address: string; phone?: string; taxId?: string; branchLabel?: string }
 /** Everything the printed document shows, ready-made by the server: the paper never computes tax or totals. */
@@ -243,11 +274,12 @@ export interface PaperModel {
   /** PV: the tax withheld per WHT type (income type + rate, the base and the tax), as the server computed it. */ whtLines?: { label: string; base: Money; tax: Money }[];
   /** Label of the party block when it is not the customer (PV: 'ผู้รับเงิน'). */ partyLabel?: string;
   /** WT (50 ทวิ, D-21): everything the certificate prints, server-built and frozen at the first print (I7). */
-  certificate?: { form: 'PND2' | 'PND3' | 'PND53' | 'PND54'; sequence?: string; incomeType: string; incomeLabel: string; paidOn: IsoDate; income: Money; tax: Money; taxInWords: string;
+  certificate?: { form: 'PND1A' | 'PND2' | 'PND3' | 'PND53' | 'PND54'; /** PND1A (50 ทวิ for an employee, PY3): the SSO the employee paid in the year, printed in the funds field */ ssoPaid?: Money; sequence?: string; incomeType: string; incomeLabel: string; paidOn: IsoDate; income: Money; tax: Money; taxInWords: string;
     condition: 'withhold' | 'forever' | 'once'; voucher?: string };
   /** JV (ใบสำคัญทั่วไป): the account lines as posted, with the server's totals. */
   journal?: { lines: { no: number; accountCode: string; accountName: string; description: string; debit: Money; credit: Money }[]; debit: Money; credit: Money };
   replacementNote?: string;                    // 'ยกเลิกและออกแทนฉบับเดิม เลขที่ … ลงวันที่ …' (on the NEW document)
+  /** PR (PY2): one payslip per employee, all read from the run's frozen slips (the paper computes nothing). */ payslips?: PayslipPaperModel[];
   voidMark?: { label: string; note?: string }; // cancelled / replaced originals: diagonal stamp on every page
   signatures: string[];                        // ['ผู้รับสินค้า/บริการ', 'ผู้รับเงิน', 'ผู้มีอำนาจลงนาม']
 }

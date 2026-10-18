@@ -196,3 +196,20 @@ Entry format — terse, greppable by symptom:
 - **Symptom:** `closeYear(st, co, 2026, ...)` throws `period.year_not_ended`; once forced past that, the seed invariants report "posted after it closed" for every 2026 entry.
 - **Root cause:** the mock world's today is the fixed `ANCHOR` (2026-10-17, `engine/log.ts`), and months set `status: 'closed'` by hand have no `closedAt`.
 - **Fix:** in the test, `vi.mock('../log')` to return a settable `today`, set the months `closed` WITH `closedAt` in the far future, and close FY2025 first (`period.year_order`). See `close2026` in `filings/cit-engine.test.ts`.
+
+## `seed spec nob-1: ob.payroll_invalid` in a later test's `buildSeedState`
+- **Symptom:** after a test pushed a row into a seeded opening balance's `payrollYtd` (e.g. `doc('nob-1').opening!.payrollYtd.push(...)`), the NEXT `buildSeedState()` throws `seed spec nob-1: ob.payroll_invalid`.
+- **Root cause:** `freezeOpening` spread `...op`, so the issued batch shared its `payrollYtd` array (and rows) with the seed spec's literal; a mutation of the state mutated the fixture.
+- **Fix:** `freezeOpening` copies the rows (`payrollYtd: op.payrollYtd.map((y) => ({ ...y }))`). Same shape of bug for any array a seed spec hands to the engine: clone where the engine freezes it. Test: "PY2 N3" in `engine/payroll.test.ts`.
+
+## axe color-contrast `.bg-primary` on a save button that just became enabled (CI only)
+- **Symptom:** `axeClean` right after navigating to a document edit page fails `color-contrast: .bg-primary` on the Linux CI runner, passes locally (~1 in 8 under 4x CPU throttle).
+- **Root cause:** the editor's save button is `disabled` while the document loads (axe skips disabled nodes), then enabled with a `transition-all` opacity fade 0.5 -> 1. If the flip lands between the helper's `getAnimations()` wait and axe's analysis, axe reads a half-faded enabled button.
+- **Fix:** before `axeClean`, `await expect(<the button>).toBeEnabled()` (getAnimations then sees the transition and waits it out). Reproduce with CDP `Emulation.setCPUThrottlingRate` (rate 4-8) + `--repeat-each`.
+- **Seen:** 2026-10-18, SP1c group 07 CI (ti-loop F4)
+
+## e2e "every built screen" test times out on CI as `page.goto: net::ERR_ABORTED`
+- **Symptom:** `screens.spec.ts` single walk fails on CI with `net::ERR_ABORTED; maybe frame was detached?` (or a 120s timeout) on a different URL each run; green locally.
+- **Root cause:** not a race: one test navigates every index card (~180 gotos); the slow runner needs more than its 120s budget, and the timeout aborts whichever goto is in flight.
+- **Fix:** the walk is split into chunks of 15 cards (one generated test per chunk, from `SCREENS`), so each stays well under its own timeout however large the index grows.
+- **Seen:** 2026-10-18, SP1c group 07 CI

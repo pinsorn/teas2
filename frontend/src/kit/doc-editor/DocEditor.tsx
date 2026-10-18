@@ -25,6 +25,7 @@ import { GroupPanel } from './GroupPanel';
 import { HeaderFields } from './HeaderFields';
 import { JournalDrawer } from './JournalDrawer';
 import { isBlankLine, LineGrid, newLine } from './LineGrid';
+import { defaultPayrollLines, isBlankPayrollLine, PayrollConfirmDialog, PayrollGrid, payrollLinePayload, useEmployees } from './PayrollGrid';
 import { MissingSummary } from './MissingSummary';
 import { PartyField } from './PartyField';
 import { PreviewDrawer } from './PreviewDrawer';
@@ -114,7 +115,9 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   if (!dateAdopted && me?.businessDate) { setDateAdopted(true); setHeader((h) => (h.documentDate ? h : { ...h, documentDate: me.businessDate })); }
   const exemptOnly = d.lineEditor === 'amount' && d.headerFields.includes('whtMode'); // a voucher: input VAT only through a bill (PB)
   const accountEditor = d.lineEditor === 'account'; // a journal voucher: account lines, debit / credit, no party, no tax
-  const [lines, setLines] = useState<DocLine[]>(initial?.lines.length ? initial.lines : accountEditor ? [newAccountLine(), newAccountLine()] : [newLine(exemptOnly || (me && !me.vatRegistered) || d.type === 'EX' ? 'EX' : 'S7')]); // a claim starts exempt: most receipts (taxi, meals) carry no tax invoice // a non-VAT company sells without VAT
+  const payrollEditor = d.lineEditor === 'payroll'; // a payroll run (PY1): one row per employee, the pay items typed; every figure beside them is the server's
+  const noPreview = accountEditor || payrollEditor; // no paper preview, no VAT totals: neither is a priced document
+  const [lines, setLines] = useState<DocLine[]>(initial?.lines.length ? initial.lines : accountEditor ? [newAccountLine(), newAccountLine()] : payrollEditor ? [] : [newLine(exemptOnly || (me && !me.vatRegistered) || d.type === 'EX' ? 'EX' : 'S7')]); // a claim starts exempt: most receipts (taxi, meals) carry no tax invoice // a non-VAT company sells without VAT
   const [party, setParty] = useState<PartySummary | undefined>(initial?.party);
   const [allocations, setAllocations] = useState<Allocation[]>(initial?.allocations ?? []); // RC / PV: the open items this document settles
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -129,10 +132,10 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   // Blank rows are never sent (nor, on a debit note opened from an invoice, a line left at quantity 0 - the prefill starts them there); money/quantity text is normalised to the wire format.
   const payload = useMemo<DocInput>(() => ({
     header,
-    lines: accountEditor ? lines.filter((l) => !isBlankAccountLine(l)).map(accountLinePayload)
+    lines: accountEditor ? lines.filter((l) => !isBlankAccountLine(l)).map(accountLinePayload) : payrollEditor ? lines.filter((l) => !isBlankPayrollLine(l)).map(payrollLinePayload)
       : lines.filter((l) => !isBlankLine(l) && !((d.type === 'DN' || d.type === 'PDN') && d.adjusts && Number(qtyText(l.qty)) === 0)).map((l) => ({ ...l, qty: qtyText(l.qty), unitPrice: moneyText(l.unitPrice) })),
     ...(d.settles || d.groups ? { allocations } : {}),
-  }), [header, lines, allocations, d.settles, d.groups, d.type, d.adjusts, accountEditor]);
+  }), [header, lines, allocations, d.settles, d.groups, d.type, d.adjusts, accountEditor, payrollEditor]);
   const payloadJson = JSON.stringify(payload);
 
   const invalidate = () => {
@@ -177,6 +180,11 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   const withholds = d.headerFields.includes('whtMode'); // only a document that pays out withholds tax from its lines
   const whtTypes = useQuery({ queryKey: qk.whtTypes(me?.activeCompanyId ?? ''), queryFn: endpoints.whtTypes, enabled: !!me && amountEditor && withholds });
   const accounts = useQuery({ queryKey: [me?.activeCompanyId ?? '', 'journal-accounts'], queryFn: endpoints.journalAccounts, enabled: !!me && accountEditor });
+  const employees = useEmployees(payrollEditor);
+  // a new payroll run starts with the company's active employees who work in the pay date's month; it is the system's start, not the user's edit, so (like the default note) it becomes the baseline: opening the screen saves no draft
+  const [rowsAdopted, setRowsAdopted] = useState(false);
+  if (payrollEditor && blank && !rowsAdopted && employees.data && header.documentDate) { setRowsAdopted(true); setLines(defaultPayrollLines(employees.data.items, header.documentDate)); }
+  useEffect(() => { if (rowsAdopted) autosave.rebase(); }, [rowsAdopted]); // eslint-disable-line react-hooks/exhaustive-deps -- once, after the render that holds the rows
   const isVoucher = d.type === 'PV';
   const needsBill = isVoucher ? compute.last?.missing.find((m) => m.code === 'pv.input_vat_needs_bill') : undefined; // D-16: the server refused a taxed line; the exit is the quick bill
   const taxedLine = isVoucher ? lines.find((l) => l.taxCode !== 'EX' && !isBlankLine(l)) : undefined;
@@ -205,7 +213,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
   const dialogOpen = confirmOpen || (want === payloadJson && ready);
 
   const jump = (field: string) => {
-    const sel = field.startsWith('header.partyId') ? '[data-field="party"]' : field === 'allocations' ? '[role="checkbox"]' : accountEditor ? '[data-cell="0:account"]' : '[data-cell="0:description"]';
+    const sel = field.startsWith('header.partyId') ? '[data-field="party"]' : field === 'allocations' ? '[role="checkbox"]' : accountEditor ? '[data-cell="0:account"]' : payrollEditor ? '[data-cell="0:employee"], [data-cell="0:salary"]' : '[data-cell="0:description"]';
     root.current?.querySelector<HTMLElement>(sel)?.focus();
   };
 
@@ -295,7 +303,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
       {mode === 'template' && <p className="text-small text-muted-foreground">{t('template.hint')}</p>}
       {!!issueError && !conflict && <ProblemBanner error={issueError} hint={mode === 'template' ? t('template.saveFailed') : t('issueFailed')} />}
 
-      <fieldset disabled={issuingNow} className={cn('m-0 grid min-w-0 gap-6 border-0 p-0', wide && previewOpen && !accountEditor && 'grid-cols-[minmax(0,1fr)_minmax(0,28rem)]')}>
+      <fieldset disabled={issuingNow} className={cn('m-0 grid min-w-0 gap-6 border-0 p-0', wide && previewOpen && !noPreview && 'grid-cols-[minmax(0,1fr)_minmax(0,28rem)]')}>
         <div className="grid min-w-0 gap-6">
           <section className="grid gap-4 rounded-xl bg-card p-4 ring-1 ring-foreground/10 md:grid-cols-2">
             {d.adjusts ? ( // a note's customer is its invoice's: the server fills it, the editor only shows it
@@ -350,7 +358,16 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
             </section>
           )}
 
-          {showLines && !accountEditor && (
+          {showLines && payrollEditor && (
+            <section aria-labelledby={`${ids}-lines`} className="grid gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
+              <h2 id={`${ids}-lines`} className="text-section font-semibold">{t('payrollGrid.title')}</h2>
+              {employees.isError ? <ErrorState error={employees.error} onRetry={() => void employees.refetch()} /> : (
+                <PayrollGrid lines={lines} onChange={setLines} employees={employees.data?.items} slips={(compute.data ?? compute.last)?.payroll?.slips} totals={(compute.data ?? compute.last)?.payroll?.totals} computing={compute.pending} />
+              )}
+            </section>
+          )}
+
+          {showLines && !accountEditor && !payrollEditor && (
             <section aria-labelledby={`${ids}-lines`} className="grid gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
               <h2 id={`${ids}-lines`} className="text-section font-semibold">{t('lines.title')}</h2>
               <LineGrid lines={lines} onChange={changeLines} searchItems={searchItems} amounts={amounts} computing={compute.pending}
@@ -364,12 +381,12 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
           <div className="grid gap-6 lg:grid-cols-2">
             <MissingSummary ref={missingRef} missing={compute.last?.missing} pending={compute.pending || !!compute.error} partyChosen={!!header.partyId}
               partyLabel={partyKind ? t(`party.${partyKind}`) : undefined} onJump={jump} />
-            {accountEditor ? null : <TotalsPanel totals={compute.data?.totals} whtLines={compute.data?.whtLines} pending={compute.pending} error={compute.error} onRetry={compute.retry} />}
+            {noPreview ? null : <TotalsPanel totals={compute.data?.totals} whtLines={compute.data?.whtLines} pending={compute.pending} error={compute.error} onRetry={compute.retry} />}
           </div>
           {me && mode !== 'template' ? <AttachmentsPanel type={d.type} docId={draftId} ensureDocId={async () => draftId ?? (await autosave.flush())?.id}
             canEdit={me.permissions.includes(d.permissions.create)} issued={!!initial && initial.status !== 'draft'} /> : null}
         </div>
-        {accountEditor ? null : <PreviewDrawer open={previewOpen} onOpenChange={setPreviewChoice} docked={wide} party={party} lines={lines} compute={compute.data} />}
+        {noPreview ? null : <PreviewDrawer open={previewOpen} onOpenChange={setPreviewChoice} docked={wide} party={party} lines={lines} compute={compute.data} />}
       </fieldset>
 
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-card px-4 py-3">
@@ -382,7 +399,7 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
             {why && <p id={`${ids}-why`} className="text-small text-muted-foreground">{t(`whyDisabled.${why}`)}</p>}
-            {accountEditor ? null : <Button type="button" variant="outline" aria-pressed={previewOpen} onClick={() => setPreviewChoice(!previewOpen)}><EyeIcon aria-hidden data-icon="inline-start" />{t('preview')}</Button>}
+            {noPreview ? null : <Button type="button" variant="outline" aria-pressed={previewOpen} onClick={() => setPreviewChoice(!previewOpen)}><EyeIcon aria-hidden data-icon="inline-start" />{t('preview')}</Button>}
             {me && !me.permissions.includes('ledger.read') ? (
               <span title={t('journalNeedsPermission')}>
                 <Button type="button" variant="outline" disabled><ListTreeIcon aria-hidden data-icon="inline-start" />{t('journal')}<span className="sr-only"> ({t('journalNeedsPermission')})</span></Button>
@@ -407,7 +424,11 @@ function DocEditorInner({ descriptor: d, mode, initial, onIssued, onRevisionRequ
           }} />
       )}
       <JournalDrawer open={journalOpen} onOpenChange={setJournalOpen} journal={compute.data?.journal} pending={compute.pending} error={compute.error} onRetry={compute.retry} />
-      {compute.data && (
+      {compute.data && payrollEditor && (
+        <PayrollConfirmDialog open={dialogOpen} title={submitMode ? t('submitApproval') : t('confirm.title', { title })} body={submitMode ? t('confirmSubmit.body') : approveIssueMode ? t('confirmApprove.body') : undefined} totals={compute.data.payroll?.totals}
+          onConfirm={() => void confirmIssue()} onCancel={() => { setConfirmOpen(false); setWant(undefined); }} />
+      )}
+      {compute.data && !payrollEditor && (
         <ConfirmIssueDialog open={dialogOpen} title={submitMode ? t('submitApproval') : t('confirm.title', { title })} body={submitMode ? t('confirmSubmit.body') : approveIssueMode ? t('confirmApprove.body') : undefined} totals={compute.data.totals} journalVoucher={d.type === 'JV'}
           onConfirm={() => void confirmIssue()} onCancel={() => { setConfirmOpen(false); setWant(undefined); }} />
       )}

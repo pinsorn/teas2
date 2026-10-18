@@ -1,5 +1,5 @@
 import type {
-  Actor, Allocation, ComputeResult, Doc, DocHeader, DocLine, DocOpening, DocTotals, DocType, IsoDate, JournalEntryPreview, JournalPreview, Lock, MissingItem, Money, PartySummary, Qty, WhtFrozen,
+  Actor, Allocation, ComputeResult, Doc, DocHeader, DocLine, DocOpening, DocTotals, DocType, IsoDate, JournalEntryPreview, JournalPreview, Lock, MissingItem, Money, PartySummary, PayrollData, Qty, WhtFrozen,
 } from '@/domain/types';
 import { ADJUSTS, CLASS, CONVERSIONS, DOC_TYPES, GROUPS, LIVE, SETTLES, carriesBalance, isTypeAvailable } from '@/domain/doc-types';
 import type { MockState } from '../store';
@@ -13,6 +13,7 @@ import { MockError, diffBody, isPinned, logActivity, logAudit, stamp, today } fr
 import { fromSatang, toSatang } from './money';
 import { adjustSnapshot, hasSnapshot, isNote, noteHeader, noteMissing, noteProblem, withNoteVat } from './notes';
 import { SeriesAllocator } from './numbering';
+import { freezePayroll, obPayrollProblem, payrollMissing, payrollProblem, prCalc, prSlips, prTotals, refuseLaterRun, slipLine, totalsOfSlips } from './payroll';
 import { refuseObLocked, refuseReconciled, refuseSettled } from './locks';
 import { refuseScheduleNote, refuseScheduleSource } from './schedules';
 import { afterAssetCancel, beforeAssetCancel, beforeDisposalTiCancel, onDisposalTiCancelled, refuseAssetNote, refuseAssetSource, refuseDisposalCorrection, refuseDisposalNote } from './assets';
@@ -24,7 +25,7 @@ import { filingLock, refuseFiled, refuseIntoFiled } from './filings';
 import { cleanInvoices, isVendorBill, issueVendorStatus, purchaseProblem, snapshotCategories, snapshotWhtTypes, withClaimPeriod, withForfeit, withVendorStatus } from './purchase-vat';
 import { computeDoc, vatBasisOf, vatOf } from './vat';
 
-export type Body = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[]; whtFrozen?: WhtFrozen; /** OB (AC3): the steps behind the trial balance */ opening?: DocOpening };
+export type Body = { header: DocHeader; lines: DocLine[]; allocations?: Allocation[]; whtFrozen?: WhtFrozen; /** OB (AC3): the steps behind the trial balance */ opening?: DocOpening; /** PR (PY1): the run's frozen slips - engine-set at issue / revise, never read from a caller */ payroll?: PayrollData };
 type Stored = MockState['docs'][number];
 
 export { LIVE };
@@ -99,6 +100,7 @@ export function calc(body: Body, vatRegistered: boolean) {
 /** Document totals: the lines' totals, plus for an RC / PV the settlement money (total, WHT, cash). One seam for create / update / issue / revise / compute. */
 export function totalsOf(st: MockState, companyId: string, type: DocType, body: Body, selfId?: string): DocTotals {
   if (type === 'OB') return obTotals(st, companyId, body); // AC3: the total of an opening balance is its debit side after the 3900 plug
+  if (type === 'PR') return prTotals(prSlips(st, companyId, body, selfId)); // PY1: the total of a payroll run is its net pay; the slips are the server's (frozen ones when it has them)
   if (type === 'JV') return jvTotals(body.lines); // AC1: the total of a journal voucher is the sum of its debits; no VAT, no tax code
   const t = calc(withNoteVat(st, companyId, type, body, selfId), vatBasisOf(st, companyId, type)).totals; // a note: each line's VAT is its original line's VAT change (rule B); a vendor's invoice carries the VAT of its tax code (A.4)
   return SETTLES[type] ? settleTotals(st, companyId, type, body, t, selfId) : GROUPS[type] ? groupTotals(body, t) : t;
@@ -132,7 +134,7 @@ export function missingOf(st: MockState, companyId: string, type: DocType, body:
   if (!isTypeAvailable(type, !!company?.vatRegistered)) out.push({ field: 'type', message: unavailableTh(type) });
   if (!body.header.documentDate) out.push({ field: 'header.documentDate', message: 'ต้องระบุวันที่เอกสาร' });
   if (isNote(type)) out.push(...noteMissing(type, body.header)); // a note's customer is its invoice's: the server fills it (stored)
-  if (!body.header.partyId) { if (!isNote(type) && type !== 'JV' && type !== 'OB' && type !== 'FA' && type !== 'DP') out.push({ field: 'header.partyId', message: 'ต้องเลือกคู่ค้า' }); }
+  if (!body.header.partyId) { if (!isNote(type) && type !== 'JV' && type !== 'OB' && type !== 'FA' && type !== 'DP' && type !== 'PR') out.push({ field: 'header.partyId', message: 'ต้องเลือกคู่ค้า' }); }
   else {
     const p = partyOf(st, companyId, body.header.partyId);
     if (!p) out.push({ field: 'header.partyId', message: 'ไม่พบคู่ค้า' });
@@ -151,6 +153,7 @@ export function missingOf(st: MockState, companyId: string, type: DocType, body:
     if (!body.allocations?.length) out.push({ field: 'allocations', message: 'ต้องเลือกใบแจ้งหนี้หรือใบกำกับภาษีที่ต้องการวางบิล' });
   } else if (type === 'JV') out.push(...jvMissing(body.lines));
   else if (type === 'OB') out.push(...obMissing(st, companyId, body));
+  else if (type === 'PR') out.push(...payrollMissing(st, companyId, body));
   else if (type !== 'FA' && type !== 'DP' && !body.lines.length) out.push({ field: 'lines', message: 'ต้องมีรายการอย่างน้อย 1 รายการ' }); // an asset / a depreciation run is engine-made: its content is the frozen asset / rows, not lines
   return out;
 }
@@ -292,12 +295,13 @@ function withWht(st: MockState, companyId: string, type: DocType, body: Body, ow
 export function compute(st: MockState, companyId: string, type: DocType, raw: Body, opts?: { docId?: string }): ComputeResult {
   const own0 = opts?.docId ? st.docs.find((x) => x.id === opts.docId) : undefined;
   const body = withWht(st, companyId, type, withNoteVat(st, companyId, type, stored(st, companyId, type, raw, own0?.allocations, own0?.header), opts?.docId), own0);
-  const c = type === 'OB' ? obCalc(body.lines) : type === 'JV' ? jvCalc(body.lines) : calc(body, vatBasisOf(st, companyId, type));
+  const prRun = type === 'PR' ? freezePayroll(st, companyId, body, opts?.docId) : undefined; // PY1: the slips as the books give them now (an issued run's unchanged rows keep their frozen slip)
+  const c = type === 'OB' ? obCalc(body.lines) : type === 'JV' ? jvCalc(body.lines) : type === 'PR' ? prCalc(st, companyId, body, opts?.docId) : calc(body, vatBasisOf(st, companyId, type));
   const totals = totalsOf(st, companyId, type, body, opts?.docId);
   const doc: Doc = {
     id: 'preview', type, status: 'draft', correctionClass: CLASS[type], revision: 0, version: 1, header: body.header,
     party: partyOf(st, companyId, body.header.partyId), lines: body.lines, totals, locks: [], createdBy: { kind: 'user', id: '', name: '' },
-    ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), ...(body.opening ? { opening: body.opening } : {}),
+    ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), ...(body.opening ? { opening: body.opening } : {}), ...(prRun ? { payroll: prRun } : {}),
   };
   const missing = missingOf(st, companyId, type, body);
   const own = opts?.docId ? st.docs.find((x) => x.id === opts.docId) : undefined;
@@ -308,9 +312,13 @@ export function compute(st: MockState, companyId: string, type: DocType, raw: Bo
   if (np) missing.push({ field: 'lines', message: np.title }); // the cap, the invoice's lines: shown before issue
   const jp = type === 'OB' ? obProblem(st, companyId, body, opts?.docId) : journalProblem(st, companyId, type, body); // JV: the account and auto-reverse rules; OB: cut-off, steps and sub-ledger ties - shown before issue too
   if (jp) missing.push({ field: 'lines', message: jp.title, code: jp.code });
+  const opp = type === 'OB' ? obPayrollProblem(st, companyId, own0 && LIVE.includes(own0.status) ? own0 : undefined, body) : undefined; // PY1a: an opening balance a payroll run builds on - shown before issue too
+  if (opp) missing.push({ field: 'lines', message: opp.title, code: opp.code });
+  const prp = payrollProblem(st, companyId, type, body, opts?.docId); // PY1: a later run, an other deduction above the pay - shown before issue too
+  if (prp) missing.push({ field: 'lines', message: prp.title, code: prp.code });
   const pp = purchaseProblem(st, companyId, type, body); // input VAT rules of a vendor's invoice: shown before issue too
   if (pp) missing.push({ field: ({ 'pb.claim_period_out_of_range': 'header.claimPeriod', 'pcn.claim_period_fixed': 'header.claimPeriod', 'pb.vendor_invoice_after_document': 'header.vendorDocDate' } as Record<string, string>)[pp.code] ?? 'lines', message: pp.title });
-  return { lines: c.lines, totals, missing, journal: ledgerFor(st, { ...doc, companyId }), ...settleExtras(st, companyId, type, body), ...(type === 'JV' || type === 'OB' ? { balance: jvBalance(body.lines) } : {}), ...(type === 'OB' ? { opening: buildOb(st, companyId, body).check } : {}),
+  return { lines: c.lines, totals, missing, journal: ledgerFor(st, { ...doc, companyId }), ...settleExtras(st, companyId, type, body), ...(type === 'JV' || type === 'OB' ? { balance: jvBalance(body.lines) } : {}), ...(type === 'OB' ? { opening: buildOb(st, companyId, body).check } : {}), ...(prRun ? { payroll: { slips: prRun.slips.map(slipLine), totals: totalsOfSlips(prRun.slips) } } : {}),
     ...((opts?.docId ? !!own0 && LIVE.includes(own0.status) && reviseNeedsApproval(st, own0, payoutOf(st, companyId, { ...doc, id: opts.docId }), doc.allocations) : approvalRequired(st, companyId, type, payoutOf(st, companyId, doc))) ? { approvalRequired: true } : {}) }; // the editor swaps issue for submit / approve-and-issue (§7.6), and a revise that raises the money above what was approved asks for the approver (C1)
 }
 
@@ -408,7 +416,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   let body: Body = { header: header0, lines: vendorNoteLines(st, d.companyId, d.type, { header: header0, lines: d.lines }), ...(d.allocations ? { allocations: d.allocations } : {}), ...(d.opening ? { opening: d.opening } : {}) }; // C1: categories as of now
   const missing = missingOf(st, d.companyId, d.type, body);
   if (missing.length) throw incomplete(missing);
-  if (d.type === 'OB') { body = { ...body, opening: freezeOpening(st, d.companyId, id, body.opening ?? EMPTY_OPENING) }; const op = obProblem(st, d.companyId, body); if (op) throw op; } // AC3: the cut-off, the steps and the ties; the closed-period refusal of D-10 does not apply to an opening balance (D-10 exemption). F1 / F3: party names, account codes and item ids are stamped here and never re-read
+  if (d.type === 'OB') { const opp = obPayrollProblem(st, d.companyId, undefined, body); if (opp) throw opp; /* PY1a */ body = { ...body, opening: freezeOpening(st, d.companyId, id, body.opening ?? EMPTY_OPENING) }; const op = obProblem(st, d.companyId, body); if (op) throw op; } // AC3: the cut-off, the steps and the ties; the closed-period refusal of D-10 does not apply to an opening balance (D-10 exemption). F1 / F3: party names, account codes and item ids are stamped here and never re-read
   else if (!opts?.keepDate) dateGuards(st, d.companyId, d.header.documentDate); // D-10
   if (!opts?.keepDate && !isPinned() && (d.type === 'RC' || d.type === 'PV')) { // R1-2: a new receipt / voucher cannot put an entry on a bank GL before its go-live
     const live = goLiveOf(st, d.companyId, resolvedBankId(st, d.companyId, d.type, d.header));
@@ -424,9 +432,12 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   if (pp) throw pp;
   const jp = journalProblem(st, d.companyId, d.type, body); // a journal voucher: postable own accounts, none a document owns, the auto-reversal month open
   if (jp) throw jp;
+  const prp = payrollProblem(st, d.companyId, d.type, body, id); // PY1: no run after this one for its employees (the year to date is a chain), no other deduction above the pay
+  if (prp) throw prp;
   refuseOverConversion(st, d, body);
   body = { ...body, header: withClaimPeriod(st, d.companyId, d.type, body.header) }; // the first unfiled month of its window (normally the document month) unless a period was chosen
   body = withWht(st, d.companyId, d.type, body); // a voucher: the WHT as of now, fixed from here on (C1)
+  if (d.type === 'PR') body = { ...body, payroll: freezePayroll(st, d.companyId, body, id) }; // PY1: the slips - employee, tables, year to date - fixed from here on; the journal is exactly these
   refuseIntoFiled(st, { ...d, status: 'issued', header: body.header, lines: body.lines, allocations: body.allocations, whtFrozen: body.whtFrozen, party: partyOf(st, d.companyId, body.header.partyId) }); // B1: nothing enters a month whose ภ.พ.30 / ภ.ง.ด. / ภ.พ.36 is finalized (plans, approvals, schedule runs and disposals all issue here)
   body = { ...body, header: withBankSnapshot(st, d.companyId, d.type, body.header) }; // an RC / PV: the account as it is now, fixed from here on (I3)
   const bad = settleProblem(st, d.companyId, d.type, body, outstandingNow(st), { partyExempt: opts?.partyExempt, prior: opts?.prior, priorParty: opts?.priorParty });
@@ -435,7 +446,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   body = withNoteVat(st, d.companyId, d.type, body); // a CN / DN keeps the VAT its lines carry at issue
   const totals = totalsOf(st, d.companyId, d.type, body);
   const next: Stored = {
-    ...d, header: body.header, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), ...(body.opening ? { opening: body.opening } : {}), number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', totals, party: partyOf(st, d.companyId, d.header.partyId),
+    ...d, header: body.header, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), ...(body.opening ? { opening: body.opening } : {}), ...(body.payroll ? { payroll: body.payroll } : {}), number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', totals, party: partyOf(st, d.companyId, d.header.partyId),
     version: d.version + 1, issuedAt: stamp(), ...(hasOut(d.type) ? { outstanding: totals.total } : {}),
     ...(opts?.approver ? { approval: { submittedBy: d.approval?.submittedBy ?? actor, submittedAt: d.approval?.submittedAt ?? stamp(), approvedBy: opts.approver, approvedAt: stamp(), amount: payoutOf(st, d.companyId, { ...d, ...body, totals }) } } : {}),
   };
@@ -482,11 +493,13 @@ export function approveAndIssue(st: MockState, id: string, version: number, acto
 export function cancel(st: MockState, id: string, version: number, reasonCode: string, reasonText: string, actor: Actor, opts?: { correction?: boolean; /** AC1: the cancel of a JV's pending auto-reversal, made by the command that cancels or turns off its accrual */ system?: boolean }): Doc {
   const d = getDoc(st, id);
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_cancellable', d.status === 'pending' || d.status === 'approved' ? 'ยังไม่ได้ออกเอกสาร ยกเลิกไม่ได้ ให้ผู้อนุมัติส่งกลับแก้ไขก่อน แล้วลบฉบับร่าง' : 'ยกเลิกได้เฉพาะเอกสารที่ออกแล้ว');
+  if (d.type === 'OB') { const opp = obPayrollProblem(st, d.companyId, d, undefined); if (opp) throw opp; } // PY1a: the chain of a payroll year to date starts here (exit: cancel those runs first)
   checkVersion(d, version);
   // SP0 §7.5: a period lock does not block cancel (blockingLocks leaves it out); the other locks do.
   if (blockingLocks(d).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ยกเลิกไม่ได้');
   refuseClosedYearEntry(st, d); // AC6: an entry of a closed year is final (exit: reopen the year)
   refuseFiled(st, d); // TX1: a document a finalized ภ.พ.30 took is not cancelled (exit: the CN / DN of the next open month)
+  refuseLaterRun(st, d); // PY1: a payroll run a later run builds on (the year to date is a chain) - exit: the next run's adjustment lines, or cancel the later run first
   refuseReconciled(st, d); // FN2: matched to a bank line - the exit is to unmatch it first
   refuseSettled(st, d); // FN3: a leg of a posted settlement - the exit is to reverse the settlement
   refuseScheduleSource(st, d); // AC4: a schedule that is not stopped holds the line (exit: stop it); after the stop the runs stay
@@ -590,6 +603,7 @@ function certNote(d: Stored, body: Body): string | undefined {
 
 /** Revise in place (classes N and L). A T-class document only accepts non-fiscal changes here; fiscal ones go through a correction plan. */
 export function reviseBody(st: MockState, d: Stored, raw: Body): Body {
+  if (d.type === 'OB' && LIVE.includes(d.status)) { const opp = obPayrollProblem(st, d.companyId, d, { header: raw.header, opening: raw.opening ?? d.opening }); if (opp) throw opp; } // PY1a: a payroll year to date a run builds on (revise and the plan both pass here)
   const keepBank = keepOmitted(d, raw.header); // absent bank account / dimensions mean "unchanged": the company default must not fill the bank in (it would read as a move)
   const sent = stored(st, d.companyId, d.type, { ...raw, header: keepBank, lines: keepCategories(d, raw.lines), allocations: raw.allocations ?? d.allocations }, d.allocations, d.header);
   const kept = keepNoteLines(d, sent); // an API caller cannot send the engine-set VAT back: the issued lines stand
@@ -607,6 +621,7 @@ export const approvalOnRevise = () => new MockError(422, 'approval.required_on_r
 export function revise(st: MockState, id: string, raw: Body, version: number, reason: string, actor: Actor, opts?: { approver?: Actor }): Doc {
   const d = getDoc(st, id);
   let body = reviseBody(st, d, raw);
+  if (d.type === 'PR') body = { ...body, payroll: freezePayroll(st, d.companyId, body, id) }; // PY1: payslips regenerated (rows unchanged keep their frozen slip), then the L-class repost
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_revisable', 'แก้ไขได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   checkVersion(d, version);
   refuseDisposalCorrection(d); // AC5 backstop: header.disposal is server-owned and never survives a revise
@@ -626,6 +641,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   refuseNonPositive(st, d.companyId, d.type, body, d.id);
   refuseBelowSettled(st, d, body);
   refuseUnrevisablePurchase(st, d, body);
+  if (d.type === 'PR') { refuseLaterRun(st, d); const prp = payrollProblem(st, d.companyId, d.type, body, d.id); if (prp) throw prp; } // PY1
   if (d.type === 'JV') refuseJvRevise(st, d, body); // AC1: final once reversed; postable own accounts; the auto-reversal month open
   const resettle = (SETTLES[d.type] !== undefined && d.correctionClass !== 'T') || GROUPS[d.type] !== undefined; // a payment voucher / billing statement re-points its own links; a receipt (T) can only change a certificate number here
   if (resettle) { // the voucher's own current links give their amounts back before the new list is checked
@@ -659,7 +675,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   }
   const next: Stored = {
     ...rest, header: fin.header, lines: fin.lines, totals, party: fin.header.partyId === d.header.partyId && filingLock(st, d) ? d.party : partyOf(st, d.companyId, fin.header.partyId), // M4: a filed document keeps the party as filed
-    revision: d.revision + 1, version: d.version + 1, ...(fin.allocations ? { allocations: fin.allocations } : {}), ...(fin.whtFrozen ? { whtFrozen: fin.whtFrozen } : {}), ...(fin.opening ? { opening: fin.opening } : {}),
+    revision: d.revision + 1, version: d.version + 1, ...(fin.allocations ? { allocations: fin.allocations } : {}), ...(fin.whtFrozen ? { whtFrozen: fin.whtFrozen } : {}), ...(fin.opening ? { opening: fin.opening } : {}), ...(fin.payroll ? { payroll: fin.payroll } : {}),
     ...(moneyChanged(d, totals.total, fin) ? { moneyBy: actor } : {}),
     ...(reapprove ? { approval: { submittedBy: actor, submittedAt: stamp(), approvedBy: opts!.approver, approvedAt: stamp(), amount: payout } } : {}),
   };

@@ -9,14 +9,15 @@ const PV_ALL = [...PV, 'doc.PV.cancel', 'doc.PV.correct', 'doc.PV.approve']; // 
 const EX = ['doc.EX.read', 'doc.EX.create', 'doc.EX.issue']; // operator: files and (once approved) issues an expense claim; the accountant approves it and adds cancel / correct
 const EX_ALL = [...EX, 'doc.EX.cancel', 'doc.EX.correct', 'doc.EX.approve'];
 const JV_ALL = ['read', 'create', 'issue', 'cancel', 'correct', 'approve'].map((v) => `doc.JV.${v}`); // JV is accountant-only (§3.1)
+const PR_ALL = ['read', 'create', 'issue', 'cancel', 'correct', 'pay'].map((v) => `doc.PR.${v}`); // payroll runs (PY1) are the accountant's; the admin sees employees only
 const OB_ALL = ['read', 'create', 'issue', 'cancel', 'correct'].map((v) => `doc.OB.${v}`); // opening balances (AC3) are the accountant's
 const FA_ALL = ['FA', 'DP'].flatMap((t) => ['read', 'create', 'issue', 'cancel', 'correct'].map((v) => `doc.${t}.${v}`)); // fixed assets and depreciation runs (AC5) are the accountant's
 const READ = ['doc.SO.read', 'doc.DO.read', 'doc.CN.read', 'doc.DN.read'];
 const IV = ['doc.IV.read', 'doc.IV.create', 'doc.IV.issue'], BL = ['doc.BL.read', 'doc.BL.create', 'doc.BL.issue']; // operator: create + issue; the accountant adds cancel / correct
 export const PERMISSIONS_BY_ROLE: Record<Role, string[]> = {
   operator: [...TI, ...IV, ...BL, ...PO, ...PB, ...PV, ...EX, 'doc.PCN.read', 'doc.PDN.read', ...READ, 'doc.RC.read', 'doc.RC.create', 'doc.RC.issue', 'doc.QT.read', 'doc.QT.create', 'doc.QT.issue', 'doc.SO.create', 'doc.SO.issue', 'doc.DO.create', 'doc.DO.issue', 'party.read', 'party.manage', 'item.read', 'bank.read'],
-  accountant: [...TI, ...IV, ...BL, ...PO, ...PB_ALL, ...PV_ALL, ...EX_ALL, ...JV_ALL, ...OB_ALL, ...FA_ALL, 'doc.PO.cancel', 'doc.PO.correct', 'doc.IV.cancel', 'doc.IV.correct', 'doc.BL.cancel', 'doc.BL.correct', ...READ, 'doc.TI.cancel', 'doc.TI.correct', 'doc.RC.read', 'doc.RC.create', 'doc.RC.issue', 'doc.RC.cancel',
+  accountant: [...TI, ...IV, ...BL, ...PO, ...PB_ALL, ...PV_ALL, ...EX_ALL, ...JV_ALL, ...OB_ALL, ...FA_ALL, ...PR_ALL, 'employee.read', 'employee.manage', 'payroll.read', 'doc.PO.cancel', 'doc.PO.correct', 'doc.IV.cancel', 'doc.IV.correct', 'doc.BL.cancel', 'doc.BL.correct', ...READ, 'doc.TI.cancel', 'doc.TI.correct', 'doc.RC.read', 'doc.RC.create', 'doc.RC.issue', 'doc.RC.cancel',
     'doc.RC.correct', 'doc.CN.create', 'doc.CN.issue', 'doc.CN.cancel', 'doc.CN.correct', 'doc.DN.create', 'doc.DN.issue', 'doc.DN.cancel', 'doc.DN.correct', 'doc.QT.read', 'doc.QT.create', 'doc.QT.issue', 'doc.QT.cancel', 'doc.QT.correct', 'doc.SO.create', 'doc.SO.issue', 'doc.SO.cancel', 'doc.SO.correct', 'doc.DO.create', 'doc.DO.issue', 'doc.DO.cancel', 'doc.DO.correct',
     'party.read', 'party.manage', 'item.read', 'item.manage', 'ledger.read', 'ledger.coa.manage', 'ledger.schedule.manage', 'ledger.period.close', 'ledger.period.reopen', 'audit.read', 'report.read', 'bank.read', 'bank.manage', 'bank.reconcile', 'tax.read', 'tax.filing.preview', 'tax.filing.finalize'],
-  admin: ['settings.manage', 'users.manage', 'party.read', 'item.read', 'item.manage', 'audit.read', 'report.read', 'bank.read', 'bank.manage'],
+  admin: ['settings.manage', 'users.manage', 'employee.read', 'party.read', 'item.read', 'item.manage', 'audit.read', 'report.read', 'bank.read', 'bank.manage'],
 };

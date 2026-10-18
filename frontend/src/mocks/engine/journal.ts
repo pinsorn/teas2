@@ -258,7 +258,11 @@ function sources(st: MockState, companyId: string): Source[] {
     const d = mine.get(j.docId);
     if (d) out.push({ type: d.type, label: `${d.number ?? d.id} · ${DESCRIPTORS[d.type]?.titleTh ?? d.type}`, href: docViewHref(d.type, d.id), entries: j.preview.entries });
   }
-  for (const j of st.bankJournals) if (j.companyId === companyId) out.push({ type: 'BANK', label: `${j.id} · ${j.label}`, href: `/finance/bank-accounts/${j.accountId}${j.lineId ? `?line=${j.lineId}` : ''}`, entries: j.entries });
+  for (const j of st.bankJournals) {
+    if (j.companyId !== companyId) continue;
+    const run = j.kind === 'payroll' ? st.payrollPayments.find((p) => p.journalId === j.id)?.runId : undefined; // PY3 m5: a payroll payment links to its run
+    out.push({ type: 'BANK', label: `${j.id} · ${j.label}`, href: run ? docViewHref('PR', run) : `/finance/bank-accounts/${j.accountId}${j.lineId ? `?line=${j.lineId}` : ''}`, entries: j.entries });
+  }
   for (const y of st.yearCloses) if (y.companyId === companyId) out.push({ type: 'YC', label: `ปิดบัญชีสิ้นปี ${y.year + 543}`, href: '/accounting/period-close', entries: y.journal }); // AC6
   for (const s of st.settlements) if (s.companyId === companyId) out.push({ type: 'STL', label: `${s.id.toUpperCase()} · หักกลบ/ปรับปรุงการชำระ`, href: `/finance/settlements/${s.id}`, entries: s.journal });
   for (const f of st.filings) if (f.companyId === companyId && f.journal?.length) out.push({ type: f.form, label: `${formName(f.form)} เดือน ${monthLabelTh(f.period)}`, href: f.form === 'PP30' ? `/tax/vat?period=${f.period}` : `/tax/wht?tab=${f.form.toLowerCase()}&period=${f.period}`, entries: f.journal }); // TX2: a filing entry labelled by its own form: the ภ.พ.36 VAT (payment month end), the ภ.พ.30 netting (finalize day)

@@ -4,6 +4,7 @@ import type { MockState } from '../store';
 import {
   type Body, LIVE, approvalOnRevise, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, keepNoteLines, keepOmitted, markReplaced, refuseBelowSettled, refuseNonPositive, refusePartyChange, refuseUnissuableReceipt, refuseUnrevisablePurchase, reissue, revise, reviseBody, reviseNeedsApprover, stableJson, totalsOf,
 } from './commands';
+import { obPayrollProblem, payrollProblem } from './payroll';
 import { refuseObLocked, refuseReconciled, refuseSettled } from './locks';
 import { filingLock, refuseFiled } from './filings';
 import { withClaimPeriod } from './purchase-vat';
@@ -106,6 +107,8 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
     refusePartyChange(st, d, proposed);
     refuseNonPositive(st, d.companyId, d.type, proposed);
     refuseBelowSettled(st, d, proposed); // an IV / PB cannot be revised below what is already received / paid: say so before the plan is shown
+    if (d.type === 'PR') { const prp = payrollProblem(st, d.companyId, d.type, proposed, d.id); if (prp) throw prp; } // PY1b: a pay-date month change, a later run, a deduction above the pay: refused before a plan is shown
+    if (d.type === 'OB') { const opp = obPayrollProblem(st, d.companyId, d, { header: proposed.header, opening: proposed.opening ?? d.opening }); if (opp) throw opp; } // PY1b: a payroll year to date a run builds on - named here, not left to reviseBody's call order
     refuseUnrevisablePurchase(st, d, proposed); // a PB under live notes, an unregistered vendor's VAT, a claim period out of range, more than the PO has left
     if (reviseNeedsApprover(st, d, proposed) && !PERMISSIONS_BY_ROLE[role].includes(`doc.${d.type}.approve`)) throw approvalOnRevise(); // C1: more money than was approved - a plan nobody here may run is never shown
     refuseReconciled(st, d, { header: proposed.header, totals: totalsOf(st, d.companyId, d.type, proposed, d.id) }); // FN2: a plan that would move a matched document's cash, account or date is never shown

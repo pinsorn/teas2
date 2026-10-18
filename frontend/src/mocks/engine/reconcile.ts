@@ -12,12 +12,13 @@ import { MockError, logActivity, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
 import { monthLabelTh } from './periods';
 import { resolveRole } from './posting';
-import { formName } from './filings/pnd-wht';
+import { formName } from './filings/pnd1';
 import { inForceTax, livePaymentOf, payableAccountOf, filingHref, taxDueOf } from './filings/payment';
 import { isCit } from './filings/cit';
 import { type Filing, nextMonth } from './filings/pp30';
 import { lastDayOf } from './filings/pp36';
 import { resolvedBankId } from './settlement';
+import { payDocs, payEntries } from './payroll';
 
 type Stored = MockState['docs'][number];
 type StoredLine = MockState['bankLines'][number];
@@ -79,7 +80,7 @@ const matchableCash = (st: MockState, d: Stored): number => {
   if (d.type === 'OB') return docCash(d); // AC3: an in-transit item of the opening balance: all of it (no journal behind it; the batch's bank line already carries it)
   const acct = st.bankAccounts.find((b) => b.id === resolvedBankId(st, d.companyId, d.type, d.header) && b.companyId === d.companyId), live = goLiveOf(st, d.companyId, acct?.id);
   if (!acct || !live) return docCash(d);
-  const net = (st.journals.find((j) => j.docId === d.id)?.preview.entries ?? []).filter((e) => e.date >= live)
+  const net = (st.journals.find((j) => j.docId === d.id)?.preview.entries ?? payEntries(st, d.id) ?? []).filter((e) => e.date >= live)
     .reduce((n, e) => n + e.lines.filter((g) => g.accountCode === acct.accountCode).reduce((x, g) => x + toSatang(g.debit) - toSatang(g.credit), 0), 0);
   return Math.min(docCash(d), Math.max(0, d.type === 'RC' ? net : -net));
 };
@@ -114,7 +115,7 @@ function transferCandidates(st: MockState, companyId: string, l: StoredLine, nee
 export function suggest(st: MockState, companyId: string, lineId: string, q?: string): BankCandidate[] {
   const l = lineOf(st, companyId, lineId);
   const want = toSatang(l.amount) > 0 ? 'RC' : 'PV', needle = (q ?? '').trim().toLowerCase();
-  const docs = st.docs
+  const docs = [...st.docs, ...payDocs(st, companyId)] // PY2: a payroll payment is matched like a payment voucher of its account
     .filter((d) => d.companyId === companyId && cashSide(d) === want && LIVE.includes(d.status) && resolvedBankId(st, companyId, d.type, d.header) === l.accountId && remainingOf(st, d) > 0)
     .map((d) => ({ d, exact: matchedPortion(st, d.id) === 0 && matchableCash(st, d) === abs(toSatang(l.amount)) && docCash(d) === abs(toSatang(l.amount)), days: daysBetween(d.header.documentDate, l.date) }))
     .filter((x) => (needle ? `${x.d.number ?? ''} ${x.d.party?.name ?? ''}`.toLowerCase().includes(needle) : x.exact && x.days <= DAYS))
@@ -182,7 +183,7 @@ export function match(st: MockState, companyId: string, lineId: string, req: Mat
   }
   const bank = bankOf(st, companyId, l.accountId);
   const docs = ids.map((id) => {
-    const d = st.docs.find((x) => x.id === id && x.companyId === companyId);
+    const d = st.docs.find((x) => x.id === id && x.companyId === companyId) ?? payDocs(st, companyId).find((x) => x.id === id);
     if (!d) throw fail(422, 'bank.match_doc_not_found', 'ไม่พบเอกสารที่เลือก');
     const no = d.number ?? d.id;
     if (cashSide(d) !== want) throw fail(422, 'bank.match_direction', `${no} เป็น${cashSide(d) === 'RC' ? 'ใบเสร็จรับเงิน (เงินเข้า)' : 'ใบสำคัญจ่าย (เงินออก)'} จับคู่กับรายการ${s > 0 ? 'เงินเข้า' : 'เงินออก'}ไม่ได้`);
@@ -218,12 +219,18 @@ export function match(st: MockState, companyId: string, lineId: string, req: Mat
     stored = { role: diff.role, amount: fromSatang(diffSat), journalId: j.id };
   }
   Object.assign(l, { status: 'matched', matches, matchedDocIds: matches.map((m) => m.docId), ...(stored ? { diff: stored } : {}) });
-  for (const m of matches) logActivity(st, m.docId, actor, 'bank.match', `จับคู่กับรายการเดินบัญชี ${label(l)} (${formatMoney(m.amount)} บาท)`);
+  for (const m of matches) logOn(st, m.docId, actor, 'bank.match', `จับคู่กับรายการเดินบัญชี ${label(l)} (${formatMoney(m.amount)} บาท)`);
   logActivity(st, l.id, actor, 'bank.match', `จับคู่กับ ${matches.map((m) => m.number).join(', ')}`);
   logAudit(st, actor, companyId, 'bank.match', l.id, { status: 'unmatched' }, { status: 'matched', matches: matches.map((m) => [m.docId, m.amount]), diff: stored });
   return publicLine(st, l);
 }
 
+/** PY3 m4: a match is logged on the document, and a payroll payment's match on its RUN as well (the payment id has no page of its own). */
+const logOn = (st: MockState, docId: string, actor: Actor, action: string, detail: string) => {
+  logActivity(st, docId, actor, action, detail);
+  const run = st.payrollPayments.find((p) => p.id === docId)?.runId;
+  if (run) logActivity(st, run, actor, action, detail);
+};
 const refuseIfTransferPending = (st: MockState, companyId: string, l: StoredLine) => {
   if (pendingTransfer(st, companyId, l.id)) throw fail(409, 'bank.transfer_pending', 'รายการนี้มีรายการโอนระหว่างบัญชีค้างอยู่ (ยกเลิกการจับคู่ไว้) บันทึกซ้ำจะนับเงินสองครั้ง กด "โอนระหว่างบัญชี" เพื่อจับคู่ใหม่ หรือกลับรายการโอนก่อน');
 };
@@ -308,7 +315,7 @@ export function unmatch(st: MockState, companyId: string, lineId: string, actor:
     const last = j?.entries[j.entries.length - 1];
     if (j && last && last.kind !== 'reversal') j.entries = [...j.entries, correctionReversal(st, companyId, last)];
   }
-  for (const m of l.matches ?? []) logActivity(st, m.docId, actor, 'bank.unmatch', `ยกเลิกการจับคู่กับรายการเดินบัญชี ${label(l)}${locked ? ` (ช่วงที่ปิดการกระทบยอดแล้ว) เหตุผล: ${why}` : why ? ` เหตุผล: ${why}` : ''}`);
+  for (const m of l.matches ?? []) logOn(st, m.docId, actor, 'bank.unmatch', `ยกเลิกการจับคู่กับรายการเดินบัญชี ${label(l)}${locked ? ` (ช่วงที่ปิดการกระทบยอดแล้ว) เหตุผล: ${why}` : why ? ` เหตุผล: ${why}` : ''}`);
   logActivity(st, l.id, actor, 'bank.unmatch', locked ? `ยกเลิกการจับคู่ในช่วงที่ปิดแล้ว เหตุผล: ${why}` : why || 'ยกเลิกการจับคู่');
   delete l.matches; delete l.matchedDocIds; delete l.diff;
   l.status = 'unmatched';
@@ -402,6 +409,7 @@ const taxWhat = (form: FilingForm, period: string) => `${formName(form)} เด�
 /** The filing a payment is for, with its tax (satang): P3 not finalized, P4 nothing due, P5 already paid - the refusals the dialog's list shares with the command. */
 function payableFiling(st: MockState, companyId: string, form: FilingForm, period: string): { f: Filing; due: number } {
   if (isCit(form)) throw fail(422, 'tax_payment.not_supported', 'ภาษีเงินได้นิติบุคคลชำระผ่านระบบนี้ไม่ได้ (ไม่มีการลงบัญชีภาษีเงินได้ค้างจ่ายในระบบ) บันทึกการชำระด้วยใบสำคัญสมุดรายวัน');
+  if (form === 'PND1A') throw fail(422, 'tax_payment.not_supported', 'ภ.ง.ด.1ก เป็นแบบสรุปรายปี ไม่มียอดชำระ (ภาษีเงินเดือนชำระตามแบบ ภ.ง.ด.1 รายเดือน)');
   const f = st.filings.find((x) => x.companyId === companyId && x.form === form && x.period === period);
   if (!f) throw fail(409, 'tax_payment.not_finalized', `แบบ ${taxWhat(form, period)} ยังไม่ได้ยืนยัน ทางออก: ยืนยันแบบก่อนชำระภาษี`);
   const due = taxDueOf(f);
@@ -444,6 +452,7 @@ export function payTax(st: MockState, companyId: string, lineId: string, req: Pa
   const tag = `ชำระภาษี ${taxWhat(req.form, req.period)}`;
   const notes = (req.extras ?? []).map((x) => (x.description ?? '').trim()).filter(Boolean);
   const j = addJournal(st, { companyId, accountId: l.accountId, lineId, kind: 'tax', label: tag, filing: { form: req.form, period: req.period, amount: fromSatang(due) }, entries: [entry(st, companyId, l.date, tag, [
+    // [SP-R] PY3a M3: only the finalized return's own tax clears here; an opening balance on 2153 / 2160 (December's PIT / SSO of a go-live company) cannot be cleared by any path - same family as group 06's deferred "OB tax payables"; Ham decides at GPY
     { code: payableAccountOf(st, f), debit: due, credit: 0 }, ...extras, { code: bank.accountCode, debit: 0, credit: abs(amount) },
   ])] });
   l.status = 'posted';

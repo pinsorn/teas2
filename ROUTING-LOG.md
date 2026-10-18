@@ -34,3 +34,17 @@
 | 2026-10-17 | SP1c GTX consolidated gate | haiku-gate-runner | Tier 3 run-and-report |
 | 2026-10-17 | SP1c TX4 implement (50 ทวิ RD layout, PP30 official boxes 8-12) | sonnet-implementer | Ham gate follow-ups; Opus review after (filing kit) |
 | 2026-10-17 | SP1c TX4 review (PP30 official boxes, 50 ทวิ layout) | opus-reviewer (fresh) | filing kit money: carry / cap / netting consumers |
+| 2026-10-17 | SP1c PY1 implement (employees, payroll runs, PIT / SSO, posting) | sonnet-implementer | default implementer; Opus review after (money) |
+| 2026-10-18 | SP1c PY1 review (payroll engine: PIT / SSO, frozen slips, YTD chain, posting) | opus-reviewer (fresh) | money + payroll tax engine; reviewer never touched it |
+| 2026-10-18 | SP1c PY1a fix (Opus REJECT: freeze on revise, OB vs runs, whole-slip invariant, 2190 deductions) | sonnet-implementer (fresh) | fix round from a written brief; Opus re-review after |
+| 2026-10-18 | SP1c PY1a re-review | opus-reviewer (warm) | round 2 of the PY1 money review |
+| 2026-10-18 | SP1c PY1b fix (2190 clearable; plan refuses PR / OB problems up front) | sonnet-implementer (fresh) | small fix from a written brief; Opus round 3 after |
+| 2026-10-18 | SP1c PY1b re-review | opus-reviewer (warm) | round 3 of the PY1 money review |
+| 2026-10-18 | SP1c PY2 implement (pay the run, unpay, payslip drawer, payslip paper) | sonnet-implementer (fresh) | default implementer; Opus review after (money) |
+| 2026-10-18 | SP1c PY2 review (pay / unpay, payslips) | opus-reviewer (fresh) | money: payment, reversal, settlement invariants |
+| 2026-10-18 | SP1c PY3 implement (ภ.ง.ด.1, 1ก, สปส.1-10, employee 50 ทวิ, pay PND1 / SSO; PY2 minors) | sonnet-implementer (fresh) | default implementer; Opus review after (tax) |
+| 2026-10-18 | SP1c PY3 review (PND1 / PND1A / SSO 1-10 filings, filing lock, payTax PND1 / SSO, employee 50 tawi, PY2 minors) | opus-reviewer | tax + money diff (frozen returns, payable clearing) — plan marks Opus; fresh reviewer |
+| 2026-10-18 | SP1c PY3a fix round (1ก year-end blocker, filing fingerprint, OB lock by filed 1ก, SSO minors) | sonnet-implementer (warm, PY3 worker) | same-area follow-up after Opus REJECT; warm re-review after |
+| 2026-10-18 | SP1c PY3b fix (SSO wage base ceiling, v49, fp required) | sonnet-implementer (warm, PY3 worker) | Opus round 2 REJECT on one major; warm re-review after |
+| 2026-10-18 | SP1c GPY consolidated gate (typecheck, lint, unit, build, Playwright --workers=1) | haiku-gate-runner | Tier 3 run-and-report |
+| 2026-10-18 | SP1c CI1: CI-only e2e reds (screens walk ERR_ABORTED/timeout, ti-loop F4 axe contrast) | sonnet-implementer (fresh) | blocks PR #14 merge; different area from payroll worker |

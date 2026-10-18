@@ -52,6 +52,9 @@ export const endpoints = {
     api<Doc>('PUT', d(type, id), { ...body, version }),
   deleteDoc: (type: DocType, id: string, version: number) => api<void>('DELETE', `${d(type, id)}?version=${version}`),
   issueDoc: (type: DocType, id: string, version: number) => api<Doc>('POST', `${d(type, id)}/issue`, { version }),
+  /** PY2 / PY3 m6: pay a payroll run (the whole net, from an account on a date) and unpay it with a reason. */
+  payRun: (id: string, body: { accountId: string; date: string; version: number }) => api<Doc>('POST', `${d('PR', id)}/pay`, body),
+  unpayRun: (id: string, body: { reason: string; version: number }) => api<Doc>('POST', `${d('PR', id)}/unpay`, body),
   /** §7.6 approval: submit (draft -> pending), approve (pending -> approved), approve-and-issue (both rights, one command), send back (reason required). */
   submitDoc: (type: DocType, id: string, version: number) => api<Doc>('POST', `${d(type, id)}/submit`, { version }),
   approveDoc: (type: DocType, id: string, version: number) => api<Doc>('POST', `${d(type, id)}/approve`, { version }),
@@ -142,6 +145,8 @@ export const endpoints = {
   /** TX1 tax filings: the finalized ones with the month to look at next (tax.read), one period (draft: tax.filing.preview too), finalize (tax.filing.finalize; `version` is the preview's), and the RD Prep text of a finalized one. */
   listFilings: (form: FilingForm) => api<{ items: FilingHistoryItem[]; next: string }>('GET', `/filings/${form}`),
   getFiling: (form: FilingForm, period: string) => api<FilingModel>('GET', `/filings/${form}/${encodeURIComponent(period)}`),
+  /** PY3 ruling 8: the annual 50 ทวิ of every employee, built from the FINALIZED ภ.ง.ด.1ก of the year (409 until it is finalized). */
+  employeeCertificates: (year: string) => api<PaperModel[]>('GET', `/filings/PND1A/${encodeURIComponent(year)}/certificates`),
   getFormCatalogue: () => api<FormCatalogue>('GET', '/form-catalogue'),
   getVatThreshold: () => api<VatThresholdWatch | null>('GET', '/vat-threshold'),
   finalizeFiling: (form: FilingForm, period: string, version: number, ack?: boolean) => api<FilingModel>('POST', `/filings/${form}/${encodeURIComponent(period)}/finalize`, { version, ...(ack ? { ack } : {}) }),
@@ -171,7 +176,7 @@ export const endpoints = {
   addAttachment: (type: DocType, id: string, a: { category: AttachmentCategory; name: string; mime: string; dataUrl: string }) => api<Attachment>('POST', `${d(type, id)}/attachments`, a),
   removeAttachment: (type: DocType, id: string, attId: string) => api<void>('DELETE', `${d(type, id)}/attachments/${attId}`),
   /** The print action was used. The server decides ต้นฉบับ / สำเนา; the answer says which it recorded. */
-  markPrinted: (type: DocType, id: string, copy: boolean) => api<{ copy: boolean; printCount: number }>('POST', `${d(type, id)}/printed`, { copy }),
+  markPrinted: (type: DocType, id: string, copy: boolean, employee?: string) => api<{ copy: boolean; printCount: number }>('POST', `${d(type, id)}/printed`, { copy, ...(employee ? { employee } : {}) }),
   getDefaultNotes: () => api<Partial<Record<DocType, string>>>('GET', '/settings/default-notes'),
   getPaper: (type: DocType, id: string, copy = false) => api<PaperModel>('GET', `${d(type, id)}/paper${qs({ copy: copy ? 1 : undefined })}`),
 };

@@ -3,6 +3,7 @@ import type { RecordKind, RecordRow } from '@/domain/records';
 import type { MockState } from '../store';
 import { accountImpl } from './accounts';
 import { bankAccountImpl } from './bank-accounts';
+import { employeeImpl } from './employees';
 import { itemImpl } from './items';
 import { partyImpl } from './parties';
 import { scheduleImpl } from './schedules';
@@ -22,4 +23,4 @@ export interface RecordKindImpl {
   canDeactivate?: (st: MockState, companyId: string, id: string) => string | undefined;
 }
 
-export const RECORD_IMPLS: Partial<Record<RecordKind, RecordKindImpl>> = { customer: partyImpl('customer'), vendor: partyImpl('vendor'), item: itemImpl, 'bank-account': bankAccountImpl, account: accountImpl, schedule: scheduleImpl };
+export const RECORD_IMPLS: Partial<Record<RecordKind, RecordKindImpl>> = { customer: partyImpl('customer'), vendor: partyImpl('vendor'), item: itemImpl, 'bank-account': bankAccountImpl, account: accountImpl, schedule: scheduleImpl, employee: employeeImpl };

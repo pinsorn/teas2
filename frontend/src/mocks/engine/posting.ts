@@ -5,7 +5,7 @@ import { MockError } from './log';
 export type AccountingRole = 'AR' | 'AP' | 'Revenue' | 'SalesDiscount' | 'SalesReturn' | 'OutputVat' | 'InputVat'
   | 'InputVatUnclaimed' | 'WhtReceivable' | 'WhtPayable' | 'WhtExpense' | 'Pnd36VatPayable' | 'Cash' | 'CustomerDeposit'
   | 'VendorPrepayment' | 'Expense' | 'FixedAsset' | 'AccumulatedDepreciation' | 'DepreciationExpense' | 'DisposalGainLoss'
-  | 'SalaryExpense' | 'PitPayable' | 'SsoPayable' | 'SsoExpense' | 'SalaryPayable' | 'EmployeePayable' | 'BankFee'
+  | 'SalaryExpense' | 'PitPayable' | 'SsoPayable' | 'SsoExpense' | 'SalaryPayable' | 'EmployeePayable' | 'PayrollDeductionPayable' | 'BankFee'
   | 'RoundingDifference' | 'SmallWriteOff' | 'RetainedEarnings' | 'OpeningBalanceEquity' | 'VatPayable' | 'VatCarryForward';
 
 export interface PostingContext {

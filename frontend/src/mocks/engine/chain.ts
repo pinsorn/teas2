@@ -68,6 +68,8 @@ export function buildChain(st: MockState, id: string): ChainGraph {
   const nodes: ChainNode[] = [...seen].flatMap((nid): ChainNode[] => {
     const d = st.docs.find((x) => x.id === nid);
     const s = d ? undefined : st.settlements.find((x) => x.id === nid); // FN3: a settlement record is a node of the chain, not a document
+    const pp = d || s ? undefined : st.payrollPayments.find((x) => x.id === nid); // PY3 m3: the payment of a payroll run is a node of the chain
+    if (pp) return [{ id: pp.id, type: 'PRP' as const, number: pp.id.toUpperCase(), status: pp.reversed ? 'cancelled' as const : 'issued' as const, total: pp.amount }];
     if (s) return [{ id: s.id, type: 'STL' as const, number: s.id.toUpperCase(), status: s.status === 'posted' ? 'issued' as const : 'cancelled' as const, total: fromSatang(s.targets.reduce((n, l) => n + toSatang(l.amount), 0)) }];
     if (!d) return [];
     const progress = progressOf(st, d);
