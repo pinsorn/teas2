@@ -62,41 +62,58 @@ describe('settings wire (ST1)', () => {
     expect(await (await call('GET', '/settings/users')).text()).not.toContain(String(reset.link).split('/').pop()!);
   });
   it('the last admin: deactivating or demoting is 409 user.last_admin', async () => {
-    setSettings({ role: 'admin' });
-    const state = loadState();
-    state.staff.find((m) => m.id === 'usr-vat-1')!.roleId = 'accountant'; // one admin: usr-vat-2
-    localStorage.setItem('teas2.mock.state.v26', JSON.stringify(state));
-    for (const [m, p, b] of [['POST', '/settings/users/usr-vat-2/active', { active: false, version: 1 }], ['PUT', '/settings/users/usr-vat-2', { roleId: 'operator', version: 1 }]] as const) {
+    expect((await call('POST', '/settings/users/usr-vat-2/active', { active: false, version: 1 })).status).toBe(200); // u-1 (admin under this toolbar) remains
+    for (const [m, p, b] of [['POST', '/settings/users/usr-vat-1/active', { active: false, version: 1 }], ['PUT', '/settings/users/usr-vat-1', { roleId: 'operator', version: 1 }]] as const) {
       const r = await call(m, p, b);
       expect([r.status, (await json(r)).code]).toEqual([409, 'user.last_admin']);
     }
   });
-  it('a custom role really restricts the user it is given to: /me and the settings routes follow it', async () => {
-    const role = await json(await call('POST', '/settings/roles', { name: 'อ่านลูกค้า', permissions: ['party.read'] }));
+  it('a custom role really restricts the user it is given to: assigned through the users route, /me and every route follow it', async () => {
+    const role = await json(await call('POST', '/settings/roles', { name: 'อ่านลูกค้า', permissions: ['users.manage', 'party.read'] }));
     const me = async () => (await json(await call('GET', '/me'))).permissions as string[];
-    expect(await me()).toContain('users.manage');
-    const state = loadState();
-    state.staff.find((m) => m.id === 'usr-vat-1')!.roleId = role.id as string; // an administrator hands u-1 the custom role (the toolbar still says admin)
-    state.staff.find((m) => m.id === 'usr-vat-3')!.roleId = 'admin';
-    localStorage.setItem('teas2.mock.state.v26', JSON.stringify(state));
-    expect(await me()).toEqual(['party.read']);
-    expect((await call('GET', '/settings/users')).status).toBe(403);
+    expect(await me()).toContain('settings.manage');
+    const put = await call('PUT', '/settings/users/usr-vat-1', { roleId: role.id, version: 1 });
+    expect(put.status).toBe(200);
+    expect(await me()).toEqual(['users.manage', 'party.read']);
+    expect((await call('GET', '/settings/companies/co-vat')).status).toBe(403); // settings.manage is not held any more
+    expect((await call('GET', '/records/employee')).status).toBe(403);
     expect((await call('GET', '/records/customer')).status).toBe(200); // party.read still works
+    const lockout = await call('PUT', '/settings/users/usr-vat-1', { roleId: 'operator', version: 2 });
+    expect([lockout.status, (await json(lockout)).code]).toEqual([409, 'user.last_admin']); // u-1 administers through the custom role: no self-demotion
+  });
+  it('m5: u-1 in the users list follows the toolbar role, so the self rule is demoable', async () => {
+    setSettings({ role: 'accountant' });
+    const row = async () => ((await json(await call('GET', '/settings/users'))).items as { id: string; roleId: string }[]).find((u) => u.id === 'usr-vat-1')!;
+    // an accountant cannot list users: reseed as admin first, then flip the toolbar
+    setSettings({ role: 'admin' });
+    expect((await row()).roleId).toBe('admin');
+    const state = loadState();
+    state.staff.find((m) => m.id === 'usr-vat-1')!.roleId = 'accountant'; // a state seeded while the toolbar said accountant
+    localStorage.setItem('teas2.mock.state.v26', JSON.stringify(state));
+    expect((await row()).roleId).toBe('admin'); // the list shows the role the toolbar simulates
+    const r = await call('POST', '/settings/users/usr-vat-1/active', { active: false, version: 1 });
+    expect([r.status, (await json(r)).code]).toEqual([409, 'user.last_admin']);
+  });
+  it('m3 wire: a company PUT without a version is 422, a stale one 409', async () => {
+    expect((await call('PUT', '/settings/companies/co-vat/contact', { tradeName: 'x' })).status).toBe(422);
+    expect((await call('PUT', '/settings/companies/co-vat/contact', { tradeName: 'x', version: 1 })).status).toBe(200);
+    const stale = await call('PUT', '/settings/companies/co-vat/contact', { tradeName: 'y', version: 1 });
+    expect([stale.status, (await json(stale)).code]).toEqual([409, 'record.version_conflict']);
   });
   it('default notes: the company page edits what a blank document starts with, per company', async () => {
     expect((await json(await call('GET', '/settings/default-notes'))).QT).toBeTruthy();
-    const r = await call('PUT', '/settings/companies/co-vat/notes', { defaultNotes: { QT: 'หมายเหตุใหม่ของฉัน' } });
+    const r = await call('PUT', '/settings/companies/co-vat/notes', { defaultNotes: { QT: 'หมายเหตุใหม่ของฉัน' }, version: 1 });
     expect(r.status).toBe(200);
     expect((await json(await call('GET', '/settings/default-notes'))).QT).toBe('หมายเหตุใหม่ของฉัน');
     setSettings({ companyKey: 'nonvat' });
     expect((await json(await call('GET', '/settings/default-notes'))).QT).not.toBe('หมายเหตุใหม่ของฉัน');
   });
   it('field errors travel as problem+json fieldErrors; a refusal does not persist', async () => {
-    const r = await call('PUT', '/settings/companies/co-vat/payroll', { ssoEmployerAccountNo: '12' });
+    const r = await call('PUT', '/settings/companies/co-vat/payroll', { ssoEmployerAccountNo: '12', version: 1 });
     expect(r.status).toBe(422);
     expect((await json(r)).fieldErrors.ssoEmployerAccountNo).toHaveLength(1);
     expect(loadState().companies.find((c) => c.id === 'co-vat')!.ssoEmployerAccountNo).toBe('1234567890');
-    const fy = await call('PUT', '/settings/companies/co-vat/fiscal', { fiscalYearStartMonth: 4 });
+    const fy = await call('PUT', '/settings/companies/co-vat/fiscal', { fiscalYearStartMonth: 4, version: 1 });
     expect([fy.status, (await json(fy)).code]).toEqual([409, 'company.fiscal_year_locked']);
   });
 });

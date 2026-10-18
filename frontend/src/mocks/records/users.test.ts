@@ -111,13 +111,22 @@ describe('users (ST1)', () => {
   // ruling 7
   it('a custom role really restricts: the mock resolves the role own list, not a system list', () => {
     const st = seed('admin');
-    const r = createRole(st, USER, V, { name: 'ดูอย่างเดียว', permissions: ['party.read', 'item.read'] });
-    expect(permissionsOf(st, V, r.id)).toEqual(['party.read', 'item.read']);
+    const r = createRole(st, USER, V, { name: 'ดูอย่างเดียว', permissions: ['users.manage', 'party.read', 'item.read'] });
+    expect(permissionsOf(st, V, r.id)).toEqual(['users.manage', 'party.read', 'item.read']);
     expect(permissionsOf(st, 'co-nonvat', r.id)).toEqual([]); // not in another company
-    expect(permissionsOf(st, V, 'accountant')).toBe(PERMISSIONS_BY_ROLE.accountant);
-    expect(effectivePermissions(st, V, 'admin')).toBe(PERMISSIONS_BY_ROLE.admin); // a system role: the toolbar rules
-    st.staff.find((m) => m.id === 'usr-vat-1')!.roleId = r.id; // u-1 holds the custom role: it applies, whatever the toolbar says
-    expect(effectivePermissions(st, V, 'admin')).toEqual(['party.read', 'item.read']);
-    expect(effectivePermissions(st, 'co-nonvat', 'admin')).toBe(PERMISSIONS_BY_ROLE.admin); // only in the company that gave it
+    expect(permissionsOf(st, V, 'accountant')).toEqual(PERMISSIONS_BY_ROLE.accountant);
+    expect(effectivePermissions(st, V, 'admin')).toEqual(PERMISSIONS_BY_ROLE.admin); // a system role: the toolbar rules
+    updateUser(st, USER, V, 'usr-vat-1', { roleId: r.id, version: 1 }); // assigned the way the page does it: u-1 holds the custom role and it applies, whatever the toolbar says
+    expect(effectivePermissions(st, V, 'admin')).toEqual(['users.manage', 'party.read', 'item.read']);
+    expect(effectivePermissions(st, 'co-nonvat', 'admin')).toEqual(PERMISSIONS_BY_ROLE.admin); // only in the company that gave it
+  });
+
+  // ST1b m4
+  it('m4: a deactivated u-1 holds NOTHING (never the wider toolbar role); an active u-1 is unchanged', () => {
+    const st = seed('accountant'); // u-1 is an accountant, so deactivating her is allowed
+    expect(effectivePermissions(st, V, 'accountant')).toEqual(PERMISSIONS_BY_ROLE.accountant);
+    setUserActive(st, USER, V, 'usr-vat-1', false, 1);
+    expect(effectivePermissions(st, V, 'admin')).toEqual([]);
+    expect(effectivePermissions(st, 'co-nonvat', 'admin')).toEqual(PERMISSIONS_BY_ROLE.admin); // the other company's membership is its own
   });
 });

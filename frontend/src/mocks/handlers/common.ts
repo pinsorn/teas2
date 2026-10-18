@@ -1,6 +1,6 @@
 import { HttpResponse, delay } from 'msw';
 import type { ApiProblem } from '@/domain/types';
-import { effectivePermissions } from '../permissions';
+import { effectivePermissions, isSystemRole } from '../permissions';
 import { getSettings } from '../settings';
 import { MockError } from '../engine/log';
 import { loadState, saveState } from '../store';
@@ -13,6 +13,9 @@ export function ctx() {
   const st = loadState();
   const s = getSettings();
   const company = st.companies.find((c) => (s.companyKey === 'vat' ? c.vatRegistered : !c.vatRegistered))!;
+  // ST1b m5: u-1's row in the users list follows the toolbar role while she holds a system role (a custom role stays as assigned)
+  const me = st.staff.find((m) => m.companyId === company.id && m.userId === 'u-1');
+  if (me && isSystemRole(me.roleId)) me.roleId = s.role;
   return { st, s, company, perms: effectivePermissions(st, company.id, s.role) };
 }
 

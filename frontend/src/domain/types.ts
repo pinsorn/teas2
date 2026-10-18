@@ -14,7 +14,8 @@ export interface Company { id: string; legalNameTh: string; legalNameEn?: string
   /** ST1: the rest of the company profile. `fiscalYearStartMonth` is stored but the engine only supports 1 (calendar year) [SP-R]: any other value is refused (company.fiscal_year_unsupported). */
   fiscalYearStartMonth: number; registrationNo?: string; tradeName?: string; email?: string; website?: string; paidUpCapital?: Money;
   /** Images as data URLs (png / jpeg / webp <= 1 MB; the logo may also be svg). Papers do not print them yet (the snapshot at issue is ST3). */ logoDataUrl?: string; stampDataUrl?: string;
-  /** The note a blank new document of the type starts with. */ defaultNotes?: Partial<Record<DocType, string>> }
+  /** The note a blank new document of the type starts with. */ defaultNotes?: Partial<Record<DocType, string>>;
+  /** ST1b m3: bumped by every saved settings section; a save carrying an older one is a 409 (absent = 1). */ version?: number }
 /** ST1: a person's membership of one company (the mock's users list). `roleId` is a system role (operator / accountant / admin) or a custom role's id. Only a hash of a one-time link is kept. */
 export interface StaffMember { id: string; companyId: string; userId?: string; name: string; email: string; roleId: string; position?: string; signatureDataUrl?: string; active: boolean; version: number;
   lastLoginAt?: string; invitePending: boolean; linkHash?: string }

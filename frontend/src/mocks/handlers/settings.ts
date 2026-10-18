@@ -43,7 +43,9 @@ export const settingsHandlers = [
   http.get('*/bff/v1/settings/companies/:id', ({ params }) => guarded('item', 'settings.manage', (c) => { own(c, params.id); return HttpResponse.json(companySettings(c.st, c.company.id)); })),
   http.put('*/bff/v1/settings/companies/:id/:section', ({ request, params }) => guarded('item', 'settings.manage', async (c) => {
     own(c, params.id);
-    return write(c, updateCompany(c.st, actorOf(request), c.company.id, params.section as CompanySection, await bodyOf(request)));
+    const actor = actorOf(request), body = await bodyOf(request);
+    if (typeof body.version !== 'number') throw new MockError(422, 'record.invalid', 'ต้องระบุเวอร์ชันของข้อมูลบริษัทที่แก้ไข');
+    return write(c, updateCompany(c.st, actor, c.company.id, params.section as CompanySection, body));
   })),
 
   // ---- users (users.manage) ----

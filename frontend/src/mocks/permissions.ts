@@ -32,6 +32,7 @@ export function permissionsOf(st: Pick<MockState, 'roles'>, companyId: string, r
 }
 /** The signed-in user's permissions: the toolbar role (a simulation of a system role), unless an administrator gave u-1 a CUSTOM role in this company - then that role's list really applies (the toolbar still offers only the three system roles). */
 export function effectivePermissions(st: Pick<MockState, 'roles' | 'staff'>, companyId: string, toolbarRole: Role): string[] {
-  const me = st.staff.find((m) => m.companyId === companyId && m.userId === 'u-1' && m.active);
+  const me = st.staff.find((m) => m.companyId === companyId && m.userId === 'u-1');
+  if (me && !me.active) return []; // ST1b m4: a deactivated user holds nothing (never the wider toolbar role)
   return me && !isSystemRole(me.roleId) ? permissionsOf(st, companyId, me.roleId) : PERMISSIONS_BY_ROLE[toolbarRole];
 }

@@ -57,8 +57,9 @@ function validate(section: CompanySection, v: Record<string, unknown>): Errors {
   } else if (section === 'payroll') {
     if (str(v.ssoEmployerAccountNo) && !/^\d{10}$/.test(str(v.ssoEmployerAccountNo))) add('ssoEmployerAccountNo', 'เลขที่บัญชีนายจ้างประกันสังคมต้องเป็นตัวเลข 10 หลัก');
   } else if (section === 'images') {
-    if (v.logoDataUrl) { const m = imageError(v.logoDataUrl, true); if (m) add('logoDataUrl', m); }
-    if (v.stampDataUrl) { const m = imageError(v.stampDataUrl, false); if (m) add('stampDataUrl', m); }
+    for (const k of ['logoDataUrl', 'stampDataUrl'] as const) { // ST1b m1 / m6: a string data URL (png / jpeg / webp, never svg) or nothing: '' and null clear, anything else is refused
+      if (k in v && v[k] !== '' && v[k] !== null) { const m = imageError(v[k], false); if (m) add(k, m); }
+    }
   } else if (section === 'notes') {
     const notes = v.defaultNotes;
     if (!notes || typeof notes !== 'object' || Array.isArray(notes)) add('defaultNotes', 'ข้อมูลไม่ถูกต้อง');
@@ -93,6 +94,7 @@ export function updateCompany(st: MockState, actor: Actor, companyId: string, se
   const co = find(st, companyId);
   if (!SECTIONS.includes(section)) throw new MockError(404, 'company.section_unknown', 'ไม่รู้จักส่วนของข้อมูลบริษัท');
   const fields = SECTION_FIELDS[section];
+  if ('version' in v && v.version !== (co.version ?? 1)) throw new MockError(409, 'record.version_conflict', 'ข้อมูลบริษัทถูกแก้ไขโดยผู้อื่นแล้ว โหลดข้อมูลล่าสุดก่อนบันทึก');
   const before = audited(co, fields);
   if (section === 'identity') {
     if (v.vatRegistered !== undefined && v.vatRegistered !== co.vatRegistered) throw new MockError(422, 'company.vat_readonly', 'เปลี่ยนสถานะ VAT ที่นี่ไม่ได้ การเปลี่ยนสถานะ VAT ทำผ่านการตั้งค่าภาษี');
@@ -130,6 +132,7 @@ export function updateCompany(st: MockState, actor: Actor, companyId: string, se
     for (const [t, text] of Object.entries(v.defaultNotes as Record<string, string>)) { if (text.trim()) notes[t as DocType] = text; else delete notes[t as DocType]; }
     co.defaultNotes = notes;
   }
+  co.version = (co.version ?? 1) + 1;
   logAudit(st, actor, companyId, `company.update.${section}`, companyId, before, audited(co, fields));
   return companySettings(st, companyId);
 }

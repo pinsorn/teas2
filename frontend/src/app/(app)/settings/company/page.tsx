@@ -2,8 +2,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { useState, type ReactNode } from 'react';
+import { createContext, useContext, useState, type ReactNode } from 'react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Alert, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,6 +22,8 @@ import { ForbiddenState } from '@/kit/states/ForbiddenState';
 import { LoadingState } from '@/kit/states/LoadingState';
 
 type Errors = Record<string, string[]>;
+/** m3: a stale save (409) reloads the page's data and reopens every section from it. */
+const Reload = createContext<() => void>(() => undefined);
 const NO_NOTE: DocType[] = ['WT', 'JV', 'FA', 'DP', 'PR', 'OB']; // no notes field on their paper
 const select = 'h-(--ctl-h) w-full rounded-lg border border-input bg-card px-3 text-body outline-none disabled:bg-muted';
 
@@ -44,13 +47,19 @@ function Inner() {
   const { me, isError: meFailed, error: meError, refetch: refetchMe } = useMe();
   const id = me?.activeCompanyId ?? '';
   const q = useQuery({ queryKey: [id, 'settings', 'company'], queryFn: () => endpoints.getCompanySettings(id), enabled: !!id });
+  const qc = useQueryClient();
+  const [round, setRound] = useState(0);
+  const [stale, setStale] = useState(false);
+  const reload = () => { void qc.refetchQueries({ queryKey: [id, 'settings', 'company'] }).then(() => { setStale(true); setRound((n) => n + 1); }); };
   if (meFailed && !me) return <ErrorState error={meError} onRetry={() => void refetchMe()} />;
   if (q.isError && !q.data) return isForbidden(q.error) ? <ForbiddenState permission="settings.manage" detail={q.error instanceof ApiError ? q.error.problem.detail : undefined} /> : <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
   if (!me || !q.data) return <LoadingState />;
   const co = q.data;
   return (
-    <div className="grid gap-4">
+    <Reload.Provider value={reload}>
+    <div className="grid gap-4" key={round}>
       <div><h1 className="text-title font-semibold">{t('title')}</h1><p className="text-body text-muted-foreground">{t('lead')}</p></div>
+      {stale ? <Alert role="alert"><AlertTitle>{t('conflict')}</AlertTitle></Alert> : null}
       <Identity co={co} />
       <Contact co={co} />
       <Payroll co={co} />
@@ -58,17 +67,20 @@ function Inner() {
       <Images co={co} />
       <Notes co={co} vat={me.vatRegistered} />
     </div>
+    </Reload.Provider>
   );
 }
 
 /** One section's Save: PUTs, puts the answer in the cache, keeps the server's field errors for the fields. */
 function useSection(co: CompanySettings, section: string) {
   const qc = useQueryClient();
+  const reload = useContext(Reload);
   const [errors, setErrors] = useState<Errors>({});
   const save = useMutation({
-    mutationFn: (body: Record<string, unknown>) => endpoints.saveCompanySection(co.id, section, body),
+    mutationFn: (body: Record<string, unknown>) => endpoints.saveCompanySection(co.id, section, { ...body, version: co.version ?? 1 }),
     onMutate: () => setErrors({}),
     onSuccess: (next) => qc.setQueryData([co.id, 'settings', 'company'], next),
+    onError: (e) => { if (e instanceof ApiError && e.code === 'record.version_conflict') reload(); },
   });
   return { errors, setErrors, save };
 }
@@ -184,7 +196,7 @@ function Images({ co }: { co: CompanySettings }) {
   return (
     <SettingsSection title={t('images.title')} description={t('images.description')} onSave={() => save.mutateAsync(v)} onError={(e) => setErrors(e.problem.fieldErrors ?? {})}>
       <div className="grid gap-4 sm:grid-cols-2">
-        <ImageUpload label={t('fields.logoDataUrl')} value={v.logoDataUrl} allowSvg onChange={(d) => setV({ ...v, logoDataUrl: d })} error={err(errors, 'logoDataUrl')} />
+        <ImageUpload label={t('fields.logoDataUrl')} value={v.logoDataUrl} onChange={(d) => setV({ ...v, logoDataUrl: d })} error={err(errors, 'logoDataUrl')} />
         <ImageUpload label={t('fields.stampDataUrl')} value={v.stampDataUrl} onChange={(d) => setV({ ...v, stampDataUrl: d })} error={err(errors, 'stampDataUrl')} />
       </div>
     </SettingsSection>

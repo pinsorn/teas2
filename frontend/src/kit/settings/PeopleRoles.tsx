@@ -94,6 +94,7 @@ function UsersInner() {
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
                       <Button size="sm" variant="outline" aria-label={t('actions.edit', { name: r.name })} onClick={() => setForm({ row: r })}>{t('edit')}</Button>
+                      {r.active && r.invitePending ? <Button size="sm" variant="outline" aria-label={t('actions.accept', { name: r.name })} onClick={() => run.mutate(() => endpoints.acceptStaff(r.id))}>{t('actions.acceptShort')}</Button> : null}
                       {r.active ? <Button size="sm" variant="outline" aria-label={t('actions.resetLink', { name: r.name })} onClick={() => run.mutate(async () => setLink({ label: t('link.resetLabel'), name: r.name, url: (await endpoints.staffResetLink(r.id)).link }))}>{t('actions.resetShort')}</Button> : null}
                       {r.active
                         ? <Button size="sm" variant="outline" aria-label={t('actions.deactivate', { name: r.name })} onClick={() => setConfirm(r)}>{t('deactivateAction')}</Button>

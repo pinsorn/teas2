@@ -1447,6 +1447,7 @@
     "company": {
       "title": "Company profile",
       "lead": "The details used on documents, tax returns and payroll. Each section saves on its own and is recorded in the audit log.",
+      "conflict": "Someone else changed the company details. The latest data is loaded; check it and save again.",
       "identity": {
         "title": "Registered details",
         "description": "Name, tax ID, branch and address as on the company certificate",
@@ -1574,6 +1575,8 @@
       "selectRole": "— Choose a role —",
       "actions": {
         "edit": "Edit {name}",
+        "accept": "Mark the invitation of {name} as accepted",
+        "acceptShort": "Mark accepted",
         "resetShort": "Reset link",
         "activateShort": "Activate",
       "resetLink": "Issue a password reset link for {name}",

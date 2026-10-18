@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import th from '../src/messages/th.json';
 import { axeClean } from './helpers/axe';
+import { fixtureId } from './helpers/fixtures';
 import { screenContract } from './helpers/screen-contract';
 
 const shot = async (page: Page, name: string) => { if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/${name}.png`, fullPage: true }); };
@@ -16,6 +17,8 @@ screenContract({ name: 'roles', path: '/settings/roles', heading: 'บทบา�
 test.beforeEach(async ({ page }) => { await page.goto('/'); await page.evaluate(() => localStorage.clear()); await page.reload(); });
 
 test('company: fiscal year is locked while periods are closed; legal identity is edited behind the confirm dialog; each section saves on its own', async ({ page }) => {
+  await page.goto('/');
+  const ti = await fixtureId(page, 'tiIssuedUnpaid'); // resolved before the edit
   await page.goto(`/settings/company?${ADMIN}`);
   await expect(page.getByRole('heading', { level: 1, name: 'ข้อมูลบริษัท' })).toBeVisible();
   const locked = page.getByTestId('fiscal-locked');
@@ -38,6 +41,12 @@ test('company: fiscal year is locked while periods are closed; legal identity is
   await identity.getByRole('button', { name: 'บันทึก' }).click();
   await expect(identity.getByRole('status')).toHaveText('บันทึกแล้ว');
   await expect(identity.getByText('บริษัท มะลิวัลย์ ใหม่ จำกัด')).toBeVisible();
+  await page.goto(`/print/TI/${ti}?role=accountant&company=vat`); // I3: the issued tax invoice still prints the name it was issued under
+  await expect(page.getByText('บริษัท มะลิวัลย์ ดีไซน์ เวิร์คส์ จำกัด').first()).toBeAttached();
+  await expect(page.getByText('บริษัท มะลิวัลย์ ใหม่ จำกัด')).toHaveCount(0);
+  await page.goto(`/settings/company?${ADMIN}`);
+  const identity2 = page.getByRole('region', { name: 'ข้อมูลตามทะเบียน' });
+  await expect(identity2.getByText('บริษัท มะลิวัลย์ ใหม่ จำกัด')).toBeVisible();
 
   const payroll = page.getByRole('region', { name: 'เงินเดือนและประกันสังคม' });
   await payroll.getByLabel('เลขที่บัญชีนายจ้าง (ประกันสังคม)').fill('123');
@@ -88,6 +97,8 @@ test('users: an invite link is shown once and never again; the last administrato
   await shot(page, 'users-link');
   await linkDialog.getByRole('button', { name: 'เสร็จสิ้น' }).click();
   await expect(page.getByRole('row', { name: /ใหม่ ทดสอบ.*รอรับคำเชิญ/ })).toBeVisible();
+  await page.getByRole('button', { name: 'ยืนยันคำเชิญของ ใหม่ ทดสอบ' }).click(); // the mock's "invite accepted"
+  await expect(page.getByRole('row', { name: /ใหม่ ทดสอบ/ })).not.toContainText('รอรับคำเชิญ');
   await page.reload();
   const token = link.split('/').pop()!;
   expect(await page.content()).not.toContain(token);

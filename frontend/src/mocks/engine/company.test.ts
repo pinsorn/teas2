@@ -5,6 +5,7 @@ import { AGENT, USER } from '../fixtures/documents';
 import { buildSeedState } from '../store';
 import { closePeriod } from './close';
 import { companySettings, updateCompany } from './company';
+import { exportFilingText, getFiling } from './filings';
 import { checkInvariants } from './invariants';
 import { PAPER_BUILDERS } from './paper';
 
@@ -72,6 +73,10 @@ describe('company settings (ST1)', () => {
     expect(paperFor(st, VAT, ti.id).seller.address).not.toBe('ที่อยู่ใหม่ 1');
     expect(paperFor(st, VAT, draft.id).seller.name).toBe('บริษัท ชื่อใหม่ จำกัด'); // a draft is not issued: it follows the company
     expect(filing.company.legalNameTh).toBe(oldFiling);
+    const f = st.filings.find((x) => x.companyId === VAT && x.form === 'PP30')!; // what the filing page / the RD file show, not the stored row
+    expect(getFiling(st, VAT, 'PP30', f.period).company?.legalNameTh).toBe(oldFiling);
+    expect(exportFilingText(st, VAT, 'PP30', f.period)).toContain(oldFiling);
+    expect(exportFilingText(st, VAT, 'PP30', f.period)).not.toContain('บริษัท ชื่อใหม่ จำกัด');
     expect(checkInvariants(st)).toEqual([]);
   });
 
@@ -87,7 +92,7 @@ describe('company settings (ST1)', () => {
     expect(fe(() => updateCompany(st, USER, VAT, 'images', { logoDataUrl: 'data:image/gif;base64,AAAA' }))?.logoDataUrl).toHaveLength(1);
     expect(fe(() => updateCompany(st, USER, VAT, 'images', { stampDataUrl: 'data:text/html;base64,AAAA' }))?.stampDataUrl).toHaveLength(1);
     expect(fe(() => updateCompany(st, USER, VAT, 'images', { stampDataUrl: 'data:image/svg+xml;base64,AAAA' }))?.stampDataUrl).toHaveLength(1); // stamp: no svg
-    expect(fe(() => updateCompany(st, USER, VAT, 'images', { logoDataUrl: 'data:image/svg+xml;base64,AAAA' }))).toBeUndefined(); // the logo may be svg
+    expect(fe(() => updateCompany(st, USER, VAT, 'images', { logoDataUrl: 'data:image/svg+xml;base64,AAAA' }))?.logoDataUrl).toHaveLength(1); // ST1b m6: no svg for any image, the logo included
     expect(fe(() => updateCompany(st, USER, VAT, 'images', { logoDataUrl: 'https://evil.example/x.png' }))?.logoDataUrl).toHaveLength(1);
     expect(updateCompany(st, USER, VAT, 'images', { logoDataUrl: '' }).logoDataUrl).toBeUndefined(); // cleared
   });
@@ -124,5 +129,31 @@ describe('company settings (ST1)', () => {
     expect(co.defaultNotes?.QT).toBeUndefined();
     expect(co.defaultNotes?.SO).toBe('ใหม่');
     expect(st.companies.find((c) => c.id === 'co-nonvat')!.defaultNotes?.SO).not.toBe('ใหม่'); // company isolation
+  });
+
+  // ST1b m1: an image field is a string data URL or nothing
+  it('m1: a non-string image value is a 422, never stored (false, 0, an object); null and "" clear', () => {
+    const st = seed();
+    for (const bad of [false, 0, 1, {}, []]) {
+      expect(fe(() => updateCompany(st, USER, VAT, 'images', { logoDataUrl: bad }))?.logoDataUrl, String(JSON.stringify(bad))).toHaveLength(1);
+      expect(fe(() => updateCompany(st, USER, VAT, 'images', { stampDataUrl: bad }))?.stampDataUrl).toHaveLength(1);
+    }
+    expect(st.companies.find((x) => x.id === VAT)!.logoDataUrl).toBeUndefined();
+    const png = `data:image/png;base64,${Buffer.from('abc').toString('base64')}`;
+    updateCompany(st, USER, VAT, 'images', { logoDataUrl: png });
+    expect(updateCompany(st, USER, VAT, 'images', { logoDataUrl: null }).logoDataUrl).toBeUndefined();
+  });
+  // ST1b m3: a company section carries the company's version
+  it('m3: a stale save is a 409 record.version_conflict and changes nothing; every saved section bumps the version', () => {
+    const st = seed();
+    const v1 = companySettings(st, VAT).version ?? 1;
+    const a = updateCompany(st, USER, VAT, 'contact', { tradeName: 'ก', version: v1 });
+    expect(a.version).toBe(v1 + 1);
+    expect(code(() => updateCompany(st, USER, VAT, 'contact', { tradeName: 'ข', version: v1 }))).toBe('record.version_conflict'); // the other admin saved first
+    expect(st.companies.find((x) => x.id === VAT)!.tradeName).toBe('ก');
+    expect(updateCompany(st, USER, VAT, 'payroll', { ssoEmployerAccountNo: '1111111111', version: a.version }).version).toBe(v1 + 2); // any section moves it
+    const n = st.audit.length;
+    expect(code(() => updateCompany(st, USER, VAT, 'identity', { legalNameTh: 'x', taxId: TIN, branchCode: '00000', address: 'a', confirm: true, version: v1 }))).toBe('record.version_conflict');
+    expect(st.audit.length).toBe(n);
   });
 });

@@ -185,6 +185,8 @@ export const endpoints = {
   inviteStaff: (body: Record<string, unknown>) => api<UserRow & { link: string }>('POST', '/settings/users', body),
   updateStaff: (id: string, body: Record<string, unknown>) => api<UserRow>('PUT', `/settings/users/${encodeURIComponent(id)}`, body),
   setStaffActive: (id: string, active: boolean, version: number) => api<UserRow>('POST', `/settings/users/${encodeURIComponent(id)}/active`, { active, version }),
+  /** The mock's "invite accepted" (the invited person following their link). */
+  acceptStaff: (id: string) => api<UserRow>('POST', `/settings/users/${encodeURIComponent(id)}/accept`, {}),
   staffResetLink: (id: string) => api<{ link: string }>('POST', `/settings/users/${encodeURIComponent(id)}/reset-link`, {}),
   listRoles: () => api<{ items: RoleRow[] }>('GET', '/settings/roles'),
   createRole: (body: Record<string, unknown>) => api<RoleRow>('POST', '/settings/roles', body),
