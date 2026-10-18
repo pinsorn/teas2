@@ -3,7 +3,7 @@ import type { DocType, WhtLine, WhtMode } from '@/domain/types';
 import type { Doc, JournalEntryPreview } from '@/domain/types';
 import type { MockState } from '../store';
 import { approvalRequired } from './approval';
-import { jvInvariants } from './journal';
+import { jvInvariants, sources } from './journal';
 import { assetInvariants } from './assets';
 import { scheduleInvariants } from './schedules';
 import { closeInvariants } from './close';
@@ -14,8 +14,11 @@ import type { FilingBox } from '@/domain/filings';
 import { obInvariants } from './opening';
 import { payDocs, payrollInvariants } from './payroll';
 import { appliedOf, docCash, toleranceOf } from './locks';
+import { revisionInForce } from './reports/as-of';
+import { unappliedOf } from './settlement-records';
 import { payoutOf, resolvedBankId } from './settlement';
 import { consumed, q4 } from './chain';
+import { companyEntries } from './ledger';
 import { divRoundHalfAway, fromSatang, toSatang } from './money';
 import { resolveRole } from './posting';
 import { claimPeriodOf, exForfeited, forfeitedOf, isRecoverable } from './purchase-vat';
@@ -23,6 +26,71 @@ import { computeDoc, vatBasisOf } from './vat';
 import { wtsOfPv } from './wht-certificates';
 
 type Stored = MockState['docs'][number];
+
+/** ONE reading of the numbers on documents (this numbering invariant and the RP3 gap audit both use it): per series key `${companyId}|${type}|${yyyy-mm}` the sequence numbers found and the documents holding them.
+ *  A document with no number (a draft) holds none; an opening item's number is the old document's, so it is not a number of this series; a number that is not `TYPE-yyyymm-nnnn` of its own type, or whose yyyymm is not the month of the document's date AT ISSUE (the revision-0 snapshot's; the current date when there is none), is `malformed`.
+ *  A revise may move a document across months and keeps its number: that is not malformed. */
+export function numbersBySeries(docs: Stored[], revisions: MockState['revisions'] = []): { groups: Map<string, { seq: number; doc: Stored }[]>; malformed: Stored[] } {
+  const groups = new Map<string, { seq: number; doc: Stored }[]>(), malformed: Stored[] = [];
+  const issued = new Map(revisions.filter((r) => r.revision === 0).map((r) => [r.docId, r.snapshot.header.documentDate]));
+  for (const d of docs) {
+    if (!d.number || d.header.obBatchId) continue;
+    const m = /^([A-Z]+)-(\d{4})(\d{2})-(\d{4})$/.exec(d.number);
+    if (!m || m[1] !== d.type || `${m[2]}-${m[3]}` !== (issued.get(d.id) ?? d.header.documentDate).slice(0, 7)) { malformed.push(d); continue; }
+    const k = `${d.companyId}|${d.type}|${m[2]}-${m[3]}`;
+    groups.set(k, [...(groups.get(k) ?? []), { seq: Number(m[4]), doc: d }]);
+  }
+  return { groups, malformed };
+}
+
+/** RP2a, the open items the aging reads: which account holds which kind of item (the roles resolve to 1130 / 2140 / 2110 / 1140 in the seed). */
+const itemKinds = (st: MockState, companyId: string) => {
+  const code = (role: 'AR' | 'AP' | 'CustomerDeposit' | 'VendorPrepayment') => { try { return resolveRole(st, role, { companyId, docType: 'JV' }).code; } catch { return undefined; } }; // a broken chart is judged by the account checks, not here
+  const kinds = new Map<string, { types: string[]; ob: string; dr: boolean; what: string }>();
+  const add = (c: string | undefined, k: { types: string[]; ob: string; dr: boolean; what: string }) => { if (c) kinds.set(c, k); };
+  add(code('AR'), { types: ['TI', 'IV'], ob: 'AR', dr: true, what: 'TI / IV / OB AR item' }); add(code('CustomerDeposit'), { types: ['RC'], ob: 'DEP', dr: false, what: 'RC / OB DEP item' });
+  add(code('AP'), { types: ['PB'], ob: 'AP', dr: false, what: 'PB / OB AP item' }); add(code('VendorPrepayment'), { types: ['PV'], ob: 'PRE', dr: true, what: 'PV / OB PRE item' });
+  return kinds;
+};
+/** Every series key of the state: those with documents holding numbers and those with a counter (a counter whose documents are gone is still a series). The invariant and the RP3 gap report both ask this one function. */
+export const seriesKeys = (st: MockState, groups: Map<string, unknown>, companyId?: string): string[] =>
+  [...new Set([...groups.keys(), ...Object.keys(st.series)])].filter((k) => !companyId || k.startsWith(`${companyId}|`));
+
+/** 23. every line on a control account (AR / AP / customer deposit / vendor prepayment) carries a party and names an open item of its own company whose type fits the account and whose party is the line's (the party it has, or had in an earlier
+ *  revision: an invoice nobody has paid may change customer, and its first entries keep the first one).
+ *  24. every item's tagged balance over ALL dates is its stored balance (outstanding for an invoice / bill, what is unapplied for a receipt / voucher, the amount of an opening deposit / prepayment; 0 when it is not live). */
+function openItemInvariants(st: MockState): string[] {
+  const out: string[] = [];
+  for (const c of st.companies) {
+    const kinds = itemKinds(st, c.id), docs = new Map(st.docs.filter((d) => d.companyId === c.id).map((d) => [d.id, d]));
+    const fits = (d: Stored, k: { types: string[]; ob: string }) => k.types.includes(d.type) || (d.type === 'OB' && d.header.obSide === k.ob);
+    const tagged = new Map<string, number>(); // `${code}|${item id}` -> debit - credit
+    /** RP3 r2-m1: the party the item had on the entry's date (the revision in force then; an opening item: the batch's revision in force). A line in ANOTHER document's entry (a receipt, a voucher, a settlement) must carry that one, not any party the item ever had;
+     *  the item's own entries keep the looser reading (its first entries keep the first customer), and an item with no revision in force on that date is judged by the loose reading too. */
+    const partyOk = (d: Stored, partyId: string, date: string, own: boolean): boolean => {
+      const ever = d.header.partyId === partyId || st.revisions.some((r) => r.docId === d.id && r.snapshot.header.partyId === partyId);
+      if (own) return ever;
+      const inForce = d.header.obBatchId ? revisionInForce(st, d.header.obBatchId, date)?.opening?.openItems.find((i) => i.id === d.id)?.partyId : revisionInForce(st, d.id, date)?.header.partyId;
+      return inForce ? inForce === partyId : ever;
+    };
+    for (const s of sources(st, c.id)) for (const e of s.entries) for (const l of e.lines) {
+      const k = kinds.get(l.accountCode);
+      if (!k) continue;
+      const d = l.openItemId ? docs.get(l.openItemId) : undefined;
+      if (!l.partyId || !l.openItemId) out.push(`${s.label}: ${l.accountCode} line has no open item`);
+      else if (!d || !fits(d, k) || !partyOk(d, l.partyId, e.date, s.docId === d.id)) out.push(`${s.label}: ${l.accountCode} line names ${l.openItemId}, not a ${k.what} of party ${l.partyId}`);
+      if (l.openItemId) tagged.set(`${l.accountCode}|${l.openItemId}`, (tagged.get(`${l.accountCode}|${l.openItemId}`) ?? 0) + toSatang(l.debit) - toSatang(l.credit));
+    }
+    for (const [code, k] of kinds) for (const d of docs.values()) {
+      if (!fits(d, k)) continue;
+      const j = (k.dr ? 1 : -1) * (tagged.get(`${code}|${d.id}`) ?? 0), live = LIVE.includes(d.status);
+      const dep = k.ob === 'DEP' || k.ob === 'PRE';
+      const want = !live ? 0 : d.type === 'RC' || d.type === 'PV' ? unappliedOf(st, d) : dep ? toSatang(d.totals.total) : toSatang(d.outstanding ?? d.totals.total);
+      if (j !== want) out.push(`${d.id}: open item journal ${j} but its stored balance is ${want}`);
+    }
+  }
+  return out;
+}
 
 /** Expected outstanding and status of a live document, from the active links alone (SP0 §7.11); independent of `recomputeSettlement`. */
 function expectedBalance(st: MockState, d: Stored) {
@@ -615,22 +683,30 @@ export function checkInvariants(st: MockState): string[] {
   out.push(...filingInvariants(st)); // 20. finalized ภ.พ.30 (TX1): the boxes are what the stored documents give, every listed document still carries what the filing took, none of the month is missing
   out.push(...scheduleInvariants(st)); // 17. schedules (AC4): plan = total, each run JV = its plan row, the prepaid account moved by the live runs
   out.push(...payrollInvariants(st)); // 21. payroll runs (PY1): every slip recomputes from what it stored, net = gross - PIT - SSO - deduction, totals = slips, the journal = totals per role, the year to date is a chain
+  // 22. RP2 (ruling 8a): a posted line that names a party carries that party's id, and the party is of the same company (every party report matches by id)
+  for (const c of st.companies) for (const e of companyEntries(st, c.id)) for (const l of e.lines) {
+    if (l.partyName && !(l.partyId && st.parties.some((p) => p.id === l.partyId && p.companyId === c.id))) out.push(`${c.id}: journal line on ${l.accountCode} for "${l.partyName}" ${l.partyId ? `carries partyId ${l.partyId}, which is not a party of this company` : 'carries no partyId'}`);
+  }
+  out.push(...openItemInvariants(st)); // 23 + 24. RP2a: every control line names its open item, and every item's tagged balance is its stored balance
   out.push(...jvInvariants(st)); // 15. journal vouchers (AC1): no controlled account, the journal is the lines, reversals mirror, accruals net to zero
 
   // numbering: gap-free per company x type x month, and the series counter agrees
-  const groups = new Map<string, number[]>();
-  for (const d of st.docs) {
-    if (!d.number || d.header.obBatchId) continue; // an opening item's number is the old document's, printed '(ยกมา)'
-    const m = /^([A-Z]+)-(\d{4})(\d{2})-(\d{4})$/.exec(d.number);
-    if (!m || m[1] !== d.type) { out.push(`${d.id}: numbering: "${d.number}" is not a ${d.type} number`); continue; }
-    const k = `${d.companyId}|${d.type}|${m[2]}-${m[3]}`;
-    groups.set(k, [...(groups.get(k) ?? []), Number(m[4])]);
-  }
-  for (const [k, seqs] of groups) {
-    const sorted = [...seqs].sort((x, y) => x - y);
+  const { groups, malformed } = numbersBySeries(st.docs, st.revisions);
+  for (const d of malformed) out.push(`${d.id}: numbering: "${d.number}" is not a ${d.type} number`);
+  for (const k of seriesKeys(st, groups)) { // every series that has a counter or a document: the same set the number-gap report checks
+    const sorted = (groups.get(k) ?? []).map((f) => f.seq).sort((x, y) => x - y);
     if (sorted.some((n, i) => n !== i + 1)) out.push(`${k}: numbering is not gap-free (${sorted.join(', ')})`);
     if ((st.series[k] ?? 0) !== sorted.length) out.push(`${k}: numbering counter ${st.series[k] ?? 0} but ${sorted.length} numbers issued`);
   }
+
+  // WHT rate rows are dated: one row per company x code x effectiveFrom (a second row of one date would never apply)
+  const rateRows = new Map<string, number>();
+  for (const t of st.whtTypes) rateRows.set(`${t.companyId} ${t.code} ${t.effectiveFrom}`, (rateRows.get(`${t.companyId} ${t.code} ${t.effectiveFrom}`) ?? 0) + 1);
+  for (const [k, n] of rateRows) if (n > 1) out.push(`wht: ${k} has ${n} rate rows`);
+
+  // audit trail (RP3): append-only - the ids are unique, increasing and gap-free (a duplicated, reordered or middle-deleted entry breaks it). Time is a fact about the event, never judged here.
+  // [SP2] This cannot see a deleted LAST entry or an edited entry: the backend needs a hash chain over (prevHash, id, at, actor, command, target, before, after, result) plus an external high-water mark.
+  st.audit.forEach((a, i) => { if (a.id !== `aud-${i + 1}`) out.push(`audit: entry ${i + 1} has id ${a.id}, expected aud-${i + 1} (ids must be unique and increasing)`); });
 
   // locks: the period lock is derived at read time, never stored (one function: derivedLocks)
   for (const d of st.docs as Doc[]) if (d.locks.some((l) => l.kind === 'period')) out.push(`${d.id}: stored period lock (derived at read time only)`);

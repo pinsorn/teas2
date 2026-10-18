@@ -37,7 +37,7 @@ export function jvEntryLines(st: MockState, companyId: string, lines: DocLine[])
     return {
       accountCode: l.accountCode!, accountName: accountOf(st, companyId, l.accountCode!)?.nameTh ?? l.accountCode!,
       debit: fromSatang(satOf(l.debit) || 0), credit: fromSatang(satOf(l.credit) || 0), rule: l.description.trim() ? `${JV_RULE}: ${l.description.trim()}` : JV_RULE,
-      ...(party ? { partyName: party } : {}), ...(l.dimensions && Object.keys(l.dimensions).length ? { dimensions: l.dimensions } : {}),
+      ...(party ? { partyName: party, partyId: l.partyId! } : {}), ...(l.dimensions && Object.keys(l.dimensions).length ? { dimensions: l.dimensions } : {}),
     };
   });
 }
@@ -249,14 +249,14 @@ export function jvInvariants(st: MockState): string[] {
 
 // ---------------------------------------------------------------- the general journal
 
-interface Source { type: string; label: string; href?: string; entries: JournalEntryPreview[] }
+export interface Source { type: string; label: string; href?: string; /** RP2a: the document behind a document source. */ docId?: string; entries: JournalEntryPreview[] }
 /** Every journal entry of the company with where it came from: documents (incl. JV), the reconciliation's own journals and settlement records. */
-function sources(st: MockState, companyId: string): Source[] {
+export function sources(st: MockState, companyId: string): Source[] {
   const out: Source[] = [];
   const mine = new Map(st.docs.filter((d) => d.companyId === companyId).map((d) => [d.id, d]));
   for (const j of st.journals) {
     const d = mine.get(j.docId);
-    if (d) out.push({ type: d.type, label: `${d.number ?? d.id} · ${DESCRIPTORS[d.type]?.titleTh ?? d.type}`, href: docViewHref(d.type, d.id), entries: j.preview.entries });
+    if (d) out.push({ type: d.type, label: `${d.number ?? d.id} · ${DESCRIPTORS[d.type]?.titleTh ?? d.type}`, href: docViewHref(d.type, d.id), docId: d.id, entries: j.preview.entries });
   }
   for (const j of st.bankJournals) {
     if (j.companyId !== companyId) continue;

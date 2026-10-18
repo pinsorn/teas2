@@ -41,11 +41,11 @@
 
 **Permissions:** `report.read` (accountant, admin).
 
-- [ ] **Step 1: Failing tests** — BS balances on the seed for both companies at 2026-06-30 and today; P&L net = CIT
+- [x] **Step 1: Failing tests** — BS balances on the seed for both companies at 2026-06-30 and today; P&L net = CIT
   function result; GL running balance identity; dimension columns sum to the total column; comparatives differences.
   e2e: `screenContract` each tab (`both`, forbiddenRole operator); drill from P&L 5110 to GL with the same range.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(reports): profit and loss, balance sheet and general ledger`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(reports): profit and loss, balance sheet and general ledger`.
 
 ---
 
@@ -70,11 +70,11 @@ Modify `app-shell/nav.ts` (receivablesPayables → `report.arap.read`; salesPurc
 - Outstanding PO (`asOf`, `overdueOnly`): PO lines with remaining quantity > 0 and not closed, ordered vs billed.
 - Asset register (`asOf`): cost, accumulated, NBV per asset and class; tie-out to 1210 / 1211 / 1220 / 1221.
 
-- [ ] **Step 1: Failing tests** — aging tie-out zero on the seed; as-of before a receipt shows the larger outstanding;
+- [x] **Step 1: Failing tests** — aging tie-out zero on the seed; as-of before a receipt shows the larger outstanding;
   bucket boundaries (exactly 30 days → 1–30); statement running balance identity; summary group totals = grand total;
   asset register tie-out. e2e: `screenContract` each tab (`both`, forbiddenRole operator).
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(reports): aging, statements, summaries, outstanding PO and asset register`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(reports): aging, statements, summaries, outstanding PO and asset register`.
 
 ---
 
@@ -96,16 +96,16 @@ tax-table changes so the viewer has content), messages, `screens.ts`.
   command, target link, before / after diff rendered as a field table, result); CSV export; requires `audit.read`.
 - Reopen history: from `periods[].reopened` (AC6) with reason, actor, time.
 
-- [ ] **Step 1: Failing tests** — gap detection on a corrupted series (can fail); cancelled numbers not gaps; audit
+- [x] **Step 1: Failing tests** — gap detection on a corrupted series (can fail); cancelled numbers not gaps; audit
   filter by actor kind agent. e2e: `screenContract` each tab (`both`; forbiddenRole operator).
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(reports): number-gap audit, audit-log viewer and reopen history`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(reports): number-gap audit, audit-log viewer and reopen history`.
 
 ---
 
 ### Task GRP: Ham gate — reports
 
-- [ ] Consolidated gate green; production build / staging.
-- [ ] Send Ham: statements by dimension with comparatives and drill-down; tie-outs on every AR / AP / asset report;
+- [x] Consolidated gate green; production build / staging.
+- [x] Send Ham: statements by dimension with comparatives and drill-down; tie-outs on every AR / AP / asset report;
   aging basis choice (TEAS 1 used document date — Appendix B); number-gap audit over every series; audit viewer.
-- [ ] AskUserQuestion "Reports approve?" — approve / approve with changes / rework. Record in `STATUS.md`.
+- [x] AskUserQuestion "Reports approve?" — approve / approve with changes / rework. Record in `STATUS.md`.

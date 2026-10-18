@@ -299,11 +299,11 @@ export function afterAssetCancel(st: MockState, d: Stored): void {
 
 /** The disposal entry, from the frozen figures alone. [AR or nothing, proceeds + VAT] [AccumulatedDepreciation, accumulated incl. the partial] [DepreciationExpense, partial / AccumulatedDepreciation, partial: the disposal month's depreciation]
  *  [loss] [FixedAsset, cost] [OutputVat] [gain]: it removes exactly the frozen cost and accumulated, and balances because gain / loss = proceeds - NBV. */
-export function disposalEntryLines(st: MockState, companyId: string, p: Disposal & { faNumber?: string }, partyName?: string): JournalLinePreview[] {
+export function disposalEntryLines(st: MockState, companyId: string, p: Disposal & { faNumber?: string }, partyName?: string, partyId?: string, openItemId?: string): JournalLinePreview[] {
   const rule = `จำหน่ายสินทรัพย์ ${p.faNumber ?? p.name}`, out: JournalLinePreview[] = [];
-  const add = (code: string | undefined, dr: number, cr: number, party?: string) => { if (code && (dr || cr)) out.push({ accountCode: code, accountName: nameOf(st, companyId, code), debit: fromSatang(dr), credit: fromSatang(cr), rule, ...(party ? { partyName: party } : {}) }); };
+  const add = (code: string | undefined, dr: number, cr: number, party?: string, item?: string) => { if (code && (dr || cr)) out.push({ accountCode: code, accountName: nameOf(st, companyId, code), debit: fromSatang(dr), credit: fromSatang(cr), rule, ...(party ? { partyName: party, ...(partyId ? { partyId } : {}) } : {}), ...(item ? { openItemId: item } : {}) }); };
   const proceeds = sat(p.proceeds), vat = sat(p.vat), gl = sat(p.gainLoss);
-  if (p.kind === 'sale') add(p.codes.ar, proceeds + vat, 0, partyName);
+  if (p.kind === 'sale') add(p.codes.ar, proceeds + vat, 0, partyName, openItemId);
   add(p.codes.accumulated, sat(p.accumulated), 0);
   add(p.codes.expense, sat(p.partial), 0); add(p.codes.accumulated, 0, sat(p.partial));
   if (p.outcome === 'loss') add(p.codes.loss, gl, 0);

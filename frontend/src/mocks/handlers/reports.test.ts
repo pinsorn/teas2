@@ -27,8 +27,39 @@ describe('GET /reports/:kind', () => {
     expect(f.status).toBe(403);
     expect((await f.json()).detail).toContain('report.read');
     setSettings({ role: 'accountant' });
-    expect((await get('/reports/profit-loss')).status).toBe(404);
+    expect((await get('/reports/no-such-report')).status).toBe(404);
     expect((await get('/reports/trial-balance?asOf=31-12-2099')).status).toBe(422);
+  });
+  it('RP1: the statements need report.read (operator 403), the GL needs its account (422), an account or party of another company is 404, CSV carries the dimension headers', async () => {
+    for (const p of ['/reports/profit-loss?from=2026-01-01&to=2026-12-31', '/reports/balance-sheet?asOf=2026-06-30', '/reports/general-ledger?account=1130']) {
+      expect((await get(p)).status, p).toBe(200);
+      setSettings({ role: 'operator' });
+      expect((await get(p)).status, p).toBe(403);
+      setSettings({ role: 'accountant' });
+    }
+    expect((await get('/reports/general-ledger')).status).toBe(422);
+    expect((await get('/reports/general-ledger?account=9999')).status).toBe(404);
+    expect((await get('/reports/general-ledger?account=1130&party=nc-01')).status).toBe(404); // the other company's customer
+    expect((await get('/reports/profit-loss?from=2026-01-01&to=2026-12-31&compare=none&format=class')).status).toBe(200); // the screen's words for "none" / "by class"
+    expect((await get('/reports/profit-loss?from=2026-12-31&to=2026-01-01')).status).toBe(422);
+    setSettings({ companyKey: 'nonvat' });
+    const csv = await (await get('/reports/profit-loss/export?from=2026-01-01&to=2026-12-31&groupBy=project')).text();
+    expect(csv.split(String.fromCharCode(13, 10))[0]).toBe('รหัสบัญชี,ชื่อบัญชี,P-A,P-B,ไม่ระบุ,รวม');
+  });
+  it('RP2: receivables, payables and the summaries need report.arap.read (accountant and admin; operator 403 naming it); a statement needs its party, the party of another company is 404', async () => {
+    const paths = ['/reports/ar-aging', '/reports/ap-aging', '/reports/sales-summary', '/reports/purchase-summary', '/reports/outstanding-po', '/reports/customer-statement?party=pc-04', '/reports/vendor-ledger?party=pv-01'];
+    for (const role of ['accountant', 'admin'] as const) { setSettings({ role }); for (const p of paths) expect((await get(p)).status, `${role} ${p}`).toBe(200); }
+    setSettings({ role: 'operator' });
+    for (const p of paths) { const r = await get(p); expect(r.status, p).toBe(403); expect((await r.json()).detail, p).toContain('report.arap.read'); }
+    setSettings({ role: 'accountant' });
+    expect((await get('/reports/customer-statement')).status).toBe(422);
+    expect((await get('/reports/customer-statement?party=nc-01')).status).toBe(404); // the other company's customer
+    expect((await get('/reports/vendor-ledger?party=pc-04')).status).toBe(422); // a customer is not a vendor
+    expect((await get('/reports/ar-aging?asOf=2026-02-30')).status).toBe(422);
+    expect((await get('/reports/asset-register')).status).toBe(200);
+    expect((await get('/reports/ar-aging/export?asOf=2026-09-30')).headers.get('content-type')).toContain('text/csv');
+    const m = (await (await get('/reports/ar-aging')).json()) as ReportModel;
+    expect(m.tieOuts!.every((t) => t.diff === '0.00')).toBe(true);
   });
   it('the toolbar "empty" state is a successful report with no rows', async () => {
     setSettings({ screenState: 'empty' });

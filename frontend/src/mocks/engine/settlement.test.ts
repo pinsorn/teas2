@@ -11,6 +11,8 @@ import { toSatang } from './money';
 import { assertBalanced } from './test-helpers';
 
 const out = (st: MockState, id: string) => toSatang(st.docs.find((d) => d.id === id)!.outstanding!);
+/** RP2a: every line on `code` of the document's first entry (a control account posts one line per open item). */
+const rowsOn = (st: MockState, docId: string, code: string) => st.journals.find((j) => j.docId === docId)!.preview.entries[0].lines.filter((l) => l.accountCode === code);
 const row = (st: MockState, docId: string, code: string) => st.journals.find((j) => j.docId === docId)!.preview.entries[0].lines.find((l) => l.accountCode === code);
 const line = (p: Partial<DocLine> = {}): DocLine => ({ id: 'l1', description: 'ออกแบบ', qty: '1', unit: 'งาน', unitPrice: '1000.00', taxCode: 'S7', ...p });
 const hdr = (partyId: string, p: Partial<DocHeader> = {}): DocHeader => ({ partyId, documentDate: '2026-10-14', ...p });
@@ -38,7 +40,7 @@ describe('multi-target receipt (§5.11, §7.11)', () => {
     const links = st.links.filter((l) => l.from === done.id && l.kind === 'settles' && l.active);
     expect(links.map((l) => [l.to, l.amount, l.wht])).toEqual([[ids.rcTargetsA, '1000.00', '30.00'], [ids.rcTargetsB, '500.00', undefined]]);
     // the journal: bank 1121 (the header's account), WHT receivable 1180, AR 1130
-    expect([row(st, done.id, '1121')?.debit, row(st, done.id, '1180')?.debit, row(st, done.id, '1130')?.credit]).toEqual(['1470.00', '30.00', '1500.00']);
+    expect([row(st, done.id, '1121')?.debit, row(st, done.id, '1180')?.debit, rowsOn(st, done.id, '1130').map((l) => [l.openItemId, l.credit])]).toEqual(['1470.00', '30.00', [[ids.rcTargetsA, '1000.00'], [ids.rcTargetsB, '500.00']]]); // RP2a: AR one line per target (was one line '1500.00')
     expect(done.allocations?.map((a) => a.targetNumber)).toEqual(st.docs.filter((d) => [ids.rcTargetsA, ids.rcTargetsB].includes(d.id)).map((d) => d.number));
     assertBalanced(st);
     expect(checkInvariants(st)).toEqual([]);
@@ -240,7 +242,7 @@ describe('payment voucher settles PB (D-17), AP is the subledger of PB', () => {
     expect([out(st, b1.id), out(st, b2.id)]).toEqual([1000000, 0]);
     expect(st.docs.find((x) => x.id === b2.id)!.status).toBe('settled');
     expect(st.docs.find((x) => x.id === b1.id)!.status).toBe('partly_settled');
-    expect([row(st, done.id, '2110')?.debit, row(st, done.id, '1121')?.credit]).toEqual(['2840.00', '2840.00']);
+    expect([rowsOn(st, done.id, '2110').map((l) => [l.openItemId, l.debit]), row(st, done.id, '1121')?.credit]).toEqual([[[b1.id, '700.00'], [b2.id, '2140.00']], '2840.00']); // RP2a: AP one line per bill (was one line '2840.00')
     assertBalanced(st); // includes the 2110 subledger invariant
   });
   it('PV: over-paying a bill is refused; cancelling the PV puts the bill back', () => {

@@ -48,3 +48,15 @@
 | 2026-10-18 | SP1c PY3b fix (SSO wage base ceiling, v49, fp required) | sonnet-implementer (warm, PY3 worker) | Opus round 2 REJECT on one major; warm re-review after |
 | 2026-10-18 | SP1c GPY consolidated gate (typecheck, lint, unit, build, Playwright --workers=1) | haiku-gate-runner | Tier 3 run-and-report |
 | 2026-10-18 | SP1c CI1: CI-only e2e reds (screens walk ERR_ABORTED/timeout, ti-loop F4 axe contrast) | sonnet-implementer (fresh) | blocks PR #14 merge; different area from payroll worker |
+| 2026-10-18 | SP1c RP1 implement (P&L, balance sheet, GL, dimension columns, comparatives) | sonnet-implementer (fresh) | default implementer; Opus review after (financial statements) |
+| 2026-10-18 | SP1c RP1 review (P&L, BS, GL, dimension columns, comparatives) | opus-reviewer | financial statements tie-outs; fresh reviewer |
+| 2026-10-18 | SP1c RP1a fix round (partyId on posted lines, honest tie-outs, TB dimension drill) | sonnet-implementer (warm, RP1 worker) | Opus REJECT on M1; warm re-review after |
+| 2026-10-18 | SP1c RP2 implement (AR/AP aging, statements, summaries, outstanding PO, asset register tab) | sonnet-implementer (fresh) | new area (RP1 worker context large); Opus review after |
+| 2026-10-18 | SP1c RP2 review (aging as-of, tie-outs by partyId, statements, summaries, PO, asset register) | opus-reviewer | money reports with GL tie-outs; fresh reviewer |
+| 2026-10-18 | SP1c RP2a design (item-tagged AR/AP control lines, journal-derived as-of aging) | opus-designer | posting-core change after Opus REJECT (B1/M1/M2); footgun zone -> Opus design, Sonnet implements |
+| 2026-10-18 | SP1c RP2a implement (from task-RP2a-design.md) | sonnet-implementer (fresh) | spec airtight, Opus-designed; RP2 worker context too large to stay warm; Opus re-review after |
+| 2026-10-18 | SP1c RP3 implement (number gaps, audit-log viewer, reopen history; RP2 minors) | sonnet-implementer (fresh) | new area; Opus review after (audit/compliance) |
+| 2026-10-18 | SP1c RP3 review (number gaps, audit viewer, append-only, reopen history) | opus-reviewer | audit/compliance diff; fresh reviewer |
+| 2026-10-18 | SP1c RP3a fix round (audit time clamp removed, malformed numbers, table focus scope, dated tax rate) | sonnet-implementer (warm, RP3 worker) | Opus REJECT (B1 falsified audit times); warm re-review after |
+| 2026-10-18 | SP1c RP3b fix (same-date rate change replaces; month-mismatched numbers) | sonnet-implementer (warm, RP3 worker) | Opus round 2 REJECT on two majors |
+| 2026-10-18 | SP1c GRP consolidated gate (typecheck, lint, unit, build, Playwright --workers=1) | haiku-gate-runner | Tier 3 run-and-report |

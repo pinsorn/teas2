@@ -66,7 +66,9 @@ test('home has no serious accessibility violations', async ({ page }) => {
 
 test('home title and a not-built route', async ({ page }) => {
   await expect(page).toHaveTitle('งานของฉัน · TEAS 2');
-  await page.goto('/reports/sales-purchases');
+  await page.getByRole('button', { name: 'โหมดตัวอย่าง' }).click(); // every non-settings route is built; settings needs settings.manage (admin)
+  await page.getByLabel('บทบาท').selectOption('admin');
+  await page.goto('/settings/company');
   await expect(page.getByText('ส่วนนี้ยังไม่เปิดใช้งาน')).toBeVisible();
   expect(await serious(page)).toEqual([]);
   await page.goto('/nope/nothing');

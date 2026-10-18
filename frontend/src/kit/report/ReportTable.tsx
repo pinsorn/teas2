@@ -24,10 +24,12 @@ export function ReportTable({ title, columns, rows }: { title: string; columns: 
   const labelCol = columns.findIndex((c) => !c.kind || c.kind === 'text'); // a total / subtotal row names itself here
   const show = (c: ReportColumn, v: string) => (!v ? '' : c.kind === 'money' ? formatMoney(v) : c.kind === 'date' ? formatDateBE(v) : v);
   return (
+    // a report can be wider than the page: its scroll region is a named region the keyboard can reach (axe scrollable-region-focusable); the shared Table container below then does not scroll itself
+    <div role="region" aria-label={title} tabIndex={0} className="overflow-x-auto [&_[data-slot=table-container]]:overflow-visible">
     <Table aria-label={title}>
       <TableHeader>
         <TableRow>
-          {columns.map((c) => <TableHead key={c.key} className={cn(c.align === 'end' && 'text-end')}>{t(c.labelKey as never)}</TableHead>)}
+          {columns.map((c) => <TableHead key={c.key} className={cn(c.align === 'end' && 'text-end')}>{c.label ?? t(c.labelKey as never)}</TableHead>)}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -37,7 +39,7 @@ export function ReportTable({ title, columns, rows }: { title: string; columns: 
               const text = !r.cells[c.key] && ci === labelCol && (r.kind === 'total' || r.kind === 'subtotal') ? t('reports.total') : show(c, r.cells[c.key] ?? '');
               return (
                 <TableCell key={c.key} className={cn(c.align === 'end' && 'text-end tabular-nums', ci === 0 && INDENT[r.level])}>
-                  {c.kind === 'status' ? <Chips chips={r.chips ?? []} /> : r.href && ci === 0 ? <Link href={r.href} className="text-primary underline underline-offset-2">{text}</Link> : text}
+                  {c.kind === 'status' ? <Chips chips={r.chips ?? []} /> : (r.links?.[c.key] ?? (ci === 0 ? r.href : undefined)) && text ? <Link href={(r.links?.[c.key] ?? r.href)!} className="text-primary underline underline-offset-2">{text}</Link> : text}
                 </TableCell>
               );
             })}
@@ -45,5 +47,6 @@ export function ReportTable({ title, columns, rows }: { title: string; columns: 
         ))}
       </TableBody>
     </Table>
+    </div>
   );
 }
