@@ -4,12 +4,17 @@ import { createDraft, issue, revise } from '../engine/commands';
 import { checkInvariants } from '../engine/invariants';
 import { ledgerFor } from '../engine/ledger';
 import { ROLES, ROLE_FIT, roleProblem } from '../engine/posting';
+import { agingReport } from '../engine/reports/ar-aging';
+import { assetRegister } from '../engine/reports/asset-register';
+import { partyStatement } from '../engine/reports/customer-statement';
+import { whtReceivable } from '../engine/reports/wht-receivable';
 import { profitLoss } from '../engine/reports/profit-loss';
 import { trialBalance } from '../engine/reports/trial-balance';
 import { AGENT, USER } from '../fixtures/documents';
 import { setSettings } from '../settings';
 import { buildSeedState, loadState, resetState } from '../store';
 import { testServer } from '../test-server';
+import { listCategories, updateCategory } from './expense-categories';
 import { CONTROL_ROLES, createPostingRule, deletePostingRule, listPostingRules, previewPosting, ruleId, updatePostingRule } from './posting-rules';
 
 // ST2 rulings 1 / 2 / 3: policy changes never move a posted entry; a rule is saved only when its account fits the role; the preview is the posting itself.
@@ -53,7 +58,7 @@ describe('ruling 2: a rule is saved only when its account fits the role', () => 
     deletePostingRule(st, USER, V, made.id, up.version);
     expect(st.audit.at(-1)).toMatchObject({ command: 'posting.rule.delete', before: { accountCode: '4210' } });
     expect(listPostingRules(st, V).items.some((r) => r.id === made.id)).toBe(false);
-    deletePostingRule(st, USER, V, ruleId({ level: 'default', key: 'PND53', role: 'WhtPayable' }), 1); // a keyed default is not "the" default
+    deletePostingRule(st, USER, V, ruleId({ level: 'default', key: 'loss', role: 'DisposalGainLoss' }), 1); // a keyed default is not "the" default (a FREE role's; a control role's is guarded)
   });
   it('an agent is refused (agent.forbidden_setting) and a stale version is a 409', () => {
     const st = seed(), audit = st.audit.length;
@@ -79,6 +84,9 @@ describe('ruling 1: a policy change never moves a posted entry', () => {
   it('issue a TI, re-point Revenue: invariants stay [], the stored journal and every report figure are unchanged; the NEXT TI posts with the new rule', () => {
     const st = seed(), doc = ti(st);
     const before = journalOf(st, doc.id), tb = JSON.stringify(trialBalance(st, V, { asOf: '2026-10-31' })), pl = JSON.stringify(profitLoss(st, V, { from: '2026-01-01', to: '2026-12-31' }));
+    // ST2b m6: and the readers that resolve a role LIVE - the AR aging, the customer statement, the asset register, the WHT receivable
+    const readers = () => JSON.stringify([agingReport('AR', st, V, { asOf: '2026-10-31' }), partyStatement('AR', st, V, { party: 'pc-01', from: '2026-01-01', to: '2026-12-31' }), assetRegister(st, V, { asOf: '2026-10-31' }), whtReceivable(st, V, { asOf: '2026-10-31' })]);
+    const rd = readers();
     expect(ledgerFor(st, { ...doc, companyId: V }).entries[0].lines.some((l) => l.accountCode === '4100')).toBe(true);
     const r = listPostingRules(st, V).items.find((x) => x.id === ruleId({ level: 'default', role: 'Revenue' }))!;
     updatePostingRule(st, USER, V, r.id, { accountCode: '4200', version: r.version });
@@ -86,6 +94,7 @@ describe('ruling 1: a policy change never moves a posted entry', () => {
     expect(journalOf(st, doc.id)).toBe(before);
     expect(JSON.stringify(trialBalance(st, V, { asOf: '2026-10-31' }))).toBe(tb);
     expect(JSON.stringify(profitLoss(st, V, { from: '2026-01-01', to: '2026-12-31' }))).toBe(pl);
+    expect(readers()).toBe(rd);
     const next = ti(st);
     expect(st.journals.find((j) => j.docId === next.id)!.preview.entries[0].lines.map((l) => l.accountCode)).toContain('4200');
     expect(checkInvariants(st)).toEqual([]);
@@ -121,6 +130,105 @@ describe('ruling 1: a policy change never moves a posted entry', () => {
   }, 120_000); // 34 roles, each on its own seed
 });
 
+describe('ST2b ruling 1: a control role is set at the company default only; create and delete are guarded like update', () => {
+  const swallow = (f: () => unknown) => { try { f(); } catch { /* refused */ } };
+  it('the set is the roles a reader resolves now; the seed has no control rule below the default level', () => {
+    expect([...CONTROL_ROLES].sort()).toEqual(['AP', 'AR', 'Cash', 'CustomerDeposit', 'EmployeePayable', 'InputVat', 'InputVatUnclaimed', 'OpeningBalanceEquity', 'OutputVat', 'PayrollDeductionPayable', 'PitPayable',
+      'Pnd36VatPayable', 'RetainedEarnings', 'SalaryPayable', 'SsoPayable', 'VatCarryForward', 'VatPayable', 'VendorPrepayment', 'WhtPayable', 'WhtReceivable'].sort());
+    expect(seed().postingRules.filter((r) => CONTROL_ROLES.has(r.role) && r.level !== 'default')).toEqual([]);
+  });
+  it('create at docType / partyGroup / category / item for a control role: posting.control_level; nothing written (probes P3 P4 P6 Q2)', () => {
+    const st = seed(), audit = st.audit.length, rules = st.postingRules.length;
+    for (const [level, key, role, accountCode] of [['docType', 'TI', 'AR', '1150'], ['docType', 'JV', 'AR', '1150'], ['docType', 'JV', 'AR', '1140'], ['docType', 'PV', 'WhtPayable', '2131'], ['partyGroup', 'government', 'AR', '1150'], ['item', 'SV-02', 'OutputVat', '2110']])
+      expect(code(() => createPostingRule(st, USER, V, { level, key, role, accountCode })), `${level} ${key} ${role}`).toMatch(/^posting\.(control_level|class_mismatch|control_account)$/);
+    expect(code(() => createPostingRule(st, USER, V, { level: 'docType', key: 'JV', role: 'AR', accountCode: '1130' }))).toBe('posting.control_level');
+    expect(code(() => createPostingRule(st, USER, V, { level: 'docType', key: 'PV', role: 'WhtPayable', accountCode: '2131' }))).toBe('posting.control_level');
+    expect([st.audit.length, st.postingRules.length]).toEqual([audit, rules]);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('a new KEYED default for a control role is refused while the account it takes over (the keyless fall-through) or the new account holds postings', () => {
+    const st = seed();
+    const form = ['PND1', 'PND2', 'PND3', 'PND54'].find((k) => !st.postingRules.some((r) => r.companyId === V && r.role === 'WhtPayable' && r.key === k))!;
+    expect(form, 'a WHT form without its own rule').toBeTruthy();
+    const used = new Set(st.journals.flatMap((j) => j.preview.entries.flatMap((e) => e.lines.map((l) => l.accountCode))));
+    const free = st.accounts.find((a) => a.companyId === V && a.postable && !a.controlRole && !used.has(a.code) && !roleProblem(st, V, 'WhtPayable', a.code))!;
+    expect(free, 'an unused liability account').toBeTruthy();
+    expect(code(() => createPostingRule(st, USER, V, { level: 'default', key: form, role: 'WhtPayable', accountCode: free.code }))).toBe('posting.control_in_use'); // the fall-through account 2131 carries postings
+    expect(code(() => createPostingRule(st, USER, V, { level: 'default', key: form, role: 'WhtPayable', accountCode: '2133' }))).toBe('posting.control_in_use'); // the new account carries postings
+    expect(checkInvariants(st)).toEqual([]);
+    st.journals = []; // a company with no postings yet: the keyed default is free to be set
+    expect(createPostingRule(st, USER, V, { level: 'default', key: form, role: 'WhtPayable', accountCode: free.code }).accountCode).toBe(free.code);
+  });
+  it('delete of a keyed control default is refused while its account holds postings (probe P5); the keyless default stays undeletable', () => {
+    const st = seed();
+    const rules = st.postingRules.length;
+    expect(code(() => deletePostingRule(st, USER, V, ruleId({ level: 'default', key: 'PND53', role: 'WhtPayable' }), 1))).toBe('posting.control_in_use');
+    expect(st.postingRules.length).toBe(rules);
+    expect(checkInvariants(st)).toEqual([]);
+    expect(code(() => deletePostingRule(st, USER, V, ruleId({ level: 'default', role: 'AR' }), 1))).toBe('posting.default_required');
+  });
+  it('every attempted create of a control role at any non-default level leaves invariants []', () => {
+    const st = seed();
+    for (const role of CONTROL_ROLES) for (const level of ['docType', 'partyGroup', 'category', 'item'] as const)
+      swallow(() => createPostingRule(st, USER, V, { level, key: level === 'docType' ? 'JV' : level === 'partyGroup' ? 'government' : level === 'item' ? 'SV-02' : 'supplies', role, accountCode: '1150' }));
+    expect(checkInvariants(st)).toEqual([]);
+  });
+});
+
+describe('ST2b ruling 2: a control account stands behind its own role only', () => {
+  it('Expense -> 1140, Cash -> 1130, OutputVat -> 2110 are refused (probes R1 P9 R2); the role itself still takes its account', () => {
+    const st = seed();
+    expect(code(() => createPostingRule(st, USER, V, { level: 'category', key: 'supplies', role: 'Expense', accountCode: '1140' }))).toBe('posting.control_account');
+    expect(roleProblem(st, V, 'Expense', '1140')?.message).toMatch(/^posting\.control_account/);
+    expect(roleProblem(st, V, 'Cash', '1130')?.message).toMatch(/^posting\.control_account/);
+    expect(roleProblem(st, V, 'OutputVat', '2110')?.message).toMatch(/^posting\.control_account/);
+    expect(roleProblem(st, V, 'AR', '1130')).toBeUndefined();
+    const r = listPostingRules(st, V).items.find((x) => x.id === ruleId({ level: 'category', key: 'supplies', role: 'Expense' }))!;
+    expect(code(() => updatePostingRule(st, USER, V, r.id, { accountCode: '1140', version: r.version }))).toBe('posting.control_account');
+    expect(listPostingRules(st, V).roles.find((x) => x.role === 'Expense')!.accountCodes).not.toContain('1140'); // the form never offers it
+  });
+});
+
+describe('ST2b ruling 7: a category\'s own Expense rule is edited through the category', () => {
+  it('deleting category|X|Expense is refused posting.category_rule', () => {
+    const st = seed();
+    expect(code(() => deletePostingRule(st, USER, V, ruleId({ level: 'category', key: 'supplies', role: 'Expense' }), 1))).toBe('posting.category_rule');
+    expect(st.postingRules.some((r) => r.level === 'category' && r.key === 'supplies' && r.role === 'Expense')).toBe(true);
+  });
+});
+
+describe('ST2b ruling 3: no reader re-derives a posted account from today\'s rules', () => {
+  const rule = (st: ReturnType<typeof seed>, level: string, key: string, role: string) => listPostingRules(st, V).items.find((x) => x.id === ruleId({ level: level as 'category', key, role }))!;
+  it('amortisation source: re-pointing the Expense rule of a prepaid category, editing its account, or switching it to capex leaves invariants [] (probes P1 P2 R3)', () => {
+    let st = seed();
+    expect(checkInvariants(st)).toEqual([]);
+    const r = rule(st, 'category', 'prepaid', 'Expense');
+    updatePostingRule(st, USER, V, r.id, { accountCode: '5100', version: r.version });
+    expect(checkInvariants(st)).toEqual([]);
+    st = seed();
+    const c = listCategories(st, V).find((x) => x.code === 'prepaid')!;
+    updateCategory(st, USER, V, 'prepaid', { ...c, accountCode: '5100' });
+    expect(checkInvariants(st)).toEqual([]);
+    st = seed();
+    const c2 = listCategories(st, V).find((x) => x.code === 'prepaid')!;
+    updateCategory(st, USER, V, 'prepaid', { ...c2, capex: true, assetClass: 'equipment' });
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('asset register: an unregistered capex bill keeps its cost on the account it posted when the FixedAsset rule of its class moves (tie-outs 0)', () => {
+    const st = seed();
+    const d = createDraft(st, V, 'PB', { header: { partyId: 'pv-03', documentDate: '2026-10-01' }, lines: [line('a', { expenseCategory: 'capex-equipment', unitPrice: '12345.00' })] }, USER, 'st2b-capex');
+    issue(st, d.id, d.version, USER);
+    const ties = () => assetRegister(st, V, { asOf: '2026-10-31' }).tieOuts!.map((t) => t.diff);
+    expect(ties().every((x) => Number(x) === 0)).toBe(true);
+    const before = JSON.stringify(assetRegister(st, V, { asOf: '2026-10-31' }));
+    const r = rule(st, 'category', 'equipment', 'FixedAsset');
+    updatePostingRule(st, USER, V, r.id, { accountCode: '1220', version: r.version });
+    expect(checkInvariants(st)).toEqual([]);
+    expect(JSON.stringify(assetRegister(st, V, { asOf: '2026-10-31' }))).toBe(before);
+    expect(ties().every((x) => Number(x) === 0)).toBe(true);
+  });
+});
+
 describe('ruling 3: the preview is the posting - one resolver, the winning level per role', () => {
   it('SV-02 -> 4200 at the item level wins over the company default, and a real TI posts the same lines', () => {
     const st = seed();
@@ -130,6 +238,9 @@ describe('ruling 3: the preview is the posting - one resolver, the winning level
     const p = previewPosting(st, V, { docType: 'TI', itemId: 'SV-02' });
     expect(p.winners.find((w) => w.role === 'Revenue')).toMatchObject({ accountCode: '4200', rule: expect.stringMatching(/^สินค้า\/บริการ SV-02: Revenue → 4200/) });
     expect(p.winners.find((w) => w.role === 'AR')!.rule).toMatch(/^ค่าเริ่มต้นบริษัท/);
+    expect(p.winners.find((w) => w.role === 'Revenue')).toMatchObject({ level: 'item', key: 'SV-02' }); // ST2b m2: the level / key come from the resolver, not from the Thai text
+    expect(p.winners.find((w) => w.role === 'AR')).toMatchObject({ level: 'default' });
+    expect(p.winners.find((w) => w.role === 'AR')).not.toHaveProperty('key');
     const real = ti(st, { itemId: 'SV-02', unitPrice: '100.00' });
     const posted = st.journals.find((j) => j.docId === real.id)!.preview.entries[0].lines;
     expect(p.journal.entries[0].lines.map((l) => [l.accountCode, l.rule])).toEqual(posted.map((l) => [l.accountCode, l.rule]));

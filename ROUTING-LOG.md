@@ -67,3 +67,4 @@
 | 2026-10-18 | SP1c ST2 implement (posting rules, preview, dimensions + account rules, expense categories; ST1 carries) | sonnet-implementer (fresh) | new area (ST1 worker context large); Opus review after (ledger rules) |
 | 2026-10-18 | SP1c ST2 review (posting rules, preview, dimensions, account rules, expense categories) | opus-reviewer | ledger rules / money; fresh reviewer, read-only on commit a9668d8 |
 | 2026-10-18 | SP1c ST2a (ST1 carries r2-m1/m3/m4, reconcile dims from master, item-form categories) | sonnet-implementer (fresh) | ST2 worker stopped at cap; its context 466k — fresh is cheaper; parallel with read-only review |
+| 2026-10-18 | SP1c ST2b fix round (control roles default-only, control account per role, schedules/asset register read stored posting, note tags, per-line revise) | sonnet-implementer (warm, ST2a worker) | Opus REJECT ST2 (B1-B4); warm Opus re-review after |

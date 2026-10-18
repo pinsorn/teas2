@@ -68,6 +68,8 @@ export function roleProblem(st: MockState, companyId: string, role: AccountingRo
   const a = st.accounts.find((x) => x.companyId === companyId && x.code === accountCode);
   if (!a || !a.postable || a.active === false) return new MockError(422, 'posting.account_invalid', `บัญชี ${accountCode} ${!a ? 'ไม่มีในผังบัญชี' : !a.postable ? 'เป็นบัญชีหมวด ลงรายการไม่ได้' : 'ปิดใช้งานแล้ว'}`);
   if (!ROLE_FIT[role].ok(a)) return new MockError(422, 'posting.class_mismatch', `บทบาท ${role} ต้องใช้บัญชีหมวด${ROLE_FIT[role].th} แต่ ${accountCode} ${a.nameTh} เป็นบัญชีหมวดอื่น`);
+  // ST2b M1: the chart marks the control account of a role (AR 1130, VendorPrepayment 1140, ...): it may stand behind THAT role only
+  if (a.controlRole && a.controlRole !== role) return new MockError(422, 'posting.control_account', `บัญชี ${accountCode} ${a.nameTh} เป็นบัญชีคุมของบทบาท ${a.controlRole} ใช้กับบทบาท ${role} ไม่ได้`);
   return undefined;
 }
 
@@ -75,8 +77,11 @@ export function roleProblem(st: MockState, companyId: string, role: AccountingRo
 // Absent in the state = the seed's; the first write copies them in (so the seed, and the state version, do not change).
 
 export type ExpenseCategoryRow = ExpenseCategory & { companyId: string; active?: boolean; version?: number; defaultWhtType?: string; parent?: string };
-export const categoriesOf = (st: MockState, companyId: string): ExpenseCategoryRow[] =>
-  st.expenseCategories ? st.expenseCategories.filter((c) => c.companyId === companyId) : EXPENSE_CATEGORIES.map((c) => ({ ...c, companyId }));
+// ST2b m5: per company - a company with no rows of its own yet (added after the first write) reads the seed's
+export const categoriesOf = (st: MockState, companyId: string): ExpenseCategoryRow[] => {
+  const mine = st.expenseCategories?.filter((c) => c.companyId === companyId);
+  return mine?.length ? mine : EXPENSE_CATEGORIES.map((c) => ({ ...c, companyId }));
+};
 export const ensureCategories = (st: MockState): ExpenseCategoryRow[] => (st.expenseCategories ??= st.companies.flatMap((co) => EXPENSE_CATEGORIES.map((c) => ({ ...c, companyId: co.id }))));
 
 export type DimensionRule = 'required' | 'optional' | 'forbidden';
@@ -86,10 +91,14 @@ export const MAX_DIMENSION_TYPES = 4;
 const SEED_TYPES: [string, string][] = [['department', 'แผนก'], ['project', 'โปรเจกต์']];
 const SEED_VALUES: [string, string, string][] = [['department', 'D-01', 'ออกแบบ'], ['department', 'D-02', 'การตลาด'], ['department', 'D-03', 'บริหาร'],
   ['project', 'P-A', 'เว็บไซต์ลูกค้า A'], ['project', 'P-B', 'งานบรรจุภัณฑ์ B']]; // RP1's seeded tags (project: P-A / P-B) stay valid
-export const dimTypesOf = (st: MockState, companyId: string): DimTypeRow[] =>
-  st.dimensionTypes ? st.dimensionTypes.filter((t) => t.companyId === companyId) : SEED_TYPES.map(([key, nameTh]) => ({ companyId, key, nameTh }));
-export const dimValuesOf = (st: MockState, companyId: string): DimValueRow[] =>
-  st.dimensionValues ? st.dimensionValues.filter((v) => v.companyId === companyId) : SEED_VALUES.map(([typeKey, code, nameTh]) => ({ companyId, typeKey, code, nameTh, active: true }));
+export const dimTypesOf = (st: MockState, companyId: string): DimTypeRow[] => {
+  const mine = st.dimensionTypes?.filter((t) => t.companyId === companyId);
+  return mine?.length ? mine : SEED_TYPES.map(([key, nameTh]) => ({ companyId, key, nameTh }));
+};
+export const dimValuesOf = (st: MockState, companyId: string): DimValueRow[] => {
+  const mine = st.dimensionValues?.filter((v) => v.companyId === companyId);
+  return mine?.length ? mine : SEED_VALUES.map(([typeKey, code, nameTh]) => ({ companyId, typeKey, code, nameTh, active: true }));
+};
 export function ensureDimensions(st: MockState): void {
   st.dimensionTypes ??= st.companies.flatMap((co) => SEED_TYPES.map(([key, nameTh]) => ({ companyId: co.id, key, nameTh })));
   st.dimensionValues ??= st.companies.flatMap((co) => SEED_VALUES.map(([typeKey, code, nameTh]) => ({ companyId: co.id, typeKey, code, nameTh, active: true })));

@@ -19,6 +19,7 @@ function tagsInUse(st: MockState, companyId: string): Set<string> {
   const used = new Set<string>();
   const add = (m?: Record<string, string>) => { for (const [k, v] of Object.entries(m ?? {})) { used.add(`${k}|${v}`); used.add(`${k}|`); } };
   for (const d of st.docs) if (d.companyId === companyId) { add(d.header.dimensions); for (const l of d.lines) add(l.dimensions); }
+  for (const sch of st.schedules) if (sch.companyId === companyId) for (const t of [sch.template, ...(sch.templateHistory ?? []).map((h) => h.template)]) if (t) { add(t.header.dimensions); for (const l of t.lines) add(l.dimensions); } // ST2b m4: a recurring template runs later and would carry the tag
   for (const e of companyEntries(st, companyId)) for (const l of e.lines) add(l.dimensions);
   return used;
 }

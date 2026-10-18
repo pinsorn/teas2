@@ -31,10 +31,10 @@ export const fiscalYearLocked = (st: MockState, companyId: string): boolean => s
 export const companySettings = (st: MockState, companyId: string): CompanySettings => ({ ...find(st, companyId), fiscalYearLocked: fiscalYearLocked(st, companyId) });
 
 /** The data URL header decides the type (never a file name) and the decoded size is counted here: the input's own check is only a courtesy. */
-export function imageError(v: unknown, allowSvg: boolean): string | undefined {
+export function imageError(v: unknown): string | undefined {
   if (typeof v !== 'string') return 'รูปภาพไม่ถูกต้อง';
-  const m = /^data:(image\/(?:png|jpeg|webp|svg\+xml));base64,([A-Za-z0-9+/]*={0,2})$/.exec(v);
-  if (!m || (m[1] === 'image/svg+xml' && !allowSvg)) return allowSvg ? 'รองรับเฉพาะไฟล์ PNG, JPEG, WebP หรือ SVG' : 'รองรับเฉพาะไฟล์ PNG, JPEG หรือ WebP';
+  const m = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]*={0,2})$/.exec(v); // svg is never accepted
+  if (!m) return 'รองรับเฉพาะไฟล์ PNG, JPEG หรือ WebP';
   const bytes = Math.floor((m[2].length * 3) / 4) - (m[2].endsWith('==') ? 2 : m[2].endsWith('=') ? 1 : 0);
   return bytes > MAX_IMAGE_BYTES ? 'ไฟล์ใหญ่เกิน 1 MB' : undefined;
 }
@@ -58,7 +58,7 @@ function validate(section: CompanySection, v: Record<string, unknown>): Errors {
     if (str(v.ssoEmployerAccountNo) && !/^\d{10}$/.test(str(v.ssoEmployerAccountNo))) add('ssoEmployerAccountNo', 'เลขที่บัญชีนายจ้างประกันสังคมต้องเป็นตัวเลข 10 หลัก');
   } else if (section === 'images') {
     for (const k of ['logoDataUrl', 'stampDataUrl'] as const) { // ST1b m1 / m6: a string data URL (png / jpeg / webp, never svg) or nothing: '' and null clear, anything else is refused
-      if (k in v && v[k] !== '' && v[k] !== null) { const m = imageError(v[k], false); if (m) add(k, m); }
+      if (k in v && v[k] !== '' && v[k] !== null) { const m = imageError(v[k]); if (m) add(k, m); }
     }
   } else if (section === 'notes') {
     const notes = v.defaultNotes;

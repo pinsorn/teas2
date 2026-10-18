@@ -4,7 +4,7 @@ import { PARTY_GROUPS } from '@/records/customers';
 import { POSTING_LEVELS, type PostingLevel, type PostingPreviewRequest, type PostingPreviewResult, type PostingRuleRow, type PostingRulesView } from '@/records/posting-rules';
 import { compute } from '../engine/commands';
 import { FieldErrors, refuseAgent } from '../engine/company';
-import { companyEntries } from '../engine/ledger';
+import { companyEntries, traceResolutions } from '../engine/ledger';
 import { MockError, logAudit, today } from '../engine/log';
 import { type AccountingRole, type PostingRule, ROLES, ROLE_FIT, categoriesOf, ensureCategories, roleProblem } from '../engine/posting';
 import { vatOf } from '../engine/vat';
@@ -13,12 +13,12 @@ import type { MockState } from '../store';
 // ST2: posting rules (SP0 §5.5). The rows ARE `st.postingRules`; this module is the only writer besides the seed. Ruling 1: a change never moves a posted entry (journals are stored; a rule
 // is read when the NEXT issue / revise / correction posts), so the only rules it cannot let through are the ones the books are keyed by.
 
-/** Roles whose ACCOUNT is how the books find their own figures: the aging and the statements (AR / AP / deposits), the returns (VAT, WHT, payroll) and their tie-out invariants, the bank, the asset register, the closing.
- *  Those readers resolve the role's account from the rules in force NOW, so moving such a role while its old account holds postings would split one subledger across two accounts (invariants red). That is refused
- *  (`posting.control_in_use`); the free roles (revenue, expense, ...) move at any time and apply to the next posting only. A test re-points every role of the seed to prove the split. */
+/** ST2b ruling 1: roles some reader resolves from the rules in force NOW (the aging and statements, the returns, the payroll / bank / closing tie-outs). They are set at the company default only
+ *  (`posting.control_level`), a keyed default is created / deleted only while its account holds no postings, and an update is refused while the old or new account holds postings (`posting.control_in_use`).
+ *  The free roles (revenue, expense, fixed asset, bank fee, ...) move at any level and apply to the NEXT posting only: no reader re-derives a posted account from today's rules. */
 export const CONTROL_ROLES: ReadonlySet<AccountingRole> = new Set<AccountingRole>(['AR', 'AP', 'CustomerDeposit', 'VendorPrepayment', 'EmployeePayable', 'OutputVat', 'InputVat', 'InputVatUnclaimed', 'WhtReceivable', 'WhtPayable',
-  'Pnd36VatPayable', 'VatPayable', 'VatCarryForward', 'PitPayable', 'SsoPayable', 'SalaryPayable', 'PayrollDeductionPayable', 'Cash', 'BankFee', 'RoundingDifference', 'SmallWriteOff', 'OpeningBalanceEquity', 'RetainedEarnings',
-  'FixedAsset', 'AccumulatedDepreciation']);
+  'Pnd36VatPayable', 'VatPayable', 'VatCarryForward', 'PitPayable', 'SsoPayable', 'SalaryPayable', 'PayrollDeductionPayable', 'Cash', 'OpeningBalanceEquity', 'RetainedEarnings']);
+const inUse = (st: MockState, companyId: string, role: string, code: string) => new MockError(409, 'posting.control_in_use', `เปลี่ยนหรือลบกฎของบทบาท ${role} ไม่ได้ เพราะบัญชี ${code} มีรายการลงบัญชีแล้ว (ทะเบียนลูกหนี้ เจ้าหนี้ และแบบภาษีอ่านยอดจากบัญชีของบทบาทนี้) ทางออก: ย้ายยอดด้วยใบสำคัญทั่วไป แล้วใช้บัญชีใหม่กับรายการถัดไป`);
 
 export const ruleId = (r: { level: string; key?: string; role: string }): string => `${r.level}|${r.key ?? ''}|${r.role}`;
 const find = (st: MockState, companyId: string, id: string): PostingRule => {
@@ -36,7 +36,7 @@ export function listPostingRules(st: MockState, companyId: string): PostingRules
   const postable = st.accounts.filter((a) => a.companyId === companyId && a.postable && a.active !== false);
   return {
     items: st.postingRules.filter((r) => r.companyId === companyId).map((r) => row(st, r)).sort((a, b) => ORDER[a.level] - ORDER[b.level] || (a.key ?? '').localeCompare(b.key ?? '') || a.role.localeCompare(b.role)),
-    roles: ROLES.map((role) => ({ role, accepts: ROLE_FIT[role].th, accountCodes: postable.filter((a) => ROLE_FIT[role].ok(a)).map((a) => a.code) })), // the same table roleProblem saves by
+    roles: ROLES.map((role) => ({ role, accepts: ROLE_FIT[role].th, accountCodes: postable.filter((a) => !roleProblem(st, companyId, role, a.code)).map((a) => a.code) })), // the very check a save runs
     accounts: postable.map((a) => ({ code: a.code, nameTh: a.nameTh })),
   };
 }
@@ -67,6 +67,11 @@ export function createPostingRule(st: MockState, actor: Actor, companyId: string
   if (kp) throw new MockError(422, 'posting.key_invalid', kp);
   const bad = roleProblem(st, companyId, role, accountCode);
   if (bad) throw bad;
+  if (CONTROL_ROLES.has(role) && level !== 'default') throw new MockError(422, 'posting.control_level', `บทบาท ${role} เป็นบัญชีคุม ตั้งได้เฉพาะค่าเริ่มต้นของบริษัท`);
+  if (CONTROL_ROLES.has(role)) { // a new keyed default re-routes its key: refused while the account it takes over (the keyless one) or the new one holds postings
+    const keyless = st.postingRules.find((x) => x.companyId === companyId && x.level === 'default' && x.key === undefined && x.role === role)?.accountCode;
+    for (const c of [keyless, accountCode]) if (c && posted(st, companyId, c)) throw inUse(st, companyId, role, c);
+  }
   if (st.postingRules.some((r) => r.companyId === companyId && r.level === level && r.key === key && r.role === role)) throw new MockError(422, 'posting.duplicate', 'มีกฎของระดับ กุญแจ และบทบาทนี้อยู่แล้ว แก้บัญชีของกฎเดิมแทน');
   const r: PostingRule = { companyId, level, ...(key !== undefined ? { key } : {}), role, accountCode, version: 1 };
   st.postingRules.push(r);
@@ -94,7 +99,7 @@ export function updatePostingRule(st: MockState, actor: Actor, companyId: string
   if (bad) throw bad;
   if (accountCode === r.accountCode) return row(st, r);
   if (CONTROL_ROLES.has(r.role) && (posted(st, companyId, r.accountCode) || posted(st, companyId, accountCode))) { // the old account holds this role's postings, the new one would take in other roles'
-    throw new MockError(409, 'posting.control_in_use', `เปลี่ยนบัญชีของบทบาท ${r.role} ไม่ได้ เพราะบัญชี ${posted(st, companyId, r.accountCode) ? r.accountCode : accountCode} มีรายการลงบัญชีแล้ว (ทะเบียนลูกหนี้ เจ้าหนี้ และแบบภาษีอ่านยอดจากบัญชีของบทบาทนี้) ทางออก: ย้ายยอดด้วยใบสำคัญทั่วไป แล้วใช้บัญชีใหม่กับรายการถัดไป`);
+    throw inUse(st, companyId, r.role, posted(st, companyId, r.accountCode) ? r.accountCode : accountCode);
   }
   const before = shape(r);
   r.accountCode = accountCode; r.version = (r.version ?? 1) + 1;
@@ -108,13 +113,14 @@ export function deletePostingRule(st: MockState, actor: Actor, companyId: string
   const r = find(st, companyId, id);
   if (version !== (r.version ?? 1)) throw conflict();
   if (r.level === 'default' && r.key === undefined) throw new MockError(409, 'posting.default_required', `ลบกฎค่าเริ่มต้นของบทบาท ${r.role} ไม่ได้ ทุกบทบาทต้องมีบัญชีค่าเริ่มต้นของบริษัท ทางออก: แก้บัญชีแทนการลบ`);
+  if (CONTROL_ROLES.has(r.role) && posted(st, companyId, r.accountCode)) throw inUse(st, companyId, r.role, r.accountCode); // a keyed default: its postings would fall through to the keyless account
+  if (r.level === 'category' && r.role === 'Expense' && categoriesOf(st, companyId).some((c) => c.code === r.key)) throw new MockError(409, 'posting.category_rule', `ลบกฎบัญชีของหมวด ${r.key} ไม่ได้ ทางออก: แก้บัญชีของหมวดแทนการลบ`);
   const before = shape(r);
   st.postingRules = st.postingRules.filter((x) => x !== r);
   logAudit(st, actor, companyId, 'posting.rule.delete', target(r), before, undefined);
 }
 
 const PREVIEW_TYPES: DocType[] = ['TI', 'IV', 'DN', 'CN', 'PB', 'PDN', 'PCN', 'EX', 'RC', 'PV'];
-const RULE_TEXT = /^(.*): (\w+) → (\S+)$/;
 /** The resolution order made visible (SP0 §5.5): one sample line through the SAME `compute` -> `ledgerFor` -> `resolveRole` the editor and the issue use. Writes nothing. */
 export function previewPosting(st: MockState, companyId: string, v: PostingPreviewRequest): PostingPreviewResult {
   if (!PREVIEW_TYPES.includes(v.docType)) throw new MockError(422, 'posting.preview_type', 'เลือกประเภทเอกสารที่ลงบัญชี');
@@ -122,12 +128,13 @@ export function previewPosting(st: MockState, companyId: string, v: PostingPrevi
   const lines = [{ id: 'preview-1', description: 'ตัวอย่างรายการ', qty: '1', unit: 'หน่วย', unitPrice: '1000.00', taxCode: (vatOf(st, companyId) ? 'S7' : 'EX') as 'S7' | 'EX',
     ...(v.itemId ? { itemId: v.itemId } : {}), ...(v.expenseCategory && !sales ? { expenseCategory: v.expenseCategory } : {}) }];
   const header = { documentDate: today(), ...(v.partyId ? { partyId: v.partyId } : {}) };
-  const out = compute(st, companyId, v.docType, { header, lines });
+  const seen: Parameters<typeof traceResolutions>[0] = [];
+  const out = traceResolutions(seen, () => compute(st, companyId, v.docType, { header, lines }));
   const entry = out.journal?.entries[0];
   const winners: PostingPreviewResult['winners'] = [];
   for (const l of entry?.lines ?? []) {
-    const m = RULE_TEXT.exec(l.rule);
-    if (m && !winners.some((w) => w.role === m[2])) winners.push({ role: m[2], accountCode: l.accountCode, accountName: l.accountName, rule: l.rule });
+    const hit = seen.find((x) => x.r.rule === l.rule && x.r.code === l.accountCode); // the resolution that produced this very line
+    if (hit && !winners.some((w) => w.role === hit.role)) winners.push({ role: hit.role, accountCode: l.accountCode, accountName: l.accountName, rule: l.rule, level: hit.r.level, ...(hit.r.key !== undefined ? { key: hit.r.key } : {}) });
   }
   return { winners, journal: out.journal ?? { entries: [] }, missing: out.missing.map((x) => x.message) };
 }

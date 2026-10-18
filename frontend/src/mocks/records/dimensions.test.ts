@@ -158,6 +158,48 @@ describe('ruling 5: account rules', () => {
   });
 });
 
+describe('ST2b rulings 4 / 5 / 9', () => {
+  const cnFor = (st: ReturnType<typeof seed>, dims: Record<string, string>, lineDims: Record<string, string>) => {
+    const base = st.docs.find((d) => d.companyId === V && d.type === 'TI' && d.status === 'issued' && !d.header.disposal && Number(d.outstanding ?? 0) > 100)!;
+    const body = { header: { partyId: base.header.partyId, documentDate: '2026-10-14', refDocId: base.id, reasonCode: 'PRICE_REDUCTION', dimensions: dims },
+      lines: [{ ...base.lines[0], qty: '1', unitPrice: '1.00', sourceLineId: base.lines[0].id, dimensions: lineDims }] } as unknown as Parameters<typeof createDraft>[3];
+    return { base, body, draft: () => createDraft(st, V, 'CN', body, USER, `cn-${n++}`) };
+  };
+  it('ruling 4: a CN carrying unknown tags is refused at issue and flagged by compute; invariant 25 never goes red (probe Q1)', () => {
+    const st = seed();
+    const { body, draft: mk } = cnFor(st, { project: 'ZZZ', bogus: 'Q' }, { department: 'NOPE' });
+    const d = mk();
+    expect(msg(() => issue(st, d.id, d.version, USER))).toMatch(/doc\.incomplete: .*(ZZZ|bogus|NOPE)/);
+    expect(compute(st, V, 'CN', body).missing.some((m) => m.code === 'dimension.rule')).toBe(true);
+    expect(checkInvariants(st)).toEqual([]);
+    const ok = cnFor(st, { project: 'P-A' }, { department: 'D-01' });
+    const good = ok.draft();
+    expect(issue(st, good.id, good.version, USER).status).toBe('issued'); // the company's own tags pass, and the account rules never judge a note
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('ruling 5: a revise that ADDS a line on a required account without the tag is refused; an old document revised in its notes only is not (m1)', () => {
+    const st = seed();
+    const d = createDraft(st, V, 'PB', { header: { partyId: 'pv-03', documentDate: '2026-10-01' }, lines: [line('a', { expenseCategory: 'supplies' })] }, USER, 'pb-m1');
+    const pb = issue(st, d.id, d.version, USER);
+    rule(st, '5160', { department: 'required' });
+    revise(st, pb.id, { header: { ...pb.header, notes: 'เฉพาะหมายเหตุ' }, lines: pb.lines }, pb.version, 'แก้หมายเหตุ', USER); // nothing introduced
+    const cur = st.docs.find((x) => x.id === pb.id)!;
+    expect(msg(() => revise(st, pb.id, { header: cur.header, lines: [...cur.lines, line('b', { expenseCategory: 'supplies' })] }, cur.version, 'เพิ่มรายการ', USER))).toMatch(/doc\.incomplete: บัญชี 5160 ต้องระบุแผนก/);
+    const ok = revise(st, pb.id, { header: cur.header, lines: [...cur.lines, line('b', { expenseCategory: 'supplies', dimensions: { department: 'D-01' } })] }, cur.version, 'เพิ่มรายการ', USER);
+    expect(ok.lines).toHaveLength(2);
+  });
+  it('ruling 9: a value or type used on a recurring JV template cannot be deleted (m4)', () => {
+    const st = seed();
+    const sch = st.schedules.find((s) => s.id === 'sch-rec-jv');
+    expect(sch, 'the seed has a recurring JV template').toBeTruthy();
+    const target = sch!.template!.lines[0];
+    target.dimensions = { department: 'D-02' };
+    const v = dimensionsView(st, V).types.find((t) => t.key === 'department')!;
+    expect(code(() => deleteDimensionValue(st, USER, V, 'department', 'D-02', v.values.find((x) => x.code === 'D-02')!.version))).toBe('dimension.in_use');
+    expect(code(() => deleteDimensionType(st, USER, V, 'department', v.version))).toBe('dimension.in_use');
+  });
+});
+
 describe('wire', () => {
   beforeAll(() => testServer.listen({ onUnhandledFrame: 'error' }));
   afterEach(() => testServer.resetHandlers());

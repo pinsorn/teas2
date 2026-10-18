@@ -63,7 +63,7 @@ export function updateUser(st: MockState, actor: Actor, companyId: string, id: s
   const e: Record<string, string[]> = {};
   if ('name' in v && !text(v.name)) e.name = ['ต้องระบุชื่อ'];
   if ('roleId' in v && (typeof v.roleId !== 'string' || !roleExists(st, companyId, v.roleId))) e.roleId = ['ต้องเลือกบทบาทของบริษัทนี้'];
-  if (v.signatureDataUrl) { const msg = imageError(v.signatureDataUrl, false); if (msg) e.signatureDataUrl = [msg]; }
+  if (v.signatureDataUrl) { const msg = imageError(v.signatureDataUrl); if (msg) e.signatureDataUrl = [msg]; }
   if (Object.keys(e).length) throw new FieldErrors(e);
   if (typeof v.roleId === 'string' && v.roleId !== m.roleId) keepAnAdmin(st, actor, m, m.active, v.roleId);
   const before = shape(m);

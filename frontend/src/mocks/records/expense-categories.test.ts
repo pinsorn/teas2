@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { DocLine } from '@/domain/types';
-import { createDraft, issue } from '../engine/commands';
+import { createDraft, issue, revise } from '../engine/commands';
 import { checkInvariants } from '../engine/invariants';
-import { resolveRole } from '../engine/posting';
+import { categoriesOf, dimTypesOf, dimValuesOf, ensureDimensions, resolveRole } from '../engine/posting';
 import { AGENT, USER } from '../fixtures/documents';
 import { buildSeedState } from '../store';
 import { createCategory, deleteCategory, listCategories, updateCategory } from './expense-categories';
@@ -52,7 +52,7 @@ describe('ruling 6: expense categories', () => {
     expect(code(() => updateCategory(st, USER, V, 'p1', { nameTh: 'แม่', accountCode: '5140', parent: 'p2', recoverableVat: true, version: 1 }))).toBe('category.cycle');
     expect(code(() => updateCategory(st, USER, V, 'p1', { nameTh: 'แม่', accountCode: '5140', parent: 'p1', recoverableVat: true, version: 1 }))).toBe('category.cycle');
   });
-  it('IN USE keeps working: an edit of the account moves the NEXT bill only; the posted entry and invariants stay; a delete is refused (deactivate), deactivated still posts', () => {
+  it('IN USE keeps working: an edit of the account moves the NEXT bill only; the posted entry and invariants stay; a delete is refused (deactivate), a deactivated one takes no new bill', () => {
     const st = seed();
     const first = bill(st, 'supplies');
     const before = JSON.stringify(st.journals.find((j) => j.docId === first.id));
@@ -66,7 +66,7 @@ describe('ruling 6: expense categories', () => {
     const v2 = listCategories(st, V).find((c) => c.code === 'supplies')!;
     updateCategory(st, USER, V, 'supplies', { nameTh: v2.nameTh, accountCode: '5130', recoverableVat: true, active: false, version: v2.version });
     expect(listCategories(st, V).find((c) => c.code === 'supplies')!.active).toBe(false);
-    expect(postedTo(st, bill(st, 'supplies').id)).toContain('5130'); // an old document revised later, or a draft already on it, still posts
+    expect(code(() => bill(st, 'supplies'))).toBe('pb.category_inactive'); // ST2b M2: deactivated = no NEW use (the old documents keep it: see below)
     expect(checkInvariants(st)).toEqual([]);
   });
   it('an unused category can be deleted (with its rule); agent refused; stale version 409; another company has its own list', () => {
@@ -83,5 +83,31 @@ describe('ruling 6: expense categories', () => {
     expect(st.audit.length).toBe(audit);
     createCategory(st, USER, 'co-nonvat', { code: 'only-nv', nameTh: 'เฉพาะ NV', accountCode: '5140', recoverableVat: true });
     expect(listCategories(st, V).some((c) => c.code === 'only-nv')).toBe(false);
+  });
+});
+
+describe('ST2b ruling 6: an inactive category is refused where it is INTRODUCED', () => {
+  it('a new document / new line cannot use it (pb.category_inactive); an old document already carrying it may still be revised', () => {
+    const st = seed();
+    const old = bill(st, 'supplies');
+    const c = listCategories(st, V).find((x) => x.code === 'supplies')!;
+    updateCategory(st, USER, V, 'supplies', { ...c, active: false });
+    expect(code(() => bill(st, 'supplies'))).toBe('pb.category_inactive');
+    const cur = st.docs.find((d) => d.id === old.id)!;
+    expect(revise(st, old.id, { header: { ...cur.header, notes: 'ยังแก้ได้' }, lines: cur.lines }, cur.version, 'แก้หมายเหตุ', USER).header.notes).toBe('ยังแก้ได้');
+    expect(code(() => revise(st, old.id, { header: cur.header, lines: [...cur.lines, line({ id: 'b', expenseCategory: 'supplies' })] }, st.docs.find((d) => d.id === old.id)!.version, 'เพิ่มรายการ', USER))).toBe('pb.category_inactive');
+    expect(checkInvariants(st)).toEqual([]);
+  });
+});
+
+describe('ST2b ruling 10: a company added later falls back to the seed masters', () => {
+  it('categoriesOf falls back to the seed rows for a company that has none in the state yet', () => {
+    const st = seed();
+    const c = listCategories(st, V).find((x) => x.code === 'supplies')!;
+    updateCategory(st, USER, V, 'supplies', { ...c, nameTh: 'วัสดุ' }); // the state now holds its own rows
+    expect(categoriesOf(st, 'co-new').map((x) => x.code)).toContain('supplies');
+    expect(dimTypesOf(st, 'co-new').map((x) => x.key)).toEqual(['department', 'project']);
+    ensureDimensions(st);
+    expect(dimValuesOf(st, 'co-new').length).toBe(5);
   });
 });

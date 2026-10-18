@@ -317,7 +317,7 @@ export function compute(st: MockState, companyId: string, type: DocType, raw: Bo
   if (opp) missing.push({ field: 'lines', message: opp.title, code: opp.code });
   const prp = payrollProblem(st, companyId, type, body, opts?.docId); // PY1: a later run, an other deduction above the pay - shown before issue too
   if (prp) missing.push({ field: 'lines', message: prp.title, code: prp.code });
-  const pp = purchaseProblem(st, companyId, type, body); // input VAT rules of a vendor's invoice: shown before issue too
+  const pp = purchaseProblem(st, companyId, type, body, own0 && LIVE.includes(own0.status) ? own0 : undefined); // input VAT rules of a vendor's invoice: shown before issue too
   if (pp) missing.push({ field: ({ 'pb.claim_period_out_of_range': 'header.claimPeriod', 'pcn.claim_period_fixed': 'header.claimPeriod', 'pb.vendor_invoice_after_document': 'header.vendorDocDate' } as Record<string, string>)[pp.code] ?? 'lines', message: pp.title });
   return { lines: c.lines, totals, missing, journal: ledgerFor(st, { ...doc, companyId }), ...settleExtras(st, companyId, type, body), ...(type === 'JV' || type === 'OB' ? { balance: jvBalance(body.lines) } : {}), ...(type === 'OB' ? { opening: buildOb(st, companyId, body).check } : {}), ...(prRun ? { payroll: { slips: prRun.slips.map(slipLine), totals: totalsOfSlips(prRun.slips) } } : {}),
     ...((opts?.docId ? !!own0 && LIVE.includes(own0.status) && reviseNeedsApproval(st, own0, payoutOf(st, companyId, { ...doc, id: opts.docId }), doc.allocations) : approvalRequired(st, companyId, type, payoutOf(st, companyId, doc))) ? { approvalRequired: true } : {}) }; // the editor swaps issue for submit / approve-and-issue (§7.6), and a revise that raises the money above what was approved asks for the approver (C1)
@@ -577,7 +577,7 @@ export function refuseUnrevisablePurchase(st: MockState, d: Stored, body: Body):
     if (np) throw np;
   } else if (d.type === 'PB') refuseFrozenByNotes(st, d, body);
   else if (d.type !== 'EX') return;
-  const pp = purchaseProblem(st, d.companyId, d.type, body);
+  const pp = purchaseProblem(st, d.companyId, d.type, body, d);
   if (pp) throw pp;
   refuseOverConversion(st, d, body);
 }

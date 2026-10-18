@@ -45,24 +45,38 @@ export function jvEntryLines(st: MockState, companyId: string, lines: DocLine[],
 // ---------------------------------------------------------------- ST2: dimensions - the company's own tags, and the account rules (required / forbidden)
 
 type Posting = Parameters<typeof ledgerFor>[1];
+const canon = (v: unknown): string => JSON.stringify(v, (_, x: unknown) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([p], [q]) => p.localeCompare(q))) : x));
 const NO_DIMENSIONS = new Set(['OB', 'DP', 'PR', 'FA']); // these post exactly their own frozen rows: no editor puts a dimension on them
 /** What is wrong with the dimensions of a document as it would post (ruling 4 / 5), keyed so two readings of the same fault compare equal. */
 function dimensionFaults(st: MockState, companyId: string, d: Posting): Map<string, string> {
   const out = new Map<string, string>();
-  if (NO_DIMENSIONS.has(d.type) || ADJUSTS[d.type]) return out; // a note is the mirror of the invoice / bill it adjusts: it inherits that posting
+  if (NO_DIMENSIONS.has(d.type)) return out;
   const types = new Map(dimTypesOf(st, companyId).map((t) => [t.key, t.nameTh])), values = dimValuesOf(st, companyId);
   for (const m of [d.header.dimensions, ...d.lines.map((l) => l.dimensions)]) for (const [k, v] of Object.entries(m ?? {})) {
     const value = values.find((x) => x.typeKey === k && x.code === v);
     if (!types.has(k) || !value) out.set(`unknown|${k}|${v}`, `มิติ ${k} = ${v} ไม่มีในมิติของบริษัทนี้ ทางออก: เลือกค่ามิติจากรายการ`);
     else if (!value.active) out.set(`inactive|${k}|${v}`, `ค่ามิติ ${types.get(k)} ${value.code} ${value.nameTh} ปิดใช้งานแล้ว ทางออก: เลือกค่าอื่น`);
   }
-  let lines: JournalLinePreview[] = [];
-  try { lines = ledgerFor(st, { ...d, companyId }).entries[0]?.lines ?? []; } catch { return out; } // a half-filled document that does not resolve is judged by its own missing list
-  for (const l of lines) for (const [k, rule] of Object.entries(accountOf(st, companyId, l.accountCode)?.dimensionRules ?? {})) {
-    const name = types.get(k) ?? k, has = !!l.dimensions?.[k];
-    if (rule === 'required' && !has) out.set(`req|${l.accountCode}|${k}`, `บัญชี ${l.accountCode} ต้องระบุ${name} ทางออก: ระบุมิติที่หัวเอกสาร`);
-    if (rule === 'forbidden' && has) out.set(`forb|${l.accountCode}|${k}`, `บัญชี ${l.accountCode} ห้ามระบุ${name} ทางออก: เอา${name}ออกจากเอกสาร`);
+  // ST2b ruling 4: a credit / debit note carries only the company's tags (judged above) but is exempt from the ACCOUNT rules below: it mirrors the invoice / bill it adjusts and inherits that posting
+  if (ADJUSTS[d.type]) return out;
+  const check = (lines: JournalLinePreview[], tag: string) => {
+    for (const l of lines) for (const [k, rule] of Object.entries(accountOf(st, companyId, l.accountCode)?.dimensionRules ?? {})) {
+      const name = types.get(k) ?? k, has = !!l.dimensions?.[k];
+      if (rule === 'required' && !has) out.set(`req|${tag}|${l.accountCode}|${k}`, `บัญชี ${l.accountCode} ต้องระบุ${name} ทางออก: ระบุมิติที่หัวเอกสาร`);
+      if (rule === 'forbidden' && has) out.set(`forb|${tag}|${l.accountCode}|${k}`, `บัญชี ${l.accountCode} ห้ามระบุ${name} ทางออก: เอา${name}ออกจากเอกสาร`);
+    }
+  };
+  // ruling 5: a fault is keyed by the DOCUMENT line it comes from and that line's content, so a new or edited line is judged in full while an unchanged line keeps the pass it had
+  const seen = new Set<string>();
+  for (const l of d.lines) {
+    let ls: JournalLinePreview[];
+    try { ls = ledgerFor(st, { ...d, companyId, lines: [l] }).entries[0]?.lines ?? []; } catch { continue; } // a half-filled line that does not resolve is judged by the missing list
+    check(ls, `${l.id}:${canon(l)}`);
+    for (const x of ls) seen.add(x.accountCode);
   }
+  let all: JournalLinePreview[] = [];
+  try { all = ledgerFor(st, { ...d, companyId }).entries[0]?.lines ?? []; } catch { return out; }
+  check(all.filter((x) => !seen.has(x.accountCode)), 'doc'); // the postings no document line stands behind (tax, cash, control accounts)
   return out;
 }
 /** Issue, revise, the correction plan and the editor's "what is missing" ask this one function. NOT retroactive: with `before` (the document as it stands) only a fault the change INTRODUCES counts, so a rule made stricter later never blocks a note edit on an old document. */

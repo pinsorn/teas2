@@ -122,7 +122,7 @@ export function issueVendorStatus(st: MockState, companyId: string, type: DocTyp
 /** Every command-time input VAT rule of a PB / PCN / PDN, first violation wins (undefined = fine): the vendor can only charge VAT when registered (ม.82/5, judged on the status recorded
  *  with the document, else the party master now), the category exists, the vendor invoice is not dated after the bill, the claim period is inside D .. V+6 (R1-I1; an expired window is not
  *  refused, the VAT is forfeited) - and a PCN has none (I2). Judged on the TAX CODE, not on the computed VAT, so a zero-priced line cannot slip through. */
-export function purchaseProblem(st: MockState, companyId: string, type: DocType, body: { header: DocHeader; lines: DocLine[] }): MockError | undefined {
+export function purchaseProblem(st: MockState, companyId: string, type: DocType, body: { header: DocHeader; lines: DocLine[] }, before?: { lines: DocLine[] }): MockError | undefined {
   if (type === 'EX') return expenseClaimProblem(st, companyId, body);
   if (!isVendorBill(type)) return undefined;
   const h = body.header;
@@ -134,6 +134,10 @@ export function purchaseProblem(st: MockState, companyId: string, type: DocType,
   for (const l of body.lines) {
     if (l.expenseCategory && !categoriesOf(st, companyId).some((c) => c.code === l.expenseCategory)) {
       return new MockError(422, 'pb.unknown_category', `รายการ “${l.description}” ใช้หมวดค่าใช้จ่าย “${l.expenseCategory}” ที่ไม่มีในระบบ`);
+    }
+    // ST2b M2: a deactivated category is refused where it is INTRODUCED (a new document or line); a document already carrying it keeps it
+    if (l.expenseCategory && categoriesOf(st, companyId).some((c) => c.code === l.expenseCategory && c.active === false) && !before?.lines.some((b) => b.id === l.id && b.expenseCategory === l.expenseCategory)) {
+      return new MockError(422, 'pb.category_inactive', `หมวดค่าใช้จ่าย “${l.expenseCategory}” ปิดใช้งานแล้ว ทางออก: เลือกหมวดอื่น หรือเปิดใช้งานหมวดนี้ในหน้าตั้งค่าการลงบัญชี`);
     }
   }
   if (type !== 'PCN' && h.vendorDocDate && (!/^\d{4}-\d{2}-\d{2}$/.test(h.vendorDocDate) || h.vendorDocDate > h.documentDate)) {

@@ -13,7 +13,7 @@ export interface PostingRuleRow {
 /** `GET /settings/posting/rules`: the rules plus what the form needs - every role with the accounts it accepts (from the ONE class table the server saves by) and the account names. */
 export interface PostingRulesView { items: PostingRuleRow[]; roles: { role: string; accepts: string; accountCodes: string[] }[]; accounts: { code: string; nameTh: string }[] }
 export interface PostingPreviewRequest { docType: DocType; itemId?: string; expenseCategory?: string; partyId?: string }
-export interface PostingPreviewResult { winners: { role: string; accountCode: string; accountName: string; rule: string }[]; journal: JournalPreview; missing: string[] }
+export interface PostingPreviewResult { winners: { role: string; accountCode: string; accountName: string; rule: string; level: PostingLevel; key?: string }[]; journal: JournalPreview; missing: string[] }
 
 /** The wire of the posting tab (ledger.posting.manage). A rule's id is `level|key|role`. */
 export const postingApi = {

@@ -3,7 +3,8 @@ import type { Actor, DocHeader, DocLine, DocType, IsoDate, Lock, Money, Schedule
 import type { MockState } from '../store';
 import { allocate, compute, createDraft, missingOf, newId, publicDoc, setJournal } from './commands';
 import { isUsed, jvAccountProblem, jvMissing, jvTotals, userReversalOf } from './journal';
-import { ledgerFor } from './ledger';
+import { GROUP_OF } from '@/records/accounts';
+import { ledgerFor, postedDebit } from './ledger';
 import { MockError, logActivity, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
 import { isClosed, monthLabelTh, refuseYearClosed } from './periods';
@@ -83,10 +84,17 @@ function sourceLine(st: MockState, d: Stored, lineId: string): { account: string
   }
   if (d.type !== 'PB' && d.type !== 'PCN' && d.type !== 'PDN') return undefined; // a note on the line moves what it holds (PCN less, PDN more)
   const cat = categoryOf(st, d.companyId, l);
+  const amount = toSatang(computeDoc(d.lines, !!d.header.priceIncludesVat, true).lines[i].net);
+  // ST2b ruling 3: a STORED document is read from what it actually posted (an expense / prepaid account, never a control one); only a pending change (not stored yet) resolves the rules in force now
+  if (st.docs.includes(d)) {
+    const expenseLike = (code: string) => { const a = st.accounts.find((x) => x.companyId === d.companyId && x.code === code); return !!a && !a.controlRole && (a.subClass === 'prepayment' || GROUP_OF[a.class] === 'expense'); };
+    const posted = postedDebit(st, d.id, amount, expenseLike);
+    if (posted !== null) return posted ? { account: posted, amount } : undefined;
+  }
   if (cat?.capex) return undefined;
   try {
     const account = resolveRole(st, 'Expense', { companyId: d.companyId, docType: d.type, itemId: l.itemId, expenseCategory: cat?.code ?? l.expenseCategory, dimensions: l.dimensions }).code;
-    return { account, amount: toSatang(computeDoc(d.lines, !!d.header.priceIncludesVat, true).lines[i].net) };
+    return { account, amount };
   } catch { return undefined; }
 }
 const isPrepaid = (st: MockState, companyId: string, code: string) =>
