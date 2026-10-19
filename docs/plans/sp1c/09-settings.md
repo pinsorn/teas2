@@ -146,7 +146,7 @@ messages, `screens.ts`.
 ### Task GST: Ham gate — settings
 
 - [x] Consolidated gate green; production build / staging.
-- [ ] Send Ham: company profile (registered identity behind a confirm), users / roles with the permission matrix,
+- [x] Send Ham: company profile (registered identity behind a confirm), users / roles with the permission matrix,
   posting profiles with the visible resolution order and preview, dimensions with account rules, WHT effective-dated
   rates (no rate editing), numbering format rules, approval policy (one threshold per type — O-5), templates.
-- [ ] AskUserQuestion "Settings approve?" — approve / approve with changes / rework. Record in `STATUS.md`.
+- [x] AskUserQuestion "Settings approve?" — approve / approve with changes / rework. Record in `STATUS.md`.
