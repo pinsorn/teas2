@@ -150,7 +150,7 @@ test('templates: a toggle is saved and audited, the preview is the real paper an
   await page.getByRole('button', { name: 'บันทึก' }).click();
   await expect(preview).toContainText('ผู้มีอำนาจลงนาม');
   await page.getByRole('button', { name: 'ใบสำคัญจ่าย', exact: true }).click(); // another type: its own labels, its own paper
-  await expect(page.getByRole('heading', { level: 2, name: /ใบสำคัญจ่าย/ })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'ใบสำคัญจ่าย (PV)', exact: true})).toBeVisible();
   await expect(preview).toContainText('ผู้รับเงิน');
   await axeClean(page);
   await page.setViewportSize({ width: 390, height: 844 });

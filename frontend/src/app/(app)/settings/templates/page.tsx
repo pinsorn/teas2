@@ -35,13 +35,15 @@ function TemplatePreview({ type, version }: { type: DocType; version: number }) 
   );
 }
 
-function Editor({ row, labels }: { row: TemplateRow; labels: string[] }) {
+type Msg = { ok: boolean; text: string } | undefined;
+
+// msg lives in the parent: a save bumps row.version, which remounts the Editor (key) and would drop the 'saved' / 'conflict' message with it.
+function Editor({ row, labels, msg, setMsg }: { row: TemplateRow; labels: string[]; msg: Msg; setMsg: (m: Msg) => void }) {
   const t = useTranslations('settings.templates.editor');
   const td = useTranslations('docTypes');
   const qc = useQueryClient();
   const { me } = useMe();
   const [v, setV] = useState({ showLogo: row.showLogo, showStamp: row.showStamp, showSignature: row.showSignature, signatureLabels: row.signatureLabels });
-  const [msg, setMsg] = useState<{ ok: boolean; text: string }>();
   const name = td(`${row.type}.title`);
   const refresh = () => qc.invalidateQueries({ queryKey: [me?.activeCompanyId ?? '', 'settings', 'templates'] });
   const save = useMutation({
@@ -89,6 +91,7 @@ function Inner() {
   const id = me?.activeCompanyId ?? '';
   const q = useQuery({ queryKey: [id, 'settings', 'templates'], queryFn: () => api<TemplatesView>('GET', T), enabled: !!id });
   const [sel, setSel] = useState<DocType>('TI');
+  const [msg, setMsg] = useState<Msg>();
   if (meFailed && !me) return <ErrorState error={meError} onRetry={() => void refetchMe()} />;
   if (q.isError && !q.data) return isForbidden(q.error) ? <ForbiddenState permission="settings.manage" detail={q.error instanceof ApiError ? q.error.problem.detail : undefined} /> : <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
   if (!me || !q.data) return <LoadingState />;
@@ -99,11 +102,11 @@ function Inner() {
       <div className="grid gap-4 lg:grid-cols-[14rem_1fr]">
         <nav aria-label={t('types')} className="flex flex-wrap gap-2 lg:flex-col">
           {q.data.items.map((r) => (
-            <Button key={r.type} variant={r.type === row.type ? 'default' : 'outline'} size="sm" aria-pressed={r.type === row.type} className="justify-start" onClick={() => setSel(r.type)}>{td(`${r.type}.title`)}</Button>
+            <Button key={r.type} variant={r.type === row.type ? 'default' : 'outline'} size="sm" aria-pressed={r.type === row.type} className="justify-start" onClick={() => { setMsg(undefined); setSel(r.type); }}>{td(`${r.type}.title`)}</Button>
           ))}
         </nav>
         <div className="grid min-w-0 gap-4">
-          <Editor key={`${row.type}-${row.version}`} row={row} labels={q.data.labels} />
+          <Editor key={`${row.type}-${row.version}`} row={row} labels={q.data.labels} msg={msg} setMsg={setMsg} />
           <TemplatePreview type={row.type} version={row.version} />
         </div>
       </div>

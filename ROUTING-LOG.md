@@ -81,3 +81,4 @@
 | 2026-10-19 | SP1c ST4 review (templates + paper snapshot at issue) | opus-reviewer (fresh) | freeze rule on papers |
 | 2026-10-19 | SP1c ST4a fix round (signature only on issuer line, stamp never on counterparty line, issueLook invariant, PR labels, stamp independent, 50 tawi actor) | sonnet-implementer (warm, ST4 worker) | Opus REJECT ST4 (M1) |
 | 2026-10-19 | SP1c GST consolidated gate (typecheck, lint, unit, build, Playwright --workers=1) | haiku-gate-runner | Tier 3 run-and-report |
+| 2026-10-19 | SP1c flaky templates e2e (CI run 39180806907) | sonnet-implementer (fresh) | root-cause a flaky test in new ST4 code before merge |
