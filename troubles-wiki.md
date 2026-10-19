@@ -219,3 +219,8 @@ Entry format — terse, greppable by symptom:
 - **Root cause:** import cycle `fixtures/documents.ts -> engine/numbering.ts -> engine/company.ts -> engine/log.ts -> fixtures/documents.ts` (log.ts reads `ANCHOR` from documents.ts). When log.ts is the entry, company.ts evaluates `extends MockError` before log.ts has defined it. `numbering.ts` is imported by the seed fixtures, so it may import `log.ts` (cycle is harmless: only used inside functions) but never `company.ts` or anything that extends a class at module load.
 - **Fix:** numbering.ts keeps its own two-line agent refusal instead of importing `refuseAgent` from company.ts.
 - **Seen:** 2026-10-19, SP1c ST3
+
+## CI-only axe color-contrast on `.bg-primary` mid-transition (payroll run new, nonvat / accountant)
+- Symptom: `screen-contract` axe reports `color-contrast: .bg-primary` once on CI (PR #16 run 39173571176); green locally and on rerun.
+- Root cause (suspected): axe samples a button while its colour transition is still running (same class as the CI1 `ti-loop` fade).
+- Fix: rerun the failed job; if it recurs, wait for the primary button's transition to finish before `axeClean` (as CI1 did for `ti-loop`).
