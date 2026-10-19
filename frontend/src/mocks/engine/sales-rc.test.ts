@@ -254,7 +254,7 @@ describe('correction plan on a receipt: cancel + reissue keeps each target\'s se
     expect(get(moved).header.bankAccountId).toBe(other.id);
     const second = get(moved);
     const stripped = { ...second.header }; delete stripped.bankAccountId;
-    const again = executePlanFor(moved, { ...stripped, dimensions: { project: 'X' } }, second); // a real change with the bank field absent: reissued, into the posted account
+    const again = executePlanFor(moved, { ...stripped, dimensions: { project: 'P-B' } }, second); // a real change with the bank field absent: reissued, into the posted account
     expect(get(again).header.bankAccountId).toBe(other.id);
     assertBalanced(st);
   });
@@ -361,7 +361,7 @@ describe('fix round 1 (Opus S4 review): party on an RC correction, in-place whit
 
   it('M1: in place, a receipt takes only certificate numbers, notes and reference; dimensions and cheque are refused doc.revise_not_allowed', () => {
     const d = get('rc-nocert');
-    const dims = rcBody(d, { header: { dimensions: { project: 'P9' } } });
+    const dims = rcBody(d, { header: { dimensions: { project: 'P-B' } } });
     const cheque = rcBody(d, { header: { paymentMethod: 'cheque', cheque: { number: '123', date: '2026-10-14', bank: 'KBANK' } } });
     expect(code(() => revise(st, d.id, dims, d.version, 'x', me))).toBe('doc.revise_not_allowed');
     expect(code(() => revise(st, d.id, cheque, d.version, 'x', me))).toBe('doc.revise_not_allowed');
@@ -372,7 +372,7 @@ describe('fix round 1 (Opus S4 review): party on an RC correction, in-place whit
   });
   it('M1: the plan for a dimension change on a receipt is cancel + reissue, not an in-place revise that would fail at execute', () => {
     const d = get('rc-nocert');
-    const plan = correctionPlan(st, d.id, rcBody(d, { header: { dimensions: { project: 'P9' } } }), 'accountant');
+    const plan = correctionPlan(st, d.id, rcBody(d, { header: { dimensions: { project: 'P-B' } } }), 'accountant');
     expect(plan.steps.map((s) => s.action)).toEqual(['cancel', 'reissue']);
   });
 

@@ -259,6 +259,7 @@
       "items": "Products and services",
       "settingsCompany": "Company",
       "settingsUsers": "Users and permissions",
+      "settingsRoles": "Roles and permissions",
       "settingsPosting": "Posting",
       "settingsDimensions": "Dimensions",
       "settingsTax": "Tax",
@@ -475,7 +476,7 @@
       "dpNew": "Run depreciation",
       "periodClose": "Period and year close",
       "dpRun": "A posted depreciation run",
-      "employeesList": "Employees list", "employeeJoiner": "Employee (joins 15 Oct)", "prList": "Payroll runs list", "prNew": "New payroll run", "prDraft": "A draft payroll run", "prIssued": "An issued payroll run (the latest)", "prPaid": "A payroll run a later run builds on", "nprIssued": "A payroll run (non-VAT)",
+      "settingsCompany": "Settings: company profile", "settingsUsers": "Settings: users and permissions", "settingsRoles": "Settings: roles and permissions", "employeesList": "Employees list", "employeeJoiner": "Employee (joins 15 Oct)", "prList": "Payroll runs list", "prNew": "New payroll run", "prDraft": "A draft payroll run", "prIssued": "An issued payroll run (the latest)", "prPaid": "A payroll run a later run builds on", "nprIssued": "A payroll run (non-VAT)",
       "styleGuide": "Style guide"
     },
     "state": { "normal": "Normal", "empty": "Empty", "loading": "Loading", "error": "Error", "forbidden": "Forbidden", "locked": "Locked" },
@@ -606,6 +607,7 @@
     "adjustVendor": { "title": "Choose the purchase bill to record the {kind} against", "hint": "A vendor credit or debit note must reference an issued purchase bill; its lines come from that bill", "empty": "No issued purchase bill yet", "loadFailed": "Could not load the purchase bills", "pick": "Choose {number}", "kindPcn": "vendor credit note", "kindPdn": "vendor debit note", "partyFixed": "Vendor of the purchase bill adjusted" },
     "adjust": { "title": "Choose the tax invoice to {kind}", "hint": "A credit or debit note must reference an issued tax invoice; its lines come from that invoice", "empty": "No issued tax invoice yet", "loadFailed": "Could not load the tax invoices", "pick": "Choose {number}", "kindCn": "credit", "kindDn": "debit", "partyFixed": "Customer of the tax invoice adjusted" },
     "notes": "Notes",
+    "dimensions": { "title": "Dimensions", "set": "Set dimensions", "lineOpen": "Set dimensions of line {n}", "none": "Not specified", "inherit": "From the header", "closed": "closed", "lineGroup": "Dimensions of line {n}", "lineLabel": "{type}, line {n}" },
     "lines": {
       "title": "Lines",
       "description": "Item {n}",
@@ -630,6 +632,7 @@
       "whtUnknown": "Unknown type {code}",
       "whtNone": "None",
       "hintAmount": "Enter moves to the next cell  ·  Enter in the last cell adds a line",
+      "categoryClosed": "closed",
       "categoryNone": "From the item / none", "fromSource": "From {qty} {unit} x unit price (change the quantity on the purchase order)", "unitPriceOf": "Unit price of line {n}",
       "taxCode": { "S7": "VAT 7%", "Z0": "VAT 0%", "EX": "No VAT / exempt" }
     },
@@ -1143,6 +1146,11 @@
     "item": { "title": "Items and services", "search": "Search code or name", "empty": "No items or services yet" },
     "bank-account": { "title": "Bank and cash accounts", "search": "Search account name or GL code", "empty": "No bank or cash accounts yet" },
     "employee": { "title": "Employees", "search": "Search by code, name or national ID", "empty": "No employees yet" },
+    "user": { "title": "User", "search": "Search by name or email", "empty": "No users yet" },
+    "role": { "title": "Role", "search": "Search roles", "empty": "No roles" },
+    "postingRule": { "title": "Posting rules", "search": "Search posting rules", "empty": "No posting rules" },
+    "expenseCategory": { "title": "Expense categories", "search": "Search expense categories", "empty": "No expense categories yet" },
+    "dimension": { "title": "Dimensions", "search": "Search dimensions", "empty": "No dimensions yet" },
     "schedule": { "title": "Recurring and amortisation", "search": "Search by name", "empty": "No recurring templates or amortisation schedules yet. Make one with “Make recurring” or “Amortise” on a document." },
     "account": { "title": "Chart of accounts", "search": "Search account code or name", "empty": "No accounts in the chart yet", "collapse": "Collapse {code}", "expand": "Expand {code}", "actions": "Actions" },
     "fields": {
@@ -1429,6 +1437,365 @@
       "note": "The s.50 bis certificate is issued once a year (PND.1 Kor)", "print": "Print payslip", "close": "Close"
     }
   },
+  "settings": {
+    "posting": {
+      "title": "Posting",
+      "lead": "Set which account each accounting role posts to. A change applies to documents issued, revised or corrected after it; what is already posted does not move.",
+      "tabsLabel": "Posting sections",
+      "tabs": { "rules": "Posting rules", "categories": "Expense categories", "preview": "Test posting" },
+      "levels": { "item": "Item / service", "category": "Expense category / asset class", "partyGroup": "Party group", "docType": "Document type", "default": "Company default" },
+      "columns": { "level": "Level", "key": "Key", "role": "Accounting role", "account": "Account", "actions": "Actions" },
+      "fields": { "level": "Rule level", "key": "Key (item, category, group, document type)", "role": "Accounting role", "account": "Account" },
+      "filterLevel": "Level",
+      "allLevels": "All levels",
+      "addRule": "Add rule",
+      "addTitle": "Add posting rule",
+      "editTitle": "Change the rule's account",
+      "edit": "Edit",
+      "delete": "Delete",
+      "cancel": "Cancel",
+      "editRule": "Edit rule {role}, level {level} {key}",
+      "deleteRule": "Delete rule {role}, level {level} {key}",
+      "deleteTitle": "Delete this posting rule",
+      "deleteBody": "Delete the {role} rule at level {level} {key}. Posted documents do not change; later documents fall through to the next level.",
+      "required": "Default",
+      "requiredHint": "Every role keeps a company default. It cannot be deleted - change its account instead.",
+      "empty": "No rules at this level",
+      "pickKey": "Choose...",
+      "keyNone": "General (no key)",
+      "itemKeyHint": "Item code, for example SV-02",
+      "pickRole": "Choose an accounting role",
+      "pickAccount": "Choose an account",
+      "accepts": "This role accepts accounts of class: {classes}",
+      "nextOnly": "The change applies to later documents only. Posted entries are not moved.",
+      "roleNames": {
+        "AR": "Trade receivables", "AP": "Trade payables", "Revenue": "Sales / service revenue", "SalesDiscount": "Sales discount", "SalesReturn": "Sales returns / credit notes", "OutputVat": "Output VAT",
+        "InputVat": "Input VAT", "InputVatUnclaimed": "Input VAT not claimable", "WhtReceivable": "Tax withheld by customers (credit)", "WhtPayable": "Withholding tax payable", "WhtExpense": "Withholding tax we bear",
+        "Pnd36VatPayable": "VAT payable (PP.36)", "Cash": "Cash / bank", "CustomerDeposit": "Customer deposits", "VendorPrepayment": "Vendor prepayments", "Expense": "Expense",
+        "FixedAsset": "Fixed assets", "AccumulatedDepreciation": "Accumulated depreciation", "DepreciationExpense": "Depreciation expense", "DisposalGainLoss": "Gain / loss on asset disposal", "SalaryExpense": "Salaries and wages",
+        "PitPayable": "Personal income tax payable", "SsoPayable": "Social security payable", "SsoExpense": "Social security (employer)", "SalaryPayable": "Salaries payable", "EmployeePayable": "Payable to employees",
+        "PayrollDeductionPayable": "Other deductions payable", "BankFee": "Bank fees", "RoundingDifference": "Rounding difference", "SmallWriteOff": "Small balance write-off", "RetainedEarnings": "Retained earnings",
+        "OpeningBalanceEquity": "Opening balance equity", "VatPayable": "VAT payable", "VatCarryForward": "VAT carried forward"
+      },
+      "preview": {
+        "lead": "Pick a document type, item, expense category or party to see which rule wins for each role and the entry it would post. Nothing is saved.",
+        "docType": "Document type", "item": "Item / service", "category": "Expense category", "party": "Party", "none": "Not specified",
+        "run": "Test", "running": "Testing", "failed": "The test failed. Try again.",
+        "missing": "This sample is incomplete (it does not affect the rule test)", "winners": "The rule used for each role", "journal": "Sample entry (1,000.00 baht)",
+        "role": "Role", "rule": "Winning rule", "account": "Account", "debit": "Debit", "credit": "Credit"
+      }
+    },
+    "categories": {
+      "title": "Expense categories",
+      "lead": "A category decides the account, whether the input VAT is claimable and whether a purchase is capitalised. A change applies to later documents only.",
+      "columns": { "code": "Code", "name": "Category", "account": "Account / asset class", "vat": "Input VAT claimable", "capex": "Capex", "status": "Status", "actions": "Actions" },
+      "fields": { "code": "Category code", "name": "Category name", "account": "Expense account", "vat": "Input VAT of this category is claimable", "capex": "Capex (capitalised as an asset, not an expense)", "assetClass": "Asset class", "wht": "Default withholding type", "parent": "Parent category", "active": "Active" },
+      "add": "Add category", "addTitle": "Add expense category", "editTitle": "Edit category {name}", "edit": "Edit", "delete": "Delete", "cancel": "Cancel",
+      "editOf": "Edit category {name}", "deleteOf": "Delete category {name}",
+      "deleteTitle": "Delete category {name}",
+      "deleteBody": "Only a category that no document, item or sub-category uses can be deleted. If it is used, deactivate it instead.",
+      "empty": "No expense categories yet",
+      "yes": "Yes", "no": "No", "active": "Active", "inactive": "Inactive", "none": "None",
+      "under": "under {parent}", "capexTo": "Asset {cls}",
+      "pickAccount": "Choose an account", "pickAssetClass": "Choose an asset class",
+      "accepts": "Accepts accounts of class: {classes}",
+      "nextOnly": "The change applies to later documents only. Posted documents do not change."
+    },
+    "dimensions": {
+      "title": "Dimensions",
+      "lead": "Dimensions split revenue and expense, for example by department or project. Set on the header they default every line; a line can set its own. Document numbers never contain a dimension.",
+      "cancel": "Cancel", "delete": "Delete",
+      "deleteTitle": "Delete {name}",
+      "deleteBody": "Only what no document or journal line uses can be deleted. If it is used, deactivate it instead. A deactivated value is not offered to new documents; old documents still show it.",
+      "types": {
+        "title": "Types and values", "lead": "{n} of {max} types used", "empty": "No dimensions yet", "add": "Add dimension", "addTitle": "Add dimension type", "renameTitle": "Rename dimension {name}",
+        "rename": "Rename", "renameOf": "Rename dimension {name}", "deleteOf": "Delete dimension {name}", "name": "Dimension name", "key": "Dimension key", "keyHint": "Lower-case letters, digits and _, for example region (cannot be changed later)"
+      },
+      "values": {
+        "code": "Code", "name": "Name", "status": "Status", "actions": "Actions", "active": "Active", "inactive": "Inactive", "activate": "Activate", "deactivate": "Deactivate",
+        "activateOf": "Activate {name}", "deactivateOf": "Deactivate {name}", "deleteOf": "Delete {name}",
+        "newCode": "Code of a {name} value", "newName": "Name of a {name} value", "add": "Add a {name} value", "failed": "Could not add. Try again."
+      },
+      "rules": {
+        "title": "Account dimension rules", "lead": "Per account, whether a document that posts to it must carry a dimension (required) or must not (forbidden). Applies to documents issued, revised or corrected after the change; issued documents are not re-checked.",
+        "account": "Account", "search": "Search accounts", "onlyWithRules": "Only accounts with a rule", "noTypes": "Add a dimension type first to set account rules", "none": "No accounts found",
+        "cell": "{account}, dimension {type}", "failed": "Could not save the rule. Try again.",
+        "rule": { "optional": "Optional", "required": "Required", "forbidden": "Forbidden" }
+      }
+    },
+    "tax": {
+      "title": "Tax",
+      "lead": "The VAT status and rate are system rules that administrators do not set. A withholding rate changes by adding a new dated rate; the old rate is never edited.",
+      "vat": {
+        "title": "Value added tax (VAT)", "lead": "View only. A registration change is a request with an effective date.",
+        "status": "Status", "registered": "Registered for VAT", "notRegistered": "Not registered for VAT", "rate": "Standard rate", "source": "Source",
+        "requests": "VAT status change requests", "pending": "Pending", "requestRegister": "Request to register for VAT from {date}", "requestDeregister": "Request to deregister from VAT from {date}", "by": "requested by {name}",
+        "dateRegister": "Register for VAT from", "dateDeregister": "Deregister from VAT from", "requestRegisterButton": "Request VAT registration", "requestDeregisterButton": "Request VAT deregistration",
+        "failed": "Could not send the request. Try again.", "requestNote": "A request does not change the company's status in the system until status changes are enabled."
+      },
+      "wht": {
+        "title": "Withholding tax types", "lead": "Changing a rate adds a new row effective from the date given. Documents dated before it keep the old rate.",
+        "col": { "code": "Code", "name": "Name", "income": "Income type", "rate": "Current rate", "status": "Status", "actions": "Actions" },
+        "active": "Active", "inactive": "Inactive", "change": "Change rate", "changeOf": "Change the rate of {name}", "history": "Rate history", "historyButtonOf": "Rate history of {name}", "historyOf": "Rate history of {name}",
+        "deactivate": "Deactivate", "activate": "Activate", "deactivateOf": "Deactivate {name}", "activateOf": "Activate {name}",
+        "freeze": "An inactive type is not offered for new lines. Documents that already carry it keep working.",
+        "failed": "Could not save. Try again.", "from": "Effective from", "rate": "Rate",
+        "form": { "title": "Change the rate of {name}", "current": "Current rate {rate} (the old row is not edited; a new row is added)", "newRate": "New rate (%)", "from": "Effective from", "fromHint": "Leave empty for today", "rateInvalid": "Enter the rate as a number from 0 to 100" }
+      },
+      "codes": { "title": "Tax codes", "lead": "View only.", "col": { "code": "Code", "name": "Name", "rate": "Rate" } }
+    },
+    "numbering": {
+      "title": "Document numbers",
+      "lead": "Set the prefix, counting scope (monthly or yearly), branch and format of the numbers of each document type.",
+      "table": "Number formats by document type",
+      "col": { "type": "Document type", "prefix": "Prefix", "scope": "Counting", "format": "Format", "next": "Next number", "actions": "Actions" },
+      "scope": { "monthly": "Monthly", "yearly": "Yearly" },
+      "edit": "Edit", "editOf": "Edit the number format of {name}",
+      "frozen": "A format is frozen per period: the first number of a period keeps the format in force, so a change applies from the next period that has no numbers yet. Numbers already issued never change.",
+      "preview": { "label": "First number under this format", "failed": "No preview", "fromNext": "Starts with period {period} (the current period already has numbers)", "fromNow": "Starts with period {period}", "wait": "Building the preview" },
+      "form": {
+        "title": "Number format of {name}", "prefix": "Prefix", "scope": "Counting", "monthly": "Monthly (restarts every month)", "yearly": "Yearly (restarts every year)", "branch": "Branch (optional)", "format": "Format",
+        "tokens": "Available tokens: {list}", "ruleMonthly": "Monthly needs {mm}, a year ({yyyy} or {yy}) and the counter {counter}", "ruleYearly": "Yearly needs a year ({yyyy} or {yy}), no {mm} and the counter {counter}"
+      }
+    },
+    "approvals": {
+      "title": "Approvals",
+      "lead": "Set which document types need approval before they are issued, with one threshold per type. A change applies to documents submitted or issued from now on; a document already submitted or issued keeps the policy it was under.",
+      "rules": {
+        "title": "Approval policy", "lead": "Approval is needed when the total is above the threshold. Leave it empty for every amount.",
+        "col": { "type": "Document type", "enabled": "Needs approval", "min": "Threshold (THB)", "actions": "Actions" },
+        "enabledOf": "{name} needs approval", "minOf": "Threshold of {name}", "minPlaceholder": "Every amount", "minHint": "Approval needed above this amount", "saveOf": "Save {name}", "save": "Save", "saved": "Saved", "failed": "Could not save. Try again."
+      },
+      "self": { "title": "Approving your own document", "lead": "Applies to every document type of the company.", "label": "The creator may approve their own document", "save": "Save", "saved": "Saved", "failed": "Could not save. Try again." },
+      "tolerance": {
+        "title": "Settlement difference tolerance", "lead": "The largest difference a settlement or small write-off may absorb (THB, including bank fees).", "rounding": "Rounding (THB)", "smallWriteOff": "Small write-off (THB)",
+        "save": "Save", "saved": "Saved", "failed": "Could not save. Try again.", "frozen": "A settlement keeps the tolerance in force when it was made. A change applies to new settlements only."
+      }
+    },
+    "templates": {
+      "title": "Document templates",
+      "lead": "Choose, per document type, whether the logo, the company stamp and the signature lines are shown and which signer names are used. These options apply when printing only; they never change the figures or data of a document already issued.",
+      "types": "Document types",
+      "notesLink": "The default note of each type is set on the company page",
+      "editor": {
+        "showLogo": "Show the company logo",
+        "showStamp": "Show the company stamp",
+        "showSignature": "Show the signature lines and the issuer's signature",
+        "labels": "Signer names",
+        "labelsHint": "Pick 1 to 4 lines, in the order picked. The issuer's signature sits on the {line} line; if you drop that line, no signature prints",
+        "labelOf": "Signature line {label}",
+        "save": "Save",
+        "saved": "Saved",
+        "failed": "Could not save. Try again.",
+        "tooFew": "Pick at least one signer name",
+        "conflict": "This template was changed by someone else. The latest has been loaded; check it and save again."
+      },
+      "preview": {
+        "title": "Print preview",
+        "note": "The preview is the real paper built from a sample document. It updates after you save.",
+        "loading": "Loading the preview",
+        "failed": "Could not show the preview"
+      }
+    },
+    "common": {
+      "save": "Save",
+      "saving": "Saving",
+      "saved": "Saved",
+      "failed": "Could not save. Try again.",
+      "cancel": "Cancel",
+      "copy": "Copy",
+      "copied": "Copied",
+      "close": "Close",
+      "empty": "–"
+    },
+    "company": {
+      "title": "Company profile",
+      "lead": "The details used on documents, tax returns and payroll. Each section saves on its own and is recorded in the audit log.",
+      "conflict": "Someone else changed the company details. The latest data is loaded; check it and save again.",
+      "identity": {
+        "title": "Registered details",
+        "description": "Name, tax ID, branch and address as on the company certificate",
+        "edit": "Edit registered details",
+        "cancelEdit": "Cancel editing",
+        "vatStatus": "VAT status",
+        "vatYes": "VAT registered",
+        "vatNo": "Not VAT registered",
+        "vatNote": "VAT status is changed in the tax settings",
+        "confirmTitle": "Confirm editing the registered details",
+        "confirmBody": "Documents already issued and returns already filed keep the name, address and tax ID they were issued with (the snapshot taken when they were issued). New documents use the new details.",
+        "confirmAction": "Confirm and save"
+      },
+      "contact": {
+        "title": "Contact",
+        "description": "Trade name, phone, email and website shown on documents"
+      },
+      "payroll": {
+        "title": "Payroll and social security",
+        "description": "The 10-digit social security employer account, used on the SSO 1-10 return"
+      },
+      "fiscal": {
+        "title": "Fiscal year",
+        "description": "The month the fiscal year starts. Only the calendar year (starting in January) is supported for now.",
+        "locked": "Cannot be changed because a period is closed",
+        "lockedExit": "Ask the administrator to reopen the periods first",
+        "lockedLink": "Go to period close"
+      },
+      "images": {
+        "title": "Images",
+        "description": "The company logo and stamp (documents will use them once enabled in the document template settings)"
+      },
+      "notes": {
+        "title": "Default notes per document type",
+        "description": "A new document of each type starts with this note. Issued documents do not change."
+      },
+      "fields": {
+        "legalNameTh": "Legal name (Thai)",
+        "legalNameEn": "Legal name (English)",
+        "taxId": "Tax ID",
+        "branchCode": "Branch code",
+        "registrationNo": "Registration number",
+        "address": "Registered address",
+        "paidUpCapital": "Paid-up capital (THB)",
+        "tradeName": "Trade name",
+        "phone": "Phone",
+        "email": "Email",
+        "website": "Website",
+        "ssoEmployerAccountNo": "Employer account (social security)",
+        "fiscalYearStartMonth": "Fiscal year start month",
+        "logoDataUrl": "Logo",
+        "stampDataUrl": "Stamp"
+      },
+      "months": {
+        "1": "January",
+        "2": "February",
+        "3": "March",
+        "4": "April",
+        "5": "May",
+        "6": "June",
+        "7": "July",
+        "8": "August",
+        "9": "September",
+        "10": "October",
+        "11": "November",
+        "12": "December"
+      }
+    },
+    "image": {
+      "none": "No image",
+      "remove": "Remove",
+      "hint": "PNG, JPEG or WebP, up to 1 MB",
+      "type": "Only PNG, JPEG or WebP files are accepted",
+      "size": "The file is larger than 1 MB",
+      "read": "Could not read the file"
+    },
+    "matrix": {
+      "all": "All",
+      "selectAll": "Grant everything under {name}",
+      "area": {
+        "party": "Customers and vendors",
+        "item": "Items",
+        "bank": "Banking",
+        "ledger": "General ledger",
+        "payroll": "Payroll returns",
+        "employee": "Employees",
+        "audit": "Audit",
+        "settings": "Settings",
+        "users": "Users",
+        "report": "Reports",
+        "tax": "Tax"
+      }
+    },
+    "users": {
+      "title": "Users and permissions",
+      "lead": "The members of this company and their roles. Every change is recorded in the audit log.",
+      "invite": "Invite a user",
+      "inviteTitle": "Invite a user",
+      "empty": "No users yet",
+      "edit": "Edit",
+      "columns": {
+        "name": "Name",
+        "email": "Email",
+        "role": "Role",
+        "position": "Position",
+        "status": "Status",
+        "lastLogin": "Last sign-in",
+        "actions": "Actions"
+      },
+      "status": {
+        "active": "Active",
+        "inactive": "Deactivated",
+        "pending": "Invite pending"
+      },
+      "never": "Never signed in",
+      "fields": {
+        "name": "Name",
+        "email": "Email",
+        "role": "Role",
+        "position": "Position",
+        "signature": "Signature"
+      },
+      "selectRole": "— Choose a role —",
+      "actions": {
+        "edit": "Edit {name}",
+        "accept": "Mark the invitation of {name} as accepted",
+        "acceptShort": "Mark accepted",
+        "resetShort": "Reset link",
+        "activateShort": "Activate",
+      "resetLink": "Issue a password reset link for {name}",
+        "deactivate": "Deactivate {name}",
+        "activate": "Activate {name}"
+      },
+      "link": {
+        "inviteLabel": "Invitation link (valid for 7 days)",
+        "resetLabel": "Password reset link (valid for 1 day)",
+        "once": "Shown once only. Copy it to the user now; after you close this it cannot be shown again (you can issue a new one).",
+        "copy": "Copy link",
+        "copied": "Copied",
+        "done": "Done",
+        "title": "Link for {name}"
+      },
+      "deactivateTitle": "Deactivate {name}?",
+      "deactivateBody": "The user can no longer sign in to this company. Their history is kept. You can activate them again.",
+      "cancelShort": "Cancel",
+      "deactivateAction": "Deactivate"
+    },
+    "roles": {
+      "title": "Roles and permissions",
+      "lead": "The three system roles cannot be edited. Copy one as a new role and adjust the permissions to the duties of each person.",
+      "empty": "No roles",
+      "create": "Add a role",
+      "createTitle": "Add a role",
+      "editTitle": "Edit the role",
+      "viewTitle": "Permissions of {name}",
+      "system": "System roles",
+      "custom": "Custom roles",
+      "copy": "Copy as a new role",
+      "copyName": "Copy of {name}",
+      "edit": "Edit",
+      "view": "View permissions",
+      "delete": "Delete",
+      "save": "Save role",
+      "columns": {
+        "name": "Role",
+        "description": "Description",
+        "permissions": "Permissions",
+        "users": "In use",
+        "actions": "Actions"
+      },
+      "inUse": "Has users",
+      "unused": "No users yet",
+      "fields": {
+        "name": "Role name",
+        "description": "Description"
+      },
+      "matrixLabel": "Role permissions",
+      "readOnlyNote": "A system role cannot be edited",
+      "deleteTitle": "Delete the role {name}?",
+      "deleteBody": "This cannot be undone. A role can be deleted only while no user holds it.",
+      "deleteAction": "Delete role",
+      "sod": "Caution: this role can both create and approve documents of type {types}, and the company has approval switched on for them. It can still be saved; this is only a warning (approving your own documents is a company setting)."
+    }
+  },
   "permissions": {
     "doc_QT_read": "Read quotation",
     "doc_QT_create": "Create quotation",
@@ -1557,6 +1924,7 @@
     "bank_reconcile": "Reconcile bank accounts",
     "ledger_read": "Read ledger",
     "ledger_coa_manage": "Manage chart of accounts",
+    "ledger_posting_manage": "Manage posting rules and expense categories",
     "ledger_schedule_manage": "Manage recurring documents and amortisation schedules",
     "ledger_period_close": "Close accounting periods and the fiscal year",
     "ledger_period_reopen": "Reopen accounting periods and the fiscal year",
@@ -1570,6 +1938,7 @@
     "report_arap_read": "Read receivables, payables and sales / purchase summaries",
     "tax_read": "View tax filings and VAT registers",
     "tax_filing_preview": "Preview tax filings",
-    "tax_filing_finalize": "Finalize tax filings"
+    "tax_filing_finalize": "Finalize tax filings",
+    "tax_settings_manage": "Manage tax settings (withholding rates)"
   }
 }

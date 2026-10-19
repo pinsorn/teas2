@@ -3,6 +3,7 @@ import type { Actor, DocHeader, DocLine, DocType, IsoDate, Lock, Money, Schedule
 import type { MockState } from '../store';
 import { allocate, compute, createDraft, missingOf, newId, publicDoc, setJournal } from './commands';
 import { isUsed, jvAccountProblem, jvMissing, jvTotals, userReversalOf } from './journal';
+import { GROUP_OF } from '@/records/accounts';
 import { ledgerFor } from './ledger';
 import { MockError, logActivity, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
@@ -83,10 +84,16 @@ function sourceLine(st: MockState, d: Stored, lineId: string): { account: string
   }
   if (d.type !== 'PB' && d.type !== 'PCN' && d.type !== 'PDN') return undefined; // a note on the line moves what it holds (PCN less, PDN more)
   const cat = categoryOf(st, d.companyId, l);
+  const amount = toSatang(computeDoc(d.lines, !!d.header.priceIncludesVat, true).lines[i].net);
+  // ST2c N1: only a pending change (not stored yet) resolves the rules in force now
+  if (st.docs.includes(d)) { // a STORED line is read from what it posted (frozen at issue / revise): a missing stamp is invariant 26, never a fallback to today's rules
+    const a = st.accounts.find((x) => x.companyId === d.companyId && x.code === l.postedAccount);
+    return a && !a.controlRole && (a.subClass === 'prepayment' || GROUP_OF[a.class] === 'expense') ? { account: a.code, amount } : undefined; // a capex line sits on an asset account: never a prepaid source
+  }
   if (cat?.capex) return undefined;
   try {
     const account = resolveRole(st, 'Expense', { companyId: d.companyId, docType: d.type, itemId: l.itemId, expenseCategory: cat?.code ?? l.expenseCategory, dimensions: l.dimensions }).code;
-    return { account, amount: toSatang(computeDoc(d.lines, !!d.header.priceIncludesVat, true).lines[i].net) };
+    return { account, amount };
   } catch { return undefined; }
 }
 const isPrepaid = (st: MockState, companyId: string, code: string) =>

@@ -3,16 +3,17 @@ import type {
 } from '@/domain/types';
 import { ADJUSTS, CLASS, CONVERSIONS, DOC_TYPES, GROUPS, LIVE, SETTLES, carriesBalance, isTypeAvailable } from '@/domain/doc-types';
 import type { MockState } from '../store';
-import { approvalRequired, refuseSelfApproval, refuseUnapprovedIssue, reviseNeedsApproval, submit } from './approval';
+import { approvalRequired, policySnapshot, refuseSelfApproval, refuseUnapprovedIssue, reviseNeedsApproval, submit } from './approval';
 import { dropAttachmentsOf } from './attachments';
 import { consumed, fmtQ, q4 } from './chain';
 import { ledgerFor, reversalOf } from './ledger';
-import { beforeJvCancel, journalProblem, jvBalance, jvCalc, jvMissing, jvTotals, postAutoReversal, refuseJvRevise, syncAutoReversal } from './journal';
+import { beforeJvCancel, dimensionProblems, journalProblem, jvBalance, jvCalc, jvMissing, jvTotals, postAutoReversal, refuseDimensions, refuseJvRevise, syncAutoReversal } from './journal';
 import { afterRevision, refuseClosed, refuseRejected, withAcceptedStamp } from './marks';
 import { MockError, diffBody, isPinned, logActivity, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
 import { adjustSnapshot, hasSnapshot, isNote, noteHeader, noteMissing, noteProblem, withNoteVat } from './notes';
-import { SeriesAllocator } from './numbering';
+import { allocateNumber } from './numbering';
+import { whtInactiveProblem } from './wht';
 import { freezePayroll, obPayrollProblem, payrollMissing, payrollProblem, prCalc, prSlips, prTotals, refuseLaterRun, slipLine, totalsOfSlips } from './payroll';
 import { refuseObLocked, refuseReconciled, refuseSettled } from './locks';
 import { refuseScheduleNote, refuseScheduleSource } from './schedules';
@@ -116,12 +117,7 @@ export const newId = (st: MockState, type: DocType) => {
   while (st.docs.some((d) => d.id === `doc-${type.toLowerCase()}-${n}`)) n++;
   return `doc-${type.toLowerCase()}-${n}`;
 };
-export const allocate = (st: MockState, companyId: string, type: DocType, date: IsoDate) => {
-  const a = new SeriesAllocator(st.series);
-  const n = a.next(companyId, type, date);
-  st.series = a.toJSON();
-  return n;
-};
+export const allocate = allocateNumber;
 export const setJournal = (st: MockState, docId: string, preview: JournalPreview) => {
   const j = st.journals.find((x) => x.docId === docId);
   if (j) j.preview = preview; else if (preview.entries.length) st.journals.push({ docId, preview });
@@ -166,12 +162,23 @@ const rcHeaderKey = ({ notes: _n, reference: _r, bankSnapshot: _b, depositAmount
 
 /** Fiscal = changes who/when/how much is taxed; only those need a chain-aware correction on a T-class document.
  *  A receipt takes ONLY certificate numbers, notes and reference in place: any other change is a correction (M1). */
-/** Lines as the client knows them: the engine-set VAT of a CN / DN line is not part of what a caller can send back. */
-export const sameLines = (a: DocLine[], b: DocLine[]) => JSON.stringify(a.map(({ vatOverride, ...l }) => (void vatOverride, l))) === JSON.stringify(b.map(({ vatOverride, ...l }) => (void vatOverride, l)));
+/** Lines as the client knows them: the engine-set VAT of a CN / DN line and the frozen `postedAccount` (ST2c) are not part of what a caller can send back. */
+const clientLine = ({ vatOverride, postedAccount, ...l }: DocLine) => (void vatOverride, void postedAccount, l);
+export const sameLines = (a: DocLine[], b: DocLine[]) => JSON.stringify(a.map(clientLine)) === JSON.stringify(b.map(clientLine));
 /** A note whose lines are unchanged keeps its issued lines (and their VAT) and its price basis: an API caller cannot send the engine-set VAT back, and the VAT is never recomputed from today's siblings (F4). */
 export const keepNoteLines = (d: Doc, body: Body): Body =>
   isNote(d.type) && sameLines(body.lines, d.lines) ? { ...body, header: { ...body.header, ...(d.header.priceIncludesVat ? { priceIncludesVat: true } : {}) }, lines: d.lines } : body;
 /** R1-M4: a PB / PCN / PDN line the API sends without a category keeps its stored one (same line id); only an explicit category changes it. */
+/** ST2c N1: a purchase line's posting account is frozen on the line whenever its journal is (re)written - issue, revise, reissue. ONE resolution: `ledgerFor` collects it as it posts, so the stamp can never differ from the entry. */
+const PURCHASE_POSTED: DocType[] = ['PB', 'PCN', 'PDN', 'PV', 'EX'];
+function stampAccounts(st: MockState, doc: Stored): void {
+  if (!PURCHASE_POSTED.includes(doc.type)) return;
+  const accounts = new Map<string, string>();
+  ledgerFor(st, doc, accounts);
+  doc.lines = doc.lines.map((l) => { const { postedAccount: _p, ...rest } = l; void _p; return accounts.has(l.id) ? { ...rest, postedAccount: accounts.get(l.id)! } : rest; });
+}
+/** A revise that does not repost keeps what the lines froze; a body never carries it in (it is the server's). */
+const carryAccounts = (old: DocLine[], lines: DocLine[]): DocLine[] => lines.map((l) => { const { postedAccount: _p, ...rest } = l; void _p; const o = old.find((x) => x.id === l.id)?.postedAccount; return o ? { ...rest, postedAccount: o } : rest; });
 const keepCategories = (d: Doc, lines: DocLine[]): DocLine[] =>
   !isVendorBill(d.type) && d.type !== 'EX' ? lines : lines.map((l) => {
     const o = d.lines.find((x) => x.id === l.id), c = l.expenseCategory || !o?.expenseCategory ? l : { ...l, expenseCategory: o.expenseCategory };
@@ -310,13 +317,14 @@ export function compute(st: MockState, companyId: string, type: DocType, raw: Bo
   refuseDisposalNote(st, type, body.header);
   const np = noteProblem(st, companyId, type, body, opts?.docId);
   if (np) missing.push({ field: 'lines', message: np.title }); // the cap, the invoice's lines: shown before issue
+  missing.push(...dimensionProblems(st, companyId, doc, own0 && LIVE.includes(own0.status) ? own0 : undefined)); // ST2: the dimension rules, shown before issue with their exit
   const jp = type === 'OB' ? obProblem(st, companyId, body, opts?.docId) : journalProblem(st, companyId, type, body); // JV: the account and auto-reverse rules; OB: cut-off, steps and sub-ledger ties - shown before issue too
   if (jp) missing.push({ field: 'lines', message: jp.title, code: jp.code });
   const opp = type === 'OB' ? obPayrollProblem(st, companyId, own0 && LIVE.includes(own0.status) ? own0 : undefined, body) : undefined; // PY1a: an opening balance a payroll run builds on - shown before issue too
   if (opp) missing.push({ field: 'lines', message: opp.title, code: opp.code });
   const prp = payrollProblem(st, companyId, type, body, opts?.docId); // PY1: a later run, an other deduction above the pay - shown before issue too
   if (prp) missing.push({ field: 'lines', message: prp.title, code: prp.code });
-  const pp = purchaseProblem(st, companyId, type, body); // input VAT rules of a vendor's invoice: shown before issue too
+  const pp = purchaseProblem(st, companyId, type, body, own0 && LIVE.includes(own0.status) ? own0 : undefined); // input VAT rules of a vendor's invoice: shown before issue too
   if (pp) missing.push({ field: ({ 'pb.claim_period_out_of_range': 'header.claimPeriod', 'pcn.claim_period_fixed': 'header.claimPeriod', 'pb.vendor_invoice_after_document': 'header.vendorDocDate' } as Record<string, string>)[pp.code] ?? 'lines', message: pp.title });
   return { lines: c.lines, totals, missing, journal: ledgerFor(st, { ...doc, companyId }), ...settleExtras(st, companyId, type, body), ...(type === 'JV' || type === 'OB' ? { balance: jvBalance(body.lines) } : {}), ...(type === 'OB' ? { opening: buildOb(st, companyId, body).check } : {}), ...(prRun ? { payroll: { slips: prRun.slips.map(slipLine), totals: totalsOfSlips(prRun.slips) } } : {}),
     ...((opts?.docId ? !!own0 && LIVE.includes(own0.status) && reviseNeedsApproval(st, own0, payoutOf(st, companyId, { ...doc, id: opts.docId }), doc.allocations) : approvalRequired(st, companyId, type, payoutOf(st, companyId, doc))) ? { approvalRequired: true } : {}) }; // the editor swaps issue for submit / approve-and-issue (§7.6), and a revise that raises the money above what was approved asks for the approver (C1)
@@ -445,12 +453,14 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   if (GROUPS[d.type]) body = { ...body, allocations: cleanAllocations(st, d.companyId, d.type, body.allocations) }; // BL: each target's outstanding AS OF ISSUE, server-read
   body = withNoteVat(st, d.companyId, d.type, body); // a CN / DN keeps the VAT its lines carry at issue
   const totals = totalsOf(st, d.companyId, d.type, body);
+  refuseDimensions(st, d.companyId, { ...d, header: body.header, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), totals }); // ST2: the company's own tags and the account rules (required / forbidden), judged BEFORE the number is taken: a refusal writes nothing
   const next: Stored = {
-    ...d, header: body.header, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), ...(body.opening ? { opening: body.opening } : {}), ...(body.payroll ? { payroll: body.payroll } : {}), number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', totals, party: partyOf(st, d.companyId, d.header.partyId),
+    ...d, header: body.header, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), ...(body.opening ? { opening: body.opening } : {}), ...(body.payroll ? { payroll: body.payroll } : {}), number: allocate(st, d.companyId, d.type, d.header.documentDate), status: 'issued', policy: d.policy ?? policySnapshot(st, d.companyId, d.type), totals, party: partyOf(st, d.companyId, d.header.partyId),
     version: d.version + 1, issuedAt: stamp(), ...(hasOut(d.type) ? { outstanding: totals.total } : {}),
     ...(opts?.approver ? { approval: { submittedBy: d.approval?.submittedBy ?? actor, submittedAt: d.approval?.submittedAt ?? stamp(), approvedBy: opts.approver, approvedAt: stamp(), amount: payoutOf(st, d.companyId, { ...d, ...body, totals }) } } : {}),
   };
   if (hasSnapshot(d.type)) next.adjustSnapshot = adjustSnapshot(st, getDoc(st, d.header.refDocId!), next); // the ม.86/10 values as of now: the paper reads them, never recomputes
+  stampAccounts(st, next);
   put(st, next);
   settleTargets(st, next, body.allocations);
   if (isNote(d.type)) adjustTarget(st, next, totals.total);
@@ -569,13 +579,15 @@ function refuseFrozenByNotes(st: MockState, d: Stored, body: Body): void {
 /** Everything that makes a revision of a PB / PCN / PDN unacceptable, judged before anything is written (also for the correction plan, which must not offer what would fail).
  *  A note keeps the bill it adjusts; its lines, cap and VAT are judged as at issue, the note itself not counting among its predecessors. */
 export function refuseUnrevisablePurchase(st: MockState, d: Stored, body: Body): void {
+  const wp = whtInactiveProblem(st, d.companyId, body, d); // ST3: a deactivated WHT type is not introduced by a revise (the lines it already carries stay)
+  if (wp) throw wp;
   if (ADJUSTS[d.type] === 'PB') {
     if (body.header.refDocId !== d.header.refDocId) throw new MockError(422, 'note.ref_locked', 'เปลี่ยนบันทึกซื้อที่อ้างอิงไม่ได้ ให้ยกเลิกเอกสารนี้แล้วบันทึกใหม่');
     const np = noteProblem(st, d.companyId, d.type, body, d.id);
     if (np) throw np;
   } else if (d.type === 'PB') refuseFrozenByNotes(st, d, body);
   else if (d.type !== 'EX') return;
-  const pp = purchaseProblem(st, d.companyId, d.type, body);
+  const pp = purchaseProblem(st, d.companyId, d.type, body, d);
   if (pp) throw pp;
   refuseOverConversion(st, d, body);
 }
@@ -671,16 +683,18 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   const reapprove = reviseNeedsApproval(st, d, payout, fin.allocations); // C1: more money than was approved needs an approver in the same command
   if (reapprove) {
     if (!opts?.approver) throw approvalOnRevise();
-    refuseSelfApproval(st, { ...d, moneyBy: actor }, opts.approver); // the person making this change is now the one who set the money
+    refuseSelfApproval(st, { ...d, policy: undefined, moneyBy: actor }, opts.approver); // ST3: a re-approval of more money is a NEW approval act: the live self-approval setting applies to it (and is frozen on the document below) // the person making this change is now the one who set the money
   }
   const next: Stored = {
     ...rest, header: fin.header, lines: fin.lines, totals, party: fin.header.partyId === d.header.partyId && filingLock(st, d) ? d.party : partyOf(st, d.companyId, fin.header.partyId), // M4: a filed document keeps the party as filed
     revision: d.revision + 1, version: d.version + 1, ...(fin.allocations ? { allocations: fin.allocations } : {}), ...(fin.whtFrozen ? { whtFrozen: fin.whtFrozen } : {}), ...(fin.opening ? { opening: fin.opening } : {}), ...(fin.payroll ? { payroll: fin.payroll } : {}),
     ...(moneyChanged(d, totals.total, fin) ? { moneyBy: actor } : {}),
-    ...(reapprove ? { approval: { submittedBy: actor, submittedAt: stamp(), approvedBy: opts!.approver, approvedAt: stamp(), amount: payout } } : {}),
+    ...(reapprove ? { approval: { submittedBy: actor, submittedAt: stamp(), approvedBy: opts!.approver, approvedAt: stamp(), amount: payout }, policy: policySnapshot(st, d.companyId, d.type) } : {}),
   };
   const marks = afterRevision(d); // a quotation's customer answer is void once it is revised
   if (marks) next.marks = marks; else delete next.marks;
+  refuseDimensions(st, d.companyId, next, d); // ST2: only a fault this revision INTRODUCES (a rule made stricter later never blocks an old document)
+  next.lines = carryAccounts(d.lines, next.lines);
   put(st, next);
   if (isNote(d.type)) { // the note's one adjusts link carries its total: a revised note moves the bill's outstanding with it
     st.links = st.links.map((l) => (l.active && l.kind === 'adjusts' && l.from === id ? { ...l, amount: next.totals.total } : l));
@@ -697,6 +711,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
   if (d.correctionClass === 'L') {
     const prev = st.journals.find((j) => j.docId === id)?.preview.entries ?? [];
     const live = prev[prev.length - 1];
+    const stored = st.docs.find((x) => x.id === id); if (stored) stampAccounts(st, stored); // the rules in force at THIS revise
     const fresh = ledgerFor(st, getDoc(st, id)).entries[0];
     const ob = d.type === 'OB'; // an opening balance reverses and reposts at its cut-off, never shifted by a period or a go-live
     setJournal(st, id, { entries: [...prev, ...(live && live.kind !== 'reversal' ? [ob ? reversalOf(live, live.date, stamp()) : correctionReversal(st, d.companyId, live)] : []),
@@ -741,9 +756,10 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   if (dated && totals.total !== old.totals.total) {
     throw new MockError(422, 'doc.reissue_total_changed', 'ออกใหม่ต้องใช้ยอดเดิม ยอดต่างต้องใช้ใบลดหนี้/ใบเพิ่มหนี้');
   }
+  refuseDimensions(st, old.companyId, { ...old, header: body.header, lines: body.lines, ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}), totals }, old); // ST2: as the plan judged it, before the new number is taken
   const at = stamp();
   const created: Stored = {
-    companyId: old.companyId, id: newId(st, old.type), type: old.type, number: allocate(st, old.companyId, old.type, body.header.documentDate),
+    companyId: old.companyId, id: newId(st, old.type), type: old.type, number: allocate(st, old.companyId, old.type, body.header.documentDate), policy: policySnapshot(st, old.companyId, old.type),
     status: 'issued', correctionClass: old.correctionClass, revision: 0, version: 1, header: body.header,
     party: partyOf(st, old.companyId, body.header.partyId), lines: body.lines, totals, locks: [], createdBy: actor, issuedAt: at, replacesId: old.id,
     ...(hasOut(old.type) ? { outstanding: totals.total } : {}), ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.whtFrozen ? { whtFrozen: body.whtFrozen } : {}),
@@ -761,6 +777,7 @@ export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reas
   const oj = st.journals.find((j) => j.docId === old.id);
   const last = oj?.preview.entries[oj.preview.entries.length - 1];
   if (oj && last && last.kind !== 'reversal') oj.preview = { entries: [...oj.preview.entries, correctionReversal(st, old.companyId, last)] };
+  stampAccounts(st, created);
   setJournal(st, created.id, postedNow(st, created.companyId, ledgerFor(st, created)));
   st.revisions.push({ docId: created.id, revision: 0, at, actor, reason, snapshot: publicDoc(created), diff: [] });
   for (const l of carried) if (l.kind === 'settles' || l.kind === 'adjusts') recomputeSettlement(st, l.to);

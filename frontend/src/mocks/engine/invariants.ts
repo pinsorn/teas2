@@ -2,7 +2,8 @@ import { ADJUSTS, CREDIT_NOTES, DOC_TYPES, GROUPS, LIVE, SETTLES, carriesBalance
 import type { DocType, WhtLine, WhtMode } from '@/domain/types';
 import type { Doc, JournalEntryPreview } from '@/domain/types';
 import type { MockState } from '../store';
-import { approvalRequired } from './approval';
+import { approvalRequiredOf } from './approval';
+import { parseNumber, periodOfKey } from './numbering';
 import { jvInvariants, sources } from './journal';
 import { assetInvariants } from './assets';
 import { scheduleInvariants } from './schedules';
@@ -20,25 +21,25 @@ import { payoutOf, resolvedBankId } from './settlement';
 import { consumed, q4 } from './chain';
 import { companyEntries } from './ledger';
 import { divRoundHalfAway, fromSatang, toSatang } from './money';
-import { resolveRole } from './posting';
+import { dimTypesOf, dimValuesOf, resolveRole } from './posting';
 import { claimPeriodOf, exForfeited, forfeitedOf, isRecoverable } from './purchase-vat';
 import { computeDoc, vatBasisOf } from './vat';
 import { wtsOfPv } from './wht-certificates';
+import { lookInvariants } from './look';
 
 type Stored = MockState['docs'][number];
 
 /** ONE reading of the numbers on documents (this numbering invariant and the RP3 gap audit both use it): per series key `${companyId}|${type}|${yyyy-mm}` the sequence numbers found and the documents holding them.
  *  A document with no number (a draft) holds none; an opening item's number is the old document's, so it is not a number of this series; a number that is not `TYPE-yyyymm-nnnn` of its own type, or whose yyyymm is not the month of the document's date AT ISSUE (the revision-0 snapshot's; the current date when there is none), is `malformed`.
  *  A revise may move a document across months and keeps its number: that is not malformed. */
-export function numbersBySeries(docs: Stored[], revisions: MockState['revisions'] = []): { groups: Map<string, { seq: number; doc: Stored }[]>; malformed: Stored[] } {
+export function numbersBySeries(st: MockState, docs: Stored[]): { groups: Map<string, { seq: number; doc: Stored }[]>; malformed: Stored[] } {
   const groups = new Map<string, { seq: number; doc: Stored }[]>(), malformed: Stored[] = [];
-  const issued = new Map(revisions.filter((r) => r.revision === 0).map((r) => [r.docId, r.snapshot.header.documentDate]));
+  const issued = new Map(st.revisions.filter((r) => r.revision === 0).map((r) => [r.docId, r.snapshot.header.documentDate]));
   for (const d of docs) {
     if (!d.number || d.header.obBatchId) continue;
-    const m = /^([A-Z]+)-(\d{4})(\d{2})-(\d{4})$/.exec(d.number);
-    if (!m || m[1] !== d.type || `${m[2]}-${m[3]}` !== (issued.get(d.id) ?? d.header.documentDate).slice(0, 7)) { malformed.push(d); continue; }
-    const k = `${d.companyId}|${d.type}|${m[2]}-${m[3]}`;
-    groups.set(k, [...(groups.get(k) ?? []), { seq: Number(m[4]), doc: d }]);
+    const p = parseNumber(st, d.companyId, d.type, d.number), at = issued.get(d.id) ?? d.header.documentDate; // ST3: the format is the series key's own (stored on it); the key's period is the month (monthly) or the year (yearly) of the issue date
+    if (!p || periodOfKey(p.key) !== at.slice(0, periodOfKey(p.key).length)) { malformed.push(d); continue; }
+    groups.set(p.key, [...(groups.get(p.key) ?? []), { seq: p.seq, doc: d }]);
   }
   return { groups, malformed };
 }
@@ -137,8 +138,11 @@ function expectedWht(st: MockState, d: Stored): { tax: number; expense: number; 
   const want: [string, bigint, bigint][] = [], perType: { code: string; tax: bigint }[] = [];
   for (const [code, b] of base) {
     if (b <= 0n) continue; // the engine skips a non-positive base before it looks the type up, so does this check
-    const t = st.whtTypes.filter((x) => x.companyId === d.companyId && x.code === code && x.effectiveFrom <= d.header.documentDate).sort((x, y) => y.effectiveFrom.localeCompare(x.effectiveFrom))[0];
-    if (!t) return { tax: 0, expense: 0, cashDelta: 0, lines: [], bad: `unknown WHT type ${code}` };
+    // ST3: a rate change is dated and may fall on or before documents already issued: those keep the rate they froze (`whtFrozen`), which must still be one of the type's own rates; a voucher without a frozen line is judged by the row in force on its date
+    const rows = st.whtTypes.filter((x) => x.companyId === d.companyId && x.code === code), fl = d.whtFrozen?.lines.find((x) => x.code === code);
+    const frozenBp = fl ? Math.round(parseFloat(fl.rate) * 100) : undefined;
+    const t = frozenBp !== undefined ? rows.find((x) => x.rateBp === frozenBp) : rows.filter((x) => x.effectiveFrom <= d.header.documentDate).sort((x, y) => y.effectiveFrom.localeCompare(x.effectiveFrom))[0];
+    if (!t) return { tax: 0, expense: 0, cashDelta: 0, lines: [], bad: `unknown WHT type ${code}${frozenBp !== undefined ? ` at ${fl!.rate}` : ''}` };
     const r = BigInt(t.rateBp);
     const income = mode === 'deduct' ? b : mode === 'grossup_always' ? divRoundHalfAway(b * 10000n, 10000n - r) : divRoundHalfAway(b * (10000n + r), 10000n);
     const lt = divRoundHalfAway(income * r, 10000n);
@@ -532,7 +536,7 @@ export function checkInvariants(st: MockState): string[] {
     } else if (d.approval && !d.approval.approvedBy) out.push(`${d.id}: ${d.status} with an approval record that nobody approved`);
     // C1: a live document the policy wants approved at its CURRENT total carries an approval that covers it (a revise above the approved amount is approved in the same command)
     const payout = payoutOf(st, d.companyId, d); // what the company pays out: the settled total plus the WHT it bears (P4 m1)
-    if (LIVE.includes(d.status) && approvalRequired(st, d.companyId, d.type, payout) && (!d.approval?.approvedBy || toSatang(d.approval.amount ?? '0.00') < toSatang(payout))) {
+    if (LIVE.includes(d.status) && approvalRequiredOf(st, d, payout) && (!d.approval?.approvedBy || toSatang(d.approval.amount ?? '0.00') < toSatang(payout))) {
       out.push(`${d.id}: ${d.type} payout ${payout} needs approval but the approval ${d.approval?.approvedBy ? `covers only ${d.approval.amount ?? '0.00'}` : 'is missing'}`);
     }
   }
@@ -641,12 +645,16 @@ export function checkInvariants(st: MockState): string[] {
     for (const [role, side, n] of jwant) if (j(role, side) !== n) out.push(`${where}: journal ${role} ${side} ${fromSatang(j(role, side))} but its legs say ${fromSatang(n)}`);
   }
   // per target and difference role, Σ the live differences stays within the company's tolerance (ruling 1)
-  const taken = new Map<string, { co: string; role: string; n: number }>();
+  const taken = new Map<string, number>(); // ST3a m1 (FN3 M-4): in creation order, each target's running difference is judged by the tolerance stored on THAT settlement (the live one only when it has none)
   for (const s of st.settlements) {
     if (s.status !== 'posted' || !s.difference) continue;
-    for (const t of s.targets) { const k = `${t.docId}|${s.difference.role}`, p = taken.get(k); taken.set(k, { co: s.companyId, role: s.difference.role, n: (p?.n ?? 0) + sat(s.difference.amount, `settlement ${s.id}`) }); }
+    const cap = s.tolerance ? toSatang(s.difference.role === 'RoundingDifference' ? s.tolerance.rounding : s.tolerance.smallWriteOff) : toleranceOf(st, s.companyId, s.difference.role);
+    for (const t of s.targets) {
+      const k = `${t.docId}|${s.difference.role}`, n = (taken.get(k) ?? 0) + sat(s.difference.amount, `settlement ${s.id}`);
+      taken.set(k, n);
+      if (n > cap) out.push(`${t.docId}: live ${s.difference.role} differences ${fromSatang(n)} exceed the tolerance ${fromSatang(cap)} (${s.id})`);
+    }
   }
-  for (const [k, v] of taken) if (v.n > toleranceOf(st, v.co, v.role)) out.push(`${k.split('|')[0]}: live ${v.role} differences ${fromSatang(v.n)} exceed the tolerance ${fromSatang(toleranceOf(st, v.co, v.role))}`);
   for (const l of st.links) {
     const s = l.kind === 'settles' ? st.settlements.find((x) => x.id === l.from) : undefined;
     if (s && l.active && s.status !== 'posted') out.push(`link ${l.from} → ${l.to} is active but ${l.from} is ${s.status}`);
@@ -687,17 +695,29 @@ export function checkInvariants(st: MockState): string[] {
   for (const c of st.companies) for (const e of companyEntries(st, c.id)) for (const l of e.lines) {
     if (l.partyName && !(l.partyId && st.parties.some((p) => p.id === l.partyId && p.companyId === c.id))) out.push(`${c.id}: journal line on ${l.accountCode} for "${l.partyName}" ${l.partyId ? `carries partyId ${l.partyId}, which is not a party of this company` : 'carries no partyId'}`);
   }
+  // 25. ST2 (ruling 4): a dimension tag on a posted line names a type AND a value of THAT company - active or not (a closed value stays on the entries that carry it). Account rules are NOT judged here: a rule made stricter later never turns an issued entry red.
+  for (const c of st.companies) {
+    const types = new Set(dimTypesOf(st, c.id).map((t) => t.key)), values = new Set(dimValuesOf(st, c.id).map((v) => `${v.typeKey}|${v.code}`));
+    for (const e of companyEntries(st, c.id)) for (const l of e.lines) for (const [k, v] of Object.entries(l.dimensions ?? {})) {
+      if (!types.has(k) || !values.has(`${k}|${v}`)) out.push(`${c.id}: journal line on ${l.accountCode} carries dimension ${k} = ${v}, which is not a type / value of the company`);
+    }
+  }
+  // 26. ST2c (N1): an issued purchase line carries the account its Expense / FixedAsset role posted to - the schedules and the asset register read it, never today's rules
+  for (const d of st.docs) if (['PB', 'PCN', 'PDN', 'PV', 'EX'].includes(d.type) && d.number && d.status !== 'draft') for (const l of d.lines) if (!l.postedAccount) out.push(`${d.id}: issued purchase line ${l.id} has no postedAccount`);
   out.push(...openItemInvariants(st)); // 23 + 24. RP2a: every control line names its open item, and every item's tagged balance is its stored balance
   out.push(...jvInvariants(st)); // 15. journal vouchers (AC1): no controlled account, the journal is the lines, reversals mirror, accruals net to zero
 
   // numbering: gap-free per company x type x month, and the series counter agrees
-  const { groups, malformed } = numbersBySeries(st.docs, st.revisions);
+  const { groups, malformed } = numbersBySeries(st, st.docs);
   for (const d of malformed) out.push(`${d.id}: numbering: "${d.number}" is not a ${d.type} number`);
   for (const k of seriesKeys(st, groups)) { // every series that has a counter or a document: the same set the number-gap report checks
     const sorted = (groups.get(k) ?? []).map((f) => f.seq).sort((x, y) => x - y);
     if (sorted.some((n, i) => n !== i + 1)) out.push(`${k}: numbering is not gap-free (${sorted.join(', ')})`);
     if ((st.series[k] ?? 0) !== sorted.length) out.push(`${k}: numbering counter ${st.series[k] ?? 0} but ${sorted.length} numbers issued`);
   }
+  const held = new Map<string, string[]>(); // ST3: a number is unique per company x type, whatever series or format produced it
+  for (const d of st.docs) if (d.number && !d.header.obBatchId) held.set(`${d.companyId}|${d.type}|${d.number}`, [...(held.get(`${d.companyId}|${d.type}|${d.number}`) ?? []), d.id]);
+  for (const [k, ids] of held) if (ids.length > 1) out.push(`${k}: numbering: duplicate number on ${ids.join(', ')}`);
 
   // WHT rate rows are dated: one row per company x code x effectiveFrom (a second row of one date would never apply)
   const rateRows = new Map<string, number>();
@@ -707,6 +727,8 @@ export function checkInvariants(st: MockState): string[] {
   // audit trail (RP3): append-only - the ids are unique, increasing and gap-free (a duplicated, reordered or middle-deleted entry breaks it). Time is a fact about the event, never judged here.
   // [SP2] This cannot see a deleted LAST entry or an edited entry: the backend needs a hash chain over (prevHash, id, at, actor, command, target, before, after, result) plus an external high-water mark.
   st.audit.forEach((a, i) => { if (a.id !== `aud-${i + 1}`) out.push(`audit: entry ${i + 1} has id ${a.id}, expected aud-${i + 1} (ids must be unique and increasing)`); });
+
+  lookInvariants(st, out); // ST4: every issued paper has its seller snapshot and its pictures resolve
 
   // locks: the period lock is derived at read time, never stored (one function: derivedLocks)
   for (const d of st.docs as Doc[]) if (d.locks.some((l) => l.kind === 'period')) out.push(`${d.id}: stored period lock (derived at read time only)`);

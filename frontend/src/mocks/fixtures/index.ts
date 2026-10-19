@@ -20,6 +20,8 @@ import { whtTypesFor } from './wht-types';
 import { approvalPolicies } from './approval-policy';
 import { nonVatEmployees, vatEmployees } from './employees';
 import { nonVatParties, vatParties } from './parties';
+import { DEFAULT_NOTES } from './default-notes';
+import { staffSeed } from './staff';
 
 /** Documents later groups seed THROUGH the engine (`fixtures/specs/<group>.ts`, appended here in group order). */
 export const SEED_SPECS: SeedSpec[] = [...SALES_SPECS, ...PURCHASE_SPECS, ...FINANCE_SPECS, ...ACCOUNTING_SPECS, ...ASSET_SPECS, ...PAYROLL_SPECS];
@@ -34,16 +36,13 @@ const periodsFor = (companyId: string): Period[] => Array.from({ length: 24 }, (
 
 /** Deterministic seed: no Math.random, no clock. */
 export function buildSeed(role: Role): MockState {
-  const companies: Company[] = companiesJson.companies.map(({ key, fiscalYearStartMonth: _f, ...c }) => {
-    void _f;
-    return { id: `co-${key}`, ...c };
-  });
+  const companies: Company[] = companiesJson.companies.map(({ key, ...c }) => ({ id: `co-${key}`, ...c, defaultNotes: { ...DEFAULT_NOTES } })); // ST1: the fiscal year start is kept (D-33); the default notes are the company's own, seeded from the fixture
   const parties = [...vatParties(), ...nonVatParties(), ...vatEmployees(), ...nonVatEmployees()];
   const items = [...vatItems(), ...nonVatItems()];
   const { docs, links, activity, revisions, series } = buildDocs(parties, items);
   return {
-    version: 56,
-    companies,
+    version: 61,
+    companies, staff: staffSeed(role), roles: [],
     memberships: companies.map((c) => ({ userId: 'u-1', companyId: c.id, companyName: c.legalNameTh, role: c.vatRegistered ? role : 'operator' })),
     parties, items, docs, links, activity, revisions, journals: [], bankImports: [], bankLines: [], bankJournals: [], settlements: [], schedules: [], yearCloses: [], filings: [], payrollPayments: [], citYears: citYearsSeed(), settlementTolerance: companies.map((c) => ({ companyId: c.id, rounding: '1.00', smallWriteOff: '100.00' })), audit: [], series, attachments: [], prints: [],
     accounts: companies.flatMap((c) => chartOfAccounts().map((a) => ({ ...a, companyId: c.id }))),

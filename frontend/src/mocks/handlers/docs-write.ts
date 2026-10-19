@@ -2,7 +2,7 @@ import { DOC_TYPES, isTypeAvailable } from '@/domain/doc-types';
 import { HttpResponse, http } from 'msw';
 import type { Actor, AttachmentCategory, DocHeader, DocType, MarkKey, Qty } from '@/domain/types';
 import { addAttachment, discardAttachment, listAttachments, markPrinted, removeAttachment } from '../engine/attachments';
-import { PAPER_BUILDERS } from '../engine/paper';
+import { PAPER_BUILDERS, PAPER_RAW } from '../engine/paper';
 import { buildChain } from '../engine/chain';
 import { approve, sendBack } from '../engine/approval';
 import { type Body, keepOmitted, unavailableTh, approveAndIssue, cancel, compute, convert, createDraft, deleteDraft, issue, publicDoc, submitForApproval, updateDraft } from '../engine/commands';
@@ -226,7 +226,7 @@ export const docsWriteHandlers = [
     if (t === 'JV') refuseJvRevise(c.st, orig, proposal); // a reversed JV and a reversal are final: refused before a plan is shown
     if (t === 'PR') refuseLaterRun(c.st, orig); // PY1: a run a later run builds on cannot be revised: refused before a plan is shown (exit: the next run's adjustment lines)
     refuseInactive(c, t, proposal?.header && keepOmitted(orig, proposal.header), orig.header); // I2: a correction cannot re-point the document to a closed account
-    const plan = correctionPlan(c.st, String(params.id), proposal, c.s.role);
+    const plan = correctionPlan(c.st, String(params.id), proposal, c.perms);
     done(c);
     return HttpResponse.json(plan);
   })),
@@ -242,9 +242,9 @@ export const docsWriteHandlers = [
       if (!stored || !target) throw new MockError(404, 'correction.plan_not_found', 'ไม่พบแผนการแก้ไข');
       let current;
       refuseInactive(c, target.type, stored.proposed.header && keepOmitted(target, stored.proposed.header), target.header); // I2: the account may have been closed since the plan was made
-      try { current = buildPlan(c.st, stored.docId, stored.proposed, c.s.role); } catch { throw planStale(); } // the world moved since the plan: stale, not a raw engine error
+      try { current = buildPlan(c.st, stored.docId, stored.proposed, c.perms); } catch { throw planStale(); } // the world moved since the plan: stale, not a raw engine error
       for (const s of current.steps) if (!c.perms.includes(s.permission)) return forbidden(s.permission);
-      const result = executePlan(c.st, planId, planHash, ACTOR, c.s.role);
+      const result = executePlan(c.st, planId, planHash, ACTOR, c.perms);
       done(c);
       return HttpResponse.json(result);
     } catch (e) {
@@ -327,7 +327,7 @@ export const docsWriteHandlers = [
     const body = (await request.json().catch(() => ({}))) as { copy?: boolean; employee?: string };
     const c = ctx(); // the body was awaited: read the state again so two quick prints (two tabs) see each other and only one is the original
     const doc = own(c, t, params.id);
-    const r = markPrinted(c.st, doc, body.copy === true, ACTOR, t === 'WT' && PAPER_BUILDERS.WT && !['draft', 'pending', 'approved'].includes(doc.status) ? PAPER_BUILDERS.WT(c, publicDoc(doc), false) : undefined, body.employee); // 50 tawi: frozen at the first print (I7); PY3 m2: `employee` = one payslip of a run (not the run's print)
+    const r = markPrinted(c.st, doc, body.copy === true, ACTOR, t === 'WT' && PAPER_RAW.WT && !['draft', 'pending', 'approved'].includes(doc.status) ? PAPER_RAW.WT(c, publicDoc(doc), false) : undefined, body.employee); // 50 tawi: frozen at the first print (I7); PY3 m2: `employee` = one payslip of a run (not the run's print)
     done(c);
     return HttpResponse.json(r);
   })),

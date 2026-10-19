@@ -1,7 +1,7 @@
 import type { RecordRow } from '@/domain/records';
 import type { ItemSummary } from '@/domain/types';
 import { MockError } from '../engine/log';
-import { EXPENSE_CATEGORIES } from '../fixtures/expense-categories';
+import { categoriesOf } from '../engine/posting';
 import type { MockState } from '../store';
 import type { RecordKindImpl } from './registry';
 
@@ -54,7 +54,7 @@ export const itemImpl: RecordKindImpl = {
     if (kind !== 'good' && wht && !st.whtTypes.some((t) => t.companyId === companyId && t.code === wht)) add('whtTypeCode', 'ไม่พบประเภทภาษีหัก ณ ที่จ่ายนี้');
     if (v.usageSales !== true && v.usagePurchase !== true) add('usageSales', 'ต้องเลือกอย่างน้อยหนึ่งการใช้งาน');
     const cat = str(v.expenseCategory);
-    if (v.usagePurchase === true && cat && !EXPENSE_CATEGORIES.some((c) => c.code === cat)) add('expenseCategory', 'ไม่พบหมวดค่าใช้จ่ายนี้');
+    if (v.usagePurchase === true && cat && !categoriesOf(st, companyId).some((c) => c.code === cat)) add('expenseCategory', 'ไม่พบหมวดค่าใช้จ่ายนี้');
     return e;
   },
 

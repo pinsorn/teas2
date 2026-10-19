@@ -1,14 +1,18 @@
 'use client';
 import { PlusIcon, Trash2Icon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useEffect, useRef, type ClipboardEvent, type KeyboardEvent } from 'react';
+import { QueryClientContext, useQuery } from '@tanstack/react-query';
+import { useContext, useEffect, useRef, type ClipboardEvent, type KeyboardEvent } from 'react';
+import { useMe } from '@/app-shell/useMe';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ErrorState } from '../states/ErrorState';
 import type { DocLine, ItemSummary, Money, TaxCode } from '@/domain/types';
 import type { WhtTypeRef } from '@/lib/api/endpoints';
 import { formatMoney } from '@/lib/format';
+import { categoryApi } from '@/records/expense-categories';
 import { EXPENSE_CATEGORY_CODES } from '@/records/items';
+import { DimensionPicker } from './HeaderFields';
 import { ItemField } from './ItemField';
 import { AMOUNT_ORDER, cleanDecimal, isComposing, moneyText, nextCell, parseClipboardRows, qtyText, type Cell } from './useLineGridKeys';
 
@@ -26,6 +30,30 @@ const AMT_COLS: Record<string, string> = {
 };
 const TAX_CODES: TaxCode[] = ['S7', 'Z0', 'EX'];
 const select = 'h-(--ctl-h) w-full rounded-lg border border-input bg-card px-2 text-body outline-none';
+
+interface CategoryProps { value: string; label: string; cell: string; onChange: (v: string) => void; onKey: (e: KeyboardEvent<HTMLSelectElement>) => void }
+/** The expense category of a line (C1: the code is stored on the line). ST2: the company's own, editable categories - a closed one is not offered for a new choice but stays shown on a line that has it. Without a query provider (a bare component test) the seed's list. */
+function CategorySelect(p: CategoryProps) {
+  return useContext(QueryClientContext) ? <LiveCategorySelect {...p} /> : <CategoryOptions {...p} />;
+}
+function LiveCategorySelect(p: CategoryProps) {
+  const t = useTranslations('docEditor.lines');
+  const { me } = useMe();
+  const q = useQuery({ queryKey: [me?.activeCompanyId ?? '', 'expense-categories'], queryFn: categoryApi.list, enabled: !!me, staleTime: 30_000 });
+  return <CategoryOptions {...p} live={q.data?.items.filter((c) => c.active || c.code === p.value).map((c) => ({ code: c.code, name: c.active ? c.nameTh : `${c.nameTh} (${t('categoryClosed')})` }))} />;
+}
+function CategoryOptions({ value, label, cell, onChange, onKey, live }: CategoryProps & { live?: { code: string; name: string }[] }) {
+  const t = useTranslations('docEditor.lines');
+  const tcat = useTranslations('records.options.expenseCategory');
+  const options = live ?? EXPENSE_CATEGORY_CODES.map((c) => ({ code: c, name: tcat(c) }));
+  return (
+    <select aria-label={label} data-cell={cell} className={select} value={value} onChange={(e) => onChange(e.target.value)} onKeyDown={onKey}>
+      <option value="">{t('categoryNone')}</option>
+      {value && !options.some((o) => o.code === value) && <option value={value}>{value}</option>}
+      {options.map((o) => <option key={o.code} value={o.code}>{o.name}</option>)}
+    </select>
+  );
+}
 
 export interface LineGridProps {
   lines: DocLine[];
@@ -49,7 +77,6 @@ export interface LineGridProps {
 
 export function LineGrid({ lines, onChange, searchItems, amounts, computing, variant = 'item', showCategory = false, whtTypes, whtError, onWhtRetry, exemptOnly = false }: LineGridProps) {
   const t = useTranslations('docEditor.lines');
-  const tcat = useTranslations('records.options.expenseCategory');
   const root = useRef<HTMLDivElement>(null);
   const focusReq = useRef<{ row: number; cell: Cell } | null>(null);
 
@@ -112,12 +139,7 @@ export function LineGrid({ lines, onChange, searchItems, amounts, computing, var
               {showCategory && (
                 <label className="grid gap-1">
                   <span aria-hidden className="text-small text-muted-foreground md:hidden">{t('colCategory')}</span>
-                  <select aria-label={t('category', { n })} data-cell={`${i}:category`} className={select} value={l.expenseCategory ?? ''}
-                    onChange={(e) => patch(i, { expenseCategory: e.target.value || undefined })} onKeyDown={(e) => onCellKey(e, i, 'category')}>
-                    <option value="">{t('categoryNone')}</option>
-                    {l.expenseCategory && !EXPENSE_CATEGORY_CODES.includes(l.expenseCategory) && <option value={l.expenseCategory}>{l.expenseCategory}</option>}
-                    {EXPENSE_CATEGORY_CODES.map((c) => <option key={c} value={c}>{tcat(c)}</option>)}
-                  </select>
+                  <CategorySelect value={l.expenseCategory ?? ''} label={t('category', { n })} cell={`${i}:category`} onChange={(v) => patch(i, { expenseCategory: v || undefined })} onKey={(e) => onCellKey(e, i, 'category')} />
                 </label>
               )}
               <label className="grid gap-1">
@@ -154,6 +176,7 @@ export function LineGrid({ lines, onChange, searchItems, amounts, computing, var
                 className="justify-self-end md:justify-self-auto" onClick={() => remove(i)}>
                 <Trash2Icon aria-hidden />
               </Button>
+              <DimensionPicker ids={l.id} line={n} value={l.dimensions} onChange={(d) => patch(i, { dimensions: Object.keys(d).length ? d : undefined })} className="col-span-2 md:col-span-full" />
             </div>
           );
         })}
@@ -206,6 +229,7 @@ export function LineGrid({ lines, onChange, searchItems, amounts, computing, var
               className="justify-self-end md:justify-self-auto" onClick={() => remove(i)}>
               <Trash2Icon aria-hidden />
             </Button>
+            <DimensionPicker ids={l.id} line={n} value={l.dimensions} onChange={(d) => patch(i, { dimensions: Object.keys(d).length ? d : undefined })} className="col-span-2 md:col-span-full" />
           </div>
         );
       })}

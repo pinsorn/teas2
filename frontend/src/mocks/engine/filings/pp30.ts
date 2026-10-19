@@ -44,7 +44,7 @@ export interface Filing {
   /** PY3: a payroll return (ภ.ง.ด.1 / ภ.ง.ด.1ก / สปส.1-10) is its frozen snapshot: the runs it took, one row per employee copied from their stored slips, and (ภ.ง.ด.1ก) the opening-balance part and the ภ.ง.ด.1 months it took */
   payroll?: PayrollSnap;
   /** PY3a M1: fingerprint of what no other invariant re-derives (company as filed, due date, period, form, who and when); the invariant recomputes it */ fp: number;
-  /** M2: who filed, as the company was at finalize (the file and the page read this, never the master now); a payroll return also freezes the SSO employer account (PY3) */ company: { taxId: string; branchCode: string; legalNameTh: string; ssoEmployerAccountNo?: string };
+  /** M2: who filed, as the company was at finalize (the file and the page read this, never the master now); a payroll return also freezes the SSO employer account (PY3) */ company: { taxId: string; branchCode: string; legalNameTh: string; ssoEmployerAccountNo?: string; /** ST1a M2: what the employee 50 ทวิ prints of the payer, frozen with the rest (fingerprinted) */ address?: string; legalNameEn?: string; phone?: string };
 }
 
 const sat = (m: string | undefined) => toSatang(m ?? '0.00');

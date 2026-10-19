@@ -27,6 +27,13 @@ describe('navigation', () => {
     expect(v).toContain('taxInvoices');
     expect(v).not.toContain('invoices');
   });
+  it('settings: company needs settings.manage, users and roles need users.manage (ST1)', () => {
+    const need = (k: string) => NAV.flatMap((g) => g.items).find((i) => i.key === k)?.permission;
+    expect([need('settingsCompany'), need('settingsUsers'), need('settingsRoles')]).toEqual(['settings.manage', 'users.manage', 'users.manage']);
+    const v = labels(visibleNav(NAV, { permissions: ['settings.manage'], vatRegistered: true }));
+    expect(v).toContain('settingsCompany');
+    expect(v).not.toContain('settingsRoles');
+  });
   it('item keys and hrefs are unique', () => {
     const items = NAV.flatMap((g) => g.items);
     expect(new Set(items.map((i) => i.key)).size).toBe(items.length);

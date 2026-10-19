@@ -11,6 +11,7 @@ import { isValidTin } from '@/domain/tin';
 import type { FieldCondition, FieldSpec } from '@/domain/records';
 import { endpoints } from '@/lib/api/endpoints';
 import { qk } from '@/lib/query/keys';
+import { categoryApi } from '@/records/expense-categories';
 
 type Values = Record<string, unknown>;
 const select = 'h-(--ctl-h) w-full rounded-lg border border-input bg-card px-3 text-body outline-none aria-invalid:border-2 aria-invalid:border-destructive disabled:bg-muted';
@@ -87,6 +88,8 @@ export function Field({ spec, form, values, error, locked }: { spec: FieldSpec; 
     }
     return out;
   } });
+  // ST2a: the item form's expense category is the company's editable list (the descriptor's fixed options are only the first paint)
+  const cats = useQuery({ queryKey: [c, 'expense-categories'], queryFn: categoryApi.list, enabled: !!me && spec.key === 'expenseCategory' });
   const gl = useQuery({ queryKey: qk.bankGlAccounts(c), queryFn: endpoints.bankGlAccounts, enabled: !!me && spec.kind === 'account' && !locked });
 
   let control: ReactNode;
@@ -99,7 +102,8 @@ export function Field({ spec, form, values, error, locked }: { spec: FieldSpec; 
     const fixed = spec.options?.map((o) => ({ value: o.value, text: t(o.labelKey) }));
     const remote = spec.optionsFrom === 'wht-types' ? wht.data?.map((w) => ({ value: w.code, text: `${w.code} · ${w.nameTh} (${w.rate})` })) : undefined;
     const hdr = spec.optionsFrom === 'account-headers' ? headers.data?.map((h) => ({ value: h.code, text: h.text })) : undefined;
-    const opts = fixed ?? remote ?? hdr ?? [];
+    const live = spec.key === 'expenseCategory' ? cats.data?.items.filter((x) => x.active || x.code === current).map((x) => ({ value: x.code, text: x.nameTh })) : undefined;
+    const opts = live ?? fixed ?? remote ?? hdr ?? [];
     control = (
       <select {...register(spec.key)} id={id} aria-invalid={!!error} aria-describedby={describedBy} aria-required={common['aria-required']} className={select}>
         <option value="">{t('records.common.selectPlaceholder')}</option>

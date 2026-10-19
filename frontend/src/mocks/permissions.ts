@@ -1,3 +1,4 @@
+import type { MockState } from './store';
 import type { Role } from '@/domain/types';
 
 const TI = ['doc.TI.read', 'doc.TI.create', 'doc.TI.issue'];
@@ -18,6 +19,20 @@ export const PERMISSIONS_BY_ROLE: Record<Role, string[]> = {
   operator: [...TI, ...IV, ...BL, ...PO, ...PB, ...PV, ...EX, 'doc.PCN.read', 'doc.PDN.read', ...READ, 'doc.RC.read', 'doc.RC.create', 'doc.RC.issue', 'doc.QT.read', 'doc.QT.create', 'doc.QT.issue', 'doc.SO.create', 'doc.SO.issue', 'doc.DO.create', 'doc.DO.issue', 'party.read', 'party.manage', 'item.read', 'bank.read'],
   accountant: [...TI, ...IV, ...BL, ...PO, ...PB_ALL, ...PV_ALL, ...EX_ALL, ...JV_ALL, ...OB_ALL, ...FA_ALL, ...PR_ALL, 'employee.read', 'employee.manage', 'payroll.read', 'doc.PO.cancel', 'doc.PO.correct', 'doc.IV.cancel', 'doc.IV.correct', 'doc.BL.cancel', 'doc.BL.correct', ...READ, 'doc.TI.cancel', 'doc.TI.correct', 'doc.RC.read', 'doc.RC.create', 'doc.RC.issue', 'doc.RC.cancel',
     'doc.RC.correct', 'doc.CN.create', 'doc.CN.issue', 'doc.CN.cancel', 'doc.CN.correct', 'doc.DN.create', 'doc.DN.issue', 'doc.DN.cancel', 'doc.DN.correct', 'doc.QT.read', 'doc.QT.create', 'doc.QT.issue', 'doc.QT.cancel', 'doc.QT.correct', 'doc.SO.create', 'doc.SO.issue', 'doc.SO.cancel', 'doc.SO.correct', 'doc.DO.create', 'doc.DO.issue', 'doc.DO.cancel', 'doc.DO.correct',
-    'party.read', 'party.manage', 'item.read', 'item.manage', 'ledger.read', 'ledger.coa.manage', 'ledger.schedule.manage', 'ledger.period.close', 'ledger.period.reopen', 'audit.read', 'report.read', 'report.arap.read', 'bank.read', 'bank.manage', 'bank.reconcile', 'tax.read', 'tax.filing.preview', 'tax.filing.finalize'],
-  admin: ['settings.manage', 'users.manage', 'employee.read', 'party.read', 'item.read', 'item.manage', 'audit.read', 'report.read', 'report.arap.read', 'bank.read', 'bank.manage'],
+    'party.read', 'party.manage', 'item.read', 'item.manage', 'ledger.read', 'ledger.coa.manage', 'ledger.posting.manage', 'ledger.schedule.manage', 'ledger.period.close', 'ledger.period.reopen', 'audit.read', 'report.read', 'report.arap.read', 'bank.read', 'bank.manage', 'bank.reconcile', 'tax.read', 'tax.filing.preview', 'tax.filing.finalize', 'tax.settings.manage'],
+  admin: ['settings.manage', 'tax.settings.manage', 'users.manage', 'employee.read', 'party.read', 'item.read', 'item.manage', 'audit.read', 'report.read', 'report.arap.read', 'bank.read', 'bank.manage'],
 };
+
+export const SYSTEM_ROLES: Role[] = ['operator', 'accountant', 'admin'];
+export const isSystemRole = (id: string): id is Role => (SYSTEM_ROLES as string[]).includes(id);
+/** ST1: what a membership's role grants. A system role is the list above; a custom role is its own list (of ITS company: another company's role id grants nothing); anything unknown grants nothing. */
+export function permissionsOf(st: Pick<MockState, 'roles'>, companyId: string, roleId: string): string[] {
+  if (isSystemRole(roleId)) return PERMISSIONS_BY_ROLE[roleId];
+  return st.roles.find((r) => r.id === roleId && r.companyId === companyId)?.permissions ?? [];
+}
+/** The signed-in user's permissions: the toolbar role (a simulation of a system role), unless an administrator gave u-1 a CUSTOM role in this company - then that role's list really applies (the toolbar still offers only the three system roles). */
+export function effectivePermissions(st: Pick<MockState, 'roles' | 'staff'>, companyId: string, toolbarRole: Role): string[] {
+  const me = st.staff.find((m) => m.companyId === companyId && m.userId === 'u-1');
+  if (me && !me.active) return []; // ST1b m4: a deactivated user holds nothing (never the wider toolbar role)
+  return me && !isSystemRole(me.roleId) ? permissionsOf(st, companyId, me.roleId) : PERMISSIONS_BY_ROLE[toolbarRole];
+}

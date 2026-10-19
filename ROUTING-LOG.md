@@ -60,3 +60,25 @@
 | 2026-10-18 | SP1c RP3a fix round (audit time clamp removed, malformed numbers, table focus scope, dated tax rate) | sonnet-implementer (warm, RP3 worker) | Opus REJECT (B1 falsified audit times); warm re-review after |
 | 2026-10-18 | SP1c RP3b fix (same-date rate change replaces; month-mismatched numbers) | sonnet-implementer (warm, RP3 worker) | Opus round 2 REJECT on two majors |
 | 2026-10-18 | SP1c GRP consolidated gate (typecheck, lint, unit, build, Playwright --workers=1) | haiku-gate-runner | Tier 3 run-and-report |
+| 2026-10-18 | SP1c ST1 implement (company settings, users, roles) | sonnet-implementer (fresh) | default implementer; Opus review after (auth/permissions) |
+| 2026-10-18 | SP1c ST1 review (company settings, users, roles) | opus-reviewer | auth/permissions + identity snapshot; fresh reviewer |
+| 2026-10-18 | SP1c ST1a fix round (role edit last-admin, pending invites, payslip/50 tawi frozen seller, corrections effective perms) | sonnet-implementer (warm, ST1 worker) | Opus REJECT (B1 last admin via role edit); warm re-review after |
+| 2026-10-18 | SP1c ST1b (rest of ST1a after the cap stop) | sonnet-implementer (warm, ST1 worker) | same area; Opus re-review of ST1a+ST1b together |
+| 2026-10-18 | SP1c ST2 implement (posting rules, preview, dimensions + account rules, expense categories; ST1 carries) | sonnet-implementer (fresh) | new area (ST1 worker context large); Opus review after (ledger rules) |
+| 2026-10-18 | SP1c ST2 review (posting rules, preview, dimensions, account rules, expense categories) | opus-reviewer | ledger rules / money; fresh reviewer, read-only on commit a9668d8 |
+| 2026-10-18 | SP1c ST2a (ST1 carries r2-m1/m3/m4, reconcile dims from master, item-form categories) | sonnet-implementer (fresh) | ST2 worker stopped at cap; its context 466k — fresh is cheaper; parallel with read-only review |
+| 2026-10-18 | SP1c ST2b fix round (control roles default-only, control account per role, schedules/asset register read stored posting, note tags, per-line revise) | sonnet-implementer (warm, ST2a worker) | Opus REJECT ST2 (B1-B4); warm Opus re-review after |
+| 2026-10-18 | SP1c ST2 round-2 review (ST2a + ST2b) | opus-reviewer (warm, ST2 reviewer) | re-check B1-B4 / M1-M3 + postedDebit amount heuristic |
+| 2026-10-18 | SP1c ST2c fix round (postedAccount frozen per line, no accessor in state) | sonnet-implementer (warm, ST2a worker) | Opus round-2 REJECT (N1 amount guess, N2 toolbar role persisted) |
+| 2026-10-19 | SP1c ST2 round-3 review (ST2c) | opus-reviewer (warm, ST2 reviewer) | postedAccount freeze + N2 |
+| 2026-10-19 | SP1c ST2e (correction plan sameBody uses sameLines) | sonnet-implementer (warm) | Opus R4 APPROVE minor |
+| 2026-10-19 | SP1c ST3 implement (tax / numbering / approvals + policy + tolerance snapshots) | sonnet-implementer (fresh) | new area; Opus review after (numbering / approvals) |
+| 2026-10-19 | SP1c ST3 review (numbering frozen format, approval / tolerance snapshots, WHT) | opus-reviewer (fresh) | numbering / approvals / tax compliance |
+| 2026-10-19 | SP1c ST3a fix round (WHT row in use, one scope per year + unambiguous parse, stricter revise approval, per-settlement tolerance) | sonnet-implementer (warm, ST3 worker) | Opus REJECT ST3 (B1, M1, M2) |
+| 2026-10-19 | SP1c ST3 round-2 review (ST3a) | opus-reviewer (warm, ST3 reviewer) | re-check B1 / M1 / M2 / m1 |
+| 2026-10-19 | SP1c ST4 implement (templates + seller / logo / signature / stamp frozen at issue on every paper) | sonnet-implementer (fresh) | new area; parallel with read-only review; Opus review after (freeze rule) |
+| 2026-10-19 | SP1c ST3b (WHT row in use by frozen rate; numbering existing-number ambiguity) | sonnet-implementer (warm, ST3 worker) | Opus r2 REJECT R2-B1; parallel with ST4 (disjoint files, no e2e) |
+| 2026-10-19 | SP1c ST4 review (templates + paper snapshot at issue) | opus-reviewer (fresh) | freeze rule on papers |
+| 2026-10-19 | SP1c ST4a fix round (signature only on issuer line, stamp never on counterparty line, issueLook invariant, PR labels, stamp independent, 50 tawi actor) | sonnet-implementer (warm, ST4 worker) | Opus REJECT ST4 (M1) |
+| 2026-10-19 | SP1c GST consolidated gate (typecheck, lint, unit, build, Playwright --workers=1) | haiku-gate-runner | Tier 3 run-and-report |
+| 2026-10-19 | SP1c flaky templates e2e (CI run 39180806907) | sonnet-implementer (fresh) | root-cause a flaky test in new ST4 code before merge |

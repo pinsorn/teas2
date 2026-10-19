@@ -70,7 +70,10 @@ export function assetRegister(st: MockState, companyId: string, p: Record<string
   for (const f of held) { bump(f.asset!.codes.cost, sat(f.asset!.cost)); bump(f.asset!.codes.accumulated, at(f).acc); }
   for (const u of waiting.filter((x) => dateOf(x.source.docId) <= asOf)) {
     const ob = u.docType === 'OB' ? st.docs.find((d) => d.id === u.source.docId) : undefined, ctx = { companyId, docType: u.docType, assetClass: u.assetClass };
-    bump(ob?.opening?.codes?.[`FixedAsset:${u.assetClass}`] ?? resolveRole(st, 'FixedAsset', ctx).code, sat(u.cost));
+    // ST2b ruling 3: a bill's cost sits on the account the bill POSTED (frozen on the line), not on whatever the rule says today
+    const src = u.source, billAcc = src.kind === 'bill' ? st.docs.find((x) => x.id === src.docId)?.lines.find((x) => x.id === src.lineId)?.postedAccount : undefined;
+    const costAcc = src.kind === 'bill' ? billAcc : ob?.opening?.codes?.[`FixedAsset:${u.assetClass}`] ?? resolveRole(st, 'FixedAsset', ctx).code; // a bill without its stamp is invariant 26, not a guess
+    if (costAcc) bump(costAcc, sat(u.cost));
     if (ob) bump(ob.opening?.codes?.[`AccumulatedDepreciation:${u.assetClass}`] ?? resolveRole(st, 'AccumulatedDepreciation', ctx).code, sat(u.accumulated));
   }
   const classTies = ['1210', '1211', '1220', '1221'].filter((c) => costCodes.has(c) || accCodes.has(c))

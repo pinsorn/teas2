@@ -1,9 +1,14 @@
 import type { Actor, Allocation, ChainEdge, CorrectionNote, CorrectionPlan, CorrectionResult, CorrectionStep, DocLine, Role, TaxCode } from '@/domain/types';
 import { PERMISSIONS_BY_ROLE } from '../permissions';
+
+/** A caller is a system role (tests, the toolbar) or the EFFECTIVE permission list (a custom role holds its own list, never the toolbar's). */
+export type Who = Role | string[];
+const grantedOf = (who: Who): string[] => (Array.isArray(who) ? who : PERMISSIONS_BY_ROLE[who]);
 import type { MockState } from '../store';
 import {
-  type Body, LIVE, approvalOnRevise, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, keepNoteLines, keepOmitted, markReplaced, refuseBelowSettled, refuseNonPositive, refusePartyChange, refuseUnissuableReceipt, refuseUnrevisablePurchase, reissue, revise, reviseBody, reviseNeedsApprover, stableJson, totalsOf,
+  type Body, LIVE, approvalOnRevise, blockingLocks, calc, cancel, createDraft, getDoc, isFiscalChange, issue, keepNoteLines, keepOmitted, sameLines, markReplaced, refuseBelowSettled, refuseNonPositive, refusePartyChange, refuseUnissuableReceipt, refuseUnrevisablePurchase, reissue, revise, reviseBody, reviseNeedsApprover, stableJson, totalsOf,
 } from './commands';
+import { refuseDimensions } from './journal';
 import { obPayrollProblem, payrollProblem } from './payroll';
 import { refuseObLocked, refuseReconciled, refuseSettled } from './locks';
 import { filingLock, refuseFiled } from './filings';
@@ -84,7 +89,7 @@ function noteFor(d: Stored, p: Body, full: boolean, vat: boolean): CorrectionNot
 }
 
 /** Pure: what a correction would do, from the current state. */
-export function buildPlan(st: MockState, id: string, proposed: Body, role: Role): CorrectionPlan {
+export function buildPlan(st: MockState, id: string, proposed: Body, role: Who): CorrectionPlan {
   const d = getDoc(st, id);
   proposed = { ...proposed, header: keepOmitted(d, proposed.header) };
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_correctable', 'แก้ไขได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
@@ -97,9 +102,10 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
     steps.push({ action, docId: doc.id, docType: action === 'issue_cn' ? 'CN' : action === 'issue_dn' ? 'DN' : doc.type, number: doc.number, summary, permission, ...(note ? { note } : {}) });
   let explanation: string;
 
-  const sameBody = JSON.stringify({ header: d.header, lines: d.lines }) === JSON.stringify({ header: proposed.header, lines: proposed.lines })
+  const sameBody = JSON.stringify(d.header) === JSON.stringify(proposed.header) && sameLines(d.lines, proposed.lines) // sameLines: the engine-set postedAccount / vatOverride are not a change
     && (proposed.allocations === undefined || JSON.stringify(d.allocations ?? []) === JSON.stringify(proposed.allocations))
     && (proposed.opening === undefined || JSON.stringify(d.opening ?? null) === JSON.stringify(proposed.opening)); // AC3: the steps behind an opening balance are part of its body
+  if (!sameBody) refuseDimensions(st, d.companyId, { ...d, header: proposed.header, lines: proposed.lines, ...(proposed.allocations ? { allocations: proposed.allocations } : {}), totals: totalsOf(st, d.companyId, d.type, proposed, d.id) }, d); // ST2: the dimension rules, refused BEFORE a plan is shown (only what the change introduces)
   if (!sameBody && d.type === 'RC') refuseUnissuableReceipt(st, d, proposed); // a plan that could not be issued is never shown
   if (sameBody) {
     explanation = 'ไม่มีการเปลี่ยนแปลง';
@@ -110,7 +116,7 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
     if (d.type === 'PR') { const prp = payrollProblem(st, d.companyId, d.type, proposed, d.id); if (prp) throw prp; } // PY1b: a pay-date month change, a later run, a deduction above the pay: refused before a plan is shown
     if (d.type === 'OB') { const opp = obPayrollProblem(st, d.companyId, d, { header: proposed.header, opening: proposed.opening ?? d.opening }); if (opp) throw opp; } // PY1b: a payroll year to date a run builds on - named here, not left to reviseBody's call order
     refuseUnrevisablePurchase(st, d, proposed); // a PB under live notes, an unregistered vendor's VAT, a claim period out of range, more than the PO has left
-    if (reviseNeedsApprover(st, d, proposed) && !PERMISSIONS_BY_ROLE[role].includes(`doc.${d.type}.approve`)) throw approvalOnRevise(); // C1: more money than was approved - a plan nobody here may run is never shown
+    if (reviseNeedsApprover(st, d, proposed) && !grantedOf(role).includes(`doc.${d.type}.approve`)) throw approvalOnRevise(); // C1: more money than was approved - a plan nobody here may run is never shown
     refuseReconciled(st, d, { header: proposed.header, totals: totalsOf(st, d.companyId, d.type, proposed, d.id) }); // FN2: a plan that would move a matched document's cash, account or date is never shown
     refuseSettled(st, d, { header: proposed.header, totals: totalsOf(st, d.companyId, d.type, proposed, d.id) }); // FN3: the same for a leg of a posted settlement
     const rb = d.type === 'PV' ? reviseBody(st, d, proposed) : proposed; // TX2: a voucher's WHT is re-frozen exactly as the revise would, so plan and revise judge the same certificates
@@ -182,7 +188,7 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
   }
   for (const s of steps) if (s.action === 'cancel' || s.action === 'reissue') { refuseReconciled(st, getDoc(st, s.docId)); refuseSettled(st, getDoc(st, s.docId)); } // FN2: cancelling / reissuing a matched document (the plan's own or a receipt it would cancel) is refused up front
   const ordered = steps.map((s, i) => ({ ...s, order: i + 1 }));
-  const granted = PERMISSIONS_BY_ROLE[role];
+  const granted = grantedOf(role);
   return {
     planId: `plan-${fnv(JSON.stringify([id, proposed, role]))}`,
     planHash: fnv(JSON.stringify({ steps: ordered, version: d.version })),
@@ -193,7 +199,7 @@ export function buildPlan(st: MockState, id: string, proposed: Body, role: Role)
 }
 
 /** Builds the plan and remembers it (single use) so `executePlan` can recompute it. */
-export function correctionPlan(st: MockState, id: string, proposed: Body, role: Role): CorrectionPlan {
+export function correctionPlan(st: MockState, id: string, proposed: Body, role: Who): CorrectionPlan {
   const plan = buildPlan(st, id, proposed, role);
   const kept = { ...proposed, header: keepOmitted(getDoc(st, id), proposed.header) }; // what the plan was built from (omitted fields = unchanged)
   (st.plans ??= {})[plan.planId] = { docId: id, proposed: structuredClone(kept), role, plan: structuredClone(plan) };
@@ -259,7 +265,7 @@ function runStep(w: MockState, s: CorrectionStep, proposed: Body, actor: Actor, 
 export const planStale = () => new MockError(409, 'correction.plan_stale', 'ข้อมูลเปลี่ยนไปหลังจากสร้างแผน กรุณาสร้างแผนใหม่');
 
 /** All or nothing: every step runs on a clone; `st` is only touched when the whole plan succeeded. */
-export function executePlan(st: MockState, planId: string, planHash: string, actor: Actor, role?: Role): CorrectionResult {
+export function executePlan(st: MockState, planId: string, planHash: string, actor: Actor, role?: Who): CorrectionResult {
   const stored = st.plans?.[planId];
   if (!stored) throw new MockError(404, 'correction.plan_not_found', 'ไม่พบแผนการแก้ไข');
   const stale = planStale;
@@ -269,7 +275,7 @@ export function executePlan(st: MockState, planId: string, planHash: string, act
   try { current = buildPlan(st, stored.docId, stored.proposed, role ?? stored.role); }
   catch (e) { throw e instanceof MockError && e.code === 'doc.reconciled' ? e : stale(); } // M7: a match made after the plan was built is the reason, not "stale"
   if (current.planHash !== planHash || JSON.stringify(current.steps) !== JSON.stringify(plan.steps)) throw stale();
-  const granted = PERMISSIONS_BY_ROLE[role ?? stored.role];
+  const granted = grantedOf(role ?? stored.role);
   const missing = plan.steps.map((s) => s.note ? `doc.${s.note.type}.issue` : s.permission).filter((p) => !granted.includes(p));
   if (missing.length) throw new MockError(403, 'auth.forbidden', `ต้องมีสิทธิ์ ${missing.join(', ')}`);
   if (!plan.steps.length) throw new MockError(422, 'correction.empty_plan', 'แผนนี้ไม่มีขั้นตอน');

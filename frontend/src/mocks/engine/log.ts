@@ -1,6 +1,7 @@
 import type { Actor, Allocation, DocHeader, DocLine, FieldChange } from '@/domain/types';
 import { ANCHOR } from '../fixtures/documents';
 import type { MockState } from '../store';
+import { stampIssue } from './look';
 import type { PostingRule } from './posting';
 
 /** Thrown by every engine command; handlers map it to problem+json. The message carries the code so tests can match it. */
@@ -24,6 +25,10 @@ export function withFixedClock<T>(iso: string, fn: () => T): T {
 export function logActivity(st: MockState, docId: string, actor: Actor, action: string, detail?: string): void {
   const n = st.activity.filter((a) => a.docId === docId).length + 1;
   st.activity.push({ docId, id: `act-${docId}-${n}`, at: stamp(), actor, action, ...(detail ? { detail } : {}) });
+  if (action === 'issue' || action === 'revise') { // ST4 (I3): every path that issues or revises a document passes here, and the seller + the pictures are taken at that moment
+    const d = st.docs.find((x) => x.id === docId);
+    if (d) stampIssue(st, d, actor);
+  }
 }
 
 /** The one place an audit entry is written. RP3: the mock has one caller address and a deterministic trace id (the entry count), so the seed is stable; an agent's calls arrive over MCP, everything else from the web app. The trail is append-only: ids are unique and count up (invariant). Time is a fact about the event and is never adjusted. */
@@ -46,12 +51,27 @@ export function changePostingRule(st: MockState, actor: Actor, companyId: string
 }
 /** Change the withholding rate (basis points) of one WHT type of the company from `effectiveFrom` (default today): a NEW dated rate row, like every rate table (`whtTypeOf` takes the latest row in force on the document's date),
  *  so a document dated before the change keeps the old rate; a change on a date that already has a row replaces that row's rate. */
-export function changeTaxRate(st: MockState, actor: Actor, companyId: string, code: string, rateBp: number, effectiveFrom: string = today()): void {
-  const inForce = st.whtTypes.filter((x) => x.companyId === companyId && x.code === code && x.effectiveFrom <= effectiveFrom).sort((x, y) => y.effectiveFrom.localeCompare(x.effectiveFrom))[0];
-  if (!inForce) throw new MockError(404, 'tax.type_not_found', 'ไม่พบประเภทภาษีหัก ณ ที่จ่าย');
+export function changeTaxRate(st: MockState, actor: Actor, companyId: string, code: string, rateBp: number, effectiveFrom: string = today(), expectedVersion?: number): void {
+  const rows = st.whtTypes.filter((x) => x.companyId === companyId && x.code === code);
+  if (!rows.length) throw new MockError(404, 'tax.type_not_found', 'ไม่พบประเภทภาษีหัก ณ ที่จ่าย');
+  const inForce = rows.filter((x) => x.effectiveFrom <= effectiveFrom).sort((x, y) => y.effectiveFrom.localeCompare(x.effectiveFrom))[0];
+  if (!inForce) throw new MockError(422, 'tax.rate_before_first', 'วันที่มีผลก่อนอัตราแรกของประเภทนี้'); // R3-m2: the type exists, the date is before its first row
+  const version = Math.max(1, ...rows.map((x) => x.version ?? 1));
+  if (expectedVersion !== undefined && expectedVersion !== version) throw new MockError(409, 'record.version_conflict', 'ประเภทภาษีนี้ถูกแก้ไขโดยผู้อื่นแล้ว โหลดข้อมูลใหม่ก่อนบันทึก');
+  if (!Number.isInteger(rateBp) || rateBp < 0 || rateBp > 10000) throw new MockError(422, 'tax.rate_invalid', 'อัตราต้องอยู่ระหว่าง 0% ถึง 100%');
   const before = { code, rateBp: inForce.rateBp, effectiveFrom: inForce.effectiveFrom };
-  if (inForce.effectiveFrom === effectiveFrom) inForce.rateBp = rateBp; // the date already has its row: a correction REPLACES it (a second row of one date would never apply)
-  else st.whtTypes.push({ ...inForce, rateBp, effectiveFrom });
+  if (inForce.effectiveFrom === effectiveFrom) { // ST3a B1: a row a live document froze / used is never changed (exit: a new row with a later date); an unused row may still be corrected
+    const next = rows.map((x) => x.effectiveFrom).filter((d) => d > effectiveFrom).sort()[0];
+    // ST3b R2-B1: "in use" is what was FROZEN (a live document's frozen line of this code at this row's rate, no other row keeping that rate); the date span only judges live lines that froze nothing (a WT certificate copies its voucher's frozen rate, so it never decides)
+    const live = st.docs.filter((d) => d.companyId === companyId && ['issued', 'partly_settled', 'settled'].includes(d.status));
+    const rateKeptElsewhere = rows.some((x) => x !== inForce && x.rateBp === inForce.rateBp);
+    const used = (!rateKeptElsewhere && live.some((d) => d.whtFrozen?.lines.some((l) => l.code === code && Math.round(parseFloat(l.rate) * 100) === inForce.rateBp)))
+      || live.some((d) => d.type !== 'WT' && !d.whtFrozen?.lines.some((l) => l.code === code) && d.header.documentDate >= effectiveFrom && (!next || d.header.documentDate < next)
+        && (d.header.whtTypeCode === code || d.lines.some((l) => l.whtTypeCode === code) || (d.allocations ?? []).some((a) => a.whtTypeCode === code)));
+    if (used) throw new MockError(409, 'tax.rate_in_use', 'อัตรานี้มีเอกสารใช้แล้ว ทางออก: เพิ่มอัตราใหม่ที่มีผลวันถัดไป');
+  }
+  if (inForce.effectiveFrom === effectiveFrom) { inForce.rateBp = rateBp; inForce.version = version + 1; } // the date already has its row: a correction REPLACES it (a second row of one date would never apply)
+  else st.whtTypes.push({ ...inForce, rateBp, effectiveFrom, version: version + 1 });
   logAudit(st, actor, companyId, 'tax.table.update', code, before, { code, rateBp, effectiveFrom });
 }
 
@@ -80,7 +100,7 @@ export function diffBody(a: Body, b: Body): FieldChange[] {
     const la = a.lines.find((l) => l.id === id) as unknown as Record<string, unknown> | undefined;
     const lb = b.lines.find((l) => l.id === id) as unknown as Record<string, unknown> | undefined;
     if (!la || !lb) { push(`lines.${id}`, la?.description, lb?.description); continue; }
-    for (const k of keys(la, lb)) push(`lines.${id}.${k}`, la[k], lb[k]);
+    for (const k of keys(la, lb)) if (k !== 'postedAccount') push(`lines.${id}.${k}`, la[k], lb[k]); // engine-set (ST2c): never a client change
   }
   // settlement allocations, one path per target (a certificate number edit shows as allocations.<target>.certNumber)
   const aa = new Map((a.allocations ?? []).map((x) => [x.targetId, x as unknown as Record<string, unknown>]));

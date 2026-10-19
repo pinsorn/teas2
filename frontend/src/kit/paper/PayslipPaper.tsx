@@ -3,11 +3,11 @@ import { useSearchParams } from 'next/navigation';
 import type { PaperModel, PayslipPaperModel } from '@/domain/types';
 import { formatDateBE, formatMoney } from '@/lib/format';
 import { Paper } from './Paper';
+import { LogoMark, SigBlocks } from './TaxInvoicePaper';
 
 // A payslip is an internal record: its labels stay Thai whatever the UI language is, so they are not in messages. Every figure is the model's (the server's frozen slip); nothing is summed or derived here.
 const L = { phone: 'โทร', taxId: 'เลขประจำตัวผู้เสียภาษี', no: 'เลขที่รอบ', payDate: 'วันที่จ่าย', period: 'งวดค่าจ้าง', employee: 'พนักงาน', nid: 'เลขประจำตัวประชาชน', income: 'รายได้', deductions: 'รายการหัก', gross: 'รวมรายได้', totalDed: 'รวมรายการหัก',
   net: 'เงินได้สุทธิ', words: 'จำนวนเงินตัวอักษร', ssoEr: 'ประกันสังคมส่วนนายจ้าง (ไม่หักจากพนักงาน)', ytd: 'ยอดสะสมตั้งแต่ต้นปี', ytdIncome: 'รายได้สะสม', ytdPit: 'ภาษีสะสม', ytdSso: 'ประกันสังคมสะสม', baht: 'บาท' };
-const mark = (name: string) => name.replace(/^(บริษัท|ห้างหุ้นส่วนจำกัด|ห้างหุ้นส่วนสามัญ|หจก\.|บจก\.)\s*/, '').charAt(0);
 
 
 function Slip({ m, s }: { m: PaperModel; s: PayslipPaperModel }) {
@@ -16,7 +16,7 @@ function Slip({ m, s }: { m: PaperModel; s: PayslipPaperModel }) {
     <section className="paper-page payslip-page" data-paper-page data-payslip={s.employeeId}>
       <header>
         <div className="ps-seller">
-          <div className="ps-logo" aria-hidden="true">{mark(co.name)}</div>
+          <LogoMark m={m} height="40px" cls="ps-logo" />
           <div>
             <h2>{co.name}</h2>
             <p>{co.address}</p>
@@ -64,7 +64,7 @@ function Slip({ m, s }: { m: PaperModel; s: PayslipPaperModel }) {
         <div><span>{L.ytdSso}</span><b>{formatMoney(s.ytd.sso)}</b></div>
       </div>
       <p className="ps-note">{L.ssoEr}: {formatMoney(s.ssoEmployer)} · {s.note}</p>
-      <div className="ps-sign">{m.signatures.map((x) => <div className="ps-sig" key={x}><div className="line" /><div className="who">{x}</div></div>)}</div>
+      <div className="ps-sign"><SigBlocks m={m} box="ps-sig" /></div>
       {m.voidMark ? <div className="paper-void" data-paper-void><div><b>{m.voidMark.label}</b>{m.voidMark.note ? <span>{m.voidMark.note}</span> : null}</div></div> : null}
     </section>
   );

@@ -154,7 +154,7 @@ describe('M4: the invariant agrees with the engine on an unknown code with a non
     const st = buildSeedState();
     const d = createDraft(st, 'co-vat', 'PV', { header: hdr('pv-01'), lines: [ln({ whtTypeCode: 'SVC' })] }, U, 'm4');
     const done = issue(st, d.id, d.version, U);
-    st.docs.find((x) => x.id === done.id)!.lines.push(ln({ id: 'l2', unitPrice: '0.00', whtTypeCode: 'NOPE' }));
+    st.docs.find((x) => x.id === done.id)!.lines.push(ln({ id: 'l2', unitPrice: '0.00', whtTypeCode: 'NOPE', postedAccount: '5100' }));
     expect(msgs(st)).toBe('');
   });
 });

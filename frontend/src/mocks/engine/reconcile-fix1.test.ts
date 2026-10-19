@@ -7,6 +7,7 @@ import { correctionPlan, executePlan } from './corrections';
 import { checkInvariants } from './invariants';
 import type { MockError } from './log';
 import { fromSatang } from './money';
+import { ensureDimensions } from './posting';
 import { glBalance, ignore, linesOf, lockTo, match, post, reverseTransfer, suggest, transfer, unmatch } from './reconcile';
 import { bankReconciliation } from './reports/bank-reconciliation';
 
@@ -227,20 +228,26 @@ describe('minors', () => {
     expect(e.code).toBe('bank.rounding_too_large');
     expect(match(st, CO, addLine('x-round2', '2026-09-05', '6955.80'), { docIds: ['rc-013'], diff: { role: 'RoundingDifference', amount: '0.80' } }, ME).status).toBe('matched');
   });
-  it('M4: inline-journal dimensions must be in the company\'s dimension set', () => {
+  it('M4: inline-journal dimensions must come from the company dimension MASTER (not from what documents carry)', () => {
     const d0 = st.docs.find((d) => d.companyId === CO && d.type === 'TI')!;
-    d0.header = { ...d0.header, dimensions: { project: 'P-1' } }; // the set = what the company's documents carry (there is no dimension master yet)
-    const [k, v] = ['project', 'P-1'];
-    expect(err(() => post(st, CO, 'bi-001-017', { accountCode: '5200', dimensions: { [k]: 'NO-SUCH-VALUE' } }, ME)).code).toBe('ledger.dimension_invalid');
-    expect(err(() => post(st, CO, 'bi-001-017', { accountCode: '5200', dimensions: { nokey: v } }, ME)).code).toBe('ledger.dimension_invalid');
-    expect(post(st, CO, 'bi-001-017', { accountCode: '5200', dimensions: { [k]: v } }, ME).status).toBe('posted');
+    d0.header = { ...d0.header, dimensions: { project: 'P-1' } }; // a document carrying a value the master lacks does not make it known
+    expect(err(() => post(st, CO, 'bi-001-017', { accountCode: '5200', dimensions: { project: 'P-1' } }, ME)).code).toBe('ledger.dimension_invalid');
+    expect(err(() => post(st, CO, 'bi-001-017', { accountCode: '5200', dimensions: { project: 'NO-SUCH-VALUE' } }, ME)).code).toBe('ledger.dimension_invalid');
+    expect(err(() => post(st, CO, 'bi-001-017', { accountCode: '5200', dimensions: { nokey: 'P-B' } }, ME)).code).toBe('ledger.dimension_invalid');
+    // a master value no document carries is accepted; once deactivated it is refused
+    expect(st.docs.some((d) => d.companyId === CO && [d.header.dimensions, ...d.lines.map((l) => l.dimensions)].some((m) => m?.department === 'D-03'))).toBe(false);
+    ensureDimensions(st);
+    st.dimensionValues!.find((x) => x.companyId === CO && x.code === 'D-03')!.active = false;
+    expect(err(() => post(st, CO, 'bi-001-017', { accountCode: '5200', dimensions: { department: 'D-03' } }, ME)).code).toBe('ledger.dimension_invalid');
+    st.dimensionValues!.find((x) => x.companyId === CO && x.code === 'D-03')!.active = true;
+    expect(post(st, CO, 'bi-001-017', { accountCode: '5200', dimensions: { department: 'D-03' } }, ME).status).toBe('posted');
   });
   it('M5: the report says the line status is read as of now', () => {
     expect(bankReconciliation(st, CO, { account: ACC, to: '2026-09-30' }).notes).toContain('สถานะรายการอ่าน ณ ปัจจุบัน');
   });
   it('M7: a plan built before a match and executed after is refused with the reconciled reason, not plan-stale', () => {
     const rc = st.docs.find((d) => d.id === 'rc-013')!;
-    const plan = correctionPlan(st, rc.id, { header: { ...rc.header, dimensions: { project: 'P-NEW' } }, lines: rc.lines, allocations: rc.allocations }, 'accountant');
+    const plan = correctionPlan(st, rc.id, { header: { ...rc.header, dimensions: { project: 'P-B' } }, lines: rc.lines, allocations: rc.allocations }, 'accountant');
     expect(plan.steps.length).toBeGreaterThan(0);
     match(st, CO, 'bi-001-003', { docIds: ['rc-013'] }, ME);
     const e = err(() => executePlan(st, plan.planId, plan.planHash, ME, 'accountant'));

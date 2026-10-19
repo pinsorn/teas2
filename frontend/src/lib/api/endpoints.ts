@@ -1,7 +1,7 @@
 import type {
   ActivityEntry, Allocation, Attachment, AttachmentCategory, BankImport, BankLine, ChainGraph, ComputeResult, CorrectionPlan, CorrectionResult, Doc, DocHeader, DocLine, DocSummary,
   DocType, HomeInbox, MarkKey, Money, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, RemainingLine, Revision, SearchHit,
-  DepositRow, DocOpening, SettlementDifferenceRole, SettlementKind, SettlementRecord, DpRow, FaSource, IsoDate, ChecklistItem, PeriodsView,
+  DepositRow, DocOpening, SettlementDifferenceRole, SettlementKind, SettlementRecord, DpRow, FaSource, IsoDate, ChecklistItem, PeriodsView, CompanySettings, RoleRow, UserRow,
 } from '@/domain/types';
 import type { CitYearPatch, CitYearView, FilingForm, FilingHistoryItem, FilingModel, TaxPaymentLines } from '@/domain/filings';
 import type { RecordKind, RecordRow } from '@/domain/records';
@@ -177,6 +177,21 @@ export const endpoints = {
   removeAttachment: (type: DocType, id: string, attId: string) => api<void>('DELETE', `${d(type, id)}/attachments/${attId}`),
   /** The print action was used. The server decides ต้นฉบับ / สำเนา; the answer says which it recorded. */
   markPrinted: (type: DocType, id: string, copy: boolean, employee?: string) => api<{ copy: boolean; printCount: number }>('POST', `${d(type, id)}/printed`, { copy, ...(employee ? { employee } : {}) }),
+  /** ST1 settings (company: settings.manage; users and roles: users.manage). Every write is audited; an agent is refused. */
+  getCompanySettings: (id: string) => api<CompanySettings>('GET', `/settings/companies/${encodeURIComponent(id)}`),
+  saveCompanySection: (id: string, section: string, body: Record<string, unknown>) => api<CompanySettings>('PUT', `/settings/companies/${encodeURIComponent(id)}/${section}`, body),
+  listStaff: () => api<{ items: UserRow[] }>('GET', '/settings/users'),
+  /** The only response that carries the one-time link. */
+  inviteStaff: (body: Record<string, unknown>) => api<UserRow & { link: string }>('POST', '/settings/users', body),
+  updateStaff: (id: string, body: Record<string, unknown>) => api<UserRow>('PUT', `/settings/users/${encodeURIComponent(id)}`, body),
+  setStaffActive: (id: string, active: boolean, version: number) => api<UserRow>('POST', `/settings/users/${encodeURIComponent(id)}/active`, { active, version }),
+  /** The mock's "invite accepted" (the invited person following their link). */
+  acceptStaff: (id: string) => api<UserRow>('POST', `/settings/users/${encodeURIComponent(id)}/accept`, {}),
+  staffResetLink: (id: string) => api<{ link: string }>('POST', `/settings/users/${encodeURIComponent(id)}/reset-link`, {}),
+  listRoles: () => api<{ items: RoleRow[] }>('GET', '/settings/roles'),
+  createRole: (body: Record<string, unknown>) => api<RoleRow>('POST', '/settings/roles', body),
+  updateRole: (id: string, body: Record<string, unknown>) => api<RoleRow>('PUT', `/settings/roles/${encodeURIComponent(id)}`, body),
+  deleteRole: (id: string) => api<{ ok: true }>('DELETE', `/settings/roles/${encodeURIComponent(id)}`),
   getDefaultNotes: () => api<Partial<Record<DocType, string>>>('GET', '/settings/default-notes'),
   getPaper: (type: DocType, id: string, copy = false) => api<PaperModel>('GET', `${d(type, id)}/paper${qs({ copy: copy ? 1 : undefined })}`),
 };

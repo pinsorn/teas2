@@ -2,7 +2,7 @@ import type { Doc, DocType, JournalEntryPreview, JournalLinePreview, JournalPrev
 import type { MockState } from '../store';
 import { fromSatang, toSatang } from './money';
 import { MockError } from './log';
-import { type AccountingRole, type PostingContext, resolveRole } from './posting';
+import { type AccountingRole, type PostingContext, type Resolved, resolveRole } from './posting';
 import { categoryOf, exForfeited, isRecoverable } from './purchase-vat';
 import { jvEntryLines } from './journal';
 import { disposalEntryLines, dpEntryLines } from './assets';
@@ -14,7 +14,7 @@ import { ADJUSTS } from '@/domain/doc-types';
 
 export interface Totals { net: number; vat: number; total: number; wht: number; cash: number }
 /** [role, debit, credit, context additions] in satang; the account behind each role comes from the posting profile (SP0 §5.5). */
-export type RolePosting = [AccountingRole, number, number, (Partial<PostingContext> & { partyName?: string; partyId?: string; openItemId?: string })?][];
+export type RolePosting = [AccountingRole, number, number, (Partial<PostingContext> & { partyName?: string; partyId?: string; openItemId?: string; /** the document line this Expense / FixedAsset row comes from (ST2c: its account is frozen on the line) */ lineId?: string })?][];
 type Rows = (t: Totals, d: Doc, st: MockState, companyId: string) => RolePosting;
 
 /** One row per document line for the net side so an item / category rule can pick that line's account (rows with the same account merge again). */
@@ -30,7 +30,7 @@ const sales = (role: AccountingRole): Rows => (t, d, st, co) => [['AR', t.total,
 const purchaseRows = (d: Doc, st: MockState, co: string): RolePosting => {
   const rs = computeDoc(d.lines, !!d.header.priceIncludesVat, true).lines;
   return d.lines.flatMap((l, i): RolePosting => {
-    const cat = categoryOf(st, co, l), ctx = { itemId: l.itemId, expenseCategory: cat?.code ?? l.expenseCategory, dimensions: l.dimensions };
+    const cat = categoryOf(st, co, l), ctx = { itemId: l.itemId, expenseCategory: cat?.code ?? l.expenseCategory, dimensions: l.dimensions, lineId: l.id };
     // an expense claim claims the VAT of a line only with the vendor's tax invoice behind THAT line (ม.82/3, ม.86/4); every other vendor document by its header's forfeit flag
     const net = toSatang(rs[i].net), vat = toSatang(rs[i].vat), claim = isRecoverable(st, co, l, d.type === 'EX' ? exForfeited(d.header, l) : d.header.inputVatForfeited);
     // I3: VAT that cannot be claimed is cost; on a capex line the cost is the asset's (TAS 16), elsewhere it is InputVatUnclaimed
@@ -65,7 +65,7 @@ export const POST: Partial<Record<DocType, Rows>> = {
     const w = frozenFigures(d.whtFrozen ?? freezeWht(st, companyId, d, d.id)); // the figures fixed at issue (C1); expense = the part of the tax / gross-up we bear
     const rs = computeDoc(d.lines, !!d.header.priceIncludesVat, vatBasisOf(st, companyId, 'PV')).lines;
     const own = d.lines.flatMap((l, i): RolePosting => {
-      const cat = categoryOf(st, companyId, l), ctx = { itemId: l.itemId, expenseCategory: cat?.code ?? l.expenseCategory, dimensions: l.dimensions };
+      const cat = categoryOf(st, companyId, l), ctx = { itemId: l.itemId, expenseCategory: cat?.code ?? l.expenseCategory, dimensions: l.dimensions, lineId: l.id };
       const cost = toSatang(rs[i].net) + toSatang(rs[i].vat); // a voucher line carries no claimable VAT: any VAT on it is cost
       return [cat?.capex ? ['FixedAsset', cost, 0, { ...ctx, assetClass: cat.assetClass }] : ['Expense', cost, 0, ctx]];
     });
@@ -90,23 +90,29 @@ function withReversal(doc: Doc, lines: JournalLinePreview[]): JournalPreview {
   return { entries };
 }
 
+/** ST2b m2: while set, every resolution `ledgerFor` makes is recorded here (the posting preview reads WHICH rule won from the resolver itself, never from the label). */
+let trace: { role: AccountingRole; r: Resolved }[] | undefined;
+export function traceResolutions<T>(into: { role: AccountingRole; r: Resolved }[], f: () => T): T { trace = into; try { return f(); } finally { trace = undefined; } }
+
 /** Posting for the document as it stands: its original entry, plus the reversal when it is cancelled or replaced.
- *  Types without a ledger effect (N-class, ...) return no entries. A JV (AC1) posts its account lines verbatim. */
-export function ledgerFor(st: MockState, doc: Doc & { companyId?: string }): JournalPreview {
+ *  `accounts` (optional) collects line id -> resolved account for the purchase lines. Types without a ledger effect (N-class, ...) return no entries. A JV (AC1) posts its account lines verbatim. */
+export function ledgerFor(st: MockState, doc: Doc & { companyId?: string }, accounts?: Map<string, string>): JournalPreview {
   const post = POST[doc.type];
   if (!post && doc.type !== 'JV' && doc.type !== 'OB' && doc.type !== 'DP') return { entries: [] };
   const companyId = doc.companyId ?? st.docs.find((d) => d.id === doc.id)?.companyId;
   if (!companyId) throw new MockError(500, 'engine.invariant', 'ledgerFor: document has no company');
   if (!post && doc.type === 'OB') return withReversal(doc, obEntryLines(st, companyId, doc)); // AC3: the steps, per party, plus the 3900 plug
   if (!post && doc.type === 'DP') return withReversal(doc, dpEntryLines(st, companyId, doc)); // AC5: exactly the run's stored rows
-  if (!post) return withReversal(doc, jvEntryLines(st, companyId, doc.lines));
-  const partyName = doc.party?.name ?? st.parties.find((p) => p.id === doc.header.partyId)?.name;
+  if (!post) return withReversal(doc, jvEntryLines(st, companyId, doc.lines, doc.header.dimensions));
+  const partyName = doc.party?.name ?? st.parties.find((p) => p.id === doc.header.partyId)?.name, group = st.parties.find((p) => p.id === doc.header.partyId && p.companyId === companyId)?.partyGroup;
   if ((doc.type === 'TI' || doc.type === 'IV') && doc.header.disposal) return withReversal(doc, disposalEntryLines(st, companyId, doc.header.disposal, partyName, doc.header.partyId, doc.id)); // AC5: the sale of a fixed asset posts its frozen disposal entry, not revenue
   const t: Totals = { net: toSatang(doc.totals.net), vat: toSatang(doc.totals.vat), total: toSatang(doc.totals.total), wht: toSatang(doc.totals.wht ?? '0.00'),
     cash: toSatang(doc.totals.cash ?? fromSatang(toSatang(doc.totals.total) - toSatang(doc.totals.wht ?? '0.00'))) };
   const acc = new Map<string, { code: string; name: string; rule: string; net: number; party?: string; partyId?: string; openItemId?: string; dims?: Record<string, string> }>();
   for (const [role, dr, cr, extra] of post(t, doc, st, companyId)) {
-    const r = resolveRole(st, role, { companyId, docType: doc.type, ...extra });
+    const r = resolveRole(st, role, { companyId, docType: doc.type, ...(group ? { partyGroup: group } : {}), ...extra }); // ST2: a rule at the party-group level applies to that group's documents
+    trace?.push({ role, r });
+    if (accounts && extra?.lineId) accounts.set(extra.lineId, r.code); // ST2c: the account the line's Expense / FixedAsset role resolved to - the one resolution `stampAccounts` freezes on the line
     const dims = { ...doc.header.dimensions, ...extra?.dimensions };
     const party = (role === 'AR' || role === 'AP' || role === 'EmployeePayable' || role === 'CustomerDeposit' || role === 'VendorPrepayment') ? (extra?.partyName ?? partyName) : undefined;
     const partyId = party ? (extra?.partyName ? extra.partyId : doc.header.partyId) : undefined; // the id of the SAME party the name belongs to (an allocation names its target's party)

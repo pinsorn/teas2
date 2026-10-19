@@ -3,7 +3,7 @@ import type { Actor, DocLine, WhtLine } from '@/domain/types';
 import type { MockState } from '../store';
 import { bahtText } from './bahtText';
 import { logActivity, stamp } from './log';
-import { SeriesAllocator } from './numbering';
+import { allocateNumber } from './numbering';
 import { freezeWht } from './settlement';
 import { whtTypeOf } from './wht';
 
@@ -34,9 +34,7 @@ function issueWt(st: MockState, pv: Stored, l: WhtLine, actor: Actor): void {
   let n = st.docs.length + 1;
   while (st.docs.some((d) => d.id === `doc-wt-${n}`)) n++;
   const id = `doc-wt-${n}`;
-  const alloc = new SeriesAllocator(st.series);
-  const number = alloc.next(pv.companyId, 'WT', pv.header.documentDate);
-  st.series = alloc.toJSON();
+  const number = allocateNumber(st, pv.companyId, 'WT', pv.header.documentDate);
   const incomeType = whtTypeOf(st, l.code, pv.party!, pv.header.documentDate).incomeType;
   const line: DocLine = { id: `${id}-l1`, description: `${incomeType} ${l.nameTh}`, qty: '1', unit: 'รายการ', unitPrice: l.income, taxCode: 'EX', whtTypeCode: l.code };
   const doc: Stored = {

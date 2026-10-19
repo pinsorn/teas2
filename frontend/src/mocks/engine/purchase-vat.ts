@@ -1,11 +1,13 @@
 import { inputVatExpired } from '@/domain/claim-window';
 import type { FilingForm } from '@/domain/filings';
 import { isValidTin } from '@/domain/tin';
-import type { DocHeader, DocLine, DocType, VendorInvoice } from '@/domain/types';
-import { EXPENSE_CATEGORIES, type ExpenseCategory } from '../fixtures/expense-categories';
+import type { Allocation, DocHeader, DocLine, DocType, VendorInvoice } from '@/domain/types';
+import { type ExpenseCategory } from '../fixtures/expense-categories';
+import { categoriesOf } from './posting';
 import type { MockState } from '../store';
 import { MockError } from './log';
 import { RATE_BP, vatOf } from './vat';
+import { whtInactiveProblem } from './wht';
 
 /** Input VAT rules of the vendor documents (PB, and the notes PCN / PDN that adjust one). [SP-R] - the statute references are the cited sections of the Revenue Code. */
 export const isVendorBill = (t: DocType): boolean => t === 'PB' || t === 'PCN' || t === 'PDN';
@@ -17,7 +19,7 @@ export const invoiceComplete = (v: Partial<VendorInvoice> | undefined): v is Ven
 export const exForfeited = (h: Pick<DocHeader, 'documentDate'>, l: DocLine): boolean => !invoiceComplete(l.vendorInvoice) || l.vendorInvoice.fullTaxInvoice !== true || inputVatExpired(h.documentDate, l.vendorInvoice.date); // ม.86/4: only a FULL tax invoice made out to the company is claimable (M2)
 
 /** The expense category of a purchase line: the code STORED on the line (C1). A posted line never reads the item master; `snapshotCategories` copies the item's category onto the line at save / revise / issue. */
-export const categoryOf = (_st: MockState, _companyId: string, l: DocLine): ExpenseCategory | undefined => EXPENSE_CATEGORIES.find((c) => c.code === l.expenseCategory);
+export const categoryOf = (st: MockState, companyId: string, l: DocLine): ExpenseCategory | undefined => categoriesOf(st, companyId).find((c) => c.code === l.expenseCategory); // ST2: the company's own (editable) categories
 
 /** C1: a line with no category of its own takes its picked item's NOW and keeps it (idempotent: a line that has one is left alone). */
 export const snapshotCategories = (st: MockState, companyId: string, lines: DocLine[]): DocLine[] =>
@@ -121,8 +123,10 @@ export function issueVendorStatus(st: MockState, companyId: string, type: DocTyp
 /** Every command-time input VAT rule of a PB / PCN / PDN, first violation wins (undefined = fine): the vendor can only charge VAT when registered (ม.82/5, judged on the status recorded
  *  with the document, else the party master now), the category exists, the vendor invoice is not dated after the bill, the claim period is inside D .. V+6 (R1-I1; an expired window is not
  *  refused, the VAT is forfeited) - and a PCN has none (I2). Judged on the TAX CODE, not on the computed VAT, so a zero-priced line cannot slip through. */
-export function purchaseProblem(st: MockState, companyId: string, type: DocType, body: { header: DocHeader; lines: DocLine[] }): MockError | undefined {
-  if (type === 'EX') return expenseClaimProblem(body);
+export function purchaseProblem(st: MockState, companyId: string, type: DocType, body: { header: DocHeader; lines: DocLine[]; allocations?: Allocation[] }, before?: { lines: DocLine[]; allocations?: Allocation[] }): MockError | undefined {
+  const inactive = whtInactiveProblem(st, companyId, body, before); // ST3: a deactivated WHT type is refused where it is introduced, on any document
+  if (inactive) return inactive;
+  if (type === 'EX') return expenseClaimProblem(st, companyId, body);
   if (!isVendorBill(type)) return undefined;
   const h = body.header;
   const vendor = st.parties.find((p) => p.id === h.partyId && p.companyId === companyId);
@@ -131,8 +135,12 @@ export function purchaseProblem(st: MockState, companyId: string, type: DocType,
     return new MockError(422, 'pb.vendor_not_vat_registered', `ผู้ขาย “${vendor.name}” ไม่ได้จดทะเบียนภาษีมูลค่าเพิ่ม จึงมีภาษีซื้อไม่ได้ (ม.82/5) ให้เลือกรหัสภาษี “ไม่มีภาษี” ในรายการ`);
   }
   for (const l of body.lines) {
-    if (l.expenseCategory && !EXPENSE_CATEGORIES.some((c) => c.code === l.expenseCategory)) {
+    if (l.expenseCategory && !categoriesOf(st, companyId).some((c) => c.code === l.expenseCategory)) {
       return new MockError(422, 'pb.unknown_category', `รายการ “${l.description}” ใช้หมวดค่าใช้จ่าย “${l.expenseCategory}” ที่ไม่มีในระบบ`);
+    }
+    // ST2b M2: a deactivated category is refused where it is INTRODUCED (a new document or line); a document already carrying it keeps it
+    if (l.expenseCategory && categoriesOf(st, companyId).some((c) => c.code === l.expenseCategory && c.active === false) && !before?.lines.some((b) => b.id === l.id && b.expenseCategory === l.expenseCategory)) {
+      return new MockError(422, 'pb.category_inactive', `หมวดค่าใช้จ่าย “${l.expenseCategory}” ปิดใช้งานแล้ว ทางออก: เลือกหมวดอื่น หรือเปิดใช้งานหมวดนี้ในหน้าตั้งค่าการลงบัญชี`);
     }
   }
   if (type !== 'PCN' && h.vendorDocDate && (!/^\d{4}-\d{2}-\d{2}$/.test(h.vendorDocDate) || h.vendorDocDate > h.documentDate)) {
@@ -155,9 +163,9 @@ export function purchaseProblem(st: MockState, companyId: string, type: DocType,
 
 /** The command-time rules of an expense claim's lines (first violation wins): a known category, and a vendor tax invoice that is whole (four details or none), has a valid TIN and is not dated after the claim.
  *  A line WITHOUT an invoice is fine - its VAT is cost (InputVatUnclaimed), never input VAT. */
-function expenseClaimProblem(body: { header: DocHeader; lines: DocLine[] }): MockError | undefined {
+function expenseClaimProblem(st: MockState, companyId: string, body: { header: DocHeader; lines: DocLine[] }): MockError | undefined {
   for (const l of body.lines) {
-    if (l.expenseCategory && !EXPENSE_CATEGORIES.some((c) => c.code === l.expenseCategory)) {
+    if (l.expenseCategory && !categoriesOf(st, companyId).some((c) => c.code === l.expenseCategory)) {
       return new MockError(422, 'ex.unknown_category', `รายการ “${l.description}” ใช้หมวดค่าใช้จ่าย “${l.expenseCategory}” ที่ไม่มีในระบบ`);
     }
     const v = l.vendorInvoice;

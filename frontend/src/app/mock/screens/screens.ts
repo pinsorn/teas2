@@ -226,5 +226,14 @@ export const SCREENS: Screen[] = [
   { name: 'taxSummary', route: '/tax/summary', company: 'both', states: true }, // TX3b: twelve months of 2026; the non-VAT company also shows the threshold card at 85 %
   { name: 'taxForms', route: '/tax/forms', company: 'both', states: true },
   { name: 'taxFormPp01', route: '/tax/forms?print=PP01', company: 'both', states: false },
+  { name: 'settingsCompany', route: '/settings/company?role=admin', company: 'both', states: true }, // ST1: admin only (accountant is forbidden)
+  { name: 'settingsUsers', route: '/settings/users?role=admin', company: 'both', states: true },
+  { name: 'settingsRoles', route: '/settings/roles?role=admin', company: 'both', states: true },
+  { name: 'settingsPosting', route: '/settings/posting?role=accountant', company: 'both', states: true }, // ST2: the accountant's (ledger.posting.manage); the operator is forbidden
+  { name: 'settingsDimensions', route: '/settings/dimensions?role=admin', company: 'both', states: true }, // ST2: settings.manage; the accountant is forbidden
+  { name: 'settingsTax', route: '/settings/tax?role=accountant', company: 'both', states: true }, // ST3: tax.settings.manage (accountant + admin); the operator is forbidden
+  { name: 'settingsNumbering', route: '/settings/numbering?role=admin', company: 'both', states: true }, // ST3: settings.manage; the accountant is forbidden
+  { name: 'settingsApprovals', route: '/settings/approvals?role=admin', company: 'both', states: true },
+  { name: 'settingsTemplates', route: '/settings/templates?role=admin', company: 'both', states: true },
   { name: 'styleGuide', route: '/style-guide', company: 'both', states: false },
 ];
