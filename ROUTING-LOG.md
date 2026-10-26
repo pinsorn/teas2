@@ -94,3 +94,4 @@
 | 2026-10-26 | SP1c HC3 review (credentials, public links, onboarding, session expiry) | opus-reviewer (fresh) | auth / public links |
 | 2026-10-26 | SP1c GHC parity checklist (docs only) | sonnet-implementer (fresh) | read-heavy audit, parallel with read-only review |
 | 2026-10-26 | SP1c HC3a fix round (anchored session gate, extend / relogin states, public links counterparty types + type check, minors) | sonnet-implementer (warm, HC3 worker) | Opus REJECT HC3 |
+| 2026-10-26 | SP1c GHC consolidated gate | haiku-gate-runner | Tier 3 run-and-report |

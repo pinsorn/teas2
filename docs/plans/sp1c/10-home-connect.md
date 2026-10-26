@@ -123,7 +123,7 @@ issued printable documents, `doc.<T>.read`), messages, `screens.ts`.
 
 ### Task GHC: Ham gate — Home / Connect / platform, and SP1c sign-off
 
-- [ ] Consolidated gate green (full e2e incl. both action counts); production build / staging (O-2).
+- [x] Consolidated gate green (full e2e incl. both action counts); production build / staging (O-2).
 - [ ] Parity audit: walk Appendix C line by line against the group files' "Parity coverage" tables; every row is built
   or listed as dropped in SP0 §1.4 (S1). Record the ticked list in `docs/specs/` as the SP1c parity checklist (one
   file, from `_TEMPLATE.md`).
