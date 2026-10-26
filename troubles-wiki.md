@@ -229,3 +229,7 @@ Entry format — terse, greppable by symptom:
 - Symptom: after `pnpm build` by hand + `pnpm start -p 3100`, specs fail instantly; Home shows "เชื่อมต่อระบบไม่สำเร็จ".
 - Root cause: `NEXT_PUBLIC_API_MOCKING` is inlined at BUILD time; a manual build without it ships a mock-less app (playwright's webServer sets it for the build).
 - Fix: `NEXT_PUBLIC_API_MOCKING=enabled corepack pnpm build`, then start with the same env. Separately, `next build` here intermittently ends with a SecurityFatalError upgrade nudge (alternates build to build): rerun the build.
+
+## Agent requests: the allowlist in `mocks/handlers/me.ts` is the only guard outside document writes
+- Fact (HC2 review r4): `docs-write.ts` passes `actorFor(request)`, so the engine also refuses an agent there; the bank, settlements, periods, filings, schedules, records and settings handlers still pass the fixed user to the engine.
+- Consequence: widening an `AGENT_ALLOWED` regex lets an agent reach those engines dressed as the signed-in user. Any new agent route needs its handler to pass `actorFor(request)` first.

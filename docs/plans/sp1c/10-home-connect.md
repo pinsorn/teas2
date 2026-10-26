@@ -76,12 +76,12 @@ gains `alerts`, `approvals` items gain `requester`, `ageDays`, `reason?`, `agent
   expiry; linked from the agent-routed inbox items and the document's activity. The mock engine `agent-review.ts`
   computes the checks for fixture agent drafts (SP1ab `ti-002`, `ti-004` + one PV draft by the agent).
 
-- [ ] **Step 1: Failing tests** — scopes cannot exceed the owner's permissions; secret never returned after creation;
+- [x] **Step 1: Failing tests** — scopes cannot exceed the owner's permissions; secret never returned after creation;
   T-class Auto refused; review checks fire for the fixture vectors (duplicate party + amount within 7 days; 3× rule;
   first document); "posted by agent" filter (S6) still works. e2e: `screenContract` connect tabs (`both`, forbiddenRole
   accountant), agent report page (`vat`), consent page (no shell; axe clean).
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(connect): API keys, OAuth apps, agent policy and agent review reports`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(connect): API keys, OAuth apps, agent policy and agent review reports`.
 
 ---
 
