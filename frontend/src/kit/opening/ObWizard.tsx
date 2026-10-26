@@ -30,6 +30,9 @@ const EMPTY: DocOpening = { openItems: [], assets: [], payrollYtd: [], bank: [] 
 const routes = routesOf(openingBalance);
 
 /** The last day of the month before `businessDate`'s month: the usual cut-off (the day before the books start). */
+const urlCutoff = (): string | undefined => {
+  try { const c = new URLSearchParams(window.location.search).get('cutoff'); return c && /^\d{4}-\d{2}-\d{2}$/.test(c) ? c : undefined; } catch { return undefined; }
+};
 const defaultCutoff = (businessDate?: string) => {
   if (!businessDate) return '';
   const [y, m] = businessDate.split('-').map(Number);
@@ -70,7 +73,8 @@ function ObWizardInner({ initial, mode, onIssued, onRevisionRequested }: ObWizar
   const { me } = useMe();
   const revise = mode === 'revise';
   const [step, setStep] = useState(0);
-  const [header, setHeader] = useState<DocHeader>(initial?.header ?? { documentDate: defaultCutoff(me?.businessDate) });
+  // HC3: the onboarding wizard lands here with the cut-off it asked for (?cutoff=YYYY-MM-DD); the server still judges it
+  const [header, setHeader] = useState<DocHeader>(initial?.header ?? { documentDate: urlCutoff() ?? defaultCutoff(me?.businessDate) });
   const [dateAdopted, setDateAdopted] = useState(!!initial || !!me?.businessDate);
   if (!dateAdopted && me?.businessDate) { setDateAdopted(true); setHeader((h) => (h.documentDate ? h : { ...h, documentDate: defaultCutoff(me.businessDate) })); }
   const [lines, setLines] = useState<DocLine[]>(initial?.lines.length ? initial.lines : [newAccountLine(), newAccountLine()]);

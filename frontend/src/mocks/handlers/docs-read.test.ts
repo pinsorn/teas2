@@ -129,7 +129,7 @@ describe('doc detail, locked, forbidden', () => {
     paid.locks = [];
     localStorage.setItem('teas2.mock.state.v2', JSON.stringify({ ...state, version: 2 }));
     localStorage.removeItem('teas2.mock.state.v27');
-    expect(loadState().version).toBe(61);
+    expect(loadState().version).toBe(63);
     expect(loadState().docs.find((d) => d.id === paid.id)!.locks).toContainEqual(expect.objectContaining({ kind: 'settlement' }));
   });
   it('GET derives the period lock for a document dated in a closed month, and not for an open-month one (F4)', async () => {
@@ -189,7 +189,7 @@ describe('doc detail, locked, forbidden', () => {
         expect((await json(`/search?q=${one.number}`)).items.some((h: { id: string }) => h.id === one.id)).toBe(true);
       }
       expect((await get('/docs/DN')).status).toBe(200);
-      expect((await get('/home')).status).toBe(200);
+      expect((await get('/home/drafts')).status).toBe(200);
     }
   });
 });

@@ -82,3 +82,17 @@
 | 2026-10-19 | SP1c ST4a fix round (signature only on issuer line, stamp never on counterparty line, issueLook invariant, PR labels, stamp independent, 50 tawi actor) | sonnet-implementer (warm, ST4 worker) | Opus REJECT ST4 (M1) |
 | 2026-10-19 | SP1c GST consolidated gate (typecheck, lint, unit, build, Playwright --workers=1) | haiku-gate-runner | Tier 3 run-and-report |
 | 2026-10-19 | SP1c flaky templates e2e (CI run 39180806907) | sonnet-implementer (fresh) | root-cause a flaky test in new ST4 code before merge |
+| 2026-10-26 | SP1c HC1 implement (axe settle + role-aware Home, inbox, alerts, KPIs) | sonnet-implementer (fresh) | new group; Opus review after (approval actions, KPI identities) |
+| 2026-10-26 | SP1c HC1 review (KPI identities, approval inbox, role-aware sections, axe settle) | opus-reviewer (fresh) | approval actions + money figures |
+| 2026-10-26 | SP1c HC1a fix round (tile gates, agent digest, agent rows, cash COA, deadlines, axe bound) | sonnet-implementer (warm, HC1 worker) | Opus REJECT HC1 |
+| 2026-10-26 | SP1c HC2 implement (API keys, OAuth, agent policy, frozen agent review reports) | sonnet-implementer (fresh) | new area; Opus review after (auth / secrets / agent limits) |
+| 2026-10-26 | SP1c HC2 review (secrets, scopes, agent policy, frozen review reports) | opus-reviewer (fresh) | auth / secrets / agent limits |
+| 2026-10-26 | SP1c HC2a fix round (agent limits, report bound to version, member-owned keys / consent, activity link, check gaps) | sonnet-implementer (warm, HC2 worker) | Opus REJECT HC2 |
+| 2026-10-26 | SP1c HC2b fix round (agent allowlist choke point, issue gate expiry + current policy, owner-only rotate, own drafts only) | sonnet-implementer (warm, HC2 worker) | Opus r2 REJECT HC2 |
+| 2026-10-26 | SP1c HC2c (unlisted types Off, agent create refused when Off; docs-write passes the real actor) | sonnet-implementer (warm, HC2 worker) | Opus r3 REJECT B1 |
+| 2026-10-26 | SP1c HC3 implement (login, TOTP, onboarding, session expiry, profile, public link) | sonnet-implementer (fresh) | new area; Opus review after (auth / public links) |
+| 2026-10-26 | SP1c HC3 review (credentials, public links, onboarding, session expiry) | opus-reviewer (fresh) | auth / public links |
+| 2026-10-26 | SP1c GHC parity checklist (docs only) | sonnet-implementer (fresh) | read-heavy audit, parallel with read-only review |
+| 2026-10-26 | SP1c HC3a fix round (anchored session gate, extend / relogin states, public links counterparty types + type check, minors) | sonnet-implementer (warm, HC3 worker) | Opus REJECT HC3 |
+| 2026-10-26 | SP1c GHC consolidated gate | haiku-gate-runner | Tier 3 run-and-report |
+| 2026-10-27 | SP1c CI axe failures root cause (payroll run new contrast, outstanding PO title) | sonnet-implementer (fresh, systematic-debugging) | recurring CI-only failures block PR #17 merge |

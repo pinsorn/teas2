@@ -9,7 +9,7 @@ const APPROVAL = ['QT', 'SO', 'DO', 'BL', 'IV', 'TI', 'RC', 'CN', 'DN', 'PO', 'P
 const VERBS = ['read', 'create', 'issue', 'cancel', 'correct'];
 const expectedDocCodes = Object.keys(DOC_TYPES).flatMap((t) =>
   (t === 'WT' ? ['read'] : VERBS).map((v) => `doc.${t}.${v}`).concat(APPROVAL.includes(t) ? [`doc.${t}.approve`] : []));
-const NON_DOC = ['doc.PR.pay', 'audit.read', 'bank.manage', 'bank.read', 'bank.reconcile', 'item.manage', 'item.read', 'ledger.coa.manage', 'ledger.posting.manage', 'ledger.read', 'ledger.period.close', 'ledger.period.reopen', 'ledger.schedule.manage', 'party.manage', 'party.read', 'payroll.read', 'employee.read', 'employee.manage', 'report.arap.read', 'report.read', 'settings.manage', 'tax.filing.finalize', 'tax.filing.preview', 'tax.read', 'tax.settings.manage', 'users.manage'];
+const NON_DOC = ['doc.PR.pay', 'audit.read', 'bank.manage', 'bank.read', 'bank.reconcile', 'item.manage', 'item.read', 'ledger.coa.manage', 'ledger.posting.manage', 'ledger.read', 'ledger.period.close', 'ledger.period.reopen', 'ledger.schedule.manage', 'party.manage', 'party.read', 'payroll.read', 'employee.read', 'employee.manage', 'report.arap.read', 'report.read', 'settings.manage', 'tax.filing.finalize', 'tax.filing.preview', 'tax.read', 'tax.settings.manage', 'users.manage', 'connect.manage'];
 
 describe('permission catalogue', () => {
   it('is exactly the master catalog for what exists today (WT read-only, approve on 16 types)', () => {
@@ -23,6 +23,10 @@ describe('permission catalogue', () => {
     for (const [code, l] of Object.entries(PERMISSIONS)) expect(l.th && l.en, code).toBeTruthy();
     expect(PERMISSIONS['doc.QT.read'].th).toBe('ดูใบเสนอราคา');
     expect(PERMISSIONS['doc.QT.correct'].th).toBe('แก้ไขใบเสนอราคาที่ออกแล้ว');
+  });
+  it('connect.manage is the administrator alone; the TEAS Connect nav item is every member (HC2a: their own keys)', () => {
+    expect(Object.entries(PERMISSIONS_BY_ROLE).filter(([, p]) => p.includes('connect.manage')).map(([r]) => r)).toEqual(['admin']);
+    expect(NAV.flatMap((g) => g.items).find((i) => i.key === 'settingsConnect')?.permission).toBeUndefined();
   });
   it('every code a mock role holds and every NAV permission is in the catalogue', () => {
     for (const code of new Set(Object.values(PERMISSIONS_BY_ROLE).flat())) expect(PERMISSIONS[code], code).toBeDefined();

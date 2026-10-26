@@ -259,9 +259,19 @@ export interface CorrectionPlan { planId: string; planHash: string; steps: Corre
   explanation: string }
 export interface CorrectionResult { affected: { docId: string; type: DocType; number?: string; status: DocStatus }[] }
 
-export interface HomeInbox { approvals: DocSummary[]; myDrafts: DocSummary[]; overdue: DocSummary[];
-  deadlines: { form: string; due: IsoDate }[]; unreconciledLines: number; agentDigest: { posted: number; waiting: number };
-  kpis: { cash: Money; ar: Money; ap: Money; vatThisMonth: Money | null } }
+/** HC1: Home is one query per section. */
+export type HomeSection = 'kpis' | 'approvals' | 'drafts' | 'overdue' | 'deadlines' | 'bank' | 'agent' | 'alerts';
+/** A tile the role may not see (the right of the engine behind it), or the VAT tile of a non-VAT company, is null. */
+export interface HomeKpis { cash: Money | null; ar: Money | null; ap: Money | null; vatThisMonth: Money | null }
+/** A pending document the signed-in user may approve: the requester and the age come from the approval trail (submittedBy / submittedAt), the amount is the document's total. */
+export interface HomeApproval { id: string; type: DocType; number?: string; partyName: string; total: Money; version: number; requester: string; ageDays: number;
+  /** why it waits: set for an agent-routed document */ reason?: string; agentReportId?: string }
+export type HomeAlertCode = 'number_gaps' | 'number_duplicates' | 'vat_threshold' | 'pb_incomplete' | 'old_drafts' | 'depreciation_due';
+/** count = documents / series / months; percent only for the VAT threshold. */
+export interface HomeAlert { code: HomeAlertCode; count: number; href: string; severity: 'warning' | 'danger'; percent?: string }
+export interface HomeDeadline { form: string; due: IsoDate }
+export interface HomeAgentDigest { posted: number; waiting: number }
+export interface HomeData { kpis: HomeKpis; approvals: HomeApproval[]; drafts: DocSummary[]; overdue: DocSummary[]; deadlines: HomeDeadline[]; bank: number; agent: HomeAgentDigest; alerts: HomeAlert[] }
 export interface SearchHit { kind: 'doc' | 'party' | 'page'; id: string; label: string; href?: string } // no href: the type's screens are not built yet (shown as text)
 
 export interface ApiProblem { type?: string; title: string; status: number; code: string; detail?: string;

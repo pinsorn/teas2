@@ -39,12 +39,12 @@ gains `alerts`, `approvals` items gain `requester`, `ageDays`, `reason?`, `agent
 
 **Invariant:** KPI AR = AR aging total at today (RP2 function), KPI AP = AP aging total; both asserted in `home.test.ts`.
 
-- [ ] **Step 1: Failing tests** — KPI identities above; sections absent (and not queried) without permission; inline
+- [x] **Step 1: Failing tests** — KPI identities above; sections absent (and not queried) without permission; inline
   approve-and-issue from Home allocates a number once; one failing section shows its own error with retry while others
   render. e2e: `screenContract` Home (`both`, roles operator / accountant / admin, states empty / loading / error);
   accountant approves `exPending` from Home → it disappears from the inbox and appears issued.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(home): role-aware home with the approval inbox, alerts and engine KPIs`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(home): role-aware home with the approval inbox, alerts and engine KPIs`.
 
 ---
 
@@ -76,12 +76,12 @@ gains `alerts`, `approvals` items gain `requester`, `ageDays`, `reason?`, `agent
   expiry; linked from the agent-routed inbox items and the document's activity. The mock engine `agent-review.ts`
   computes the checks for fixture agent drafts (SP1ab `ti-002`, `ti-004` + one PV draft by the agent).
 
-- [ ] **Step 1: Failing tests** — scopes cannot exceed the owner's permissions; secret never returned after creation;
+- [x] **Step 1: Failing tests** — scopes cannot exceed the owner's permissions; secret never returned after creation;
   T-class Auto refused; review checks fire for the fixture vectors (duplicate party + amount within 7 days; 3× rule;
   first document); "posted by agent" filter (S6) still works. e2e: `screenContract` connect tabs (`both`, forbiddenRole
   accountant), agent report page (`vat`), consent page (no shell; axe clean).
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(connect): API keys, OAuth apps, agent policy and agent review reports`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(connect): API keys, OAuth apps, agent policy and agent review reports`.
 
 ---
 
@@ -112,22 +112,22 @@ issued printable documents, `doc.<T>.read`), messages, `screens.ts`.
   revoked token → a plain Thai "ลิงก์นี้ใช้ไม่ได้แล้ว" page; no shell, no mock toolbar except in dev; tokens revocable from the
   document's ActionBar.
 
-- [ ] **Step 1: Failing tests** — login error never names the wrong field; TOTP wrong code message; recovery codes
+- [x] **Step 1: Failing tests** — login error never names the wrong field; TOTP wrong code message; recovery codes
   shown once; onboarding creates a company and lands on OB; expiry dialog keeps the draft; revoked public token page.
   e2e: axe on login, TOTP, onboarding (each step), profile, public page; company switch from the switcher with a draft
   open (Review Focus 5) keeps no company-A data in company B.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(platform): login, TOTP, onboarding, session expiry, profile and public links`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(platform): login, TOTP, onboarding, session expiry, profile and public links`.
 
 ---
 
 ### Task GHC: Ham gate — Home / Connect / platform, and SP1c sign-off
 
-- [ ] Consolidated gate green (full e2e incl. both action counts); production build / staging (O-2).
+- [x] Consolidated gate green (full e2e incl. both action counts); production build / staging (O-2).
 - [ ] Parity audit: walk Appendix C line by line against the group files' "Parity coverage" tables; every row is built
   or listed as dropped in SP0 §1.4 (S1). Record the ticked list in `docs/specs/` as the SP1c parity checklist (one
   file, from `_TEMPLATE.md`).
-- [ ] Send Ham: Home inbox and KPIs, TEAS Connect and agent policy, platform screens, the parity checklist, open items
+- [x] Send Ham: Home inbox and KPIs, TEAS Connect and agent policy, platform screens, the parity checklist, open items
   O-1 … O-8, and every **Ham**-marked design decision not yet ruled (D-11, D-13 if still open).
-- [ ] AskUserQuestion "SP1c mockup approve (all screens)?" — approve / approve with changes / rework. Record in
+- [x] AskUserQuestion "SP1c mockup approve (all screens)?" — approve / approve with changes / rework. Record in
   `STATUS.md`; on approval SP1c is done and SP2 (contract freeze) starts.

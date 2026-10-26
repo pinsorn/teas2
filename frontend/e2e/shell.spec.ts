@@ -35,13 +35,14 @@ test('the company switcher in the sidebar switches company', async ({ page }) =>
 
 test('Home data re-keys after a company switch (non-VAT shows its own data, not the VAT company data)', async ({ page }) => {
   const main = page.getByRole('main');
-  await expect(main.getByText('ภ.พ.30')).toBeVisible();
-  await expect(main.getByText('ภาษีขายเดือนนี้')).toBeVisible();
+  await expect(main.getByRole('region', { name: 'กำหนดยื่นภาษี' }).getByText('ภ.พ.30')).toBeVisible();
+  await expect(main.getByText('ภาษีมูลค่าเพิ่มเดือนนี้')).toBeVisible();
+  const vatAr = await main.getByTestId('kpi-ar').textContent();
   await page.getByRole('button', { name: 'โหมดตัวอย่าง' }).click();
   await page.getByLabel('บริษัท').selectOption('nonvat');
-  await expect(main.getByText('ภ.พ.30')).toHaveCount(0);
-  await expect(main.getByText('ภาษีขายเดือนนี้')).toHaveCount(0);
-  await expect(main.getByText('ภ.ง.ด.53')).toBeVisible();
+  await expect(main.getByRole('region', { name: 'กำหนดยื่นภาษี' }).getByText('ภ.พ.30')).toHaveCount(0);
+  await expect(main.getByText('ภาษีมูลค่าเพิ่มเดือนนี้')).toHaveCount(0);
+  await expect(main.getByTestId('kpi-ar')).not.toHaveText(vatAr!);
 });
 
 test('Ctrl+K opens the command menu', async ({ page }) => {
@@ -64,13 +65,9 @@ test('home has no serious accessibility violations', async ({ page }) => {
   expect(await serious(page)).toEqual([]);
 });
 
-test('home title and a not-built route', async ({ page }) => {
+test('home title and an unknown route', async ({ page }) => {
   await expect(page).toHaveTitle('งานของฉัน · TEAS 2');
-  await page.getByRole('button', { name: 'โหมดตัวอย่าง' }).click(); // every non-settings route is built; settings needs settings.manage (admin)
-  await page.getByLabel('บทบาท').selectOption('admin');
-  await page.goto('/settings/connect'); // group 09 built every settings page but connect (group 10)
-  await expect(page.getByText('ส่วนนี้ยังไม่เปิดใช้งาน')).toBeVisible();
-  expect(await serious(page)).toEqual([]);
+  // every nav route is built now (TEAS Connect was the last, HC2): no page renders the "not built" notice any more, so only the 404 is checked
   await page.goto('/nope/nothing');
   await expect(page.getByRole('heading', { name: 'ไม่พบหน้าที่ต้องการ' })).toBeVisible();
 });

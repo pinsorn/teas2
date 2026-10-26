@@ -118,10 +118,10 @@ test('non-VAT company: no VAT columns, the threshold card warns at 85 % on the s
   await shot(page, 'summary-nonvat');
   await axeClean(page);
   await page.goto('/?company=nonvat');
-  await expect(page.getByTestId('vat-threshold')).toBeVisible();
+  await expect(page.getByTestId('alert-vat_threshold')).toBeVisible();
   await page.goto('/?company=vat');
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-  await expect(page.getByTestId('vat-threshold')).toHaveCount(0);
+  await expect(page.getByTestId('alert-vat_threshold')).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/tax/summary?year=2026&company=nonvat');
   await expect(page.getByTestId('vat-threshold')).toBeVisible();

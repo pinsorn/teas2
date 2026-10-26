@@ -14,7 +14,8 @@ import { reportsHandlers } from './reports';
 import { scheduleHandlers } from './schedules';
 import { searchHandlers } from './search';
 import { settingsHandlers } from './settings';
+import { connectHandlers } from './connect';
 import { settlementHandlers } from './settlements';
 
 export * from './common';
-export const handlers = [...meHandlers, ...homeHandlers, ...partiesHandlers, ...recordsHandlers, ...itemsHandlers, ...docsReadHandlers, ...docsWriteHandlers, ...financeRefsHandlers, ...bankHandlers, ...settlementHandlers, ...scheduleHandlers, ...periodHandlers, ...filingHandlers, ...reportsHandlers, ...searchHandlers, ...settingsHandlers, ...mockFixturesHandlers];
+export const handlers = [...meHandlers, ...homeHandlers, ...partiesHandlers, ...recordsHandlers, ...itemsHandlers, ...docsReadHandlers, ...docsWriteHandlers, ...financeRefsHandlers, ...bankHandlers, ...settlementHandlers, ...scheduleHandlers, ...periodHandlers, ...filingHandlers, ...reportsHandlers, ...searchHandlers, ...settingsHandlers, ...connectHandlers, ...mockFixturesHandlers];

@@ -3,7 +3,7 @@ import type {
 } from '@/domain/types';
 import { ADJUSTS, CLASS, CONVERSIONS, DOC_TYPES, GROUPS, LIVE, SETTLES, carriesBalance, isTypeAvailable } from '@/domain/doc-types';
 import type { MockState } from '../store';
-import { approvalRequired, policySnapshot, refuseSelfApproval, refuseUnapprovedIssue, reviseNeedsApproval, submit } from './approval';
+import { approvalRequired, policySnapshot, refuseAgentAction, refuseSelfApproval, refuseUnapprovedIssue, reviseNeedsApproval, submit } from './approval';
 import { dropAttachmentsOf } from './attachments';
 import { consumed, fmtQ, q4 } from './chain';
 import { ledgerFor, reversalOf } from './ledger';
@@ -11,6 +11,7 @@ import { beforeJvCancel, dimensionProblems, journalProblem, jvBalance, jvCalc, j
 import { afterRevision, refuseClosed, refuseRejected, withAcceptedStamp } from './marks';
 import { MockError, diffBody, isPinned, logActivity, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
+import { policyOf } from '../records/connect';
 import { adjustSnapshot, hasSnapshot, isNote, noteHeader, noteMissing, noteProblem, withNoteVat } from './notes';
 import { allocateNumber } from './numbering';
 import { whtInactiveProblem } from './wht';
@@ -332,6 +333,7 @@ export function compute(st: MockState, companyId: string, type: DocType, raw: Bo
 
 /** `opts.id` is used verbatim (seed runner only; handlers never pass it). */
 export function createDraft(st: MockState, companyId: string, type: DocType, body: Body, actor: Actor, idempotencyKey: string, opts?: { id?: string }): Doc {
+  if (actor.kind === 'agent' && policyOf(st, companyId, type).mode === 'off') throw new MockError(403, 'agent.forbidden_action', 'agent สร้างเอกสารประเภทนี้ไม่ได้ (นโยบาย agent ปิดอยู่หรือไม่รองรับประเภทนี้)'); // HC2c: policy Off = no draft
   const key = `${companyId}|${type}|${idempotencyKey}`;
   const prior = st.idempotency?.[key];
   if (prior && st.docs.some((d) => d.id === prior)) return publicDoc(getDoc(st, prior));
@@ -342,17 +344,33 @@ export function createDraft(st: MockState, companyId: string, type: DocType, bod
   return publicDoc(d);
 }
 
+/** HC2a (§8.2 / §8.4): an agent issues only a draft whose CURRENT report (same document version) routed auto and holds no error; otherwise a person issues it. */
+function agentIssueGate(st: MockState, d: Stored, actor: Actor): void {
+  if (actor.kind !== 'agent') return;
+  const r = st.agentReports?.find((x) => x.id === d.agentReportId);
+  const pol = policyOf(st, d.companyId, d.type); // HC2b: the policy NOW, not the one the report was made under
+  if (!r || r.docVersion !== d.version || r.route !== 'auto' || r.checks.some((k) => k.severity === 'error') || stamp() > r.expiresAt || pol.mode !== 'auto' || toSatang(d.totals.total) > toSatang(pol.cap)) {
+    throw new MockError(409, 'agent.review_required', 'agent ออกเอกสารเองได้เฉพาะร่างที่รายงานการตรวจฉบับปัจจุบันให้ออกอัตโนมัติ ไม่มีข้อผิดพลาด ยังไม่หมดอายุ และนโยบายปัจจุบันยังเป็นอัตโนมัติและยอดไม่เกินวงเงิน ให้ส่งตรวจใหม่หรือให้คนอนุมัติ');
+  }
+}
+
 /** Did a save change the money of the document (its total, its lines or who is paid how much)? That person becomes `moneyBy` (I2). */
 const moneyChanged = (d: Stored, total: Money, body: Body): boolean =>
   total !== d.totals.total || !sameLines(body.lines, d.lines) || fiscalAllocations(body.allocations) !== fiscalAllocations(d.allocations);
 
+/** HC2b: an agent edits or deletes only a draft IT created, and only while it is a draft (it never pushes an approved or pending document back, nor touches a person's draft). */
+function agentOwnDraft(d: Stored, actor: Actor): void {
+  if (actor.kind === 'agent' && !(d.status === 'draft' && d.createdBy.kind === 'agent' && d.createdBy.id === actor.id)) throw new MockError(403, 'agent.forbidden_action', 'agent แก้ไขหรือลบได้เฉพาะฉบับร่างที่ agent สร้างเอง');
+}
+
 export function updateDraft(st: MockState, id: string, raw: Body, version: number, actor: Actor): Doc {
   const d = getDoc(st, id);
+  agentOwnDraft(d, actor);
   if (d.status === 'pending') throw new MockError(409, 'approval.pending', 'เอกสารนี้รออนุมัติ แก้ไขไม่ได้ ให้ผู้อนุมัติส่งกลับแก้ไขก่อน');
   if (d.status !== 'draft' && d.status !== 'approved') throw new MockError(409, 'doc.not_draft', 'แก้ไขได้เฉพาะเอกสารฉบับร่าง');
   checkVersion(d, version);
   const body = stored(st, d.companyId, d.type, raw, undefined, d.header);
-  const { allocations: _a, approval: _ap, opening: _op, ...rest } = d; void _a; void _ap; void _op; // editing an approved document returns it to draft (§7.6): the approval goes, it must be sent again
+  const { allocations: _a, approval: _ap, opening: _op, agentReportId: _ar, ...rest } = d; void _a; void _ap; void _op; void _ar; // HC2a: a report is bound to one version of the draft, so an edit drops it (the agent reviews again); editing an approved document returns it to draft (§7.6): the approval goes, it must be sent again
   const totals = totalsOf(st, d.companyId, d.type, body);
   const next: Stored = { ...rest, status: 'draft', header: body.header, lines: body.lines, totals, party: partyOf(st, d.companyId, body.header.partyId),
     version: d.version + 1, ...(body.allocations ? { allocations: body.allocations } : {}), ...(body.opening ? { opening: body.opening } : {}), ...(moneyChanged(d, totals.total, body) ? { moneyBy: actor } : {}) }; // I2: the one who changed the money
@@ -365,6 +383,7 @@ export function updateDraft(st: MockState, id: string, raw: Body, version: numbe
 
 export function deleteDraft(st: MockState, id: string, version: number, actor: Actor): void {
   const d = getDoc(st, id);
+  agentOwnDraft(d, actor);
   if (d.status !== 'draft') throw new MockError(409, 'doc.not_draft', d.status === 'pending' || d.status === 'approved' ? 'ลบเอกสารที่ส่งอนุมัติแล้วไม่ได้ ให้ผู้อนุมัติส่งกลับแก้ไขก่อน แล้วลบฉบับร่าง' : 'ลบได้เฉพาะเอกสารฉบับร่าง');
   checkVersion(d, version);
   st.docs = st.docs.filter((x) => x.id !== id);
@@ -419,6 +438,7 @@ export function issue(st: MockState, id: string, version: number, actor: Actor, 
   const d = getDoc(st, id);
   if (d.status !== 'draft' && d.status !== 'approved' && d.status !== 'pending') throw new MockError(409, 'doc.not_draft', 'ออกได้เฉพาะเอกสารฉบับร่าง');
   checkVersion(d, version);
+  agentIssueGate(st, d, actor);
   if (!opts?.approver) refuseUnapprovedIssue(st, d); // a document the policy wants approved issues only from `approved`: nothing below has run, so a refusal leaves no number, link or journal
   const header0 = issueVendorStatus(st, d.companyId, d.type, d.header); // R1-M2: the vendor's VAT status as of issue
   let body: Body = { header: header0, lines: vendorNoteLines(st, d.companyId, d.type, { header: header0, lines: d.lines }), ...(d.allocations ? { allocations: d.allocations } : {}), ...(d.opening ? { opening: d.opening } : {}) }; // C1: categories as of now
@@ -491,6 +511,7 @@ export function submitForApproval(st: MockState, id: string, version: number, ac
 
 /** One action for a person who holds both rights (§7.6): approve and issue in a single command - one number, one journal. A document the policy does not need approved simply issues. */
 export function approveAndIssue(st: MockState, id: string, version: number, actor: Actor): Doc {
+  refuseAgentAction(actor);
   const d = getDoc(st, id);
   if (d.status !== 'draft' && d.status !== 'pending') throw new MockError(409, 'approval.not_approvable', 'อนุมัติและออกได้เฉพาะเอกสารฉบับร่างหรือที่รออนุมัติ');
   checkVersion(d, version);
@@ -501,6 +522,7 @@ export function approveAndIssue(st: MockState, id: string, version: number, acto
 
 /** `opts.correction`: the cancel is a step of a correction plan, so its reversal follows the correction rule (original date while open) instead of today. */
 export function cancel(st: MockState, id: string, version: number, reasonCode: string, reasonText: string, actor: Actor, opts?: { correction?: boolean; /** AC1: the cancel of a JV's pending auto-reversal, made by the command that cancels or turns off its accrual */ system?: boolean }): Doc {
+  refuseAgentAction(actor);
   const d = getDoc(st, id);
   if (!LIVE.includes(d.status)) throw new MockError(409, 'doc.not_cancellable', d.status === 'pending' || d.status === 'approved' ? 'ยังไม่ได้ออกเอกสาร ยกเลิกไม่ได้ ให้ผู้อนุมัติส่งกลับแก้ไขก่อน แล้วลบฉบับร่าง' : 'ยกเลิกได้เฉพาะเอกสารที่ออกแล้ว');
   if (d.type === 'OB') { const opp = obPayrollProblem(st, d.companyId, d, undefined); if (opp) throw opp; } // PY1a: the chain of a payroll year to date starts here (exit: cancel those runs first)
@@ -631,6 +653,7 @@ export const approvalOnRevise = () => new MockError(422, 'approval.required_on_r
 
 /** `opts.approver`: the person who also approves this revise (C1) - the caller passes one only if they hold the approve right. */
 export function revise(st: MockState, id: string, raw: Body, version: number, reason: string, actor: Actor, opts?: { approver?: Actor }): Doc {
+  refuseAgentAction(actor);
   const d = getDoc(st, id);
   let body = reviseBody(st, d, raw);
   if (d.type === 'PR') body = { ...body, payroll: freezePayroll(st, d.companyId, body, id) }; // PY1: payslips regenerated (rows unchanged keep their frozen slip), then the L-class repost
@@ -730,6 +753,7 @@ export function revise(st: MockState, id: string, raw: Body, version: number, re
 
 /** Replace an issued document by a new one (new number, `replaces` link, old one marked `replaced` and reversed in the ledger). */
 export function reissue(st: MockState, id: string, raw: Body, actor: Actor, reason: string): Doc {
+  refuseAgentAction(actor);
   const old = getDoc(st, id);
   if (!LIVE.includes(old.status)) throw new MockError(409, 'doc.not_correctable', 'ออกใหม่ได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   if (blockingLocks(old).length) throw new MockError(409, 'doc.locked', 'เอกสารถูกล็อก ออกใหม่ไม่ได้');

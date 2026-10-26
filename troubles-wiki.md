@@ -220,7 +220,18 @@ Entry format — terse, greppable by symptom:
 - **Fix:** numbering.ts keeps its own two-line agent refusal instead of importing `refuseAgent` from company.ts.
 - **Seen:** 2026-10-19, SP1c ST3
 
-## CI-only axe color-contrast on `.bg-primary` mid-transition (payroll run new, nonvat / accountant)
-- Symptom: `screen-contract` axe reports `color-contrast: .bg-primary` once on CI (PR #16 run 39173571176); green locally and on rerun.
-- Root cause (suspected): axe samples a button while its colour transition is still running (same class as the CI1 `ti-loop` fade).
-- Fix: rerun the failed job; if it recurs, wait for the primary button's transition to finish before `axeClean` (as CI1 did for `ti-loop`).
+## CI-only axe flakes: `color-contrast: .bg-primary` (payroll run new) and `document-title: html` (outstanding POs "overdue only") — ROOT-CAUSED
+- Symptom: each failed once on PR #16 and again on PR #17 (run 40362220456); green locally and on rerun. The `axe.ts` waits (non-empty title, finite animations) did not help.
+- Root cause 1 (`.bg-primary`): `ui/button.tsx` had `transition-all` + `disabled:opacity-50`. The DocEditor primary button is disabled until the data loads, then enabled: opacity fades 0.5 -> 1 over ~150 ms and axe reads the blend (reproduced deterministically by pausing the transition at 50 ms: `color-contrast: .bg-primary` at opacity 0.73; passes at 0.99). The flip lands after the helper's `getAnimations()` wait when the data arrives late. Fix: the button no longer transitions `opacity` (`transition-[color,background-color,border-color,box-shadow,translate]`), so there is no half-faded state to sample.
+- Root cause 2 (`document-title`): `ReportView` wrote filter changes with a DEBOUNCED (300 ms) `router.replace`; the test's last step (a checkbox) ends just before `afterEach` axe, so the replace fires while axe is analysing. A Next `router.replace` re-commits the metadata and `document.title` is `""` for ~1-2 ms, visible to other tasks (a MessageChannel poller saw it on 3/3 runs). Fix: `window.history.replaceState` (Next syncs it into `useSearchParams`; no title blink, 0/3 polls). Tab switches still use `router.replace` (same blink, but a click is followed by an awaited UI change, not by a timer).
+- General rule: any timer-driven `router.replace/push` can blank the title mid-axe; use `history.replaceState` for query-only state.
+- Seen: 2026-10-26/27, PR #16 + #17 CI
+
+## e2e: every test fails with "mock worker did not answer /bff/v1/mock/fixtures" / /me network error (manual build)
+- Symptom: after `pnpm build` by hand + `pnpm start -p 3100`, specs fail instantly; Home shows "เชื่อมต่อระบบไม่สำเร็จ".
+- Root cause: `NEXT_PUBLIC_API_MOCKING` is inlined at BUILD time; a manual build without it ships a mock-less app (playwright's webServer sets it for the build).
+- Fix: `NEXT_PUBLIC_API_MOCKING=enabled corepack pnpm build`, then start with the same env. Separately, `next build` here intermittently ends with a SecurityFatalError upgrade nudge (alternates build to build): rerun the build.
+
+## Agent requests: the allowlist in `mocks/handlers/me.ts` is the only guard outside document writes
+- Fact (HC2 review r4): `docs-write.ts` passes `actorFor(request)`, so the engine also refuses an agent there; the bank, settlements, periods, filings, schedules, records and settings handlers still pass the fixed user to the engine.
+- Consequence: widening an `AGENT_ALLOWED` regex lets an agent reach those engines dressed as the signed-in user. Any new agent route needs its handler to pass `actorFor(request)` first.

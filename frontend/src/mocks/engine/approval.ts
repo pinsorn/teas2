@@ -74,8 +74,14 @@ export function submit(st: MockState, id: string, version: number, actor: Actor)
   return strip(next);
 }
 
+/** HC2a (§8.5): an agent never approves, cancels, reissues or corrects a document, whatever its key holds (the engine refuses, not only the scope list). */
+export function refuseAgentAction(actor: Actor): void {
+  if (actor.kind === 'agent') throw new MockError(403, 'agent.forbidden_action', 'ตัวแทน (agent) อนุมัติ ยกเลิก หรือแก้ไขเอกสารที่ออกแล้วไม่ได้ ต้องให้ผู้ใช้ทำเอง');
+}
+
 /** pending -> approved. The number is allocated at issue, not here. */
 export function approve(st: MockState, id: string, version: number, actor: Actor): Doc {
+  refuseAgentAction(actor);
   const d = find(st, id);
   if (d.status !== 'pending') throw new MockError(409, 'approval.not_pending', 'อนุมัติได้เฉพาะเอกสารที่รออนุมัติ');
   checkVersion(d, version);

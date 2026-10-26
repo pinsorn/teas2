@@ -16,7 +16,7 @@ import { endpoints } from '@/lib/api/endpoints';
 import { Guarded } from './Guarded';
 
 /** Send back needs a reason (§7.6): the author sees it on the timeline as "ส่งกลับแก้ไข: <reason>". The server's refusal is shown in place. */
-function SendBackDialog({ docLabel, busy, error, onConfirm, onCancel }: { docLabel: string; busy?: boolean; error?: unknown; onConfirm: (reason: string) => void; onCancel: () => void }) {
+export function SendBackDialog({ docLabel, busy, error, onConfirm, onCancel }: { docLabel: string; busy?: boolean; error?: unknown; onConfirm: (reason: string) => void; onCancel: () => void }) {
   const t = useTranslations('docView.approval');
   const tp = useTranslations('problem');
   const id = useId();

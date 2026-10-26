@@ -12,7 +12,8 @@ export const problem = (status: number, code: string, title: string, extra: Part
 export function ctx() {
   const st = loadState();
   const s = getSettings();
-  const company = st.companies.find((c) => (s.companyKey === 'vat' ? c.vatRegistered : !c.vatRegistered))!;
+  // 'new' = the company onboarding made; after a reset it is gone and the VAT company is the fallback
+  const company = (s.companyKey === 'new' ? st.companies.find((c) => c.id === 'co-new') : undefined) ?? st.companies.find((c) => (s.companyKey === 'nonvat' ? !c.vatRegistered : c.vatRegistered) && c.id !== 'co-new')!;
   return { st, s, company, perms: effectivePermissions(st, company.id, s.role) };
 }
 

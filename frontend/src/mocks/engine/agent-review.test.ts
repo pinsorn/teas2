@@ -1,0 +1,335 @@
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { handlers } from '../handlers';
+import { agentGate } from '../handlers/me';
+import { setSettings } from '../settings';
+import { resetState } from '../store';
+import { testServer } from '../test-server';
+import { PERMISSIONS_BY_ROLE } from '../permissions';
+import { AGENT, USER } from '../fixtures/documents';
+import { buildSeedState, loadState } from '../store';
+import { POLICY_TYPES, policyView, setPolicy } from '../records/connect';
+import { reviewDraft, routeOf, getReport } from './agent-review';
+import { approve } from './approval';
+import { approveAndIssue, cancel, createDraft, deleteDraft, issue, reissue, revise, updateDraft } from './commands';
+import { checkInvariants } from './invariants';
+import { homeApprovals } from './home';
+import { withFixedClock } from './log';
+
+const V = 'co-vat';
+const code = (f: () => unknown) => { try { f(); } catch (e) { return (e as { message: string }).message.split(':')[0]; } return undefined; };
+const codes = (r: { checks: { code: string }[] }) => r.checks.map((c) => c.code);
+const acct = PERMISSIONS_BY_ROLE.accountant;
+const draftLike = (st: ReturnType<typeof buildSeedState>, id: string, over: { date?: string; qty?: string } = {}) => {
+  const d = st.docs.find((x) => x.id === id)!;
+  return createDraft(st, V, d.type, { header: { ...d.header, ...(over.date ? { documentDate: over.date } : {}) }, lines: d.lines.map((l) => ({ ...l, ...(over.qty ? { qty: over.qty } : {}) })) }, AGENT, `t-${Math.random()}`);
+};
+
+describe('the seed: reports made through the review command', () => {
+  const st = buildSeedState();
+  it('ti-002, ti-004 and one agent PV draft each carry a stored report; the state version is 63', () => {
+    expect(st.version).toBe(63);
+    for (const id of ['ti-002', 'ti-004', 'pv-ag1']) {
+      const d = st.docs.find((x) => x.id === id)!;
+      expect(d.status, id).toBe('draft');
+      expect(d.createdBy.kind, id).toBe('agent');
+      expect(st.agentReports!.find((r) => r.id === d.agentReportId)).toMatchObject({ docId: id, version: 1, route: 'human' });
+    }
+    expect(st.agentReports).toHaveLength(3);
+    expect(checkInvariants(st)).toEqual([]);
+  });
+  it('the T-class drafts route to a human by policy; the voucher (Auto-if-clean) by its warning; the audit knows the agent reviewed', () => {
+    const pv = st.agentReports!.find((r) => r.docId === 'pv-ag1')!;
+    expect(pv.policy.mode).toBe('auto');
+    expect(codes(pv)).toContain('date_not_current');
+    expect(st.agentReports!.find((r) => r.docId === 'ti-002')!.policy.mode).toBe('human');
+    expect(st.audit.some((a) => a.command === 'agent.review' && a.actor.kind === 'agent')).toBe(true);
+  });
+  it('the Home inbox shows the agent drafts on the HUMAN route, each with its report id', () => {
+    const rows = homeApprovals(st, V, acct, USER).filter((r) => r.reason === 'agent');
+    expect(rows.map((r) => r.id).sort()).toEqual(['pv-ag1', 'ti-002', 'ti-004']);
+    for (const r of rows) expect(r.agentReportId).toBe(st.docs.find((d) => d.id === r.id)!.agentReportId);
+  });
+  it('an agent draft that was never reviewed, or whose report routes auto, is not in the inbox', () => {
+    const s = buildSeedState();
+    const fresh = draftLike(s, 'ti-002');
+    expect(homeApprovals(s, V, acct, USER).some((r) => r.id === fresh.id)).toBe(false);
+    s.agentReports!.find((r) => r.docId === 'ti-002')!.route = 'auto';
+    expect(homeApprovals(s, V, acct, USER).some((r) => r.id === 'ti-002')).toBe(false);
+  });
+});
+
+describe('§8.3 checks fire for their vectors', () => {
+  it('duplicate: the same party and amount within 7 days (and not 8)', () => {
+    const st = buildSeedState();
+    const near = draftLike(st, 'ti-002', { date: '2026-10-09' }); // ti-002 is 2026-10-11
+    expect(codes(reviewDraft(st, AGENT, near.id))).toContain('duplicate');
+    const far = draftLike(st, 'ti-002', { date: '2026-09-30' }); // 11 days from ti-002, 9 from near
+    expect(codes(reviewDraft(st, AGENT, far.id))).not.toContain('duplicate');
+  });
+  it('3x: above three times the party\'s 90-day maximum', () => {
+    const st = buildSeedState();
+    const base = st.docs.find((x) => x.id === 'ti-002')!;
+    const pid = base.header.partyId!;
+    const hist = st.docs.filter((d) => d.type === 'TI' && d.header.partyId === pid && ['issued', 'partly_settled', 'settled'].includes(d.status) && d.header.documentDate <= '2026-10-11' && d.header.documentDate >= '2026-07-13');
+    const big = draftLike(st, 'ti-002', { qty: '1000' });
+    const r = reviewDraft(st, AGENT, big.id);
+    expect(hist.length).toBeGreaterThan(0); // the party has history in the 90 days, so the rule can fire
+    expect(codes(r)).toContain('over_3x');
+    expect(codes(reviewDraft(st, AGENT, 'ti-002'))).not.toContain('over_3x');
+  });
+  it('first document: a party with no live document', () => {
+    const st = buildSeedState();
+    const pid = st.docs.find((x) => x.id === 'ti-002')!.header.partyId!;
+    for (const d of st.docs) if (d.header.partyId === pid && d.id !== 'ti-002') d.status = 'cancelled'; // the party has nothing live
+    expect(codes(reviewDraft(st, AGENT, 'ti-002'))).toContain('first_document');
+  });
+  it('posting default: Revenue resolved at the company default; date: not in the current month', () => {
+    const st = buildSeedState();
+    st.postingRules = st.postingRules.filter((r) => !(r.companyId === V && r.role === 'Revenue' && r.level !== 'default'));
+    const r = reviewDraft(st, AGENT, 'ti-002');
+    expect(codes(r)).toContain('posting_default');
+    expect(codes(reviewDraft(st, AGENT, 'pv-ag1'))).toContain('date_not_current');
+    expect(codes(r)).not.toContain('date_not_current');
+    for (const c of r.checks) expect(['error', 'warning', 'info']).toContain(c.severity);
+  });
+  it('a closed period and a policy that is Off are errors; the report carries totals, journal rules and the 15-minute token expiry', () => {
+    const st = buildSeedState();
+    const old = draftLike(st, 'ti-002', { date: '2026-05-10' });
+    expect(reviewDraft(st, AGENT, old.id).checks.find((c) => c.code === 'period_closed')?.severity).toBe('error');
+    setPolicy(st, USER, V, 'TI', { mode: 'off', cap: '50000.00', version: 1 });
+    const r = reviewDraft(st, AGENT, 'ti-002');
+    expect(r.checks.find((c) => c.code === 'policy_off')?.severity).toBe('error');
+    expect(r.totals.total).toBe(st.docs.find((d) => d.id === 'ti-002')!.totals.total);
+    expect(r.journal.entries[0].lines.every((l) => !!l.rule)).toBe(true);
+    expect(Date.parse(r.expiresAt) - Date.parse(r.createdAt)).toBe(15 * 60_000);
+  });
+  it('only an agent reviews, and only its own draft', () => {
+    const st = buildSeedState();
+    expect(code(() => reviewDraft(st, USER, 'ti-002'))).toBe('agent.review_agent_only');
+    const issued = st.docs.find((d) => d.type === 'TI' && d.status === 'issued')!;
+    expect(code(() => reviewDraft(st, AGENT, issued.id))).toBe('agent.review_not_draft');
+  });
+});
+
+describe('ruling 4: the report is frozen', () => {
+  it('a later policy change or party-history change never rewrites the stored report; a revise by the agent makes version 2', () => {
+    const st = buildSeedState();
+    const id = st.docs.find((d) => d.id === 'ti-002')!.agentReportId!;
+    const before = JSON.stringify(getReport(st, V, id));
+    setPolicy(st, USER, V, 'TI', { mode: 'off', cap: '1.00', version: 1 });
+    const pid = st.docs.find((x) => x.id === 'ti-002')!.header.partyId!;
+    for (const d of st.docs) if (d.header.partyId === pid && d.id !== 'ti-002') d.status = 'cancelled';
+    expect(JSON.stringify(getReport(st, V, id))).toBe(before);
+    const again = reviewDraft(st, AGENT, 'ti-002');
+    expect(again).toMatchObject({ version: 2, id: 'ar-4' });
+    expect(st.docs.find((d) => d.id === 'ti-002')!.agentReportId).toBe('ar-4');
+    expect(JSON.stringify(getReport(st, V, id))).toBe(before); // version 1 stays what it was
+    expect(getReport(st, V, 'ar-4').policy.mode).toBe('off'); // version 2 saw the new policy
+    expect(code(() => getReport(st, 'co-nonvat', id))).toBe('record.not_found');
+  });
+});
+
+describe('§8.4 route', () => {
+  const auto = { mode: 'auto', cap: '50000.00' };
+  it('auto only when Auto-if-clean, clean and within the cap; a cancel / reissue is never auto', () => {
+    expect(routeOf(auto, { clean: true, total: '50000.00' })).toBe('auto');
+    expect(routeOf(auto, { clean: true, total: '50000.01' })).toBe('human');
+    expect(routeOf(auto, { clean: false, total: '10.00' })).toBe('human');
+    expect(routeOf({ mode: 'human', cap: '50000.00' }, { clean: true, total: '10.00' })).toBe('human');
+    for (const action of ['cancel', 'reissue'] as const) expect(routeOf(auto, { action, clean: true, total: '10.00' })).toBe('human');
+  });
+  it('an N-class draft with a clean report routes auto under the default policy (it posts without a person)', () => {
+    const st = buildSeedState();
+    const qt = st.docs.find((d) => d.type === 'QT' && d.status === 'issued')!;
+    const d = withFixedClock('2026-10-14T10:00:00+07:00', () => createDraft(st, V, 'QT', { header: { ...qt.header, documentDate: '2026-10-14' }, lines: qt.lines }, AGENT, 'auto-qt'));
+    const r = reviewDraft(st, AGENT, d.id);
+    expect(r.checks.filter((c) => c.severity !== 'info')).toEqual([]);
+    expect(r.route).toBe('auto');
+    void issue;
+  });
+});
+
+describe('HC2a M1: an agent never approves, cancels or corrects; it issues only on a current auto report', () => {
+  const body = (d: { header: object; lines: object[] }) => ({ header: d.header, lines: d.lines }) as never;
+  it('approve, approve-and-issue, cancel, revise and reissue are refused for an agent (agent.forbidden_action), for any document', () => {
+    const st = buildSeedState();
+    const pending = st.docs.find((d) => d.status === 'pending')!;
+    const issued = st.docs.find((d) => d.type === 'TI' && d.status === 'issued')!;
+    expect(code(() => approve(st, pending.id, pending.version, AGENT))).toBe('agent.forbidden_action');
+    expect(code(() => approveAndIssue(st, pending.id, pending.version, AGENT))).toBe('agent.forbidden_action');
+    expect(code(() => cancel(st, issued.id, issued.version, 'OTHER', 'x', AGENT))).toBe('agent.forbidden_action');
+    expect(code(() => revise(st, issued.id, body(issued), issued.version, 'x', AGENT))).toBe('agent.forbidden_action');
+    expect(code(() => reissue(st, issued.id, body(issued), AGENT, 'x'))).toBe('agent.forbidden_action');
+    expect(st.docs.find((d) => d.id === issued.id)!.status).toBe('issued'); // nothing changed
+    expect(st.docs.find((d) => d.id === pending.id)!.status).toBe('pending');
+  });
+  it('the same commands still work for a person (the guard is the actor, not the command)', () => {
+    const st = buildSeedState();
+    const issued = st.docs.find((d) => d.type === 'QT' && d.status === 'issued')!;
+    expect(cancel(st, issued.id, issued.version, 'OTHER', 'x', USER).status).toBe('cancelled');
+  });
+  let k = 0; // a different price each time: two drafts of the same amount would be each other's duplicate
+  const autoDraft = (st: ReturnType<typeof buildSeedState>) => {
+    const qt = st.docs.find((d) => d.type === 'QT' && d.status === 'issued')!;
+    return withFixedClock('2026-10-14T10:00:00+07:00', () => createDraft(st, V, 'QT', { header: { ...qt.header, documentDate: '2026-10-14' }, lines: qt.lines.map((l) => ({ ...l, unitPrice: (Number(l.unitPrice) - ++k).toFixed(2) })) }, AGENT, `auto-${k}`));
+  };
+  it('issue: allowed on a current auto report; refused with no report, a human route, an error check, or a report of another version', () => {
+    const st = buildSeedState();
+    const none = autoDraft(st);
+    expect(code(() => issue(st, none.id, none.version, AGENT))).toBe('agent.review_required'); // never reviewed
+    const ok = autoDraft(st);
+    const rr = reviewDraft(st, AGENT, ok.id); expect(rr.checks.filter((c) => c.severity !== 'info')).toEqual([]); expect(rr.route).toBe('auto');
+    expect(issue(st, ok.id, ok.version, AGENT).status).toBe('issued');
+    const human = st.docs.find((d) => d.id === 'ti-002')!;
+    expect(code(() => issue(st, human.id, human.version, AGENT))).toBe('agent.review_required'); // routed human
+    expect(st.docs.find((d) => d.id === 'ti-002')!.status).toBe('draft');
+    const err = autoDraft(st);
+    reviewDraft(st, AGENT, err.id);
+    st.agentReports!.find((r) => r.id === st.docs.find((d) => d.id === err.id)!.agentReportId)!.checks.push({ code: 'period_closed', severity: 'error', message: 'x' });
+    expect(code(() => issue(st, err.id, err.version, AGENT))).toBe('agent.review_required');
+    expect(code(() => issue(st, human.id, human.version, USER))).not.toBe('agent.review_required'); // a person is not gated
+  });
+  it('M2: editing a draft drops its report; the report names its version and the page data says when the document moved on', () => {
+    const st = buildSeedState();
+    const d = autoDraft(st);
+    const r1 = reviewDraft(st, AGENT, d.id);
+    expect(r1.docVersion).toBe(d.version);
+    expect(getReport(st, V, r1.id).docNowVersion).toBe(d.version);
+    const edited = updateDraft(st, d.id, { header: { ...d.header, notes: 'แก้' }, lines: d.lines }, d.version, AGENT);
+    expect(edited.agentReportId).toBeUndefined(); // a new report needs a new review
+    expect(code(() => issue(st, d.id, edited.version, AGENT))).toBe('agent.review_required');
+    expect(getReport(st, V, r1.id)).toMatchObject({ docVersion: d.version, docNowVersion: edited.version }); // the old report says it is for the old version
+    expect(JSON.stringify({ ...getReport(st, V, r1.id), docNowVersion: 0 })).toBe(JSON.stringify({ ...r1, companyId: undefined, docNowVersion: 0 }).replace('"companyId":undefined,', ''));
+    const r2 = reviewDraft(st, AGENT, d.id);
+    expect(r2).toMatchObject({ version: 2, docVersion: edited.version });
+    expect(issue(st, d.id, edited.version, AGENT).status).toBe('issued');
+  });
+  it('M2: an inbox row whose draft was edited (no report) is not shown until the agent reviews again', () => {
+    const st = buildSeedState();
+    const d = st.docs.find((x) => x.id === 'ti-002')!;
+    updateDraft(st, d.id, { header: { ...d.header, notes: 'แก้' }, lines: d.lines }, d.version, USER);
+    expect(homeApprovals(st, V, acct, USER).some((r) => r.id === 'ti-002')).toBe(false);
+    reviewDraft(st, AGENT, 'ti-002');
+    expect(homeApprovals(st, V, acct, USER).find((r) => r.id === 'ti-002')?.agentReportId).toBe(st.docs.find((x) => x.id === 'ti-002')!.agentReportId);
+  });
+  it('M4: the review is on the document\'s timeline, detail = the report id', () => {
+    const st = buildSeedState();
+    const e = st.activity.filter((a) => a.docId === 'ti-002' && a.action === 'agent_review');
+    expect(e).toHaveLength(1);
+    expect(e[0].detail).toBe(st.docs.find((d) => d.id === 'ti-002')!.agentReportId);
+  });
+});
+
+describe('HC2a m4: the catalogue gaps', () => {
+  it('a vendor document number already used for the vendor; a filed ภ.พ.30 month; an IV against a TI of the same party and amount', () => {
+    const st = buildSeedState();
+    const pv = st.docs.find((d) => d.id === 'pv-ag1')!;
+    pv.header.vendorDocNumber = 'INV-77';
+    st.docs.push({ ...structuredClone(st.docs.find((d) => d.id === 'pv-sep-3')!), id: 'pv-dupno', header: { ...st.docs.find((d) => d.id === 'pv-sep-3')!.header, partyId: pv.header.partyId, vendorDocNumber: 'INV-77' } });
+    expect(codes(reviewDraft(st, AGENT, 'pv-ag1'))).toContain('duplicate_vendor_doc');
+    const filed = draftLike(st, 'ti-002', { date: '2026-08-20' }); // ภ.พ.30 of 2026-08 is filed
+    expect(reviewDraft(st, AGENT, filed.id).checks.find((c) => c.code === 'filing_locked')?.severity).toBe('error');
+    const ti = st.docs.find((d) => d.id === 'ti-002')!;
+    st.docs.push({ ...structuredClone(ti), id: 'iv-twin', type: 'IV', status: 'draft', number: undefined, header: { ...ti.header, documentDate: '2026-10-10' } });
+    expect(codes(reviewDraft(st, AGENT, 'ti-002'))).toContain('duplicate');
+  });
+  it('3x compares like with like, and the window is exactly 90 days (day 90 is out, day 89 is in)', () => {
+    const base = () => {
+      const st = buildSeedState();
+      const d = st.docs.find((x) => x.id === 'ti-002')!;
+      for (const x of st.docs) if (x.header.partyId === d.header.partyId && x.id !== 'ti-002') x.status = 'cancelled';
+      const hist = (date: string, type = 'TI', total = '1.00') => st.docs.push({ ...structuredClone(st.docs.find((x) => x.type === 'TI' && x.status === 'cancelled')!), id: `h-${date}-${type}`, type: type as never, status: 'issued', header: { ...d.header, documentDate: date }, totals: { ...d.totals, total } });
+      return { st, d, hist };
+    };
+    const { st, hist } = base(); // ti-002 is dated 2026-10-11: 89 days back = 2026-07-14, 90 days back = 2026-07-13
+    hist('2026-07-13');
+    expect(codes(reviewDraft(st, AGENT, 'ti-002'))).not.toContain('over_3x'); // day 90: outside the window
+    const b = base();
+    b.hist('2026-07-14');
+    expect(codes(reviewDraft(b.st, AGENT, 'ti-002'))).toContain('over_3x'); // day 89: inside
+    const c = base();
+    c.hist('2026-10-01', 'QT', '1000000.00'); // a big quotation does not make a big TI normal, and a tiny QT does not make it abnormal
+    c.hist('2026-10-01', 'TI', '1000000.00');
+    expect(codes(reviewDraft(c.st, AGENT, 'ti-002'))).not.toContain('over_3x');
+  });
+});
+
+describe('HC2b: the issue gate re-checks token expiry and the CURRENT policy; own drafts only; closed year', () => {
+  let k = 0;
+  const auto = (st: ReturnType<typeof buildSeedState>) => {
+    const qt = st.docs.find((d) => d.type === 'QT' && d.status === 'issued')!;
+    const d = withFixedClock('2026-10-14T10:00:00+07:00', () => createDraft(st, V, 'QT', { header: { ...qt.header, documentDate: '2026-10-14' }, lines: qt.lines.map((l) => ({ ...l, unitPrice: (Number(l.unitPrice) - ++k).toFixed(2) })) }, AGENT, `gate-${k}`));
+    expect(reviewDraft(st, AGENT, d.id).route).toBe('auto');
+    return d;
+  };
+  it('N1: a policy switched to Off (or to Human, or a lower cap) after the review refuses the issue; so does an expired token', () => {
+    const st = buildSeedState();
+    const a = auto(st);
+    setPolicy(st, USER, V, 'QT', { mode: 'off', cap: '50000.00', version: 1 });
+    expect(code(() => issue(st, a.id, a.version, AGENT))).toBe('agent.review_required');
+    setPolicy(st, USER, V, 'QT', { mode: 'human', cap: '50000.00', version: 2 });
+    expect(code(() => issue(st, a.id, a.version, AGENT))).toBe('agent.review_required');
+    setPolicy(st, USER, V, 'QT', { mode: 'auto', cap: '1.00', version: 3 }); // the amount now exceeds the cap
+    expect(code(() => issue(st, a.id, a.version, AGENT))).toBe('agent.review_required');
+    setPolicy(st, USER, V, 'QT', { mode: 'auto', cap: '50000.00', version: 4 });
+    const rep = st.agentReports!.find((r) => r.id === st.docs.find((d) => d.id === a.id)!.agentReportId)!;
+    rep.expiresAt = '2026-01-01T00:00:00.000Z'; // the 15-minute token has run out
+    expect(code(() => issue(st, a.id, a.version, AGENT))).toBe('agent.review_required');
+    rep.expiresAt = new Date(Date.now() + 60_000).toISOString();
+    expect(issue(st, a.id, a.version, AGENT).status).toBe('issued'); // back to a valid state: it issues
+  });
+  it('N4: an agent edits or deletes only a draft it created, and only while it is a draft', () => {
+    const st = buildSeedState();
+    const own = auto(st);
+    const person = st.docs.find((d) => d.type === 'TI' && d.status === 'draft' && d.createdBy.kind === 'user')!;
+    const pending = st.docs.find((d) => d.status === 'pending')!;
+    const other: typeof AGENT = { ...AGENT, id: 'ag-2' };
+    for (const d of [person, pending]) {
+      expect([d.id, code(() => updateDraft(st, d.id, { header: d.header, lines: d.lines }, d.version, AGENT))]).toEqual([d.id, 'agent.forbidden_action']);
+      expect([d.id, code(() => deleteDraft(st, d.id, d.version, AGENT))]).toEqual([d.id, 'agent.forbidden_action']);
+    }
+    expect(code(() => updateDraft(st, own.id, { header: own.header, lines: own.lines }, own.version, other))).toBe('agent.forbidden_action'); // another agent's draft
+    expect(st.docs.find((d) => d.id === pending.id)!.status).toBe('pending'); // nothing was pushed back
+    expect(updateDraft(st, own.id, { header: own.header, lines: own.lines }, own.version, AGENT).status).toBe('draft');
+    expect(code(() => deleteDraft(st, person.id, person.version, USER))).toBeUndefined(); // a person may delete a person's draft
+  });
+  it('n3: a date in a closed YEAR is an error in the review checks', () => {
+    const st = buildSeedState();
+    st.yearCloses.push({ id: 'yc-t', companyId: V, year: 2026, date: '2026-12-31', closedAt: '2026-10-14T00:00:00Z', closedBy: USER, net: '0.00', journal: [] });
+    const d = draftLike(st, 'ti-002', { date: '2026-09-10' }); // the month itself is open: only the year is closed
+    const c = reviewDraft(st, AGENT, d.id).checks.find((x) => x.code === 'period_closed');
+    expect(c?.severity).toBe('error');
+    expect(c?.message).toContain('ปีบัญชี');
+  });
+});
+
+describe('HC2c: types outside the policy table are never an agent\'s; every write handler carries the request\'s actor', () => {
+  it('B1: an agent cannot create a JV (or any type outside POLICY_TYPES); a JV draft made another way cannot be agent-issued; the policy view lists only POLICY_TYPES', () => {
+    const st = buildSeedState();
+    for (const t of ['JV', 'PR', 'OB', 'FA', 'DP', 'WT'] as const) expect([t, code(() => createDraft(st, V, t, { header: { documentDate: '2026-10-14' }, lines: [] }, AGENT, `x-${t}`))]).toEqual([t, 'agent.forbidden_action']);
+    expect(code(() => createDraft(st, V, 'QT', { header: { documentDate: '2026-10-14' }, lines: [] }, AGENT, 'x-qt'))).not.toBe('agent.forbidden_action'); // a listed type is not refused by this rule
+    const jv = createDraft(st, V, 'JV', { header: { documentDate: '2026-10-14' }, lines: [] }, USER, 'jv-user');
+    const row = st.docs.find((d) => d.id === jv.id)!;
+    row.createdBy = AGENT; // even an "agent" JV draft with a clean, current, unexpired auto report is refused: its policy is Off
+    row.agentReportId = 'ar-jv';
+    st.agentReports!.push({ id: 'ar-jv', companyId: V, docId: jv.id, docType: 'JV', partyName: '', version: 1, docVersion: row.version, createdAt: '2026-10-14T00:00:00Z', expiresAt: new Date(Date.now() + 600_000).toISOString(), agentName: AGENT.name, totals: row.totals, journal: { entries: [] }, checks: [], route: 'auto', policy: { mode: 'auto', cap: '50000.00' } });
+    expect(code(() => issue(st, jv.id, row.version, AGENT))).toBe('agent.review_required');
+    const listed = policyView(st, V).items.map((r) => r.docType);
+    expect(listed.every((t) => POLICY_TYPES.includes(t))).toBe(true);
+    expect(listed).not.toContain('JV');
+  });
+  describe('m1: with the gate out of the way, the HTTP handlers still pass the agent actor to the engine', () => {
+    beforeAll(() => testServer.listen({ onUnhandledFrame: 'error' }));
+    afterEach(() => testServer.resetHandlers());
+    afterAll(() => testServer.close());
+    it('approve over HTTP as an agent is refused by the ENGINE (agent.forbidden_action), not by the gate', async () => {
+      localStorage.clear(); resetState(); setSettings({ companyKey: 'vat', role: 'accountant', screenState: 'normal' });
+      testServer.resetHandlers(...handlers.filter((h) => h !== agentGate)); // the allowlist is switched off for this test
+      const st = loadState();
+      const pending = st.docs.find((d) => d.status === 'pending' && d.type !== 'FA')!;
+      const r = await fetch(`http://localhost/bff/v1/docs/${pending.type}/${pending.id}/approve`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-teas-actor': 'agent' }, body: JSON.stringify({ version: pending.version }) });
+      expect([r.status, ((await r.json()) as { code: string }).code]).toEqual([403, 'agent.forbidden_action']);
+      expect(loadState().docs.find((d) => d.id === pending.id)!.status).toBe('pending'); // and nothing changed
+    });
+  });
+});
