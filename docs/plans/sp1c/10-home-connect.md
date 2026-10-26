@@ -112,12 +112,12 @@ issued printable documents, `doc.<T>.read`), messages, `screens.ts`.
   revoked token → a plain Thai "ลิงก์นี้ใช้ไม่ได้แล้ว" page; no shell, no mock toolbar except in dev; tokens revocable from the
   document's ActionBar.
 
-- [ ] **Step 1: Failing tests** — login error never names the wrong field; TOTP wrong code message; recovery codes
+- [x] **Step 1: Failing tests** — login error never names the wrong field; TOTP wrong code message; recovery codes
   shown once; onboarding creates a company and lands on OB; expiry dialog keeps the draft; revoked public token page.
   e2e: axe on login, TOTP, onboarding (each step), profile, public page; company switch from the switcher with a draft
   open (Review Focus 5) keeps no company-A data in company B.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(platform): login, TOTP, onboarding, session expiry, profile and public links`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(platform): login, TOTP, onboarding, session expiry, profile and public links`.
 
 ---
 

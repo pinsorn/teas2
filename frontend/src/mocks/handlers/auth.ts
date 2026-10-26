@@ -68,7 +68,8 @@ export const authHandlers = [
   })),
   http.get('*/bff/v1/auth/session', ({ request }) => run(request, false, (c) => {
     const session = getSession();
-    return HttpResponse.json({ state: session, email: profileOf(c.st, currentUserId(c.st)).email, ...(session === 'expiring' ? { expiresInSec: 120 } : {}) });
+    const live = session !== 'out' ? currentSession(c.st) : undefined; // HC3b: an identity only for a live session (active / expiring / expired); signed out (toolbar or a real logout) names nobody
+    return HttpResponse.json({ state: session, ...(live ? { email: profileOf(c.st, live.userId).email } : {}), ...(session === 'expiring' ? { expiresInSec: 120 } : {}) });
   })),
   // HC3a M1: only a session that is still alive (active / expiring) can be extended; an expired or signed-out one is a 401 (the gate says so first)
   http.post('*/bff/v1/auth/session/extend', ({ request }) => run(request, false, () => {

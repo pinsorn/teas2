@@ -18,7 +18,7 @@ export const PUBLIC_LINK_TYPES: DocType[] = ['QT', 'SO', 'DO', 'IV', 'TI', 'BL',
 export const authApi = {
   login: (email: string, password: string) => api<LoginResult>('POST', '/auth/login', { email, password }),
   totp: (challenge: string, v: { code: string } | { recoveryCode?: string }) => api<LoginResult>('POST', '/auth/totp', { challenge, ...v }),
-  session: () => api<{ state: SessionState; email: string; expiresInSec?: number }>('GET', '/auth/session'),
+  session: () => api<{ state: SessionState; email?: string; expiresInSec?: number }>('GET', '/auth/session'),
   extend: () => api<{ state: SessionState }>('POST', '/auth/session/extend'),
   logout: () => api<{ state: SessionState }>('POST', '/auth/logout'),
   /** an expired session only; a user with two-step on gets `totp_required` first and sends the password again with the code */

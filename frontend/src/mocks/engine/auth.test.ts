@@ -361,3 +361,16 @@ describe('HC3a minors', () => {
     expect(demoRecovery(st)).toBe(DEMO.recovery[1]);
   });
 });
+
+describe('HC3b: GET /auth/session names nobody unless a live session exists', () => {
+  const read = async () => (await call('GET', '/auth/session')).json() as Promise<{ state: string; email?: string }>;
+  it('active / expiring / expired carry the email; the toolbar signed-out state and a real logout carry none', async () => {
+    for (const state of ['active', 'expiring', 'expired'] as const) { setSession(state); expect(await read()).toMatchObject({ state, email: DEMO.email }); }
+    setSession('out');
+    expect(await read()).toEqual({ state: 'out' }); // a live session row exists, but the browser says signed out
+    setSession('active');
+    expect((await call('POST', '/auth/logout')).status).toBe(200); // a real logout: the handler also sets `out`; force the state back to prove the missing session alone is enough
+    setSession('active');
+    expect(await read()).toEqual({ state: 'active' });
+  });
+});
