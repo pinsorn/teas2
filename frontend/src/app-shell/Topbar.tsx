@@ -1,15 +1,21 @@
 'use client';
-import { MenuIcon, SearchIcon } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { LanguagesIcon, MenuIcon, SearchIcon, UserIcon } from 'lucide-react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { SessionExpiryDialog } from '@/kit/auth/SessionExpiryDialog';
+import { setLocale } from '@/records/auth';
 import { Breadcrumbs } from './Breadcrumbs';
 import { CommandMenu } from './CommandMenu';
 import { SidebarPanel } from './Sidebar';
 
 export function Topbar() {
   const t = useTranslations('shell');
+  const locale = useLocale();
+  const router = useRouter();
   const [menu, setMenu] = useState(false);
   const [command, setCommand] = useState(false);
   return (
@@ -33,7 +39,12 @@ export function Topbar() {
         <span className="sm:hidden">{t('searchShort')}</span>
         <kbd className="hidden rounded border bg-muted px-1 text-xs sm:inline">{t('searchHint')}</kbd>
       </Button>
+      <Button variant="ghost" size="icon" aria-label={t(locale === 'en' ? 'switchToThai' : 'switchToEnglish')} onClick={() => { setLocale(locale === 'en' ? 'th' : 'en'); router.refresh(); }}>
+        <LanguagesIcon aria-hidden />
+      </Button>
+      <Button variant="ghost" size="icon" asChild><Link href="/profile" aria-label={t('profile')}><UserIcon aria-hidden /></Link></Button>
       <CommandMenu open={command} onOpenChange={setCommand} />
+      <SessionExpiryDialog />
     </header>
   );
 }

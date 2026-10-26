@@ -1,6 +1,8 @@
 'use client';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
+import { useState } from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Guarded } from './Guarded';
@@ -12,6 +14,8 @@ import { settleable } from '../doc-editor/SettlementPanel';
 import { ApprovalActions } from './ApprovalActions';
 import { ScheduleActions } from './ScheduleActions';
 import { PayrollActions } from '../payroll/PayRunDialog';
+import { ApiError } from '@/lib/api/client';
+import { authApi } from '@/records/auth';
 
 /** A descriptor may list the conversions it allows; the "convert to…" button (and its dialog) exists only for those. */
 export type ConvertibleDescriptor = DocDescriptor & { convertsTo?: DocType[] };
@@ -24,6 +28,31 @@ const MARK_BUTTONS: MarkKey[] = ['accepted', 'rejected', 'delivered', 'sent'];
 const MARK_LABEL = { accepted: 'markAccepted', rejected: 'markRejected', delivered: 'markDelivered', sent: 'markSent' } as const;
 /** The notes made from a document (never by conversion): their buttons open the note's editor on `?adjust=<this document>`. */
 const NOTE_LABEL = { CN: 'issueCn', DN: 'issueDn', PCN: 'issuePcn', PDN: 'issuePdn' } as const;
+
+/** HC3 (ruling 5): the public link of an ISSUED printable document. "Copy" makes a NEW random link and copies it (the token is shown once, here); "Revoke" ends every link of the document. A cancelled document's links stop working by themselves. */
+function PublicLinkActions({ doc, why }: { doc: Doc; why?: string }) {
+  const t = useTranslations('docView.actions');
+  const [busy, setBusy] = useState(false);
+  const failed = (e: unknown) => toast.error(e instanceof ApiError ? e.problem.title : t('publicLinkFailed'));
+  const copy = async () => {
+    setBusy(true);
+    try {
+      const { token } = await authApi.createLink(doc.type, doc.id);
+      const url = `${window.location.origin}/p/${token}`;
+      try { await navigator.clipboard.writeText(url); toast.success(t('publicLinkCopied')); } catch { toast.message(t('publicLinkCopyFailed', { url })); }
+    } catch (e) { failed(e); } finally { setBusy(false); }
+  };
+  const revoke = async () => {
+    setBusy(true);
+    try { const { revoked } = await authApi.revokeLinks(doc.type, doc.id); toast.success(revoked ? t('publicLinkRevoked', { count: revoked }) : t('publicLinkNone')); } catch (e) { failed(e); } finally { setBusy(false); }
+  };
+  return (
+    <>
+      <Guarded why={why}>{(p) => <Button {...p} variant="outline" disabled={p.disabled || busy} onClick={() => void copy()}>{t('publicLink')}</Button>}</Guarded>
+      <Guarded why={why}>{(p) => <Button {...p} variant="outline" disabled={p.disabled || busy} onClick={() => void revoke()}>{t('publicLinkRevoke')}</Button>}</Guarded>
+    </>
+  );
+}
 
 export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, companyId = '', onCancel, onConvert, onMark, onCloseRemainder, nothingRemaining, onReprint }: {
   descriptor: ConvertibleDescriptor; doc: Doc; permissions: string[]; /** The active company's VAT status (conversion targets depend on it). */ vatRegistered: boolean; /** The active company: the approval buttons refresh its queries. */ companyId?: string; onCancel: () => void; onConvert?: () => void; onMark?: (mark: MarkKey) => void; onCloseRemainder?: () => void; /** Every line is already converted in full: there is nothing to close. */ nothingRemaining?: boolean; /** The original was printed: the print action asks first (a reprint is a สำเนา). */ onReprint?: () => void;
@@ -71,6 +100,7 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, comp
               : <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t('print')}</span> : <Link href={routes.print(doc.id)}>{t('print')}</Link>}</Button>}
           </Guarded>
         ) : null}
+        {live && DOC_TYPES[d.type].printable ? <PublicLinkActions doc={doc} why={missing(d.permissions.read)} /> : null}
         {engineMade ? null : <Guarded why={missing(d.permissions.create)}>
           {(p) => <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t('copy')}</span> : <Link href={`${routes.create}?copyFrom=${doc.id}`}>{t('copy')}</Link>}</Button>}
         </Guarded>}

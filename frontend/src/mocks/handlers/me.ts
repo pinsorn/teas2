@@ -4,6 +4,7 @@ import { setSettings } from '../settings';
 import { today } from '../engine/log';
 import type { Actor } from '@/domain/types';
 import { AGENT, USER } from '../fixtures/documents';
+import { authHandlers, sessionGate } from './auth';
 import { ctx, problem, screenGate } from './common';
 
 /** An agent's calls reach the mock with this header (over MCP in the real system); everything from the web app is the signed-in user. */
@@ -37,11 +38,14 @@ export const buildMe = (): Me => {
 
 export const meHandlers = [
   agentGate,
+  sessionGate, // HC3: expired / signed out = 401 on everything but sign-in and the public link
+  ...authHandlers, // HC3: every route there refuses an agent itself
   http.get('*/bff/v1/me', async () => (await screenGate('me')) ?? HttpResponse.json(buildMe())),
   http.post('*/bff/v1/me/active-company', async ({ request }) => {
     const { companyId } = (await request.json()) as { companyId?: string };
-    if (companyId !== 'co-vat' && companyId !== 'co-nonvat') return problem(404, 'company.not_found', 'ไม่พบบริษัท');
-    setSettings({ companyKey: companyId === 'co-vat' ? 'vat' : 'nonvat' });
+    const key = companyId === 'co-vat' ? 'vat' : companyId === 'co-nonvat' ? 'nonvat' : companyId === 'co-new' ? 'new' : undefined;
+    if (!key || (key === 'new' && !ctx().st.companies.some((c) => c.id === 'co-new'))) return problem(404, 'company.not_found', 'ไม่พบบริษัท');
+    setSettings({ companyKey: key });
     return HttpResponse.json(buildMe());
   }),
 ];

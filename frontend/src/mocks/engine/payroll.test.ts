@@ -909,7 +909,7 @@ describe('PY2 ruling 9-10: permission, isolation and the seed', () => {
   it('the seed pays pr-2026-08 through the command: settled, one payment, version 52', () => {
     expect(doc('pr-2026-08').status).toBe('settled');
     expect(st.payrollPayments.map((p) => [p.id, p.runId, p.accountId])).toEqual([['prp-001', 'pr-2026-08', 'ba-kbank']]);
-    expect(st.version).toBe(62);
+    expect(st.version).toBe(63);
     expect(checkInvariants(st)).toEqual([]);
   });
   it('over the wire: pay then unpay; the operator is forbidden (names doc.PR.pay); another company\'s run is 404', async () => {

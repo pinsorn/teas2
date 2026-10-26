@@ -26,8 +26,8 @@ const draftLike = (st: ReturnType<typeof buildSeedState>, id: string, over: { da
 
 describe('the seed: reports made through the review command', () => {
   const st = buildSeedState();
-  it('ti-002, ti-004 and one agent PV draft each carry a stored report; the state version is 62', () => {
-    expect(st.version).toBe(62);
+  it('ti-002, ti-004 and one agent PV draft each carry a stored report; the state version is 63', () => {
+    expect(st.version).toBe(63);
     for (const id of ['ti-002', 'ti-004', 'pv-ag1']) {
       const d = st.docs.find((x) => x.id === id)!;
       expect(d.status, id).toBe('draft');

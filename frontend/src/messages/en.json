@@ -30,6 +30,13 @@
       "groupBody": "The whole document is added to a new billing statement (draft). Nothing is posted; choose more documents of this customer in the editor."
     },
     "actions": {
+      "publicLink": "Copy public link",
+      "publicLinkRevoke": "Revoke public links",
+      "publicLinkCopied": "Public link copied. Anyone with the link can open this document.",
+      "publicLinkCopyFailed": "Could not copy automatically. Link: {url}",
+      "publicLinkRevoked": "{count} public link(s) revoked",
+      "publicLinkNone": "There is no active public link",
+      "publicLinkFailed": "Could not complete the public-link request",
       "submit": "Submit for approval", "approve": "Approve", "approveAndIssue": "Approve and issue", "sendBack": "Send back for changes", "whyPaid": "Paid in full, nothing left to pay", "whyPayrollPaid": "Payroll is paid: unpay it before changing the run",
       "label": "Actions", "issueDraft": "Save and issue…", "edit": "Edit", "print": "Print", "copy": "Copy as new",
       "cancel": "Cancel document", "convert": "Convert to…", "locked": "Cannot cancel ({reason}); see the ways forward in the banner above", "lockedReconciliation": "Cannot cancel ({reason}); use “Cancel match” in the banner above", "whyCancelled": "A cancelled document cannot be edited", "whyReplaced": "This document was replaced; edit the new one", "whyFinal": "This voucher is final (reversed, or itself a reversal), so it cannot be edited", "whyPending": "Not approved yet, so it cannot be issued", "converted": "Created {number}", "markAccepted": "Customer accepted", "markRejected": "Customer rejected", "whyRejected": "Rejected by the customer; it cannot be converted", "whyNoTarget": "No target document is available to this company and permitted to you", "closeRemainder": "Close remainder", "receive": "Receive payment", "whyDisposalInvoice": "This invoice is the sale of a fixed asset: it cannot be edited and takes no credit / debit note. Exit: cancel it (the disposal is cancelled with it) and dispose of the asset again.",
@@ -165,6 +172,9 @@
     "overdueDays": "{days} days overdue"
   },
   "shell": {
+    "profile": "My profile",
+    "switchToEnglish": "Switch to English",
+    "switchToThai": "เปลี่ยนเป็นภาษาไทย",
     "skipToContent": "Skip to content",
     "navLabel": "Main menu",
     "breadcrumbLabel": "Breadcrumb",
@@ -490,6 +500,13 @@
       "settingsConnect": "TEAS Connect",
       "agentReport": "Agent review report",
       "oauthConsent": "App consent",
+      "login": "Sign in",
+      "loginTotp": "Two-step verification",
+      "onboarding": "Get started (company setup)",
+      "profile": "My profile",
+      "publicDoc": "Document by public link (tax invoice)",
+      "publicQt": "Document by public link (quotation)",
+      "publicInvalid": "Public link that no longer works",
       "styleGuide": "Style guide"
     },
     "state": { "normal": "Normal", "empty": "Empty", "loading": "Loading", "error": "Error", "forbidden": "Forbidden", "locked": "Locked" },
@@ -2011,6 +2028,155 @@
       "failed": "That did not work. Try again.",
       "approve": "Allow",
       "deny": "Deny"
+    }
+  },
+  "auth": {
+    "session": {
+      "expiringTitle": "Your session is about to expire",
+      "expiringBody": "Your session expires in {minutes} minutes. Stay signed in?",
+      "stay": "Stay signed in",
+      "signOut": "Sign out",
+      "expiredTitle": "Session expired",
+      "expiredBody": "Enter the password for {email} to continue. This page and what you typed are still here.",
+      "password": "Password",
+      "relogin": "Sign in again",
+      "failed": "Could not sign in. Try again."
+    },
+    "demo": {
+      "title": "Sample data (mock mode)",
+      "email": "Email",
+      "password": "Password",
+      "totpEmail": "Email with two-step on",
+      "totpPassword": "Password of that account",
+      "totpCode": "6-digit code the app shows",
+      "recovery": "Sample recovery code"
+    },
+    "login": {
+      "title": "Sign in to TEAS",
+      "lead": "Enter your email and password",
+      "email": "Email",
+      "password": "Password",
+      "submit": "Sign in",
+      "submitting": "Signing in…",
+      "failed": "Could not sign in. Try again.",
+      "firstRun": "First time here? Set up a new company"
+    },
+    "totp": {
+      "title": "Two-step verification",
+      "lead": "Enter the 6-digit code from your authenticator app",
+      "recoveryLead": "Enter one recovery code (each works once)",
+      "code": "6-digit code",
+      "recovery": "Recovery code",
+      "submit": "Verify",
+      "failed": "Could not verify. Try again.",
+      "useCode": "Use the app code instead",
+      "useRecovery": "Use a recovery code instead",
+      "back": "Back to sign in"
+    },
+    "onboarding": {
+      "title": "Get started with TEAS",
+      "lead": "Set up your company in 6 steps; then you go on to enter the opening balances",
+      "stepsLabel": "Setup steps",
+      "steps": {
+        "identity": "Legal identity",
+        "vat": "VAT status",
+        "fiscal": "Fiscal year start",
+        "template": "Chart of accounts",
+        "bank": "Bank account",
+        "cutoff": "Opening-balance date"
+      },
+      "progress": "Step {n} of {total}",
+      "errors": {
+        "name": "Enter the legal name",
+        "tin": "The tax ID is not valid (check the last digit)",
+        "branch": "Enter the 5-digit branch code",
+        "address": "Enter the registered address",
+        "vat": "Choose the VAT status",
+        "accountName": "Enter the account name",
+        "accountNo": "The account number must be 10-15 digits (dashes allowed)",
+        "cutoff": "Enter the opening-balance date"
+      },
+      "fields": {
+        "legalNameTh": "Legal name (Thai)",
+        "taxId": "Tax ID (13 digits)",
+        "branchCode": "Branch code (00000 = head office)",
+        "address": "Registered address",
+        "fiscalMonth": "Fiscal year starts in",
+        "accountName": "Account name",
+        "bankName": "Bank",
+        "accountNo": "Account number",
+        "cutoff": "Opening-balance date"
+      },
+      "vat": {
+        "yes": "VAT registered",
+        "yesHint": "Issue tax invoices and file PP.30",
+        "no": "Not VAT registered",
+        "noHint": "Issue invoices (IV) instead of tax invoices"
+      },
+      "fiscalNote": "For now the system supports only a fiscal year that starts in January",
+      "template": {
+        "smeTh": "Thai SME standard chart",
+        "smeThHint": "Assets, liabilities, equity, income and expenses as most Thai businesses use them; editable later"
+      },
+      "bank": {
+        "bank": "Bank account",
+        "cash": "Cash"
+      },
+      "cutoffNote": "The last day before you start using TEAS. Balances as of this date are carried in the next step.",
+      "back": "Back",
+      "next": "Next",
+      "finish": "Create the company and enter opening balances",
+      "toLogin": "Back to sign in"
+    },
+    "profile": {
+      "title": "My profile",
+      "failed": "Could not complete the request. Try again.",
+      "password": {
+        "title": "Password",
+        "current": "Current password",
+        "next": "New password",
+        "rule": "At least 10 characters with a lower-case letter, an upper-case letter and a digit",
+        "confirm": "Confirm new password",
+        "done": "Password changed; other devices were signed out",
+        "submit": "Change password"
+      },
+      "totp": {
+        "title": "Two-step verification",
+        "enabled": "On · {count} recovery codes left",
+        "disabled": "Not set up",
+        "scan": "Scan the QR code with an authenticator app, then enter the 6-digit code it shows",
+        "secretLabel": "Or enter this secret in the app:",
+        "code": "6-digit code",
+        "verify": "Verify and turn on",
+        "cancel": "Cancel",
+        "start": "Set up two-step verification",
+        "redo": "Set up again",
+        "codesTitle": "Recovery codes",
+        "codesLead": "Keep these somewhere safe. Each works once and they are not shown again.",
+        "copied": "Copied",
+        "copy": "Copy all codes",
+        "saved": "I have saved the codes",
+        "failed": "Could not complete the request. Try again."
+      },
+      "sessions": {
+        "title": "Signed-in devices",
+        "current": "This device",
+        "lastSeen": "Last active {when}",
+        "revokeCurrent": "Sign out this device ({device})",
+        "revoke": "End the sign-in of {device}",
+        "signOut": "Sign out",
+        "end": "End"
+      },
+      "language": {
+        "title": "Language",
+        "th": "ไทย",
+        "en": "English"
+      },
+      "newCompany": "Set up a new company (get-started page)"
+    },
+    "publicLink": {
+      "invalidTitle": "This link no longer works",
+      "invalidBody": "The link was revoked or has expired, or the document was cancelled. Please contact the sender."
     }
   },
   "permissions": {

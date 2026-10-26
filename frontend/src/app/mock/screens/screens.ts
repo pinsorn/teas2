@@ -238,5 +238,11 @@ export const SCREENS: Screen[] = [
   { name: 'settingsConnect', route: '/settings/connect?role=admin', company: 'both', states: true }, // HC2: connect.manage (admin only); tabs ?tab=apps / ?tab=policy
   { name: 'agentReport', route: '/agent-reports/ar-1?role=accountant', company: 'vat', states: true }, // HC2: the stored report of ti-002 (needs the type's read right)
   { name: 'oauthConsent', route: '/oauth/consent?client=cl-assistant&role=admin', company: 'both', states: true }, // HC2: outside the app shell
+  { name: 'login', route: '/login', company: 'both', states: false }, // HC3: outside the app shell; the demo logins are shown on the page in mock mode (the TOTP step is reached from it)
+  { name: 'onboarding', route: '/onboarding', company: 'both', states: false }, // HC3: the six-step first-run wizard (creates co-new and lands on the opening-balance wizard)
+  { name: 'profile', route: '/profile?role=accountant', company: 'both', states: false }, // HC3: password, two-step, signed-in devices, language
+  { name: 'publicDoc', route: '/p/c41f9a7be2d05863fa1c7e9b3d28a5f60b94e1d7', company: 'both', states: false }, // HC3: the fixture public token of the issued, unpaid tax invoice (mocks/engine/auth.ts FIXTURE_TOKENS)
+  { name: 'publicQt', route: '/p/7be3a05d9c1f4286e0b7d35a1f89c264d0e5a3b8', company: 'both', states: false },
+  { name: 'publicInvalid', route: '/p/this-link-was-revoked', company: 'both', states: false }, // HC3: one plain page for an unknown / revoked link
   { name: 'styleGuide', route: '/style-guide', company: 'both', states: false },
 ];

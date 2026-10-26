@@ -29,9 +29,10 @@ import { seedBankStatements } from './fixtures/statements';
 import { seedAgentReports, type StoredReport } from './engine/agent-review';
 import { seedConnect, type StoredApp, type StoredKey, type StoredPolicy } from './records/connect';
 import { USER } from './fixtures/documents';
+import { seedAuth, type AuthState, type PublicLink } from './engine/auth';
 
 export interface MockState {
-  version: 62;
+  version: 63;
   /** ST4: every picture an issued document or a finalized return refers to, kept once (hash -> data URL) and never removed. ABSENT until the first issue that has one. */
   images?: Record<string, string>;
   /** ST4: the print options a company changed per document type; ABSENT = the defaults (every image and line on, the type's own labels). */
@@ -83,6 +84,8 @@ export interface MockState {
   numbering?: NumberingConfig[]; seriesFormats?: Record<string, string>; vatRequests?: VatRequest[];
   /** HC2 (TEAS Connect): API keys (hash + prefix only, never the secret), connected OAuth apps, the agent policy per company and document type (ABSENT = the defaults, §8.4) and the stored agent review reports (frozen when made). */
   apiKeys?: StoredKey[]; oauthApps?: StoredApp[]; agentPolicies?: StoredPolicy[]; agentReports?: StoredReport[];
+  /** HC3 (mock-only auth, D-32): credentials as hashes, the sessions of the browser, the failure counters; and the public document links (hash of the token only). */
+  auth?: AuthState; publicLinks?: PublicLink[];
   audit: AuditEntry[];
   /** Attachment METADATA only. The bytes live under their own localStorage key `teas2.mock.att.<id>` (engine/attachments.ts): they must never be part of this blob, whose save swallows quota errors. */
   attachments: (Omit<Attachment, 'dataUrl'> & { companyId: string })[];
@@ -121,6 +124,7 @@ export function buildSeedState(role: Role = 'accountant'): MockState {
   seedFilings(s); // TX1: the ภ.พ.30 of 2026-07 and 2026-08 are filed (last: they lock the documents they took)
   seedConnect(s, USER); // HC2: two API keys and a connected app (fixed secrets, stored as hashes)
   seedAgentReports(s); // HC2: the agent's drafts reviewed through the commands (ti-002, ti-004 and one payment voucher), before the trail is put in time order
+  seedAuth(s); // HC3: the demo logins, the sessions list and the two fixture public links (made by the command)
   seedAudit(s); // RP3: the trail in time order, then logins, switches, a posting-rule and a tax-table change
   return s;
 }
@@ -130,7 +134,7 @@ export const seed = (): MockState => buildSeedState(getSettings().role);
 export function loadState(): MockState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 62) return s; }
+    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 63) return s; }
   } catch { /* fall through to a fresh seed */ }
   return seed();
 }
