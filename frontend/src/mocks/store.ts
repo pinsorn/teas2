@@ -26,9 +26,12 @@ import { buildSeed } from './fixtures';
 import { clearAttachmentBlobs } from './engine/attachments';
 import { getSettings } from './settings';
 import { seedBankStatements } from './fixtures/statements';
+import { seedAgentReports, type StoredReport } from './engine/agent-review';
+import { seedConnect, type StoredApp, type StoredKey, type StoredPolicy } from './records/connect';
+import { USER } from './fixtures/documents';
 
 export interface MockState {
-  version: 61;
+  version: 62;
   /** ST4: every picture an issued document or a finalized return refers to, kept once (hash -> data URL) and never removed. ABSENT until the first issue that has one. */
   images?: Record<string, string>;
   /** ST4: the print options a company changed per document type; ABSENT = the defaults (every image and line on, the type's own labels). */
@@ -78,6 +81,8 @@ export interface MockState {
   whtTypes: CompanyWhtType[];
   /** ST3: per company and document type the numbering config (absent = the default `{PREFIX}-{YYYY}{MM}-{####}`, monthly); `seriesFormats` = the format stored on a series key by its first number (absent = the default); `vatRequests` = dated, pending requests to change VAT registration (the mock never flips the flag). */
   numbering?: NumberingConfig[]; seriesFormats?: Record<string, string>; vatRequests?: VatRequest[];
+  /** HC2 (TEAS Connect): API keys (hash + prefix only, never the secret), connected OAuth apps, the agent policy per company and document type (ABSENT = the defaults, §8.4) and the stored agent review reports (frozen when made). */
+  apiKeys?: StoredKey[]; oauthApps?: StoredApp[]; agentPolicies?: StoredPolicy[]; agentReports?: StoredReport[];
   audit: AuditEntry[];
   /** Attachment METADATA only. The bytes live under their own localStorage key `teas2.mock.att.<id>` (engine/attachments.ts): they must never be part of this blob, whose save swallows quota errors. */
   attachments: (Omit<Attachment, 'dataUrl'> & { companyId: string })[];
@@ -114,6 +119,8 @@ export function buildSeedState(role: Role = 'accountant'): MockState {
   for (const d of s.docs) if (!['draft', 'pending', 'approved'].includes(d.status) && !d.sellerSnapshot) stampIssue(s, d, d.createdBy); // ST4 (I3): a seeded issued paper keeps the seller and the pictures it would have been issued with (the engine-made ones were stamped when they were issued)
   seedBankStatements(s); // FN1: the September statements, imported through the same engine the upload uses
   seedFilings(s); // TX1: the ภ.พ.30 of 2026-07 and 2026-08 are filed (last: they lock the documents they took)
+  seedConnect(s, USER); // HC2: two API keys and a connected app (fixed secrets, stored as hashes)
+  seedAgentReports(s); // HC2: the agent's drafts reviewed through the commands (ti-002, ti-004 and one payment voucher), before the trail is put in time order
   seedAudit(s); // RP3: the trail in time order, then logins, switches, a posting-rule and a tax-table change
   return s;
 }
@@ -123,7 +130,7 @@ export const seed = (): MockState => buildSeedState(getSettings().role);
 export function loadState(): MockState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 61) return s; }
+    if (raw) { const s = JSON.parse(raw) as MockState; if (s.version === 62) return s; }
   } catch { /* fall through to a fresh seed */ }
   return seed();
 }

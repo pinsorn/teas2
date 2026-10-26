@@ -235,5 +235,8 @@ export const SCREENS: Screen[] = [
   { name: 'settingsNumbering', route: '/settings/numbering?role=admin', company: 'both', states: true }, // ST3: settings.manage; the accountant is forbidden
   { name: 'settingsApprovals', route: '/settings/approvals?role=admin', company: 'both', states: true },
   { name: 'settingsTemplates', route: '/settings/templates?role=admin', company: 'both', states: true },
+  { name: 'settingsConnect', route: '/settings/connect?role=admin', company: 'both', states: true }, // HC2: connect.manage (admin only); tabs ?tab=apps / ?tab=policy
+  { name: 'agentReport', route: '/agent-reports/ar-1?role=accountant', company: 'vat', states: true }, // HC2: the stored report of ti-002 (needs the type's read right)
+  { name: 'oauthConsent', route: '/oauth/consent?client=cl-assistant&role=admin', company: 'both', states: true }, // HC2: outside the app shell
   { name: 'styleGuide', route: '/style-guide', company: 'both', states: false },
 ];

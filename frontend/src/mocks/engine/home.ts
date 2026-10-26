@@ -54,12 +54,13 @@ export function homeKpis(st: MockState, companyId: string, perms: string[]): Hom
 }
 
 /** Pending documents whose FROZEN policy wants approval and that this actor may approve (the right, the right to read, and the frozen self-approval rule: the same refusal the approve command raises),
- *  plus the drafts an agent made, for whoever may issue them (a link to the document, never an inline action: HC2 narrows this to the human route). */
+ *  plus the drafts an agent made, for whoever may issue them (a link to the document, never an inline action; only those whose stored review report routes to a human). */
 export function homeApprovals(st: MockState, companyId: string, perms: string[], actor: Actor): HomeApproval[] {
   const out: HomeApproval[] = [], vat = st.companies.find((c) => c.id === companyId)?.vatRegistered ?? false;
   for (const d of mine(st, companyId)) {
     if (!isTypeAvailable(d.type, vat) || !perms.includes(`doc.${d.type}.read`)) continue;
-    if (d.status === 'draft' && d.createdBy.kind === 'agent' && perms.includes(`doc.${d.type}.issue`)) {
+    if (d.status === 'draft' && d.createdBy.kind === 'agent') {
+      if (!perms.includes(`doc.${d.type}.issue`) || st.agentReports?.find((r) => r.id === d.agentReportId)?.route !== 'human') continue; // HC2 (ruling 4): only a draft the agent has submitted, on the HUMAN route (the route is the STORED one: the policy in force when it was made)
       out.push({ id: d.id, type: d.type, number: d.number, partyName: d.party?.name ?? '', total: d.totals.total, version: d.version, requester: d.createdBy.name,
         ageDays: Math.max(0, days(today(), d.header.documentDate)), reason: 'agent', ...(d.agentReportId ? { agentReportId: d.agentReportId } : {}) });
       continue;

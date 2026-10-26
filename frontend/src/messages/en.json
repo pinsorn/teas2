@@ -487,6 +487,9 @@
       "periodClose": "Period and year close",
       "dpRun": "A posted depreciation run",
       "settingsCompany": "Settings: company profile", "settingsUsers": "Settings: users and permissions", "settingsRoles": "Settings: roles and permissions", "employeesList": "Employees list", "employeeJoiner": "Employee (joins 15 Oct)", "prList": "Payroll runs list", "prNew": "New payroll run", "prDraft": "A draft payroll run", "prIssued": "An issued payroll run (the latest)", "prPaid": "A payroll run a later run builds on", "nprIssued": "A payroll run (non-VAT)",
+      "settingsConnect": "TEAS Connect",
+      "agentReport": "Agent review report",
+      "oauthConsent": "App consent",
       "styleGuide": "Style guide"
     },
     "state": { "normal": "Normal", "empty": "Empty", "loading": "Loading", "error": "Error", "forbidden": "Forbidden", "locked": "Locked" },
@@ -1710,6 +1713,7 @@
         "employee": "Employees",
         "audit": "Audit",
         "settings": "Settings",
+        "connect": "TEAS Connect (agents and API keys)",
         "users": "Users",
         "report": "Reports",
         "tax": "Tax"
@@ -1804,6 +1808,205 @@
       "deleteBody": "This cannot be undone. A role can be deleted only while no user holds it.",
       "deleteAction": "Delete role",
       "sod": "Caution: this role can both create and approve documents of type {types}, and the company has approval switched on for them. It can still be saved; this is only a warning (approving your own documents is a company setting)."
+    }
+  },
+  "connect": {
+    "page": {
+      "title": "TEAS Connect",
+      "lead": "Connect an agent (an AI assistant) to this company with an API key or an approved app. An agent can do no more than its owner may, and can never change settings.",
+      "tabs": {
+        "label": "TEAS Connect sections",
+        "keys": "API keys",
+        "apps": "Connected apps",
+        "policy": "Agent policy"
+      }
+    },
+    "keys": {
+      "title": "API keys",
+      "lead": "A key belongs to this company and its owner. What it can actually do is its scopes, never more than the owner holds now.",
+      "create": "Create key",
+      "empty": "No API keys yet",
+      "failed": "That did not work. Try again.",
+      "col": {
+        "name": "Name",
+        "kind": "Kind",
+        "prefix": "Prefix",
+        "owner": "Owner",
+        "lastUsed": "Last used",
+        "scopes": "Scopes",
+        "status": "Status",
+        "actions": "Actions"
+      },
+      "kind": {
+        "rest": "REST",
+        "mcp": "MCP"
+      },
+      "never": "Never used",
+      "status": {
+        "active": "Active",
+        "revoked": "Revoked",
+        "expired": "Expired"
+      },
+      "expires": "expires {date}",
+      "rotate": "Rotate",
+      "revoke": "Revoke",
+      "rotateOf": "Rotate key {name}",
+      "revokeOf": "Revoke key {name}",
+      "confirm": {
+        "cancel": "Cancel",
+        "rotate": {
+          "title": "Rotate key {name}?",
+          "body": "A new key with the same scopes is made and the old one is revoked at once. The agent must switch to the new key.",
+          "ok": "Rotate key"
+        },
+        "revoke": {
+          "title": "Revoke key {name}?",
+          "body": "The agent using this key stops working at once. A revoked key cannot be turned on again.",
+          "ok": "Revoke key"
+        }
+      },
+      "form": {
+        "title": "Create an API key",
+        "lead": "The new key is shown once, right after it is created.",
+        "name": "Key name",
+        "kind": "Kind",
+        "kinds": {
+          "mcp": "MCP (AI assistant)",
+          "rest": "REST (another system)"
+        },
+        "expires": "Expires on (optional)",
+        "scopes": "Scopes",
+        "scopesHint": "Only rights you hold in this company are offered. Closing periods, filing tax and changing settings are never offered.",
+        "cancel": "Cancel",
+        "submit": "Create key",
+        "failed": "The key was not created. Try again."
+      }
+    },
+    "apps": {
+      "title": "Connected apps",
+      "lead": "Apps and agents allowed through the consent page. Revoke any of them at any time.",
+      "empty": "No connected apps",
+      "failed": "The app was not revoked. Try again.",
+      "col": {
+        "name": "App",
+        "owner": "Owner",
+        "scopes": "Scopes",
+        "connectedAt": "Connected",
+        "actions": "Actions"
+      },
+      "revoke": "Revoke",
+      "revokeOf": "Revoke app {name}",
+      "confirm": {
+        "title": "Revoke app {name}?",
+        "body": "The app can no longer reach this company until you allow it again.",
+        "cancel": "Cancel",
+        "ok": "Revoke"
+      }
+    },
+    "policy": {
+      "title": "Agent policy per document type",
+      "lead": "Off: an agent cannot create this type. Human: every document waits for a person. Auto-if-clean: issued without a person when the review report has no error or warning and the total is within the cap.",
+      "col": {
+        "type": "Document type",
+        "mode": "Policy",
+        "cap": "Auto cap (THB)",
+        "actions": "Actions"
+      },
+      "mode": {
+        "off": "Off",
+        "human": "Human approves",
+        "auto": "Auto if clean"
+      },
+      "tClass": "T-class",
+      "tClassHint": "A T-class type can never be automatic",
+      "modeOf": "Policy of {name}",
+      "capOf": "Cap of {name}",
+      "capHint": "Cap now {cap}, used when Auto is chosen",
+      "saveOf": "Save {name}",
+      "save": "Save",
+      "saved": "Saved",
+      "failed": "Not saved. Try again.",
+      "frozen": "A policy change applies to review reports the agent submits from now on. Reports already made keep the policy they were made under.",
+      "limits": {
+        "title": "An agent never",
+        "lead": "System limits. They cannot be changed here.",
+        "period": "Closes or reopens periods",
+        "filing": "Files tax returns",
+        "settings": "Changes settings",
+        "permissions": "Changes permissions or users",
+        "posting": "Changes posting rules",
+        "numbering": "Changes document numbering",
+        "policy": "Changes the agent policy",
+        "cancelT": "Cancels or reissues T-class documents without a person",
+        "company": "Acts on another company"
+      }
+    },
+    "report": {
+      "title": "Agent review report",
+      "draft": "Draft",
+      "by": "Submitted by {agent} for {owner} · report {version}",
+      "route": {
+        "title": "Approval route",
+        "auto": "Issued automatically",
+        "human": "Waits for a person",
+        "policy": "Policy at submission: {mode}, cap {cap}",
+        "frozen": "This report was made once, when the agent submitted the draft. A later policy or party-history change does not alter it."
+      },
+      "mode": {
+        "off": "Off",
+        "human": "Human approves",
+        "auto": "Auto if clean"
+      },
+      "expires": "Review token expires {at}",
+      "made": "made {at}",
+      "checks": {
+        "title": "Checks",
+        "error": "Errors (cannot be issued)",
+        "warning": "Warnings (a person must look)",
+        "info": "Information",
+        "none": "None"
+      },
+      "totals": {
+        "title": "Totals and tax (computed by the server)",
+        "net": "Before tax",
+        "vat": "VAT",
+        "total": "Total"
+      },
+      "journal": {
+        "title": "Journal preview",
+        "none": "This document type posts nothing",
+        "account": "Account",
+        "debit": "Debit",
+        "credit": "Credit",
+        "rule": "Rule that chose the account"
+      }
+    },
+    "secret": {
+      "title": "New key: {name}",
+      "lead": "Copy and keep this key somewhere safe now. It is shown once and cannot be shown again.",
+      "copy": "Copy key",
+      "copied": "Copied",
+      "copyFailed": "Copy failed. Select the text and copy it yourself.",
+      "done": "I have saved the key"
+    },
+    "consent": {
+      "noClient": "No app is asking to connect",
+      "unknown": "Unknown app",
+      "approvedTitle": "{name} is connected",
+      "approvedBody": "It can work in {company} within the rights shown.",
+      "deniedTitle": "Connection refused",
+      "deniedBody": "Nothing was connected.",
+      "toApps": "Go to connected apps",
+      "title": "{name} asks to connect to your company",
+      "lead": "Company {company} · owner {owner}",
+      "granted": "What this app will be able to do",
+      "limited": "Limited to what {owner} may do in this company, and no more.",
+      "none": "There is nothing that can be granted",
+      "notGranted": "Asked for, not granted",
+      "never": "The app can never close periods, file tax, or change settings, permissions or policy, and it stays inside this company.",
+      "failed": "That did not work. Try again.",
+      "approve": "Allow",
+      "deny": "Deny"
     }
   },
   "permissions": {
@@ -1949,6 +2152,7 @@
     "tax_read": "View tax filings and VAT registers",
     "tax_filing_preview": "Preview tax filings",
     "tax_filing_finalize": "Finalize tax filings",
-    "tax_settings_manage": "Manage tax settings (withholding rates)"
+    "tax_settings_manage": "Manage tax settings (withholding rates)",
+    "connect_manage": "Manage TEAS Connect (API keys, apps, agent policy)"
   }
 }
