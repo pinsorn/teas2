@@ -2,7 +2,7 @@ import { HttpResponse, http } from 'msw';
 import type { Actor, DocType } from '@/domain/types';
 import { PAPER_BUILDERS } from '../engine/paper';
 import { FieldErrors } from '../engine/company';
-import { activeLinkCount, changePassword, confirmEnrol, createPublicLink, currentUserId, DEMO, listSessions, login, logout, onboard, profileOf, relogin, resolvePublicLink, revokePublicLinks, revokeSession, startEnrol, verifyTotp } from '../engine/auth';
+import { activeLinkCount, changePassword, confirmEnrol, createPublicLink, currentSession, currentUserId, DEMO, demoRecovery, listSessions, login, logout, onboard, profileOf, relogin, resolvePublicLink, revokePublicLinks, revokeSession, startEnrol, verifyTotp } from '../engine/auth';
 import { publicDoc } from '../engine/commands';
 import { MockError } from '../engine/log';
 import { AGENT, USER } from '../fixtures/documents';
@@ -37,12 +37,14 @@ async function run(req: Request, write: boolean, fn: (c: C, actor: Actor) => Res
   }
 }
 
-/** The toolbar's session state decides what the signed-in app may do: expired / signed out = 401 on everything but the sign-in routes and the public link. An agent has no browser session. */
-const OPEN = /^\/(auth\/(login|totp|session|logout|relogin|demo)|public\/)/;
+/** The toolbar's session state decides what the signed-in app may do. When the session is expired or signed out EVERYTHING is 401 except this EXACT method + path list (HC3a B1: anchored, no prefixes - enrolment, the sessions list / revoke and extend are NOT on it). An agent has no browser session. */
+const OPEN: [string, RegExp][] = [
+  ['POST', /^\/auth\/login$/], ['POST', /^\/auth\/totp$/], ['POST', /^\/auth\/relogin$/], ['GET', /^\/auth\/session$/], ['POST', /^\/auth\/logout$/], ['GET', /^\/auth\/demo$/], ['GET', /^\/public\/p\/[^/]+$/],
+];
 export const sessionGate = http.all('*/bff/v1/*', ({ request }) => {
   if (isAgent(request)) return undefined;
   const path = new URL(request.url).pathname.replace(/^.*\/bff\/v1/, '');
-  if (OPEN.test(path)) return undefined;
+  if (OPEN.some(([m, re]) => m === request.method && re.test(path))) return undefined;
   const session = getSession();
   if (session === 'expired') return problem(401, 'auth.session_expired', 'เซสชันหมดอายุ กรอกรหัสผ่านเพื่อดำเนินการต่อ');
   if (session === 'out') return problem(401, 'auth.unauthenticated', 'ยังไม่ได้เข้าสู่ระบบ');
@@ -68,15 +70,26 @@ export const authHandlers = [
     const session = getSession();
     return HttpResponse.json({ state: session, email: profileOf(c.st, currentUserId(c.st)).email, ...(session === 'expiring' ? { expiresInSec: 120 } : {}) });
   })),
-  http.post('*/bff/v1/auth/session/extend', ({ request }) => run(request, false, () => { setSession('active'); return HttpResponse.json({ state: 'active' }); })),
-  http.post('*/bff/v1/auth/logout', ({ request }) => run(request, true, (c) => { logout(c.st); setSession('out'); return HttpResponse.json({ state: 'out' }); })),
-  http.post('*/bff/v1/auth/relogin', ({ request }) => run(request, true, async (c) => {
-    relogin(c.st, currentUserId(c.st), s((await bodyOf(request)).password));
+  // HC3a M1: only a session that is still alive (active / expiring) can be extended; an expired or signed-out one is a 401 (the gate says so first)
+  http.post('*/bff/v1/auth/session/extend', ({ request }) => run(request, false, () => {
+    const st = getSession();
+    if (st === 'expired' || st === 'out') return problem(401, st === 'out' ? 'auth.unauthenticated' : 'auth.session_expired', 'เซสชันหมดอายุแล้ว เข้าสู่ระบบอีกครั้ง');
     setSession('active');
     return HttpResponse.json({ state: 'active' });
   })),
+  http.post('*/bff/v1/auth/logout', ({ request }) => run(request, true, (c) => { logout(c.st); setSession('out'); return HttpResponse.json({ state: 'out' }); })),
+  // HC3a M2: only from `expired`, for the user of the held session, with the second factor when the user has one
+  http.post('*/bff/v1/auth/relogin', ({ request }) => run(request, true, async (c) => {
+    const state = getSession();
+    if (state === 'out' || !currentSession(c.st)) return problem(401, 'auth.unauthenticated', 'ยังไม่ได้เข้าสู่ระบบ เข้าสู่ระบบจากหน้าเข้าสู่ระบบ');
+    if (state !== 'expired') return problem(409, 'auth.not_expired', 'เซสชันยังไม่หมดอายุ');
+    const b = await bodyOf(request);
+    const r = relogin(c.st, s(b.password), typeof b.recoveryCode === 'string' ? { recoveryCode: b.recoveryCode } : typeof b.code === 'string' ? { code: b.code } : {});
+    if (r.status === 'ok') setSession('active');
+    return HttpResponse.json(r);
+  })),
   // the mock's demo identities, so a person reviewing the mockup knows what to type; a real backend has no such route
-  http.get('*/bff/v1/auth/demo', ({ request }) => run(request, false, () => HttpResponse.json({ email: DEMO.email, password: DEMO.password, totpEmail: DEMO.totpEmail, totpPassword: DEMO.totpPassword, totpCode: DEMO.totpCode, recoveryCode: DEMO.recovery[3] }))),
+  http.get('*/bff/v1/auth/demo', ({ request }) => run(request, false, (c) => HttpResponse.json({ email: DEMO.email, password: DEMO.password, totpEmail: DEMO.totpEmail, totpPassword: DEMO.totpPassword, totpCode: DEMO.totpCode, recoveryCode: demoRecovery(c.st) }))),
 
   http.get('*/bff/v1/auth/profile', ({ request }) => run(request, false, (c) => HttpResponse.json(profileOf(c.st, currentUserId(c.st))))),
   http.post('*/bff/v1/auth/password', ({ request }) => run(request, true, async (c, a) => {
@@ -94,7 +107,8 @@ export const authHandlers = [
   })),
 
   http.post('*/bff/v1/onboarding', ({ request }) => run(request, true, async (c, a) => {
-    const r = onboard(c.st, a, await bodyOf(request));
+    const uid = currentUserId(c.st); // the admin of the new company is the person signed in, not a fixed user
+    const r = onboard(c.st, { ...a, id: uid, name: profileOf(c.st, uid).displayName }, await bodyOf(request));
     setSettings({ companyKey: 'new' });
     return HttpResponse.json(r, { status: 201 });
   })),
@@ -103,6 +117,7 @@ export const authHandlers = [
   http.get('*/bff/v1/docs/:type/:id/public-links', ({ request, params }) => run(request, false, (c) => {
     const perm = `doc.${String(params.type)}.read`;
     if (!c.perms.includes(perm)) return forbidden(perm);
+    if (!c.st.docs.some((x) => x.id === params.id && x.companyId === c.company.id && x.type === params.type)) throw new MockError(404, 'doc.not_found', 'ไม่พบเอกสาร');
     return HttpResponse.json({ active: activeLinkCount(c.st, c.company.id, String(params.id)) });
   })),
   http.post('*/bff/v1/docs/:type/:id/public-links', ({ request, params }) => run(request, true, (c, a) => {
@@ -115,6 +130,7 @@ export const authHandlers = [
   http.delete('*/bff/v1/docs/:type/:id/public-links', ({ request, params }) => run(request, true, (c, a) => {
     const perm = `doc.${String(params.type)}.read`;
     if (!c.perms.includes(perm)) return forbidden(perm);
+    if (!c.st.docs.some((x) => x.id === params.id && x.companyId === c.company.id && x.type === params.type)) throw new MockError(404, 'doc.not_found', 'ไม่พบเอกสาร');
     return HttpResponse.json({ revoked: revokePublicLinks(c.st, a, c.company.id, String(params.id)) });
   })),
 

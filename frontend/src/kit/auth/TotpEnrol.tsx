@@ -13,11 +13,12 @@ import { authApi, type ProfileView } from '@/records/auth';
 /** Mock only: what a person reviewing the mockup types (GET /auth/demo; a real backend answers 404 and nothing shows). */
 export function DemoHint({ kind }: { kind: 'login' | 'totp' | 'enrol' }) {
   const t = useTranslations('auth.demo');
-  const q = useQuery({ queryKey: ['auth', 'demo'], queryFn: authApi.demo, retry: false, staleTime: Infinity });
-  const d = q.data;
+  const mock = process.env.NEXT_PUBLIC_API_MOCKING === 'enabled'; // a real build never asks (HC3a m5)
+  const q = useQuery({ queryKey: ['auth', 'demo'], queryFn: authApi.demo, retry: false, staleTime: 0, enabled: mock });
+  const d = mock ? q.data : undefined;
   if (!d) return null;
   const rows: [string, string][] = kind === 'login' ? [[t('email'), d.email], [t('password'), d.password], [t('totpEmail'), d.totpEmail], [t('totpPassword'), d.totpPassword]]
-    : [[t('totpCode'), d.totpCode], ...(kind === 'totp' ? [[t('recovery'), d.recoveryCode] as [string, string]] : [])];
+    : [[t('totpCode'), d.totpCode], ...(kind === 'totp' && d.recoveryCode ? [[t('recovery'), d.recoveryCode] as [string, string]] : [])];
   return (
     <section aria-label={t('title')} className="grid gap-1 rounded-lg border border-dashed bg-muted p-3 text-small">
       <h2 className="font-semibold">{t('title')}</h2>

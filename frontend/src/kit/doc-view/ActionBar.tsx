@@ -15,7 +15,7 @@ import { ApprovalActions } from './ApprovalActions';
 import { ScheduleActions } from './ScheduleActions';
 import { PayrollActions } from '../payroll/PayRunDialog';
 import { ApiError } from '@/lib/api/client';
-import { authApi } from '@/records/auth';
+import { authApi, PUBLIC_LINK_TYPES } from '@/records/auth';
 
 /** A descriptor may list the conversions it allows; the "convert to…" button (and its dialog) exists only for those. */
 export type ConvertibleDescriptor = DocDescriptor & { convertsTo?: DocType[] };
@@ -100,7 +100,7 @@ export function ActionBar({ descriptor: d, doc, permissions, vatRegistered, comp
               : <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t('print')}</span> : <Link href={routes.print(doc.id)}>{t('print')}</Link>}</Button>}
           </Guarded>
         ) : null}
-        {live && DOC_TYPES[d.type].printable ? <PublicLinkActions doc={doc} why={missing(d.permissions.read)} /> : null}
+        {live && DOC_TYPES[d.type].printable && PUBLIC_LINK_TYPES.includes(d.type) ? <PublicLinkActions doc={doc} why={missing(d.permissions.read)} /> : null}
         {engineMade ? null : <Guarded why={missing(d.permissions.create)}>
           {(p) => <Button {...p} variant="outline" asChild={!p.disabled}>{p.disabled ? <span>{t('copy')}</span> : <Link href={`${routes.create}?copyFrom=${doc.id}`}>{t('copy')}</Link>}</Button>}
         </Guarded>}

@@ -176,12 +176,20 @@ test.describe('session expiry', () => {
     await expect(page).toHaveURL(/\/login$/);
   });
 
-  test('signed out: an app page goes to the login page; signing in again comes back', async ({ page }) => {
-    await page.goto(`/?${ACC}`);
-    await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
-    await setSession(page, 'out');
-    await expect(page).toHaveURL(/\/login$/);
+  test('signed out: a dialog says unsaved changes are lost (no silent redirect); its button goes to the login page; signing in again comes back', async ({ page }) => {
+    await page.goto(`/sales/quotations/new?${ACC}`);
+    const ref = page.getByLabel('อ้างอิง');
+    await ref.fill('ยังไม่ได้บันทึก');
     const d = await demo(page);
+    await setSession(page, 'out');
+    const dlg = page.getByRole('dialog', { name: 'ออกจากระบบแล้ว' });
+    await expect(dlg).toBeVisible();
+    await expect(dlg).toContainText('ยังไม่ได้บันทึก');
+    await expect(page).toHaveURL(/\/sales\/quotations\/new/); // still on the page: nothing was thrown away silently
+    await axeClean(page);
+    await shot(page, 'hc3a-signed-out-desktop');
+    await dlg.getByRole('button', { name: 'เข้าสู่ระบบ' }).click();
+    await expect(page).toHaveURL(/\/login$/);
     await signIn(page, d.email, d.password);
     await expect(page).toHaveURL(/\/$/);
   });

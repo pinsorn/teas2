@@ -2032,6 +2032,12 @@
   },
   "auth": {
     "session": {
+      "outTitle": "Signed out",
+      "outBody": "You have been signed out. Anything on this page that was not saved will be lost. Sign in again to continue.",
+      "signIn": "Sign in",
+      "totpLead": "This account has two-step verification on. Enter the 6-digit code from the app, or one recovery code.",
+      "totpCode": "6-digit code or recovery code",
+      "verify": "Verify",
       "expiringTitle": "Your session is about to expire",
       "expiringBody": "Your session expires in {minutes} minutes. Stay signed in?",
       "stay": "Stay signed in",

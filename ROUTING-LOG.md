@@ -91,3 +91,6 @@
 | 2026-10-26 | SP1c HC2b fix round (agent allowlist choke point, issue gate expiry + current policy, owner-only rotate, own drafts only) | sonnet-implementer (warm, HC2 worker) | Opus r2 REJECT HC2 |
 | 2026-10-26 | SP1c HC2c (unlisted types Off, agent create refused when Off; docs-write passes the real actor) | sonnet-implementer (warm, HC2 worker) | Opus r3 REJECT B1 |
 | 2026-10-26 | SP1c HC3 implement (login, TOTP, onboarding, session expiry, profile, public link) | sonnet-implementer (fresh) | new area; Opus review after (auth / public links) |
+| 2026-10-26 | SP1c HC3 review (credentials, public links, onboarding, session expiry) | opus-reviewer (fresh) | auth / public links |
+| 2026-10-26 | SP1c GHC parity checklist (docs only) | sonnet-implementer (fresh) | read-heavy audit, parallel with read-only review |
+| 2026-10-26 | SP1c HC3a fix round (anchored session gate, extend / relogin states, public links counterparty types + type check, minors) | sonnet-implementer (warm, HC3 worker) | Opus REJECT HC3 |

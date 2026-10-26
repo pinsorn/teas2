@@ -1,13 +1,13 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AGENT, USER } from '../fixtures/documents';
 import { FIXTURE_PREDICATES } from '../fixtures/ids';
-import { setSettings } from '../settings';
+import { setSession, setSettings } from '../settings';
 import { buildSeedState, loadState, resetState } from '../store';
 import { testServer } from '../test-server';
 import { cancel } from './commands';
 import { checkInvariants } from './invariants';
 import { MockError } from './log';
-import { DEMO, FIXTURE_TOKENS, changePassword, confirmEnrol, createPublicLink, listSessions, login, onboard, profileOf, resolvePublicLink, revokePublicLinks, revokeSession, startEnrol, verifyTotp } from './auth';
+import { DEMO, FIXTURE_TOKENS, changePassword, demoRecovery, relogin, currentSession, confirmEnrol, createPublicLink, listSessions, login, onboard, profileOf, resolvePublicLink, revokePublicLinks, revokeSession, startEnrol, verifyTotp } from './auth';
 
 beforeAll(() => testServer.listen({ onUnhandledFrame: 'error' }));
 afterEach(() => testServer.resetHandlers());
@@ -220,5 +220,144 @@ describe('every new route stays outside the agent allowlist (wiki: Agent request
     const revoked = await call('GET', `/public/p/${FIXTURE_TOKENS.ti}`);
     expect(revoked.status).toBe(404);
     expect(await revoked.json()).toEqual(await unknown.json());
+  });
+});
+
+// ---------------------------------------------------------------- HC3a (Opus review round 1)
+describe('HC3a B1: the session gate open set is an exact method + path list', () => {
+  const GATE = ['auth.session_expired', 'auth.unauthenticated'];
+  const code = async (method: string, path: string, body?: unknown) => ((await (await call(method, path, method === 'GET' ? undefined : body)).json().catch(() => ({}))) as { code?: string }).code;
+  // [method, path, gated?]: gated = an expired / signed-out session gets the gate's 401
+  const table: [string, string, boolean][] = [
+    ['POST', '/auth/login', false], ['POST', '/auth/totp', false], ['POST', '/auth/relogin', false], ['GET', '/auth/session', false], ['POST', '/auth/logout', false], ['GET', '/auth/demo', false], ['GET', '/public/p/nope', false],
+    ['POST', '/auth/totp/enrol', true], ['POST', '/auth/totp/enrol/verify', true], ['GET', '/auth/sessions', true], ['POST', '/auth/sessions/ses-2/revoke', true], ['POST', '/auth/session/extend', true],
+    ['GET', '/auth/profile', true], ['POST', '/auth/password', true], ['POST', '/onboarding', true], ['GET', '/docs/TI/x/public-links', true], ['POST', '/docs/TI/x/public-links', true], ['DELETE', '/docs/TI/x/public-links', true],
+    ['GET', '/me', true], ['GET', '/auth/sessionx', true], ['GET', '/auth/login', true], ['POST', '/auth/demo', true], ['POST', '/public/p/nope', true],
+  ];
+  for (const state of ['expired', 'out'] as const) {
+    it.each(table)(`${state}: %s %s`, async (method, path, gated) => {
+      setSession(state);
+      const c = await code(method, path, {});
+      if (gated) expect(c).toBe(state === 'out' ? 'auth.unauthenticated' : 'auth.session_expired');
+      else if (path === '/auth/relogin') expect(c).toBe(state === 'out' ? 'auth.unauthenticated' : 'auth.invalid_credentials'); // the handler's own answer, not the gate's
+      else expect(GATE).not.toContain(c);
+    });
+  }
+  const real = table.filter(([m, p]) => !(p === '/auth/sessionx' || (m === 'GET' && p === '/auth/login') || (m === 'POST' && (p === '/auth/demo' || p.startsWith('/public/'))))); // routes nobody handles
+  it.each(real)('expiring behaves like active: %s %s is never the gate 401', async (method, path) => {
+    setSession('expiring');
+    expect(GATE).not.toContain(await code(method, path, {}));
+  });
+  it('signed out: enrolment, the sessions list / revoke and extend are all 401 and nothing is written', async () => {
+    setSession('out');
+    const before = localStorage.getItem('teas2.mock.state.v26');
+    for (const [m, p] of [['POST', '/auth/totp/enrol'], ['POST', '/auth/totp/enrol/verify'], ['GET', '/auth/sessions'], ['POST', '/auth/sessions/ses-2/revoke'], ['POST', '/auth/session/extend']]) expect((await call(m, p, m === 'GET' ? undefined : {})).status).toBe(401);
+    expect(localStorage.getItem('teas2.mock.state.v26')).toBe(before);
+  });
+});
+
+describe('HC3a M1 / M2: extend and re-login', () => {
+  it('extend works from expiring and active only', async () => {
+    setSession('expiring');
+    expect((await call('POST', '/auth/session/extend')).status).toBe(200);
+    setSession('expired');
+    expect((await call('POST', '/auth/session/extend')).status).toBe(401);
+  });
+  it('relogin only from expired: out is 401, expiring is refused, an expired one works with the password', async () => {
+    setSession('out');
+    expect((await call('POST', '/auth/relogin', { password: DEMO.password })).status).toBe(401);
+    setSession('expiring');
+    expect((await call('POST', '/auth/relogin', { password: DEMO.password })).status).toBe(409);
+    setSession('expired');
+    expect((await call('POST', '/auth/relogin', { password: 'wrong' })).status).toBe(401);
+    const r = await call('POST', '/auth/relogin', { password: DEMO.password });
+    expect(await r.json()).toEqual({ status: 'ok' });
+    expect((await call('GET', '/auth/profile')).status).toBe(200); // the gate is open again
+  });
+  it('relogin ends the old session row, opens a new one and audits a login; there is no fallback user', () => {
+    const st = seed();
+    const old = currentSession(st)!;
+    expect(relogin(st, DEMO.password)).toEqual({ status: 'ok' });
+    expect(old.revokedAt).toBeTruthy();
+    expect(currentSession(st)!.id).not.toBe(old.id);
+    expect(st.audit.at(-1)).toMatchObject({ command: 'auth.login', target: 'u-1' });
+    expect(fail(() => relogin(st, 'nope')).code).toBe('auth.invalid_credentials');
+    st.auth!.current = '';
+    expect(fail(() => relogin(st, DEMO.password)).code).toBe('auth.unauthenticated'); // nobody is signed in: u-1 is not assumed
+  });
+  it('a TOTP user repeats the second factor at re-login; a wrong code and each recovery code behave as at sign-in', () => {
+    const st = seed();
+    const r = login(st, DEMO.totpEmail, DEMO.totpPassword);
+    if (r.status !== 'totp_required') throw new Error('x');
+    verifyTotp(st, r.challenge, { code: DEMO.totpCode });
+    expect(relogin(st, DEMO.totpPassword)).toEqual({ status: 'totp_required' }); // the password alone does not re-open the session
+    const held = currentSession(st)!;
+    expect(fail(() => relogin(st, DEMO.totpPassword, { code: '000000' })).code).toBe('auth.totp_invalid');
+    expect(currentSession(st)!.id).toBe(held.id);
+    expect(relogin(st, DEMO.totpPassword, { recoveryCode: DEMO.recovery[0] })).toEqual({ status: 'ok' });
+    expect(currentSession(st)!.id).not.toBe(held.id);
+    expect(fail(() => relogin(st, DEMO.totpPassword, { recoveryCode: DEMO.recovery[0] })).code).toBe('auth.totp_invalid'); // each recovery code once
+  });
+});
+
+describe('HC3a M3 / M4: public links', () => {
+  it('GET / DELETE check the document type in the URL like POST', async () => {
+    setSettings({ role: 'accountant' });
+    const st = loadState();
+    const ti = st.docs.find((x) => FIXTURE_PREDICATES.tiIssuedUnpaid(x, st))!;
+    expect((await call('GET', `/docs/QT/${ti.id}/public-links`)).status).toBe(404);
+    expect((await call('POST', `/docs/QT/${ti.id}/public-links`)).status).toBe(404);
+    expect((await call('DELETE', `/docs/QT/${ti.id}/public-links`)).status).toBe(404);
+    expect(resolvePublicLink(loadState(), FIXTURE_TOKENS.ti)).toBeTruthy(); // the QT right did not revoke a TI link
+    expect((await call('GET', `/docs/TI/${ti.id}/public-links`)).status).toBe(200);
+  });
+  it('only documents that go to a counterparty get a link: PR, JV, EX, PV, PB and the like are refused in the engine', () => {
+    const st = seed();
+    let refused = 0;
+    for (const type of ['PR', 'JV', 'EX', 'PV', 'PB', 'PCN', 'PDN', 'OB', 'FA', 'DP'] as const) {
+      const d = st.docs.find((x) => x.type === type && ['issued', 'partly_settled', 'settled'].includes(x.status));
+      if (!d) continue;
+      expect(fail(() => createPublicLink(st, USER, d.companyId, d.id)).code, type).toMatch(/^public\.(not_shareable|not_printable)$/);
+      refused++;
+    }
+    expect(refused).toBeGreaterThan(2);
+    const pr = st.docs.find((x) => x.type === 'PR' && ['issued', 'settled'].includes(x.status))!;
+    expect(fail(() => createPublicLink(st, USER, pr.companyId, pr.id)).code).toBe('public.not_shareable');
+  });
+});
+
+describe('HC3a minors', () => {
+  it('m3: the fifth consecutive failure itself answers "locked" - sign-in and TOTP', () => {
+    const st = seed();
+    for (let i = 0; i < 4; i++) expect(fail(() => login(st, DEMO.email, `x${i}`)).code).toBe('auth.invalid_credentials');
+    expect(fail(() => login(st, DEMO.email, 'x5')).code).toBe('auth.locked');
+    const s2 = seed();
+    for (let i = 0; i < 4; i++) { const r = login(s2, DEMO.totpEmail, DEMO.totpPassword); if (r.status === 'totp_required') expect(fail(() => verifyTotp(s2, r.challenge, { code: '111111' })).code).toBe('auth.totp_invalid'); }
+    const r = login(s2, DEMO.totpEmail, DEMO.totpPassword);
+    if (r.status !== 'totp_required') throw new Error('x');
+    expect(fail(() => verifyTotp(s2, r.challenge, { code: '111111' })).code).toBe('auth.locked');
+  });
+  it('m1: auth events are audited in the company the user is working in', () => {
+    const st = seed();
+    setSettings({ companyKey: 'nonvat' });
+    login(st, DEMO.email, DEMO.password);
+    expect(st.audit.at(-1)).toMatchObject({ command: 'auth.login', companyId: 'co-nonvat' });
+    changePassword(st, USER, 'u-1', { current: DEMO.password, next: 'Newpass#2026x', confirm: 'Newpass#2026x' });
+    expect(st.audit.at(-1)).toMatchObject({ command: 'auth.password.change', companyId: 'co-nonvat' });
+  });
+  it('m2: the administrator of the new company is the acting user', () => {
+    const st = seed();
+    const who = { kind: 'user' as const, id: 'usr-vat-2', name: 'wichai' };
+    onboard(st, who, { legalNameTh: 'บริษัท ตัวอย่างใหม่ จำกัด', taxId: '0105569056784', branchCode: '00000', address: '1 ถนนทดสอบ', vatRegistered: false, fiscalYearStartMonth: 1, template: 'sme-th', bank: { kind: 'cash', accountName: 'เงินสดย่อย' }, cutoff: '2026-09-30' });
+    expect(st.memberships.filter((m) => m.companyId === 'co-new')).toEqual([expect.objectContaining({ userId: 'usr-vat-2', role: 'admin' })]);
+    expect(st.staff.find((m) => m.companyId === 'co-new')).toMatchObject({ userId: 'usr-vat-2', email: DEMO.totpEmail });
+  });
+  it('m5: /auth/demo offers a recovery code that is still unused', () => {
+    const st = seed();
+    expect(demoRecovery(st)).toBe(DEMO.recovery[0]);
+    const r = login(st, DEMO.totpEmail, DEMO.totpPassword);
+    if (r.status !== 'totp_required') throw new Error('x');
+    verifyTotp(st, r.challenge, { recoveryCode: DEMO.recovery[0] });
+    expect(demoRecovery(st)).toBe(DEMO.recovery[1]);
   });
 });

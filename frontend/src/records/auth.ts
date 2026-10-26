@@ -10,15 +10,19 @@ export interface ProfileView { userId: string; email: string; displayName: strin
 export interface SessionRow { id: string; device: string; ip: string; createdAt: string; lastSeenAt: string; current: boolean }
 export interface OnboardBody { legalNameTh: string; taxId: string; branchCode: string; address: string; vatRegistered: boolean; fiscalYearStartMonth: number; template: string;
   bank: { kind: 'bank' | 'cash'; accountName: string; bankName?: string; accountNo?: string }; cutoff: IsoDate }
-export interface Demo { email: string; password: string; totpEmail: string; totpPassword: string; totpCode: string; recoveryCode: string }
+export interface Demo { email: string; password: string; totpEmail: string; totpPassword: string; totpCode: string; recoveryCode?: string }
+
+/** HC3a M4: the documents that go to a counterparty - only these get a public link (never a payroll run, a journal, an expense claim, a payment voucher or a vendor bill). WT: for the payee. */
+export const PUBLIC_LINK_TYPES: DocType[] = ['QT', 'SO', 'DO', 'IV', 'TI', 'BL', 'RC', 'CN', 'DN', 'PO', 'WT'];
 
 export const authApi = {
   login: (email: string, password: string) => api<LoginResult>('POST', '/auth/login', { email, password }),
-  totp: (challenge: string, v: { code: string } | { recoveryCode: string }) => api<LoginResult>('POST', '/auth/totp', { challenge, ...v }),
+  totp: (challenge: string, v: { code: string } | { recoveryCode?: string }) => api<LoginResult>('POST', '/auth/totp', { challenge, ...v }),
   session: () => api<{ state: SessionState; email: string; expiresInSec?: number }>('GET', '/auth/session'),
   extend: () => api<{ state: SessionState }>('POST', '/auth/session/extend'),
   logout: () => api<{ state: SessionState }>('POST', '/auth/logout'),
-  relogin: (password: string) => api<{ state: SessionState }>('POST', '/auth/relogin', { password }),
+  /** an expired session only; a user with two-step on gets `totp_required` first and sends the password again with the code */
+  relogin: (password: string, v: { code?: string; recoveryCode?: string } = {}) => api<{ status: 'ok' | 'totp_required' }>('POST', '/auth/relogin', { password, ...v }),
   /** mock only: what to type. A real backend has no such route (404) and the hint stays hidden. */
   demo: () => api<Demo>('GET', '/auth/demo'),
   profile: () => api<ProfileView>('GET', '/auth/profile'),

@@ -11,7 +11,8 @@ import { hashOf } from '../records/connect';
 import { FieldErrors, refuseAgent, updateCompany } from './company';
 import { MockError, logAudit, stamp, withFixedClock } from './log';
 import { firstOpenMonthStart } from './opening';
-import { PRINT_TYPES } from './look';
+import { PUBLIC_LINK_TYPES } from '@/records/auth';
+import { getSettings } from '../settings';
 
 // SP1c HC3. D-32: the platform screens are mock-only, but the mock behaves like the contract: a password, a TOTP secret and a recovery code are kept as HASHES (hashOf, the HC2 mock hash; a real server stores a salted slow hash / an encrypted secret),
 // a login failure never says which field was wrong, 5 consecutive failures lock, recovery codes are returned once. No credential and no token ever goes into the audit log, an activity row or a URL.
@@ -48,7 +49,15 @@ const credOf = (st: MockState, userId: string): Cred => {
   return c;
 };
 /** The user the browser is signed in as: the owner of the current session (u-1 until someone else logs in). */
-export const currentUserId = (st: MockState): string => auth(st).sessions.find((s) => s.id === auth(st).current && !s.revokedAt)?.userId ?? 'u-1';
+export const currentUserId = (st: MockState): string => currentSession(st)?.userId ?? 'u-1';
+/** The live session the browser holds, or nothing (no fallback: a re-login needs a session of its own). */
+export const currentSession = (st: MockState): Sess | undefined => auth(st).sessions.find((s) => s.id === auth(st).current && !s.revokedAt);
+/** HC3a m1: an auth event is audited in the company the user is working in (the toolbar's active company if they belong to it), else the first they belong to. */
+const auditCo = (st: MockState, userId: string): string => {
+  const mine = st.memberships.filter((m) => m.userId === userId).map((m) => m.companyId);
+  const k = getSettings().companyKey, active = k === 'new' ? 'co-new' : k === 'nonvat' ? 'co-nonvat' : 'co-vat';
+  return mine.includes(active) ? active : mine[0] ?? 'co-vat';
+};
 
 // the failure counter is per email (an unknown email has one too: the same answers, so the lock is no oracle)
 const keyOf = (email: string) => hashOf(email.trim().toLowerCase());
@@ -70,8 +79,7 @@ function openSession(st: MockState, c: Cred): string {
   const id = `ses-${Math.max(0, ...a.sessions.map((s) => Number(s.id.slice(4)) || 0)) + 1}`;
   a.sessions.push({ id, userId: c.userId, device: 'Chrome · Windows', ip: '127.0.0.1', createdAt: stamp(), lastSeenAt: stamp() });
   a.current = id;
-  const co = st.memberships.find((m) => m.userId === c.userId)?.companyId ?? 'co-vat';
-  logAudit(st, { kind: 'user', id: c.userId, name: c.displayName }, co, 'auth.login', c.userId);
+  logAudit(st, { kind: 'user', id: c.userId, name: c.displayName }, auditCo(st, c.userId), 'auth.login', c.userId);
   return id;
 }
 
@@ -80,7 +88,7 @@ export function login(st: MockState, email: string, password: string): LoginResu
   const key = keyOf(email);
   guard(st, key);
   const c = auth(st).creds.find((x) => x.email.toLowerCase() === email.trim().toLowerCase());
-  if (!c || c.passwordHash !== hashOf(password)) { miss(st, key); throw INVALID(); } // an unknown email and a wrong password are the same answer
+  if (!c || c.passwordHash !== hashOf(password)) { miss(st, key); throw locked(st, key) ? LOCKED() : INVALID(); } // an unknown email and a wrong password are the same answer; the failure that locks says so
   if (c.secretHash) {
     const challenge = randomHex(16);
     auth(st).challenges[challenge] = { userId: c.userId, exp: Date.now() + 5 * 60_000 };
@@ -89,19 +97,23 @@ export function login(st: MockState, email: string, password: string): LoginResu
   return { status: 'ok', sessionId: openSession(st, c) };
 }
 
+/** The second factor: a 6-digit code, or one unused recovery code (marked used). False = not accepted (the caller counts it). */
+function secondFactor(c: Cred, v: { code?: string; recoveryCode?: string }): boolean {
+  if (typeof v.code === 'string') return !!c.secretHash && /^\d{6}$/.test(v.code) && v.code === codeFor(c.secretHash);
+  if (typeof v.recoveryCode === 'string') {
+    const h = hashOf(v.recoveryCode.trim().toUpperCase());
+    const r = c.recovery.find((x) => x.hash === h && !x.usedAt);
+    if (r) { r.usedAt = stamp(); return true; }
+  }
+  return false;
+}
+
 export function verifyTotp(st: MockState, challenge: string, v: { code?: string; recoveryCode?: string }): { sessionId: string } {
   const a = auth(st), ch = a.challenges[challenge];
   if (!ch || ch.exp < Date.now()) { delete a.challenges[challenge]; throw err(401, 'auth.challenge_invalid', 'การเข้าสู่ระบบหมดอายุ กรอกอีเมลและรหัสผ่านใหม่อีกครั้ง'); }
   const c = credOf(st, ch.userId), key = keyOf(c.email);
   guard(st, key);
-  let ok = false;
-  if (typeof v.code === 'string') ok = !!c.secretHash && /^\d{6}$/.test(v.code) && v.code === codeFor(c.secretHash);
-  else if (typeof v.recoveryCode === 'string') {
-    const h = hashOf(v.recoveryCode.trim().toUpperCase());
-    const r = c.recovery.find((x) => x.hash === h && !x.usedAt);
-    if (r) { r.usedAt = stamp(); ok = true; }
-  }
-  if (!ok) {
+  if (!secondFactor(c, v)) {
     miss(st, key);
     if (locked(st, key)) { delete a.challenges[challenge]; throw LOCKED(); }
     throw err(401, 'auth.totp_invalid', 'รหัสยืนยันไม่ถูกต้อง');
@@ -120,7 +132,7 @@ export function startEnrol(st: MockState, actor: Actor, userId: string): { secre
   refuseAgent(actor);
   const c = credOf(st, userId);
   c.pendingSecretHash = hashOf(SECRET);
-  logAudit(st, actor, 'co-vat', 'auth.totp.enrol_start', userId);
+  logAudit(st, actor, auditCo(st, userId), 'auth.totp.enrol_start', userId);
   return { secret: SECRET, uri: `otpauth://totp/TEAS:${encodeURIComponent(c.email)}?secret=${SECRET}&issuer=TEAS` };
 }
 /** Step 2: the right code turns TOTP on and returns the recovery codes - THIS call is the only time they exist in clear. */
@@ -134,7 +146,7 @@ export function confirmEnrol(st: MockState, actor: Actor, userId: string, code: 
   c.secretHash = c.pendingSecretHash;
   delete c.pendingSecretHash;
   c.recovery = recoveryCodes.map((r) => ({ hash: hashOf(r) }));
-  logAudit(st, actor, 'co-vat', 'auth.totp.enable', userId, undefined, { recoveryCodes: recoveryCodes.length });
+  logAudit(st, actor, auditCo(st, userId), 'auth.totp.enable', userId, undefined, { recoveryCodes: recoveryCodes.length });
   return { recoveryCodes };
 }
 
@@ -143,21 +155,30 @@ export function changePassword(st: MockState, actor: Actor, userId: string, v: {
   refuseAgent(actor);
   const c = credOf(st, userId), key = keyOf(c.email);
   guard(st, key);
-  if (c.passwordHash !== hashOf(String(v.current ?? ''))) { miss(st, key); throw err(422, 'auth.current_password_invalid', 'รหัสผ่านปัจจุบันไม่ถูกต้อง'); }
+  if (c.passwordHash !== hashOf(String(v.current ?? ''))) { miss(st, key); throw locked(st, key) ? LOCKED() : err(422, 'auth.current_password_invalid', 'รหัสผ่านปัจจุบันไม่ถูกต้อง'); }
   if (v.next !== v.confirm) throw err(422, 'auth.password_mismatch', 'รหัสผ่านใหม่และการยืนยันไม่ตรงกัน');
   if (typeof v.next !== 'string' || !STRENGTH.test(v.next)) throw err(422, 'auth.password_weak', 'รหัสผ่านใหม่ต้องยาวอย่างน้อย 10 ตัวอักษร และมีตัวพิมพ์เล็ก ตัวพิมพ์ใหญ่ และตัวเลข');
   if (hashOf(v.next) === c.passwordHash) throw err(422, 'auth.password_reuse', 'รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านเดิม');
   c.passwordHash = hashOf(v.next);
   delete auth(st).failures[key];
   for (const s of auth(st).sessions) if (s.userId === userId && s.id !== auth(st).current && !s.revokedAt) s.revokedAt = stamp(); // a new password ends every other sign-in
-  logAudit(st, actor, 'co-vat', 'auth.password.change', userId);
+  logAudit(st, actor, auditCo(st, userId), 'auth.password.change', userId);
 }
-/** Re-login while the session is expired: the password of the signed-in user only (same counter, same answer). */
-export function relogin(st: MockState, userId: string, password: string): void {
-  const c = credOf(st, userId), key = keyOf(c.email);
+/** Re-login of an EXPIRED session (HC3a M2): only for the user of the session the browser holds (no fallback to anyone), and a user with two-step on repeats the second factor. The old session row ends and a new one opens (audited as a login).
+ *  Same counter and same answers as the sign-in. Returns `totp_required` when the password was right but the second factor has not been given yet. */
+export function relogin(st: MockState, password: string, v: { code?: string; recoveryCode?: string } = {}): { status: 'ok' | 'totp_required' } {
+  const old = currentSession(st);
+  if (!old) throw err(401, 'auth.unauthenticated', 'ยังไม่ได้เข้าสู่ระบบ');
+  const c = credOf(st, old.userId), key = keyOf(c.email);
   guard(st, key);
-  if (c.passwordHash !== hashOf(password)) { miss(st, key); throw INVALID(); }
-  delete auth(st).failures[key];
+  if (c.passwordHash !== hashOf(password)) { miss(st, key); throw locked(st, key) ? LOCKED() : INVALID(); }
+  if (c.secretHash) {
+    if (v.code === undefined && v.recoveryCode === undefined) return { status: 'totp_required' };
+    if (!secondFactor(c, v)) { miss(st, key); throw locked(st, key) ? LOCKED() : err(401, 'auth.totp_invalid', 'รหัสยืนยันไม่ถูกต้อง'); }
+  }
+  old.revokedAt = stamp();
+  openSession(st, c);
+  return { status: 'ok' };
 }
 
 export const listSessions = (st: MockState, userId: string) =>
@@ -167,7 +188,7 @@ export function revokeSession(st: MockState, actor: Actor, userId: string, id: s
   const a = auth(st), s = a.sessions.find((x) => x.id === id && x.userId === userId && !x.revokedAt);
   if (!s) throw err(404, 'auth.session_not_found', 'ไม่พบอุปกรณ์ที่เข้าสู่ระบบนี้');
   s.revokedAt = stamp();
-  logAudit(st, actor, 'co-vat', 'auth.session.revoke', id);
+  logAudit(st, actor, auditCo(st, userId), 'auth.session.revoke', id);
   const signedOut = id === a.current;
   if (signedOut) a.current = '';
   return { signedOut };
@@ -189,7 +210,7 @@ const docOf = (st: MockState, companyId: string, docId: string) => {
 export function createPublicLink(st: MockState, actor: Actor, companyId: string, docId: string, token?: string): { token: string } {
   refuseAgent(actor);
   const d = docOf(st, companyId, docId);
-  if (!DOC_TYPES[d.type].printable || !PRINT_TYPES.includes(d.type)) throw err(422, 'public.not_printable', 'เอกสารประเภทนี้ไม่มีแบบพิมพ์ จึงสร้างลิงก์สาธารณะไม่ได้');
+  if (!DOC_TYPES[d.type].printable || !PUBLIC_LINK_TYPES.includes(d.type)) throw err(422, 'public.not_shareable', 'เอกสารประเภทนี้ไม่ใช่เอกสารที่ส่งให้คู่ค้า จึงสร้างลิงก์สาธารณะไม่ได้');
   if (!LIVE.includes(d.status)) throw err(409, 'public.not_issued', 'สร้างลิงก์สาธารณะได้เฉพาะเอกสารที่ออกแล้วและยังไม่ถูกยกเลิก');
   const links = (st.publicLinks ??= []);
   const t = token ?? randomHex(20);
@@ -252,8 +273,8 @@ export function onboard(st: MockState, actor: Actor, v: Body): { companyId: stri
     if (!/^\d{4}-\d{2}-\d{2}$/.test(cutoff) || Number.isNaN(Date.parse(cutoff))) throw new FieldErrors({ cutoff: ['ต้องระบุวันตัดยอดยกมา'] });
     if (cutoff > limit) throw new FieldErrors({ cutoff: [`วันตัดยอดต้องไม่เกิน ${limit} (วันก่อนเริ่มงวดบัญชีแรกที่ยังเปิดอยู่)`] });
     const name = st.companies.find((c) => c.id === id)!.legalNameTh;
-    st.staff.push({ id: 'usr-new-1', companyId: id, userId: 'u-1', name: actor.name, email: credOf(st, 'u-1').email, roleId: 'admin', position: 'ผู้ดูแลระบบ', active: true, version: 1, invitePending: false });
-    st.memberships.push({ userId: 'u-1', companyId: id, companyName: name, role: 'admin' as Role });
+    st.staff.push({ id: 'usr-new-1', companyId: id, userId: actor.id, name: actor.name, email: credOf(st, actor.id).email, roleId: 'admin', position: 'ผู้ดูแลระบบ', active: true, version: 1, invitePending: false });
+    st.memberships.push({ userId: actor.id, companyId: id, companyName: name, role: 'admin' as Role });
     logAudit(st, actor, id, 'company.create', id, undefined, { id, legalNameTh: name, vatRegistered: co.vatRegistered, template: v.template, cutoff });
     return { companyId: id, cutoff };
   } catch (e) {
@@ -280,4 +301,10 @@ export function seedAuth(st: MockState): void {
     if (ti) createPublicLink(st, { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' }, ti.companyId, ti.id, FIXTURE_TOKENS.ti);
     if (qt) createPublicLink(st, { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' }, qt.companyId, qt.id, FIXTURE_TOKENS.qt);
   });
+}
+
+/** The first sample recovery code the two-step demo account has NOT used yet (mock only; none left = undefined). */
+export function demoRecovery(st: MockState): string | undefined {
+  const c = auth(st).creds.find((x) => x.email === DEMO.totpEmail);
+  return DEMO.recovery.find((r) => c?.recovery.some((x) => x.hash === hashOf(r) && !x.usedAt));
 }
