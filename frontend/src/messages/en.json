@@ -277,9 +277,12 @@
       "cash": "Cash and bank",
       "ar": "Receivables",
       "ap": "Payables",
-      "vat": "Output VAT this month"
+      "vat": "VAT this month (output - input)"
     },
-    "approvals": { "title": "Awaiting approval", "empty": "No documents awaiting approval" },
+    "approvals": {
+      "title": "Awaiting my approval", "empty": "No documents awaiting approval", "requester": "Requested by {name}", "age": "Waiting {count} days", "today": "Sent today",
+      "agentWaiting": "Waiting for approval from the agent", "agentReport": "View the check report"
+    },
     "drafts": { "title": "My drafts", "empty": "No drafts in progress" },
     "overdue": { "title": "Overdue", "empty": "Nothing is overdue", "outstanding": "Outstanding {amount}" },
     "deadlines": { "title": "Tax deadlines", "empty": "No tax deadlines coming up" },
@@ -289,6 +292,13 @@
       "empty": "The AI agent has no activity in this period",
       "posted": "{count} posted",
       "waiting": "{count} waiting for review"
+    },
+    "alerts": {
+      "title": "Alerts", "empty": "Nothing needs attention", "open": "View details",
+      "number_gaps": "{count} gaps in document numbers", "number_duplicates": "{count} duplicate document numbers",
+      "vat_threshold": "12-month revenue is at {percent}% of the VAT registration threshold",
+      "pb_incomplete": "{count} bills with the vendor's documents incomplete", "old_drafts": "{count} drafts older than 30 days",
+      "depreciation_due": "Last month's depreciation has not been run ({count})"
     }
   },
   "status": {

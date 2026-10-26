@@ -1,38 +1,29 @@
 import { HttpResponse, http } from 'msw';
-import type { HomeInbox } from '@/domain/types';
-import { fromSatang, toSatang } from '../engine/money';
-import { ANCHOR } from '../fixtures/documents';
-import { toSummary } from './docs-read';
-import { ctx, screenGate } from './common';
+import { HOME_NEEDS } from '@/domain/home';
+import type { HomeSection } from '@/domain/types';
+import { homeAgent, homeAlerts, homeApprovals, homeBank, homeDeadlines, homeDrafts, homeKpis, homeOverdue } from '../engine/home';
+import { USER } from '../fixtures/documents';
+import { ctx, forbidden, problem, screenGate } from './common';
 
+/** HC1: one endpoint per Home section (each has its own right and its own loading / error state); the figures come from the engines, never from a re-sum here. */
 export const homeHandlers = [
-  http.get('*/bff/v1/home', async () => {
+  http.get('*/bff/v1/home/:section', async ({ params }) => {
+    const section = String(params.section) as HomeSection;
+    if (!Object.hasOwn(HOME_NEEDS, section)) return problem(404, 'home.unknown_section', 'ไม่รู้จักส่วนนี้ของหน้าหลัก');
     const gate = await screenGate('item');
     if (gate) return gate;
     const { st, s, company, perms } = ctx();
-    const docs = s.screenState === 'empty' ? [] : st.docs.filter((d) => d.companyId === company.id && !d.header.obBatchId && perms.includes(`doc.${d.type}.read`)); // an opening item is shown through its batch
-    const open = docs.filter((d) => d.status === 'issued' || d.status === 'partly_settled');
-    const agent = docs.filter((d) => d.createdBy.kind === 'agent');
-    const month = ANCHOR.slice(0, 7);
-    const sum = (xs: string[]) => fromSatang(xs.reduce((a, x) => a + toSatang(x), 0));
-    const body: HomeInbox = {
-      approvals: docs.filter((d) => d.status === 'pending').map(toSummary),
-      myDrafts: docs.filter((d) => d.status === 'draft').map(toSummary),
-      overdue: open.filter((d) => d.header.dueDate && d.header.dueDate < ANCHOR).map(toSummary),
-      deadlines: company.vatRegistered
-        ? [{ form: 'ภ.พ.30', due: '2026-10-15' }, { form: 'ภ.ง.ด.53', due: '2026-10-07' }]
-        : [{ form: 'ภ.ง.ด.53', due: '2026-10-07' }],
-      unreconciledLines: docs.length ? 7 : 0,
-      agentDigest: { posted: agent.filter((d) => d.status !== 'draft').length, waiting: agent.filter((d) => d.status === 'draft').length },
-      kpis: {
-        cash: docs.length ? '482350.00' : '0.00',
-        ar: sum(open.filter((d) => d.type === 'TI').map((d) => d.outstanding ?? '0.00')),
-        ap: docs.length ? '126400.00' : '0.00',
-        vatThisMonth: company.vatRegistered
-          ? sum(docs.filter((d) => d.type === 'TI' && d.number && d.header.documentDate.startsWith(month) && d.status !== 'replaced').map((d) => d.totals.vat))
-          : null,
-      },
-    };
-    return HttpResponse.json(body);
+    if (!HOME_NEEDS[section](perms)) return forbidden(`home.${section}`);
+    const empty = s.screenState === 'empty', c = company.id;
+    switch (section) {
+      case 'kpis': return HttpResponse.json(empty ? { cash: '0.00', ar: '0.00', ap: '0.00', vatThisMonth: company.vatRegistered ? '0.00' : null } : homeKpis(st, c));
+      case 'approvals': return HttpResponse.json(empty ? [] : homeApprovals(st, c, perms, USER));
+      case 'drafts': return HttpResponse.json(empty ? [] : homeDrafts(st, c, perms));
+      case 'overdue': return HttpResponse.json(empty ? [] : homeOverdue(st, c, perms));
+      case 'deadlines': return HttpResponse.json(empty ? [] : homeDeadlines(st, c));
+      case 'bank': return HttpResponse.json(empty ? 0 : homeBank(st, c));
+      case 'agent': return HttpResponse.json(empty ? { posted: 0, waiting: 0 } : homeAgent(st, c, perms));
+      case 'alerts': return HttpResponse.json(empty ? [] : homeAlerts(st, c, perms));
+    }
   }),
 ];

@@ -1,6 +1,6 @@
 import type {
   ActivityEntry, Allocation, Attachment, AttachmentCategory, BankImport, BankLine, ChainGraph, ComputeResult, CorrectionPlan, CorrectionResult, Doc, DocHeader, DocLine, DocSummary,
-  DocType, HomeInbox, MarkKey, Money, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, RemainingLine, Revision, SearchHit,
+  DocType, HomeData, HomeSection, MarkKey, Money, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, RemainingLine, Revision, SearchHit,
   DepositRow, DocOpening, SettlementDifferenceRole, SettlementKind, SettlementRecord, DpRow, FaSource, IsoDate, ChecklistItem, PeriodsView, CompanySettings, RoleRow, UserRow,
 } from '@/domain/types';
 import type { CitYearPatch, CitYearView, FilingForm, FilingHistoryItem, FilingModel, TaxPaymentLines } from '@/domain/filings';
@@ -37,7 +37,8 @@ const d = (type: DocType, id: string) => `/docs/${type}/${id}`;
 export const endpoints = {
   getMe: () => api<Me>('GET', '/me'),
   setActiveCompany: (companyId: string) => api<Me>('POST', '/me/active-company', { companyId }),
-  getHome: () => api<HomeInbox>('GET', '/home'),
+  /** HC1: one request per Home section (its own right, its own failure). */
+  getHome: <S extends HomeSection>(section: S) => api<HomeData[S]>('GET', `/home/${section}`),
   searchParties: (p: { kind?: 'customer' | 'vendor' | 'employee'; q?: string; limit?: number } = {}) =>
     api<Page<PartySummary>>('GET', `/parties${qs(p)}`),
   searchItems: (p: { q?: string; limit?: number; usage?: 'sales' | 'purchase' } = {}) => api<Page<ItemSummary>>('GET', `/items${qs(p)}`),

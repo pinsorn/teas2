@@ -224,3 +224,8 @@ Entry format — terse, greppable by symptom:
 - Symptom: `screen-contract` axe reports `color-contrast: .bg-primary` once on CI (PR #16 run 39173571176); green locally and on rerun.
 - Root cause (suspected): axe samples a button while its colour transition is still running (same class as the CI1 `ti-loop` fade).
 - Fix: rerun the failed job; if it recurs, wait for the primary button's transition to finish before `axeClean` (as CI1 did for `ti-loop`).
+
+## e2e: every test fails with "mock worker did not answer /bff/v1/mock/fixtures" / /me network error (manual build)
+- Symptom: after `pnpm build` by hand + `pnpm start -p 3100`, specs fail instantly; Home shows "เชื่อมต่อระบบไม่สำเร็จ".
+- Root cause: `NEXT_PUBLIC_API_MOCKING` is inlined at BUILD time; a manual build without it ships a mock-less app (playwright's webServer sets it for the build).
+- Fix: `NEXT_PUBLIC_API_MOCKING=enabled corepack pnpm build`, then start with the same env. Separately, `next build` here intermittently ends with a SecurityFatalError upgrade nudge (alternates build to build): rerun the build.

@@ -189,7 +189,7 @@ describe('doc detail, locked, forbidden', () => {
         expect((await json(`/search?q=${one.number}`)).items.some((h: { id: string }) => h.id === one.id)).toBe(true);
       }
       expect((await get('/docs/DN')).status).toBe(200);
-      expect((await get('/home')).status).toBe(200);
+      expect((await get('/home/drafts')).status).toBe(200);
     }
   });
 });
