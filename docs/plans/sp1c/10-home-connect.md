@@ -39,12 +39,12 @@ gains `alerts`, `approvals` items gain `requester`, `ageDays`, `reason?`, `agent
 
 **Invariant:** KPI AR = AR aging total at today (RP2 function), KPI AP = AP aging total; both asserted in `home.test.ts`.
 
-- [ ] **Step 1: Failing tests** — KPI identities above; sections absent (and not queried) without permission; inline
+- [x] **Step 1: Failing tests** — KPI identities above; sections absent (and not queried) without permission; inline
   approve-and-issue from Home allocates a number once; one failing section shows its own error with retry while others
   render. e2e: `screenContract` Home (`both`, roles operator / accountant / admin, states empty / loading / error);
   accountant approves `exPending` from Home → it disappears from the inbox and appears issued.
-- [ ] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
-- [ ] **Step 6: Controller commits** — `feat(home): role-aware home with the approval inbox, alerts and engine KPIs`.
+- [x] **Step 2: Run → FAIL.** **Step 3: Implement.** **Step 4: Run → PASS.** **Step 5: Full gate.**
+- [x] **Step 6: Controller commits** — `feat(home): role-aware home with the approval inbox, alerts and engine KPIs`.
 
 ---
 

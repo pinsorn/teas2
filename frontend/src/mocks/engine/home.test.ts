@@ -65,7 +65,9 @@ describe('each KPI tile is gated by the right of its own engine', () => {
   });
   it('the kpis section is shown exactly when some tile is visible (derived from the tile rights)', () => {
     expect(HOME_NEEDS.kpis([])).toBe(false);
-    expect(HOME_NEEDS.kpis(['tax.read'])).toBe(true);
+    expect(HOME_NEEDS.kpis(['tax.read'])).toBe(false); // the VAT tile alone needs the preview right too
+    expect(HOME_NEEDS.kpis(['tax.read', 'tax.filing.preview'], true)).toBe(true);
+    expect(HOME_NEEDS.kpis(['tax.read', 'tax.filing.preview'], false)).toBe(false); // a non-VAT company has no VAT tile
     expect(HOME_NEEDS.kpis(['doc.TI.read'])).toBe(false);
     expect(HOME_NEEDS.kpis(PERMISSIONS_BY_ROLE.admin)).toBe(true);
   });

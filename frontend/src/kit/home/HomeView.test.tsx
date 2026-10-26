@@ -12,7 +12,7 @@ import { formatTHB } from '@/lib/format';
 import { homeKpis } from '@/mocks/engine/home';
 import { PERMISSIONS_BY_ROLE } from '@/mocks/permissions';
 import { setSettings } from '@/mocks/settings';
-import { loadState, resetState } from '@/mocks/store';
+import { loadState, resetState, saveState } from '@/mocks/store';
 import { testServer } from '@/mocks/test-server';
 
 vi.mock('next/navigation', () => import('@/test/next-navigation'));
@@ -53,6 +53,17 @@ describe('role-aware Home: a section the role cannot see is absent AND never que
       expect(seen.filter((s) => !want.includes(s as never))).toEqual([]);
     });
   }
+  it('a role whose only KPI right is tax.read gets no kpis section and no kpis request', async () => {
+    const st = loadState();
+    st.roles.push({ id: 'r-tax', companyId: 'co-vat', name: 'ภาษีอย่างเดียว', permissions: ['tax.read'], version: 1 });
+    st.staff.find((m) => m.companyId === 'co-vat' && m.userId === 'u-1')!.roleId = 'r-tax';
+    saveState(st);
+    const seen = logHome();
+    open('accountant');
+    await waitFor(() => expect([...new Set(seen)].sort()).toEqual(homeSectionsFor(['tax.read']).sort()), { timeout: 4000 });
+    expect(seen).not.toContain('kpis');
+    expect(document.getElementById('h-kpis')).toBeNull();
+  });
   it('the roles really differ (the operator has the cash tile only, the accountant the inbox, the admin no inbox)', () => {
     expect(homeSectionsFor(PERMISSIONS_BY_ROLE.operator)).not.toContain('deadlines');
     expect(homeSectionsFor(PERMISSIONS_BY_ROLE.accountant)).toEqual(expect.arrayContaining(['kpis', 'approvals']));

@@ -32,7 +32,7 @@ export function HomeView() {
   if (isPending) body = <LoadingState rows={4} />;
   else if (isError || !me) body = isForbidden(error) ? <ForbiddenState /> : <ErrorState error={error} onRetry={() => void refetch()} />;
   else {
-    const can = (s: keyof typeof HOME_NEEDS) => HOME_NEEDS[s](me.permissions);
+    const can = (s: keyof typeof HOME_NEEDS) => HOME_NEEDS[s](me.permissions, me.vatRegistered);
     const quick = QUICK.flatMap((x) => (DESCRIPTORS[x] ? [DESCRIPTORS[x]] : [])).filter((x) => me.permissions.includes(x.permissions.create) && isTypeAvailable(x.type, me.vatRegistered));
     body = (
       <>
