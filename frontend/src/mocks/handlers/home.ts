@@ -15,10 +15,14 @@ export const homeHandlers = [
     const { st, s, company, perms } = ctx();
     if (!HOME_NEEDS[section](perms)) return forbidden(`home.${section}`);
     const empty = s.screenState === 'empty', c = company.id;
+    if (section === 'kpis') { // the same per-tile gating whatever the screen state; no tile visible = the section is forbidden
+      const k = homeKpis(st, c, perms);
+      if (Object.values(k).every((v) => v === null)) return forbidden('home.kpis');
+      return HttpResponse.json(empty ? Object.fromEntries(Object.entries(k).map(([key, v]) => [key, v === null ? null : '0.00'])) : k);
+    }
     switch (section) {
-      case 'kpis': return HttpResponse.json(empty ? { cash: '0.00', ar: '0.00', ap: '0.00', vatThisMonth: company.vatRegistered ? '0.00' : null } : homeKpis(st, c, perms));
       case 'approvals': return HttpResponse.json(empty ? [] : homeApprovals(st, c, perms, USER));
-      case 'drafts': return HttpResponse.json(empty ? [] : homeDrafts(st, c, perms));
+      case 'drafts': return HttpResponse.json(empty ? [] : homeDrafts(st, c, perms, USER));
       case 'overdue': return HttpResponse.json(empty ? [] : homeOverdue(st, c, perms));
       case 'deadlines': return HttpResponse.json(empty ? [] : homeDeadlines(st, c));
       case 'bank': return HttpResponse.json(empty ? 0 : homeBank(st, c));

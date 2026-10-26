@@ -58,6 +58,12 @@ describe('role-aware Home: a section the role cannot see is absent AND never que
     expect(homeSectionsFor(PERMISSIONS_BY_ROLE.accountant)).toEqual(expect.arrayContaining(['kpis', 'approvals']));
     expect(homeSectionsFor(PERMISSIONS_BY_ROLE.admin)).not.toContain('approvals');
   });
+  it('the empty screen state gates the KPI tiles like the real payload (permitted tiles 0.00, the rest null)', async () => {
+    setSettings({ role: 'operator', screenState: 'empty' });
+    await expect(endpoints.getHome('kpis')).resolves.toEqual({ cash: '0.00', ar: null, ap: null, vatThisMonth: null });
+    setSettings({ role: 'accountant', screenState: 'empty' });
+    await expect(endpoints.getHome('kpis')).resolves.toMatchObject({ cash: '0.00', ar: '0.00', ap: '0.00' });
+  });
   it('the server refuses a section the role cannot see', async () => {
     setSettings({ role: 'operator' });
     await expect(endpoints.getHome('deadlines')).rejects.toMatchObject({ problem: { status: 403 } });

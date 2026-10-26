@@ -15,7 +15,7 @@ import { reportPermission } from '@/domain/reports';
 import { vatRegisterRight } from './reports';
 import { boxOf, getPp30, nextMonth, prevMonth } from './filings/pp30';
 import { formName } from './filings/pnd1';
-import { today } from './log';
+import { stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
 import { glBalance } from './reconcile';
 import { apAging } from './reports/ap-aging';
@@ -75,8 +75,9 @@ export function homeApprovals(st: MockState, companyId: string, perms: string[],
   return out.sort((a, b) => b.ageDays - a.ageDays || a.id.localeCompare(b.id));
 }
 
-export const homeDrafts = (st: MockState, companyId: string, perms: string[]): DocSummary[] =>
-  readable(st, companyId, perms).filter((d) => d.status === 'draft').map(summary);
+/** The signed-in user's own drafts; the drafts an agent made are the inbox's (reason 'agent'). */
+export const homeDrafts = (st: MockState, companyId: string, perms: string[], actor: Actor): DocSummary[] =>
+  readable(st, companyId, perms).filter((d) => d.status === 'draft' && d.createdBy.kind === 'user' && d.createdBy.id === actor.id).map(summary);
 
 /** TI / IV / PB / EX with something outstanding and a due date before today. */
 export const homeOverdue = (st: MockState, companyId: string, perms: string[]): DocSummary[] =>
@@ -107,10 +108,13 @@ export function homeDeadlines(st: MockState, companyId: string): HomeDeadline[] 
 
 export const homeBank = (st: MockState, companyId: string): number => st.bankLines.filter((l) => l.companyId === companyId && l.status === 'unmatched').length;
 
-/** posted = agent documents issued today (mock today); waiting = agent drafts and documents pending approval. */
+/** The Bangkok (+07:00) calendar date of an ISO instant. */
+const bangkokDate = (iso: string): string => new Date(Date.parse(iso) + 7 * 3_600_000).toISOString().slice(0, 10);
+
+/** posted = agent documents issued today, waiting = agent drafts and documents pending approval. "Today" is ONE clock domain: the Bangkok date of `issuedAt` against the Bangkok date of `stamp()` now (the clock issue() writes with), never the mock today and never a UTC slice. */
 export function homeAgent(st: MockState, companyId: string, perms: string[]): HomeAgentDigest {
-  const a = readable(st, companyId, perms).filter((d) => d.createdBy.kind === 'agent');
-  return { posted: a.filter((d) => LIVE.includes(d.status) && d.issuedAt?.slice(0, 10) === today()).length, waiting: a.filter((d) => d.status === 'draft' || d.status === 'pending').length };
+  const a = readable(st, companyId, perms).filter((d) => d.createdBy.kind === 'agent'), now = bangkokDate(stamp());
+  return { posted: a.filter((d) => LIVE.includes(d.status) && !!d.issuedAt && bangkokDate(d.issuedAt) === now).length, waiting: a.filter((d) => d.status === 'draft' || d.status === 'pending').length };
 }
 
 /** Each alert needs the right of the report / screen it opens; a role without any gets none (and the section is not queried). */

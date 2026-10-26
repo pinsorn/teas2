@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { HOME_NEEDS } from '@/domain/home';
 import { PERMISSIONS_BY_ROLE } from '../permissions';
 import { USER } from '../fixtures/documents';
 import { buildSeedState } from '../store';
@@ -61,6 +62,12 @@ describe('each KPI tile is gated by the right of its own engine', () => {
     expect(arOnly.ar).not.toBeNull();
     expect(homeKpis(st, VAT, ['bank.read'])).toMatchObject({ ar: null, ap: null, vatThisMonth: null });
     expect(homeKpis(st, VAT, [])).toEqual({ cash: null, ar: null, ap: null, vatThisMonth: null });
+  });
+  it('the kpis section is shown exactly when some tile is visible (derived from the tile rights)', () => {
+    expect(HOME_NEEDS.kpis([])).toBe(false);
+    expect(HOME_NEEDS.kpis(['tax.read'])).toBe(true);
+    expect(HOME_NEEDS.kpis(['doc.TI.read'])).toBe(false);
+    expect(HOME_NEEDS.kpis(PERMISSIONS_BY_ROLE.admin)).toBe(true);
   });
   it('the VAT tile needs tax.read AND (the preview right, or the month already filed): the register gate', () => {
     const st = buildSeedState();
@@ -128,7 +135,11 @@ describe('approval inbox = the approval engine', () => {
 describe('the other sections come from their engines', () => {
   it('drafts, overdue (TI / IV / PB / EX only), deadlines, bank lines and the agent digest are read from stored data', () => {
     const st = buildSeedState();
-    expect(homeDrafts(st, VAT, acct).every((d) => d.status === 'draft')).toBe(true);
+    const mineDrafts = homeDrafts(st, VAT, acct, USER);
+    expect(mineDrafts.length).toBeGreaterThan(0);
+    expect(mineDrafts.every((d) => d.status === 'draft' && !d.createdByAgent)).toBe(true);
+    expect(homeDrafts(st, VAT, acct, approver)).toEqual([]); // another user's drafts are not mine
+    expect(homeApprovals(st, VAT, acct, approver).map((r) => r.id)).toEqual(expect.arrayContaining(['ti-002', 'ti-004'])); // agent drafts: the inbox only
     for (const d of homeOverdue(st, VAT, acct)) {
       expect(['TI', 'IV', 'PB', 'EX']).toContain(d.type);
       expect(toSatang(d.outstanding ?? '0.00')).toBeGreaterThan(0);
@@ -154,18 +165,28 @@ describe('the other sections come from their engines', () => {
     const due = after.map((x) => x.due);
     expect(due.filter((d) => d < today())).toEqual(due.slice(0, due.filter((d) => d < today()).length)); // overdue before not yet due
   });
-  it('agent digest: posted = agent documents ISSUED today, waiting = agent drafts + pending (not a restatement of the seed)', () => {
+  it('agent digest: posted = agent documents ISSUED today (Bangkok date, no pinned clock), waiting = agent drafts + pending', () => {
     const st = buildSeedState();
     const base = homeAgent(st, VAT, acct);
     const agent = { kind: 'agent' as const, id: 'ag-1', name: 'ผู้ช่วย AI', ownerName: 'สมศรี' };
     const mk = (n: string) => createDraft(st, VAT, 'TI', { header: { partyId: 'pc-01', documentDate: today() }, lines: [{ id: n, description: 'งานทดสอบ', qty: '1', unit: 'งาน', unitPrice: '100.00', taxCode: 'S7' }] }, agent, n);
     const drafted = mk('ag-d1'), issuedNow = mk('ag-d2'), issuedBefore = mk('ag-d3');
-    withFixedClock(`${today()}T10:00:00+07:00`, () => issue(st, issuedNow.id, issuedNow.version, agent));
+    issue(st, issuedNow.id, issuedNow.version, agent); // the real clock, nothing pinned
     withFixedClock('2026-10-01T10:00:00+07:00', () => issue(st, issuedBefore.id, issuedBefore.version, agent));
     const a = homeAgent(st, VAT, acct);
     expect(a.posted).toBe(base.posted + 1); // only the one issued today
     expect(a.waiting).toBe(base.waiting + 1); // the new draft
     expect(drafted.status).toBe('draft');
+  });
+  it('agent digest: 00:30 Bangkok counts as that Bangkok day (a UTC slice would call it the day before)', () => {
+    const st = buildSeedState();
+    const agent = { kind: 'agent' as const, id: 'ag-1', name: 'ผู้ช่วย AI', ownerName: 'สมศรี' };
+    const d = createDraft(st, VAT, 'TI', { header: { partyId: 'pc-01', documentDate: '2026-10-14' }, lines: [{ id: 'm1', description: 'งานทดสอบ', qty: '1', unit: 'งาน', unitPrice: '100.00', taxCode: 'S7' }] }, agent, 'ag-m1');
+    const early = '2026-10-14T00:30:00+07:00'; // = 2026-10-13T17:30Z
+    const base = withFixedClock(early, () => homeAgent(st, VAT, acct).posted);
+    withFixedClock(early, () => issue(st, d.id, d.version, agent));
+    expect(withFixedClock(early, () => homeAgent(st, VAT, acct).posted)).toBe(base + 1);
+    expect(withFixedClock('2026-10-15T00:30:00+07:00', () => homeAgent(st, VAT, acct).posted)).toBe(base); // the next Bangkok day
   });
 });
 
