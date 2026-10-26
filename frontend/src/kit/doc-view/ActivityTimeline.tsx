@@ -1,5 +1,6 @@
 'use client';
 import { useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { isForbidden, useMe } from '@/app-shell/useMe';
 import type { DocType } from '@/domain/types';
@@ -10,7 +11,7 @@ import { ErrorState } from '../states/ErrorState';
 import { ForbiddenState } from '../states/ForbiddenState';
 import { LoadingState } from '../states/LoadingState';
 
-const KNOWN = ['create', 'issue', 'settle', 'cancel', 'revise', 'convert', 'accept', 'reject', 'deliver', 'send', 'submit', 'approve', 'send_back'];
+const KNOWN = ['create', 'issue', 'settle', 'cancel', 'revise', 'convert', 'accept', 'reject', 'deliver', 'send', 'submit', 'approve', 'send_back', 'agent_review'];
 
 /** Newest first. An agent's action is marked and names its owner (SP0 agent-actor rule). */
 export function ActivityTimeline({ type, id }: { type: DocType; id: string }) {
@@ -27,7 +28,7 @@ export function ActivityTimeline({ type, id }: { type: DocType; id: string }) {
         <li key={a.id} className="grid gap-0.5">
           <div className="text-body">
             <span className="font-medium">{KNOWN.includes(a.action) ? t(`action.${a.action}`) : a.action}</span>
-            {a.detail ? <span className="text-muted-foreground"> · {a.detail}</span> : null}
+            {a.action === 'agent_review' && a.detail ? <> · <Link href={`/agent-reports/${a.detail}`} className="text-primary underline underline-offset-4">{t('report')}</Link></> : a.detail ? <span className="text-muted-foreground"> · {a.detail}</span> : null}
           </div>
           <div className="text-small text-muted-foreground">
             {a.actor.name}{a.actor.kind === 'agent' ? ` (${tc('agent')}${a.actor.ownerName ? `, ${a.actor.ownerName}` : ''})` : ''}

@@ -10,14 +10,15 @@ const noSideScroll = (page: Page) => page.evaluate(() => document.documentElemen
 const call = (page: Page, method: string, path: string, body?: unknown) =>
   page.evaluate(async ([m, p, b]) => { const r = await fetch(`/bff/v1${p}`, { method: m as string, headers: { 'content-type': 'application/json' }, body: b ? JSON.stringify(b) : undefined }); return { status: r.status, json: await r.json() }; }, [method, path, body] as const) as Promise<{ status: number; json: Record<string, unknown> }>;
 
-// TEAS Connect is the administrator's (connect.manage): the accountant is forbidden on every tab
-for (const [tab, path] of [['keys', '/settings/connect'], ['apps', '/settings/connect?tab=apps'], ['policy', '/settings/connect?tab=policy']] as const) {
+// HC2a: any member has their own keys; the connected apps and the agent policy are the administrator's (connect.manage)
+screenContract({ name: 'connect keys', path: '/settings/connect', heading: 'TEAS Connect', company: 'both', roles: ['admin', 'accountant'], states: ['loading', 'error', 'forbidden'] });
+for (const [tab, path] of [['apps', '/settings/connect?tab=apps'], ['policy', '/settings/connect?tab=policy']] as const) {
   screenContract({ name: `connect ${tab}`, path, heading: 'TEAS Connect', company: 'both', roles: ['admin'], states: ['loading', 'error', 'forbidden'], forbiddenRole: 'accountant' });
 }
 // the stored review report of the agent's draft: read with the document type's right (the administrator holds none); the other company has no such report
 screenContract({ name: 'agent report', path: '/agent-reports/ar-1', heading: 'รายงานการตรวจของ agent', company: 'vat', otherCompany: 'not-found', states: ['loading', 'error', 'forbidden'], forbiddenRole: 'admin' });
 // the consent page lives outside the app shell
-screenContract({ name: 'oauth consent', path: '/oauth/consent?client=cl-assistant', heading: /ขอเชื่อมต่อกับบริษัทของคุณ/, company: 'both', roles: ['admin'], states: ['loading', 'error', 'forbidden'], forbiddenRole: 'accountant' });
+screenContract({ name: 'oauth consent', path: '/oauth/consent?client=cl-assistant', heading: /ขอเชื่อมต่อกับบริษัทของคุณ/, company: 'both', roles: ['admin', 'accountant'], states: ['loading', 'error', 'forbidden'] }); // any active member may connect an agent for themselves
 
 test.beforeEach(async ({ page }) => { await page.goto('/'); await page.evaluate(() => localStorage.clear()); await page.reload(); });
 
@@ -84,6 +85,28 @@ test('API keys: a scope beyond the owner is refused by the server; an agent cann
   expect([forbidden.status, forbidden.json.code]).toEqual([422, 'connect.scope_forbidden']);
 });
 
+test('a member (the accountant) has their own keys tab only; approve / cancel / correct scopes are never allowed, even for a right they hold', async ({ page }) => {
+  await page.goto(`/settings/connect?${ACC}`);
+  await expect(page.getByRole('heading', { level: 1, name: 'TEAS Connect' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'คีย์ API' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'แอปที่เชื่อมต่อ' })).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: 'นโยบาย agent' })).toHaveCount(0);
+  await expect(page.getByText('คีย์ของคุณเอง')).toBeVisible();
+  await page.getByRole('button', { name: 'สร้างคีย์' }).click();
+  const form = page.getByRole('dialog', { name: 'สร้างคีย์ API' });
+  await form.getByLabel('ชื่อคีย์').fill('ผู้ช่วยออกใบกำกับ');
+  await expect(form.getByLabel(/อนุมัติ/)).toHaveCount(0); // approve / cancel / correct are not even offered
+  await form.getByLabel('สร้างใบกำกับภาษี', { exact: true }).check();
+  await form.getByRole('button', { name: 'สร้างคีย์' }).click();
+  await expect(page.getByRole('dialog', { name: /คีย์ใหม่: ผู้ช่วยออกใบกำกับ/ }).getByTestId('secret-once')).toContainText('teas_mcp_');
+  for (const sc of ['doc.TI.approve', 'doc.TI.cancel', 'doc.PB.correct']) {
+    const r = await call(page, 'POST', '/connect/keys', { name: 'x', kind: 'rest', scopes: [sc] });
+    expect([sc, r.status, r.json.code]).toEqual([sc, 422, 'connect.scope_forbidden']);
+  }
+  expect((await call(page, 'GET', '/connect/apps')).status).toBe(403);
+  await shot(page, 'hc2a-member-keys-desktop');
+});
+
 test('connected apps: the list and a confirmed revoke', async ({ page }) => {
   await page.goto(`/settings/connect?tab=apps&${ADMIN}`);
   const table = page.getByRole('table', { name: 'แอปที่เชื่อมต่อ' });
@@ -119,6 +142,8 @@ test('the agent report: the stored checks by severity, the route, the totals and
   await expect(link).toBeVisible();
   await link.click();
   await expect(page.getByRole('heading', { level: 1, name: 'รายงานการตรวจของ agent' })).toBeVisible();
+  await expect(page.getByTestId('report-for-version')).toContainText('รายงานนี้สำหรับฉบับที่');
+  await expect(page.getByTestId('report-moved')).toHaveCount(0); // the document has not moved on
   await expect(page.getByText('รอคนอนุมัติ')).toBeVisible();
   await expect(page.getByRole('heading', { name: /ข้อผิดพลาด/ })).toBeVisible();
   await expect(page.getByRole('heading', { name: /คำเตือน/ })).toBeVisible();
@@ -131,6 +156,9 @@ test('the agent report: the stored checks by severity, the route, the totals and
   const id = await fixtureId(page, 'tiAgentDraft');
   await page.goto(`/sales/tax-invoices/${id}?${ACC}`);
   await expect(page.getByTestId('agent-banner').getByRole('link', { name: 'ดูรายงานการตรวจ' })).toHaveAttribute('href', /^\/agent-reports\/ar-\d+$/);
+  await page.getByRole('tab', { name: 'กิจกรรม' }).click(); // and so does the timeline entry
+  await expect(page.getByRole('link', { name: 'ดูรายงานการตรวจ' }).last()).toHaveAttribute('href', /^\/agent-reports\/ar-\d+$/);
+  await shot(page, 'hc2a-timeline-desktop');
 });
 
 test('consent: no app shell; the company and the owner\'s limits are shown; approve connects, deny does not', async ({ page }) => {

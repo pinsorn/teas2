@@ -1,10 +1,10 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AGENT, USER } from '../fixtures/documents';
-import { PERMISSIONS_BY_ROLE, permissionsOf } from '../permissions';
+import { permissionsOf } from '../permissions';
 import { setSettings } from '../settings';
 import { buildSeedState, loadState, resetState } from '../store';
 import { testServer } from '../test-server';
-import { createKey, rotateKey, revokeKey, authenticateKey, rightsOf, setPolicy, policyView, policyOf, listKeys, listApps, revokeApp, consentInfo, decideConsent } from './connect';
+import { createKey, rotateKey, revokeKey, authenticateKey, rightsOf, appRights, setPolicy, policyView, policyOf, listKeys, listApps, revokeApp, consentInfo, decideConsent } from './connect';
 
 beforeAll(() => testServer.listen({ onUnhandledFrame: 'error' }));
 afterEach(() => testServer.resetHandlers());
@@ -12,7 +12,8 @@ afterAll(() => testServer.close());
 beforeEach(() => { localStorage.clear(); resetState(); setSettings({ companyKey: 'vat', role: 'admin', screenState: 'normal' }); });
 
 const V = 'co-vat', N = 'co-nonvat';
-const OWNER = { id: 'u-1', name: USER.name, perms: PERMISSIONS_BY_ROLE.accountant };
+const OWNER = { id: 'u-1', name: USER.name }; // the owner's rights are read from ONE place: the signed-in user's toolbar role (the tests set it)
+const as = (role: 'operator' | 'accountant' | 'admin') => setSettings({ companyKey: 'vat', role, screenState: 'normal' });
 const code = (f: () => unknown) => { try { f(); } catch (e) { return (e as { message: string }).message.split(':')[0]; } return undefined; };
 const seed = () => buildSeedState('accountant');
 const call = (method: string, path: string, body?: unknown, agent = false) =>
@@ -72,9 +73,14 @@ describe('ruling 2: scopes are bounded by the owner, on this company', () => {
   it('create refuses a scope the owner does not hold (connect.scope_exceeds) and a §8.5 right (connect.scope_forbidden)', () => {
     const st = seed();
     const n = st.apiKeys!.length, a = st.audit.length;
-    const op = { ...OWNER, perms: PERMISSIONS_BY_ROLE.operator };
-    expect(code(() => createKey(st, USER, V, op, { name: 'x', kind: 'rest', scopes: ['report.read'] }))).toBe('connect.scope_exceeds'); // the operator holds no report.read
-    expect(code(() => createKey(st, USER, V, { ...OWNER, perms: [...OWNER.perms, 'settings.manage'] }, { name: 'x', kind: 'rest', scopes: ['settings.manage'] }))).toBe('connect.scope_forbidden');
+    as('operator');
+    expect(code(() => createKey(st, USER, V, OWNER, { name: 'x', kind: 'rest', scopes: ['report.read'] }))).toBe('connect.scope_exceeds'); // the operator holds no report.read
+    as('admin');
+    expect(code(() => createKey(st, USER, V, OWNER, { name: 'x', kind: 'rest', scopes: ['settings.manage'] }))).toBe('connect.scope_forbidden');
+    as('accountant'); // the accountant HOLDS these, and still no key may carry them (M1): approve, cancel, correct of any type
+    for (const sc of ['doc.TI.approve', 'doc.PV.approve', 'doc.TI.cancel', 'doc.PB.correct', 'doc.EX.approve', 'ledger.period.close', 'tax.filing.finalize']) expect([sc, code(() => createKey(st, USER, V, OWNER, { name: 'x', kind: 'rest', scopes: [sc] }))]).toEqual([sc, 'connect.scope_forbidden']);
+    expect(createKey(st, USER, V, OWNER, { name: 'ok', kind: 'rest', scopes: ['doc.TI.create', 'doc.TI.issue', 'doc.TI.read'] }).key.scopeCount).toBe(3);
+    st.apiKeys!.pop(); st.audit.pop();
     expect({ keys: st.apiKeys!.length, audit: st.audit.length }).toEqual({ keys: n, audit: a }); // a refusal writes nothing
   });
   it('at USE the key holds scopes ∩ the owner\'s CURRENT rights: a demoted or deactivated owner\'s key loses them', () => {
@@ -82,7 +88,7 @@ describe('ruling 2: scopes are bounded by the owner, on this company', () => {
     const k = createKey(st, USER, V, OWNER, { name: 'x', kind: 'rest', scopes: ['report.read', 'party.read'] });
     expect(authenticateKey(st, k.secret, V).rights.sort()).toEqual(['party.read', 'report.read']);
     const me = st.staff.find((m) => m.companyId === V && m.userId === 'u-1')!;
-    me.roleId = 'operator'; // demoted: the operator holds party.read but not report.read
+    as('operator'); // demoted: the operator holds party.read but not report.read
     expect(permissionsOf(st, V, 'operator')).not.toContain('report.read');
     expect(authenticateKey(st, k.secret, V).rights).toEqual(['party.read']);
     me.active = false;
@@ -98,11 +104,34 @@ describe('ruling 2: scopes are bounded by the owner, on this company', () => {
     setSettings({ companyKey: 'nonvat', role: 'admin', screenState: 'normal' });
     expect((await call('POST', '/connect/keys/key-1/revoke', { version: 1 })).status).toBe(404);
   });
-  it('the whole surface needs connect.manage: the accountant and the operator are forbidden', async () => {
+  it('apps and the policy need connect.manage; a member reaches their own keys and the consent page', async () => {
     for (const role of ['accountant', 'operator'] as const) {
-      setSettings({ companyKey: 'vat', role, screenState: 'normal' });
-      for (const [m, p] of [['GET', '/connect/keys'], ['GET', '/connect/apps'], ['GET', '/connect/policy'], ['GET', '/oauth/consent-info?client=cl-assistant']]) expect([role, p, (await call(m, p)).status]).toEqual([role, p, 403]);
+      as(role);
+      for (const p of ['/connect/apps', '/connect/policy']) expect([role, p, (await call('GET', p)).status]).toEqual([role, p, 403]);
+      for (const p of ['/connect/keys', '/oauth/consent-info?client=cl-assistant']) expect([role, p, (await call('GET', p)).status]).toEqual([role, p, 200]);
+      expect([role, (await call('PUT', '/connect/policy/PV', { mode: 'off', cap: '1.00', version: 1 })).status]).toEqual([role, 403]);
     }
+  });
+  it('M3: a member makes, sees, rotates and revokes THEIR keys only; the manager sees everyone\'s', async () => {
+    const st = seed();
+    as('accountant');
+    const mine = createKey(st, USER, V, OWNER, { name: 'mine', kind: 'rest', scopes: ['doc.TI.read'] }); // the ceiling is the member\'s own rights
+    st.apiKeys!.push({ ...st.apiKeys!.find((k) => k.id === mine.key.id)!, id: 'key-other', name: 'theirs', ownerId: 'u-9', ownerName: 'คนอื่น' });
+    expect(listKeys(st, V, 'u-1').map((k) => k.name).sort()).toEqual(['mine', 'ผู้ช่วยบัญชี (MCP)', 'ระบบรายงานภายนอก']);
+    expect(listKeys(st, V).map((k) => k.name)).toContain('theirs');
+    expect(code(() => revokeKey(st, USER, V, 'key-other', 1, 'u-1'))).toBe('record.not_found');
+    expect(code(() => rotateKey(st, USER, V, 'key-other', 1, undefined, 'u-1'))).toBe('record.not_found');
+    expect(revokeKey(st, USER, V, 'key-other', 1).revokedAt).toBeTruthy(); // the manager may
+  });
+  it('m1: rotate is refused for an expired key and for a key whose owner is no longer active', () => {
+    const st = seed();
+    const k = createKey(st, USER, V, OWNER, { name: 'x', kind: 'rest', scopes: ['report.read'], expiresAt: '2026-12-31' });
+    st.apiKeys!.find((x) => x.id === k.key.id)!.expiresAt = '2026-10-01';
+    expect(code(() => rotateKey(st, USER, V, k.key.id, k.key.version))).toBe('connect.key_expired');
+    const j = createKey(st, USER, V, OWNER, { name: 'y', kind: 'rest', scopes: ['report.read'] });
+    st.staff.find((m) => m.companyId === V && m.userId === 'u-1')!.active = false;
+    expect(code(() => rotateKey(st, USER, V, j.key.id, j.key.version))).toBe('connect.owner_inactive');
+    expect(code(() => createKey(st, USER, V, OWNER, { name: 'z', kind: 'rest', scopes: ['report.read'] }))).toBe('connect.not_member');
   });
 });
 
@@ -115,12 +144,10 @@ describe('ruling 3: the agent policy', () => {
     expect(v.hardLimits.length).toBeGreaterThanOrEqual(8);
     expect(policyView(st, N).items.map((r) => r.docType)).not.toContain('TI'); // only the types the company can have
   });
-  it('a T-class type can never be Auto; cancel / reissue are never Auto for any type; nothing is written on a refusal', () => {
+  it('a T-class type can never be Auto; nothing is written on a refusal', () => {
     const st = seed();
     const n = st.audit.length;
     for (const t of ['TI', 'RC', 'CN', 'DN']) expect(code(() => setPolicy(st, USER, V, t, { mode: 'auto', cap: '1.00', version: 1 }))).toBe('agent.policy_t_class');
-    expect(code(() => setPolicy(st, USER, V, 'PV', { mode: 'human', cap: '1.00', version: 1, autoCancel: true }))).toBe('agent.policy_cancel_auto');
-    expect(code(() => setPolicy(st, USER, V, 'PV', { mode: 'human', cap: '1.00', version: 1, autoReissue: true }))).toBe('agent.policy_cancel_auto');
     expect(st.agentPolicies ?? []).toEqual([]);
     expect(st.audit).toHaveLength(n);
   });
@@ -153,24 +180,38 @@ describe('ruling 5: connected apps and the consent screen', () => {
   });
   it('consent shows the company and the owner\'s rights; approve connects with requested ∩ owner (never more); deny connects nothing', () => {
     const st = seed();
+    as('accountant');
     const info = consentInfo(st, V, OWNER, 'cl-assistant');
     expect(info).toMatchObject({ client: { name: 'ผู้ช่วยบัญชี (AI)' }, company: { id: V }, owner: { name: USER.name } });
     expect(info.requested).toContain('settings.manage');
     expect(info.granted).not.toContain('settings.manage'); // a §8.5 right is never granted
     expect(info.granted).toContain('doc.TI.create'); // the accountant holds it
-    expect(consentInfo(st, V, { ...OWNER, perms: PERMISSIONS_BY_ROLE.operator }, 'cl-assistant').granted).not.toContain('report.read');
-    expect(decideConsent(st, USER, V, OWNER, 'cl-assistant', 'deny')).toEqual({ status: 'denied' });
+    expect(info.granted).not.toContain('doc.TI.approve'); // not even a right the accountant holds
+    as('operator');
+    expect(consentInfo(st, V, OWNER, 'cl-assistant').granted).not.toContain('report.read');
+    as('accountant');
+    expect(code(() => decideConsent(st, USER, V, OWNER, 'cl-assistant', 'deny', 'co-nonvat'))).toBe('oauth.company_mismatch'); // m2: the page showed another company
+    expect(code(() => decideConsent(st, USER, V, OWNER, 'cl-assistant', 'approve'))).toBe('oauth.company_mismatch');
+    expect(decideConsent(st, USER, V, OWNER, 'cl-assistant', 'deny', V)).toEqual({ status: 'denied' });
     expect(listApps(st, V)).toHaveLength(1);
-    const ok = decideConsent(st, USER, V, OWNER, 'cl-assistant', 'approve');
+    const ok = decideConsent(st, USER, V, OWNER, 'cl-assistant', 'approve', V);
     expect(listApps(st, V).find((a) => a.id === ok.appId)?.scopes).toEqual(info.granted);
     expect(code(() => consentInfo(st, V, OWNER, 'cl-nope'))).toBe('oauth.client_unknown');
-    expect(code(() => decideConsent(st, AGENT, V, OWNER, 'cl-assistant', 'approve'))).toBe('agent.forbidden_setting');
+    expect(code(() => decideConsent(st, AGENT, V, OWNER, 'cl-assistant', 'approve', V))).toBe('agent.forbidden_setting');
+    // m3: the app holds its scopes ∩ the owner's CURRENT rights, like a key
+    expect(appRights(st, V, ok.appId!).sort()).toEqual([...info.granted].sort());
+    as('operator');
+    expect(appRights(st, V, ok.appId!).every((c) => permissionsOf(st, V, 'operator').includes(c))).toBe(true);
+    expect(appRights(st, V, ok.appId!)).not.toContain('report.read');
+    st.staff.find((m) => m.companyId === V && m.userId === 'u-1')!.active = false;
+    expect(appRights(st, V, ok.appId!)).toEqual([]);
   });
   it('over the wire: the consent info and the approval work for the administrator', async () => {
     const info = await (await call('GET', '/oauth/consent-info?client=cl-assistant')).json() as { granted: string[]; company: { name: string } };
     expect(info.company.name).toBeTruthy();
     expect(info.granted).not.toContain('doc.TI.create'); // the administrator holds no TI right
-    expect((await call('POST', '/oauth/consent', { client: 'cl-assistant', decision: 'approve' })).status).toBe(200);
+    expect((await call('POST', '/oauth/consent', { client: 'cl-assistant', decision: 'approve', companyId: 'co-vat' })).status).toBe(200);
+    expect((await call('POST', '/oauth/consent', { client: 'cl-assistant', decision: 'approve' })).status).toBe(409); // no company shown: refused
     expect((await (await call('GET', '/connect/apps')).json() as { items: unknown[] }).items).toHaveLength(2);
   });
 });

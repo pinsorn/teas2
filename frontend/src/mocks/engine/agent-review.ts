@@ -4,14 +4,15 @@ import type { AgentReport, ReportCheck } from '@/records/connect';
 import { policyOf } from '../records/connect';
 import { AGENT } from '../fixtures/documents';
 import type { MockState } from '../store';
-import { createDraft } from './commands';
-import { MockError, logAudit, stamp, today, withFixedClock } from './log';
-import { isClosed } from './periods';
+import { createDraft, dateGuards } from './commands';
+import { MockError, logActivity, logAudit, stamp, today, withFixedClock } from './log';
+import { isFiledPeriod } from './purchase-vat';
 import { ledgerFor, traceResolutions } from './ledger';
 import { fromSatang, toSatang } from './money';
 import type { Resolved } from './posting';
 
-/** SP0 §8.2-§8.4 (HC2). `reviewDraft` is the agent's `review(document)` call: the report (totals and tax from the server, the journal with the rules, the §8.3 checks, the route under the policy IN FORCE, the token expiry)
+/** SP0 §8.2-§8.4 (HC2 / HC2a). Where an Auto-routed draft is posted: by the agent itself, through the ordinary `issue` command. The engine lets an agent issue only a draft whose CURRENT report (same document version) routed `auto` and holds no error (`agent.review_required` otherwise); a human-routed draft waits in the Home inbox for a person, and an agent can never approve, cancel, reissue or correct (`agent.forbidden_action`). An edit to the draft drops its report: a new report needs a new review.
+ * `reviewDraft` is the agent's `review(document)` call: the report (totals and tax from the server, the journal with the rules, the §8.3 checks, the route under the policy IN FORCE, the token expiry)
  *  is computed ONCE here and STORED. Reading it never recomputes: a later policy or party-history change cannot rewrite what the human was shown. */
 type Stored = MockState['docs'][number];
 export type StoredReport = AgentReport & { companyId: string };
@@ -20,6 +21,8 @@ const DAY = 86_400_000;
 const dayNo = (iso: string) => Date.parse(`${iso.slice(0, 10)}T00:00:00Z`) / DAY;
 const TOKEN_MINUTES = 15; // §8.2: the review token lives 15 minutes
 const T_BUYER = ['TI', 'IV', 'CN', 'DN'];
+/** Documents of one kind compare with each other (an IV and a TI of the same party and amount are the same sale). */
+const kindOf = (t: string) => (t === 'IV' ? 'TI' : t);
 
 /** §8.4: auto only for Auto-if-clean, a clean report (no error, no warning) and a total within the cap; a cancel / reissue is never auto. */
 export function routeOf(policy: { mode: string; cap: string }, o: { action?: 'create' | 'cancel' | 'reissue'; clean: boolean; total: string }): 'auto' | 'human' {
@@ -33,16 +36,20 @@ function checksOf(st: MockState, d: Stored, trace: { role: string; r: Resolved }
   const co = st.companies.find((c) => c.id === d.companyId);
   const policy = policyOf(st, d.companyId, d.type);
   // errors: block posting
-  if (isClosed(st, d.companyId, date)) add('period_closed', 'error', `งวด ${date.slice(0, 7)} ปิดแล้ว ลงเอกสารวันที่ ${date} ไม่ได้`);
+  try { dateGuards(st, d.companyId, date); } catch (e) { if (e instanceof MockError) add(e.code === 'doc.future_date' ? 'date_future' : 'period_closed', 'error', e.title); else throw e; } // the guards issue() uses: future date, closed year, closed period
+  if (co?.vatRegistered && d.totals.vat !== '0.00' && isFiledPeriod(st, d.companyId, date.slice(0, 7), 'PP30')) add('filing_locked', 'error', `ภ.พ.30 ของ ${date.slice(0, 7)} ยื่นแล้ว ลงเอกสารที่มีภาษีวันที่ ${date} ไม่ได้`);
   if (T_BUYER.includes(d.type) && co?.vatRegistered && d.party?.vatRegistered && (!d.party.taxId || !d.party.branchCode)) add('buyer_tin_missing', 'error', 'ผู้ซื้อที่จดทะเบียน VAT ต้องมีเลขประจำตัวผู้เสียภาษีและสาขา');
   if (postingFailed) add('posting_failed', 'error', 'หาบัญชีที่จะลงรายการไม่ได้ ตรวจสอบกฎการลงบัญชี');
   if (policy.mode === 'off') add('policy_off', 'error', 'นโยบายของบริษัทปิดการใช้ agent สำหรับเอกสารประเภทนี้');
   // warnings: route to a human
   const peers = st.docs.filter((x) => x.companyId === d.companyId && x.id !== d.id && !!d.header.partyId && x.header.partyId === d.header.partyId && !x.header.obBatchId);
   const live = peers.filter((x) => LIVE.includes(x.status));
-  const dup = peers.find((x) => x.type === d.type && !['cancelled', 'replaced'].includes(x.status) && toSatang(x.totals.total) === total && Math.abs(dayNo(x.header.documentDate) - dayNo(date)) <= 7);
+  const dup = peers.find((x) => kindOf(x.type) === kindOf(d.type) && !['cancelled', 'replaced'].includes(x.status) && toSatang(x.totals.total) === total && Math.abs(dayNo(x.header.documentDate) - dayNo(date)) <= 7);
   if (dup) add('duplicate', 'warning', `อาจซ้ำกับ ${dup.number ?? dup.id} (คู่ค้าและยอดเดียวกัน ห่างกันไม่เกิน 7 วัน)`);
-  const recent = live.filter((x) => { const n = dayNo(date) - dayNo(x.header.documentDate); return n >= 0 && n <= 90; });
+  const vno = d.header.vendorDocNumber?.trim();
+  const vdup = vno ? st.docs.find((x) => x.companyId === d.companyId && x.id !== d.id && x.header.partyId === d.header.partyId && x.header.vendorDocNumber?.trim() === vno && !['cancelled', 'replaced'].includes(x.status)) : undefined;
+  if (vdup) add('duplicate_vendor_doc', 'warning', `เลขที่เอกสารผู้ขาย ${vno} ซ้ำกับ ${vdup.number ?? vdup.id}`);
+  const recent = live.filter((x) => { const n = dayNo(date) - dayNo(x.header.documentDate); return kindOf(x.type) === kindOf(d.type) && n >= 0 && n < 90; }); // the 90 days up to the document's date, of the same kind of document
   const max = Math.max(0, ...recent.map((x) => toSatang(x.totals.total)));
   if (recent.length && total > 3 * max) add('over_3x', 'warning', `ยอดสูงกว่า 3 เท่าของยอดสูงสุดของคู่ค้าใน 90 วัน (${fromSatang(max)})`);
   if (d.header.partyId && !live.length) add('first_document', 'warning', 'เอกสารฉบับแรกของคู่ค้านี้');
@@ -73,16 +80,17 @@ export function reviewDraft(st: MockState, actor: Actor, docId: string): StoredR
     route: routeOf(policy, { clean, total: d.totals.total }), policy: { mode: policy.mode, cap: policy.cap } };
   reports.push(r);
   d.agentReportId = r.id;
+  logActivity(st, d.id, actor, 'agent_review', r.id); // the document's timeline links the report (detail = report id)
   logAudit(st, actor, d.companyId, 'agent.review', d.id, undefined, { reportId: r.id, route: r.route });
   return r;
 }
 
-/** The stored report, as it was made. Another company's report is a 404. */
+/** The stored report, as it was made, plus where its document stands NOW (`docNowVersion`): the page warns when the document has moved on. Another company's report is a 404. */
 export function getReport(st: MockState, companyId: string, id: string): AgentReport {
   const r = (st.agentReports ?? []).find((x) => x.id === id && x.companyId === companyId);
   if (!r) throw new MockError(404, 'record.not_found', 'ไม่พบรายงานการตรวจ');
   const { companyId: _c, ...wire } = structuredClone(r); void _c;
-  return wire;
+  return { ...wire, docNowVersion: st.docs.find((x) => x.id === r.docId)?.version ?? r.docVersion };
 }
 
 /** Seed (through the commands): the agent's own drafts ti-002 and ti-004, and one agent payment voucher, each reviewed the way the agent does. */

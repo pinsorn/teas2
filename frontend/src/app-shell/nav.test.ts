@@ -20,7 +20,8 @@ describe('navigation', () => {
   });
   it('drops a group with no visible item', () => {
     const g = visibleNav(NAV, { permissions: [], vatRegistered: true }).map((x) => x.key);
-    expect(g).toEqual(['home']);
+    expect(g).toEqual(['home', 'settings']); // HC2a: the settings group keeps TEAS Connect (every member's own keys)
+    expect(visibleNav(NAV, { permissions: [], vatRegistered: true }).find((x) => x.key === 'settings')?.items.map((i) => i.key)).toEqual(['settingsConnect']);
   });
   it('keeps the tax invoice and hides the invoice for a VAT company', () => {
     const v = labels(visibleNav(NAV, { permissions: PERMISSIONS_BY_ROLE.accountant, vatRegistered: true }));

@@ -24,9 +24,10 @@ export type Severity = 'error' | 'warning' | 'info';
 export interface ReportCheck { code: string; severity: Severity; message: string }
 /** §8.2: computed ONCE when the agent submits the draft and stored; never recomputed on read. */
 export interface AgentReport { id: string; docId: string; docType: DocType; docNumber?: string; partyName: string; /** report number of this document (a revise by the agent makes the next) */ version: number; docVersion: number;
-  createdAt: string; expiresAt: string; agentName: string; ownerName?: string; totals: DocTotals; journal: JournalPreview; checks: ReportCheck[]; route: 'auto' | 'human';
+  createdAt: string; expiresAt: string; /** where the document stands now (read live, never part of the stored report) */ docNowVersion?: number; agentName: string; ownerName?: string; totals: DocTotals; journal: JournalPreview; checks: ReportCheck[]; route: 'auto' | 'human';
   policy: { mode: PolicyMode; cap: Money } }
 
+const shown = new Map<string, string>(); // client -> the company its consent page showed
 export const connectApi = {
   keys: () => api<ApiKeysView>('GET', '/connect/keys'),
   createKey: (body: ApiKeyBody) => api<ApiKeyCreated>('POST', '/connect/keys', body),
@@ -36,7 +37,8 @@ export const connectApi = {
   revokeApp: (id: string, version: number) => api<OAuthAppRow>('POST', `/connect/apps/${id}/revoke`, { version }),
   policy: () => api<PolicyView>('GET', '/connect/policy'),
   savePolicy: (docType: string, body: { mode: PolicyMode; cap: Money; version: number }) => api<PolicyRow>('PUT', `/connect/policy/${docType}`, body),
-  consentInfo: (client: string) => api<ConsentInfo>('GET', `/oauth/consent-info?client=${encodeURIComponent(client)}`),
-  consent: (client: string, decision: 'approve' | 'deny') => api<ConsentResult>('POST', '/oauth/consent', { client, decision }),
+  consentInfo: async (client: string) => { const i = await api<ConsentInfo>('GET', `/oauth/consent-info?client=${encodeURIComponent(client)}`); shown.set(client, i.company.id); return i; },
+  /** the decision carries the company the page showed: the server refuses it if the active company has moved */
+  consent: (client: string, decision: 'approve' | 'deny') => api<ConsentResult>('POST', '/oauth/consent', { client, decision, companyId: shown.get(client) }),
   report: (id: string) => api<AgentReport>('GET', `/agent-reports/${encodeURIComponent(id)}`),
 };

@@ -74,7 +74,7 @@ export const NAV: NavGroup[] = [
     item('items', '/master/items', 'item.read'),
   ]),
   group('settings', ['company', 'users', 'roles', 'posting', 'dimensions', 'tax', 'numbering', 'approvals', 'templates', 'connect']
-    .map((s) => item(`settings${s[0].toUpperCase()}${s.slice(1)}`, `/settings/${s}`, s === 'users' || s === 'roles' ? USERS : s === 'posting' ? POSTING : s === 'tax' ? TAX_SETTINGS : s === 'connect' ? 'connect.manage' : SETTINGS))), // ST1: people and roles are the user administrator's; ST2: the posting rules are the accountant's; ST3: the tax settings are the accountant's too (and the admin's); HC2: TEAS Connect is the admin's (connect.manage)
+    .map((s) => item(`settings${s[0].toUpperCase()}${s.slice(1)}`, `/settings/${s}`, s === 'users' || s === 'roles' ? USERS : s === 'posting' ? POSTING : s === 'tax' ? TAX_SETTINGS : s === 'connect' ? undefined : SETTINGS))), // ST1: people and roles are the user administrator's; ST2: the posting rules are the accountant's; ST3: the tax settings are the accountant's too (and the admin's); HC2a: TEAS Connect is every member's (their own keys); its all-keys / apps / policy parts need connect.manage
 ];
 
 export function visibleNav(nav: NavGroup[], ctx: { permissions: string[]; vatRegistered: boolean }): NavGroup[] {

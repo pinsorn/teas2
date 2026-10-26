@@ -86,3 +86,5 @@
 | 2026-10-26 | SP1c HC1 review (KPI identities, approval inbox, role-aware sections, axe settle) | opus-reviewer (fresh) | approval actions + money figures |
 | 2026-10-26 | SP1c HC1a fix round (tile gates, agent digest, agent rows, cash COA, deadlines, axe bound) | sonnet-implementer (warm, HC1 worker) | Opus REJECT HC1 |
 | 2026-10-26 | SP1c HC2 implement (API keys, OAuth, agent policy, frozen agent review reports) | sonnet-implementer (fresh) | new area; Opus review after (auth / secrets / agent limits) |
+| 2026-10-26 | SP1c HC2 review (secrets, scopes, agent policy, frozen review reports) | opus-reviewer (fresh) | auth / secrets / agent limits |
+| 2026-10-26 | SP1c HC2a fix round (agent limits, report bound to version, member-owned keys / consent, activity link, check gaps) | sonnet-implementer (warm, HC2 worker) | Opus REJECT HC2 |

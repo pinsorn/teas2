@@ -24,9 +24,9 @@ describe('permission catalogue', () => {
     expect(PERMISSIONS['doc.QT.read'].th).toBe('ดูใบเสนอราคา');
     expect(PERMISSIONS['doc.QT.correct'].th).toBe('แก้ไขใบเสนอราคาที่ออกแล้ว');
   });
-  it('connect.manage is the administrator alone and gates the TEAS Connect nav item (HC2)', () => {
+  it('connect.manage is the administrator alone; the TEAS Connect nav item is every member (HC2a: their own keys)', () => {
     expect(Object.entries(PERMISSIONS_BY_ROLE).filter(([, p]) => p.includes('connect.manage')).map(([r]) => r)).toEqual(['admin']);
-    expect(NAV.flatMap((g) => g.items).find((i) => i.key === 'settingsConnect')?.permission).toBe('connect.manage');
+    expect(NAV.flatMap((g) => g.items).find((i) => i.key === 'settingsConnect')?.permission).toBeUndefined();
   });
   it('every code a mock role holds and every NAV permission is in the catalogue', () => {
     for (const code of new Set(Object.values(PERMISSIONS_BY_ROLE).flat())) expect(PERMISSIONS[code], code).toBeDefined();

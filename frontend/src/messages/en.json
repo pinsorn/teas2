@@ -69,8 +69,8 @@
       }
     },
     "activity": {
-      "empty": "No activity yet",
-      "action": { "submit": "Submitted for approval", "approve": "Approved", "send_back": "Sent back for changes", "create": "Created draft", "issue": "Issued", "settle": "Payment received", "pay": "Payroll paid", "unpay": "Payroll payment reversed", "cancel": "Cancelled", "revise": "Revised", "convert": "Converted", "accept": "Customer accepted", "reject": "Customer rejected", "deliver": "Delivered", "close": "Remainder closed", "send": "Sent to vendor", "settlement": "Netting / deposit applied", "settlement_reverse": "Settlement reversed", "reverse": "Reversed" }
+      "empty": "No activity yet", "report": "View review report",
+      "action": { "submit": "Submitted for approval", "approve": "Approved", "send_back": "Sent back for changes", "agent_review": "Agent submitted for review", "create": "Created draft", "issue": "Issued", "settle": "Payment received", "pay": "Payroll paid", "unpay": "Payroll payment reversed", "cancel": "Cancelled", "revise": "Revised", "convert": "Converted", "accept": "Customer accepted", "reject": "Customer rejected", "deliver": "Delivered", "close": "Remainder closed", "send": "Sent to vendor", "settlement": "Netting / deposit applied", "settlement_reverse": "Settlement reversed", "reverse": "Reversed" }
     },
     "revisions": {
       "empty": "No history yet", "first": "First issued version", "n": "Revision {n}", "view": "View this version", "hide": "Hide this version",
@@ -1824,6 +1824,7 @@
     "keys": {
       "title": "API keys",
       "lead": "A key belongs to this company and its owner. What it can actually do is its scopes, never more than the owner holds now.",
+    "leadOwn": "Your own keys: a key never holds more than you do in this company, and never approval, cancel or correct rights.",
       "create": "Create key",
       "empty": "No API keys yet",
       "failed": "That did not work. Try again.",
@@ -1944,6 +1945,8 @@
     "report": {
       "title": "Agent review report",
       "draft": "Draft",
+      "forVersion": "This report is for version {n}",
+      "moved": "The document has moved on (this report is for version {n}, it is now version {now}). Do not rely on it; the agent must submit it again.",
       "by": "Submitted by {agent} for {owner} · report {version}",
       "route": {
         "title": "Approval route",

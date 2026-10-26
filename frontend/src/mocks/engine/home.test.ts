@@ -13,6 +13,7 @@ import { boxOf, getPp30 } from './filings/pp30';
 import { apAging } from './reports/ap-aging';
 import { arAging, openItems } from './reports/ar-aging';
 import { numberGaps } from './reports/number-gaps';
+import { reviewDraft } from './agent-review';
 import { homeAgent, homeAlerts, homeApprovals, homeBank, homeDeadlines, homeDrafts, homeKpis, homeOverdue } from './home';
 
 const VAT = 'co-vat', NON = 'co-nonvat';
@@ -171,8 +172,10 @@ describe('the other sections come from their engines', () => {
     const st = buildSeedState();
     const base = homeAgent(st, VAT, acct);
     const agent = { kind: 'agent' as const, id: 'ag-1', name: 'ผู้ช่วย AI', ownerName: 'สมศรี' };
-    const mk = (n: string) => createDraft(st, VAT, 'TI', { header: { partyId: 'pc-01', documentDate: today() }, lines: [{ id: n, description: 'งานทดสอบ', qty: '1', unit: 'งาน', unitPrice: '100.00', taxCode: 'S7' }] }, agent, n);
-    const drafted = mk('ag-d1'), issuedNow = mk('ag-d2'), issuedBefore = mk('ag-d3');
+    // an agent issues only a draft whose current report routed auto (HC2a): quotations (N-class, Auto-if-clean), each priced differently so they are not each other's duplicate, reviewed before issue
+    let price = 100;
+    const mk = (n: string, review = true) => { const d = createDraft(st, VAT, 'QT', { header: { partyId: 'pc-01', documentDate: today() }, lines: [{ id: n, description: 'งานทดสอบ', qty: '1', unit: 'งาน', unitPrice: `${price++}.00`, taxCode: 'S7' }] }, agent, n); if (review) expect(reviewDraft(st, agent, d.id).route).toBe('auto'); return d; };
+    const drafted = mk('ag-d1', false), issuedNow = mk('ag-d2'), issuedBefore = mk('ag-d3');
     issue(st, issuedNow.id, issuedNow.version, agent); // the real clock, nothing pinned
     withFixedClock('2026-10-01T10:00:00+07:00', () => issue(st, issuedBefore.id, issuedBefore.version, agent));
     const a = homeAgent(st, VAT, acct);
@@ -183,7 +186,8 @@ describe('the other sections come from their engines', () => {
   it('agent digest: 00:30 Bangkok counts as that Bangkok day (a UTC slice would call it the day before)', () => {
     const st = buildSeedState();
     const agent = { kind: 'agent' as const, id: 'ag-1', name: 'ผู้ช่วย AI', ownerName: 'สมศรี' };
-    const d = createDraft(st, VAT, 'TI', { header: { partyId: 'pc-01', documentDate: '2026-10-14' }, lines: [{ id: 'm1', description: 'งานทดสอบ', qty: '1', unit: 'งาน', unitPrice: '100.00', taxCode: 'S7' }] }, agent, 'ag-m1');
+    const d = createDraft(st, VAT, 'QT', { header: { partyId: 'pc-01', documentDate: '2026-10-14' }, lines: [{ id: 'm1', description: 'งานทดสอบ', qty: '1', unit: 'งาน', unitPrice: '100.00', taxCode: 'S7' }] }, agent, 'ag-m1');
+    expect(reviewDraft(st, agent, d.id).route).toBe('auto'); // the agent's own review, before it issues
     const early = '2026-10-14T00:30:00+07:00'; // = 2026-10-13T17:30Z
     const base = withFixedClock(early, () => homeAgent(st, VAT, acct).posted);
     withFixedClock(early, () => issue(st, d.id, d.version, agent));

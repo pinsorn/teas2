@@ -45,14 +45,15 @@ function Inner() {
   if (meFailed && !me) return <ErrorState error={meError} onRetry={() => void refetchMe()} />;
   if (!me) return <LoadingState />;
   const id = me.activeCompanyId;
+  const manage = me.permissions.includes('connect.manage'); // a member sees their own keys; the apps and the policy are the manager's (a direct link to them answers 403)
   return (
     <div className="grid gap-4">
       <div><h1 className="text-title font-semibold">{t('title')}</h1><p className="text-body text-muted-foreground">{t('lead')}</p></div>
       <Tabs value={tab} onValueChange={(v) => { const u = new URLSearchParams(search.toString()); u.set('tab', v); router.replace(`${pathname}?${u}`); }}>
         <TabsList aria-label={t('tabs.label')} className="h-auto flex-wrap group-data-horizontal/tabs:h-auto">
-          {TABS.map((k) => <TabsTrigger key={k} value={k} className="h-8 flex-auto">{t(`tabs.${k}`)}</TabsTrigger>)}
+          {TABS.filter((k) => k === 'keys' || manage).map((k) => <TabsTrigger key={k} value={k} className="h-8 flex-auto">{t(`tabs.${k}`)}</TabsTrigger>)}
         </TabsList>
-        <TabsContent value="keys"><KeysTab companyId={id} /></TabsContent>
+        <TabsContent value="keys"><KeysTab companyId={id} manage={manage} /></TabsContent>
         <TabsContent value="apps"><AppsTab companyId={id} /></TabsContent>
         <TabsContent value="policy"><PolicyTab companyId={id} /></TabsContent>
       </Tabs>
@@ -77,7 +78,7 @@ function Section({ title, lead, action, children }: { title: string; lead?: stri
 }
 
 // ------------------------------------------------------------------ API keys
-function KeysTab({ companyId }: { companyId: string }) {
+function KeysTab({ companyId, manage }: { companyId: string; manage: boolean }) {
   const t = useTranslations('connect.keys');
   const qc = useQueryClient();
   const key = [companyId, 'connect', 'keys'];
@@ -96,7 +97,7 @@ function KeysTab({ companyId }: { companyId: string }) {
   if (g) return g;
   const rows = q.data!.items;
   return (
-    <Section title={t('title')} lead={t('lead')} action={<Button onClick={() => { setNotice(undefined); setForm(true); }}>{t('create')}</Button>}>
+    <Section title={t('title')} lead={manage ? t('lead') : t('leadOwn')} action={<Button onClick={() => { setNotice(undefined); setForm(true); }}>{t('create')}</Button>}>
       {notice ? <Alert variant="destructive" role="alert"><AlertTitle>{notice}</AlertTitle></Alert> : null}
       {rows.length === 0 ? <EmptyState title={t('empty')} /> : (
         <div className="overflow-x-auto">
@@ -277,6 +278,8 @@ function PolicyRowEditor({ row, companyId }: { row: PolicyRow; companyId: string
   const td = useTranslations('docTypes');
   const qc = useQueryClient();
   const [mode, setMode] = useState<PolicyMode>(row.mode), [cap, setCap] = useState(row.cap);
+  const [seen, setSeen] = useState(row.version);
+  if (seen !== row.version) { setSeen(row.version); setMode(row.mode); setCap(row.cap); } // the row was refetched (after a 409 or a save): show the server's values, not the stale edit
   const [msg, setMsg] = useState<{ ok: boolean; text: string }>();
   const name = td(`${row.docType}.title`);
   const save = useMutation({

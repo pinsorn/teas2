@@ -65,13 +65,9 @@ test('home has no serious accessibility violations', async ({ page }) => {
   expect(await serious(page)).toEqual([]);
 });
 
-test('home title and a not-built route', async ({ page }) => {
+test('home title and an unknown route', async ({ page }) => {
   await expect(page).toHaveTitle('งานของฉัน · TEAS 2');
-  await page.getByRole('button', { name: 'โหมดตัวอย่าง' }).click(); // every non-settings route is built; settings needs settings.manage (admin)
-  await page.getByLabel('บทบาท').selectOption('admin');
-  await page.goto('/settings/connect'); // group 09 built every settings page but connect (group 10)
-  await expect(page.getByText('ส่วนนี้ยังไม่เปิดใช้งาน')).toBeVisible();
-  expect(await serious(page)).toEqual([]);
+  // every nav route is built now (TEAS Connect was the last, HC2): no page renders the "not built" notice any more, so only the 404 is checked
   await page.goto('/nope/nothing');
   await expect(page.getByRole('heading', { name: 'ไม่พบหน้าที่ต้องการ' })).toBeVisible();
 });

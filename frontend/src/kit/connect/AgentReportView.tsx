@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
+import { Alert, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DESCRIPTORS } from '@/descriptors';
@@ -24,6 +25,8 @@ export function AgentReportView({ report: r }: { report: AgentReport }) {
           {td(`${r.docType}.title`)} {base ? <Link href={`${base}/${r.docId}`} className="text-primary underline underline-offset-4">{r.docNumber ?? t('draft')}</Link> : (r.docNumber ?? t('draft'))} · {r.partyName || '–'}
         </p>
         <p className="text-small text-muted-foreground">{t('by', { agent: r.agentName, owner: r.ownerName ?? '–', version: r.version })}</p>
+        <p className="text-small font-medium" data-testid="report-for-version">{t('forVersion', { n: r.docVersion })}</p>
+        {r.docNowVersion !== undefined && r.docNowVersion !== r.docVersion ? <Alert role="alert" className="mt-2" data-testid="report-moved"><AlertTitle>{t('moved', { n: r.docVersion, now: r.docNowVersion })}</AlertTitle></Alert> : null}
       </div>
 
       <section aria-labelledby="ar-route" className="grid gap-2 rounded-lg border bg-card p-4">

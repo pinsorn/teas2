@@ -5,7 +5,8 @@ import type { ApiKeyBody, ApiKeyCreated, ApiKeyRow, ConsentInfo, ConsentResult, 
 import { FieldErrors, refuseAgent } from '../engine/company';
 import { MockError, logAudit, stamp, today } from '../engine/log';
 import { fromSatang, toSatang } from '../engine/money';
-import { permissionsOf } from '../permissions';
+import { effectivePermissions, permissionsOf } from '../permissions';
+import { getSettings } from '../settings';
 import type { MockState } from '../store';
 
 /** SP0 §8.1 / §8.4 / §8.5 (HC2). A key or an OAuth app is bound to one owner and one company; its rights at USE are its scopes ∩ the owner's CURRENT rights. */
@@ -15,7 +16,9 @@ export interface StoredApp { id: string; companyId: string; clientId: string; na
 export interface StoredPolicy { companyId: string; docType: DocType; mode: PolicyMode; cap: Money; version: number }
 
 /** §8.5: an agent never closes / reopens periods, finalizes filings, or changes settings, permissions, posting profiles, numbering or agent policy: those rights can never be a scope. */
-export const AGENT_FORBIDDEN = ['settings.manage', 'users.manage', 'connect.manage', 'ledger.period.close', 'ledger.period.reopen', 'tax.filing.finalize', 'tax.settings.manage', 'ledger.posting.manage', 'ledger.coa.manage', 'ledger.schedule.manage'];
+const NEVER_FOR_AGENT = ['settings.manage', 'users.manage', 'connect.manage', 'ledger.period.close', 'ledger.period.reopen', 'tax.filing.finalize', 'tax.settings.manage', 'ledger.posting.manage', 'ledger.coa.manage', 'ledger.schedule.manage'];
+/** §8.5 + HC2a: no key, app or agent ever holds these, whatever its owner holds: the §8.5 rights, and approve / cancel / correct of ANY document type (a person does those). */
+export const agentForbidden = (code: string): boolean => NEVER_FOR_AGENT.includes(code) || /^doc\.[A-Z]+\.(approve|cancel|correct)$/.test(code);
 export const HARD_LIMITS = ['period', 'filing', 'settings', 'permissions', 'posting', 'numbering', 'policy', 'cancelT', 'company'];
 export const POLICY_TYPES: DocType[] = ['QT', 'SO', 'DO', 'BL', 'IV', 'TI', 'RC', 'CN', 'DN', 'PO', 'PB', 'PCN', 'PDN', 'PV', 'EX'];
 export const DEFAULT_CAP = '50000.00'; // D-22: only the starting value
@@ -35,30 +38,33 @@ export function hashOf(s: string): string {
 const newSecret = (kind: KeyKind): string => `teas_${kind}_${Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => b.toString(16).padStart(2, '0')).join('')}`;
 const PREFIX_LEN = 14;
 
-/** The owner's rights in a company RIGHT NOW (a deactivated or demoted owner holds less, or nothing). */
+/** The owner's rights in a company RIGHT NOW: ONE source for create and for use (m7). The signed-in user (u-1) is the toolbar role unless a custom role was given; anyone else is their staff row; a deactivated member holds nothing. */
 export function ownerRights(st: MockState, companyId: string, ownerId: string): string[] {
+  if (ownerId === 'u-1') return effectivePermissions(st, companyId, getSettings().role);
   const m = st.staff.find((x) => x.companyId === companyId && x.userId === ownerId);
   return m && m.active ? permissionsOf(st, companyId, m.roleId) : [];
 }
-/** Ruling 2: scopes ∩ the owner's current rights (and never a §8.5 right). */
+const activeOwner = (st: MockState, companyId: string, ownerId: string): boolean => st.staff.some((x) => x.companyId === companyId && x.userId === ownerId && x.active);
+/** Ruling 2: scopes ∩ the owner's current rights (and never a right an agent cannot hold). */
 export const rightsOf = (st: MockState, companyId: string, ownerId: string, scopes: string[]): string[] => {
   const own = ownerRights(st, companyId, ownerId);
-  return scopes.filter((s) => own.includes(s) && !AGENT_FORBIDDEN.includes(s));
+  return scopes.filter((s) => own.includes(s) && !agentForbidden(s));
 };
-export const scopeChoices = (ownerPerms: string[]): string[] => ownerPerms.filter((p) => !AGENT_FORBIDDEN.includes(p) && Object.hasOwn(PERMISSIONS, p)).sort();
+export const scopeChoices = (ownerPerms: string[]): string[] => ownerPerms.filter((p) => !agentForbidden(p) && Object.hasOwn(PERMISSIONS, p)).sort();
 
 const statusOf = (k: StoredKey): ApiKeyRow['status'] => (k.revokedAt ? 'revoked' : k.expiresAt && today() > k.expiresAt ? 'expired' : 'active');
 /** What leaves the engine: never the hash, never the secret. */
 const publicKey = (k: StoredKey): ApiKeyRow => ({ id: k.id, version: k.version, name: k.name, kind: k.kind, prefix: k.prefix, ownerName: k.ownerName, scopes: k.scopes, scopeCount: k.scopes.length,
   createdAt: k.createdAt, ...(k.lastUsedAt ? { lastUsedAt: k.lastUsedAt } : {}), ...(k.expiresAt ? { expiresAt: k.expiresAt } : {}), ...(k.revokedAt ? { revokedAt: k.revokedAt } : {}), status: statusOf(k) });
-const keyOf = (st: MockState, companyId: string, id: string): StoredKey => {
-  const k = (st.apiKeys ?? []).find((x) => x.id === id && x.companyId === companyId); // another company's key is a 404
+const keyOf = (st: MockState, companyId: string, id: string, who?: string): StoredKey => {
+  const k = (st.apiKeys ?? []).find((x) => x.id === id && x.companyId === companyId && (!who || x.ownerId === who)); // another company's key is a 404
   if (!k) throw new MockError(404, 'record.not_found', 'ไม่พบคีย์ API นี้');
   return k;
 };
 const conflict = () => new MockError(409, 'record.version_conflict', 'ข้อมูลนี้ถูกแก้ไขโดยผู้อื่นแล้ว โหลดข้อมูลใหม่ก่อนบันทึก');
 
-export const listKeys = (st: MockState, companyId: string): ApiKeyRow[] => (st.apiKeys ?? []).filter((k) => k.companyId === companyId).map(publicKey);
+/** `who` = a member who may see only their own keys (absent = connect.manage: everyone's). */
+export const listKeys = (st: MockState, companyId: string, who?: string): ApiKeyRow[] => (st.apiKeys ?? []).filter((k) => k.companyId === companyId && (!who || k.ownerId === who)).map(publicKey);
 
 function insertKey(st: MockState, actor: Actor, companyId: string, owner: { id: string; name: string }, b: { name: string; kind: KeyKind; scopes: string[]; expiresAt?: IsoDate }, secret: string, command: string, rotatedFrom?: string): ApiKeyCreated {
   const keys = (st.apiKeys ??= []);
@@ -70,8 +76,9 @@ function insertKey(st: MockState, actor: Actor, companyId: string, owner: { id: 
 }
 
 /** Ruling 1 + 2: the secret is made here, returned once, and stored as a hash + prefix. `ownerPerms` = the signed-in owner's rights on THIS company. */
-export function createKey(st: MockState, actor: Actor, companyId: string, owner: { id: string; name: string; perms: string[] }, v: Partial<ApiKeyBody>, secret?: string): ApiKeyCreated {
+export function createKey(st: MockState, actor: Actor, companyId: string, owner: { id: string; name: string }, v: Partial<ApiKeyBody>, secret?: string): ApiKeyCreated {
   refuseAgent(actor);
+  if (!activeOwner(st, companyId, owner.id)) throw new MockError(403, 'connect.not_member', 'ต้องเป็นสมาชิกที่ใช้งานอยู่ของบริษัทนี้');
   const e: Record<string, string[]> = {};
   const name = typeof v.name === 'string' ? v.name.trim() : '';
   if (!name || name.length > 60) e.name = ['ต้องระบุชื่อคีย์ (ไม่เกิน 60 ตัวอักษร)'];
@@ -80,19 +87,22 @@ export function createKey(st: MockState, actor: Actor, companyId: string, owner:
   if (!Array.isArray(v.scopes) || !scopes.length || scopes.some((s) => typeof s !== 'string' || !Object.hasOwn(PERMISSIONS, s))) e.scopes = ['ต้องเลือกสิทธิ์อย่างน้อยหนึ่งรายการจากรายการที่มี'];
   if (v.expiresAt !== undefined && v.expiresAt !== '' && (typeof v.expiresAt !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v.expiresAt) || v.expiresAt <= today())) e.expiresAt = ['วันหมดอายุต้องเป็นวันหลังวันนี้'];
   if (Object.keys(e).length) throw new FieldErrors(e);
-  const bad = (scopes as string[]).find((s) => AGENT_FORBIDDEN.includes(s));
-  if (bad) throw new MockError(422, 'connect.scope_forbidden', `สิทธิ์ ${bad} ให้ agent ไม่ได้ (agent เปลี่ยนการตั้งค่า ปิดงวด หรือยื่นภาษีไม่ได้)`);
-  const over = (scopes as string[]).filter((s) => !owner.perms.includes(s));
+  const bad = (scopes as string[]).find((s) => agentForbidden(s));
+  if (bad) throw new MockError(422, 'connect.scope_forbidden', `สิทธิ์ ${bad} ให้ agent ไม่ได้ (agent อนุมัติ ยกเลิก แก้ไขเอกสาร เปลี่ยนการตั้งค่า ปิดงวด หรือยื่นภาษีไม่ได้)`);
+  const mine = ownerRights(st, companyId, owner.id);
+  const over = (scopes as string[]).filter((s) => !mine.includes(s));
   if (over.length) throw new MockError(422, 'connect.scope_exceeds', `สิทธิ์ของคีย์ต้องไม่เกินสิทธิ์ของเจ้าของคีย์ในบริษัทนี้: ${over.join(', ')}`);
   return insertKey(st, actor, companyId, owner, { name, kind: v.kind as KeyKind, scopes: [...new Set(scopes as string[])], ...(v.expiresAt ? { expiresAt: v.expiresAt } : {}) }, secret ?? newSecret(v.kind as KeyKind), 'connect.key.create');
 }
 
 /** Rotate = a new key with the same name / kind / scopes / expiry / owner; the OLD key is revoked in the same command. */
-export function rotateKey(st: MockState, actor: Actor, companyId: string, id: string, version: unknown, secret?: string): ApiKeyCreated {
+export function rotateKey(st: MockState, actor: Actor, companyId: string, id: string, version: unknown, secret?: string, who?: string): ApiKeyCreated {
   refuseAgent(actor);
-  const old = keyOf(st, companyId, id);
+  const old = keyOf(st, companyId, id, who);
   if (version !== old.version) throw conflict();
   if (statusOf(old) === 'revoked') throw new MockError(409, 'connect.key_revoked', 'คีย์นี้ถูกเพิกถอนแล้ว สร้างคีย์ใหม่แทน');
+  if (statusOf(old) === 'expired') throw new MockError(409, 'connect.key_expired', 'คีย์นี้หมดอายุแล้ว สร้างคีย์ใหม่แทน (หมุนเวียนคีย์ที่หมดอายุไม่ได้)');
+  if (!activeOwner(st, companyId, old.ownerId)) throw new MockError(409, 'connect.owner_inactive', 'เจ้าของคีย์ไม่ได้ใช้งานในบริษัทนี้แล้ว หมุนเวียนคีย์ไม่ได้ เพิกถอนคีย์แทน');
   const made = insertKey(st, actor, companyId, { id: old.ownerId, name: old.ownerName }, { name: old.name, kind: old.kind, scopes: old.scopes, expiresAt: old.expiresAt }, secret ?? newSecret(old.kind), 'connect.key.rotate', old.id);
   const before = publicKey(old);
   old.revokedAt = stamp(); old.version += 1;
@@ -100,9 +110,9 @@ export function rotateKey(st: MockState, actor: Actor, companyId: string, id: st
   return made;
 }
 
-export function revokeKey(st: MockState, actor: Actor, companyId: string, id: string, version: unknown): ApiKeyRow {
+export function revokeKey(st: MockState, actor: Actor, companyId: string, id: string, version: unknown, who?: string): ApiKeyRow {
   refuseAgent(actor);
-  const k = keyOf(st, companyId, id);
+  const k = keyOf(st, companyId, id, who);
   if (version !== k.version) throw conflict();
   if (k.revokedAt) return publicKey(k); // already there: no write, no audit
   const before = publicKey(k);
@@ -138,17 +148,25 @@ export function revokeApp(st: MockState, actor: Actor, companyId: string, id: st
   return publicApp(a);
 }
 
-export function consentInfo(st: MockState, companyId: string, owner: { name: string; perms: string[] }, clientId: string): ConsentInfo {
+/** m3: a connected app holds its scopes ∩ the owner's CURRENT rights, like a key. */
+export const appRights = (st: MockState, companyId: string, appId: string): string[] => {
+  const a = (st.oauthApps ?? []).find((x) => x.id === appId && x.companyId === companyId && !x.revokedAt);
+  return a ? rightsOf(st, companyId, a.ownerId, a.scopes) : [];
+};
+
+export function consentInfo(st: MockState, companyId: string, owner: { id: string; name: string }, clientId: string): ConsentInfo {
   const c = Object.hasOwn(CLIENTS, clientId) ? CLIENTS[clientId] : undefined;
   if (!c) throw new MockError(404, 'oauth.client_unknown', 'ไม่รู้จักแอปที่ขอเชื่อมต่อ');
-  const ceiling = scopeChoices(owner.perms);
+  const ceiling = scopeChoices(ownerRights(st, companyId, owner.id));
   return { client: { id: clientId, name: c.name }, company: { id: companyId, name: st.companies.find((x) => x.id === companyId)?.legalNameTh ?? '' }, owner: { name: owner.name },
     requested: c.scopes, granted: c.scopes.filter((s) => ceiling.includes(s)), notGranted: c.scopes.filter((s) => !ceiling.includes(s)) };
 }
 
 /** Approve connects the app with the requested scopes the owner holds (never more); Deny connects nothing. Both are audited. */
-export function decideConsent(st: MockState, actor: Actor, companyId: string, owner: { id: string; name: string; perms: string[] }, clientId: string, decision: unknown): ConsentResult {
+export function decideConsent(st: MockState, actor: Actor, companyId: string, owner: { id: string; name: string }, clientId: string, decision: unknown, shownCompanyId?: unknown): ConsentResult {
   refuseAgent(actor);
+  if (!activeOwner(st, companyId, owner.id)) throw new MockError(403, 'connect.not_member', 'ต้องเป็นสมาชิกที่ใช้งานอยู่ของบริษัทนี้');
+  if (shownCompanyId !== companyId) throw new MockError(409, 'oauth.company_mismatch', 'บริษัทที่ใช้งานอยู่ไม่ตรงกับบริษัทที่แสดงในหน้านี้ ให้เปิดหน้าอนุญาตใหม่');
   const info = consentInfo(st, companyId, owner, clientId);
   if (decision !== 'approve' && decision !== 'deny') throw new MockError(422, 'record.invalid', 'ต้องเลือกอนุมัติหรือปฏิเสธ');
   if (decision === 'deny') { logAudit(st, actor, companyId, 'connect.oauth.deny', clientId); return { status: 'denied' }; }
@@ -179,7 +197,6 @@ export function setPolicy(st: MockState, actor: Actor, companyId: string, type: 
   if (!t || !isTypeAvailable(t, vat)) throw new MockError(404, 'record.not_found', 'ไม่พบประเภทเอกสารนี้');
   const cur = policyOf(st, companyId, t);
   if (v.version !== cur.version) throw conflict();
-  if (v.autoCancel === true || v.autoReissue === true) throw new MockError(422, 'agent.policy_cancel_auto', 'agent ยกเลิกหรือออกเอกสารใหม่แทนเอกสารเดิมโดยอัตโนมัติไม่ได้ ต้องให้คนอนุมัติเสมอ');
   const e: Record<string, string[]> = {};
   if (v.mode !== 'off' && v.mode !== 'human' && v.mode !== 'auto') e.mode = ['ต้องเลือกปิด / ให้คนอนุมัติ / อัตโนมัติถ้าไม่มีข้อสังเกต'];
   if (typeof v.cap !== 'string' || !/^\d{1,12}(\.\d{1,2})?$/.test(v.cap.trim()) || toSatang(v.cap.trim()) <= 0) e.cap = ['วงเงินต้องเป็นจำนวนเงินมากกว่า 0'];
