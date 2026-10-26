@@ -11,7 +11,7 @@ import { ledgerFor, traceResolutions } from './ledger';
 import { fromSatang, toSatang } from './money';
 import type { Resolved } from './posting';
 
-/** SP0 §8.2-§8.4 (HC2 / HC2a). Where an Auto-routed draft is posted: by the agent itself, through the ordinary `issue` command. The engine lets an agent issue only a draft whose CURRENT report (same document version) routed `auto` and holds no error (`agent.review_required` otherwise); a human-routed draft waits in the Home inbox for a person, and an agent can never approve, cancel, reissue or correct (`agent.forbidden_action`). An edit to the draft drops its report: a new report needs a new review.
+/** SP0 §8.2-§8.4 (HC2 / HC2a). Where an Auto-routed draft is posted: by the agent itself, through the ordinary `issue` command. The engine lets an agent issue only a draft whose CURRENT report (same document version) routed `auto` and holds no error (`agent.review_required` otherwise); a human-routed draft waits in the Home inbox for a person, and an agent can never approve, cancel, reissue or correct (`agent.forbidden_action`). An edit to the draft drops its report: a new report needs a new review. The cap is per document; a running per-period agent total is an SP2 item.
  * `reviewDraft` is the agent's `review(document)` call: the report (totals and tax from the server, the journal with the rules, the §8.3 checks, the route under the policy IN FORCE, the token expiry)
  *  is computed ONCE here and STORED. Reading it never recomputes: a later policy or party-history change cannot rewrite what the human was shown. */
 type Stored = MockState['docs'][number];

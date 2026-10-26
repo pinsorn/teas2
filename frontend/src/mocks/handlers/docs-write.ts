@@ -21,8 +21,7 @@ import { saveState } from '../store';
 import { ctx, forbidden, persist, problem, screenGate } from './common';
 import { actorFor } from './me';
 
-const ACTOR: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
-/** Create / update / delete / issue may be an agent's (the gate in me.ts lets only those through); everything else is always the signed-in user. */
+/** HC2c: EVERY write passes the request's actor (an agent over HTTP is refused by the gate in me.ts first, and by the engine's own refusals behind it). */
 const by = (req: Request): Actor => actorFor(req);
 
 /** vatOverride (correction notes) and allocation targetNumber are engine-set only: never accepted from an API caller. */
@@ -139,14 +138,14 @@ export const docsWriteHandlers = [
   http.post('*/bff/v1/docs/:type/:id/submit', ({ request, params }) => generic(String(params.type), P('create'), async (c, t) => {
     own(c, t, params.id);
     const body = (await request.json().catch(() => ({}))) as { version?: number };
-    const doc = submitForApproval(c.st, String(params.id), versionOf(request, body), ACTOR);
+    const doc = submitForApproval(c.st, String(params.id), versionOf(request, body), by(request));
     done(c);
     return HttpResponse.json(doc);
   })),
   http.post('*/bff/v1/docs/:type/:id/approve', ({ request, params }) => generic(String(params.type), P('approve'), async (c, t) => {
     own(c, t, params.id);
     const body = (await request.json().catch(() => ({}))) as { version?: number };
-    const doc = approve(c.st, String(params.id), versionOf(request, body), ACTOR);
+    const doc = approve(c.st, String(params.id), versionOf(request, body), by(request));
     done(c);
     return HttpResponse.json(doc);
   })),
@@ -154,14 +153,14 @@ export const docsWriteHandlers = [
     own(c, t, params.id);
     if (!c.perms.includes(`doc.${t}.issue`)) return forbidden(`doc.${t}.issue`); // one action only for a person who holds BOTH rights
     const body = (await request.json().catch(() => ({}))) as { version?: number };
-    const doc = approveAndIssue(c.st, String(params.id), versionOf(request, body), ACTOR);
+    const doc = approveAndIssue(c.st, String(params.id), versionOf(request, body), by(request));
     done(c);
     return HttpResponse.json(doc);
   })),
   http.post('*/bff/v1/docs/:type/:id/send-back', ({ request, params }) => generic(String(params.type), P('approve'), async (c, t) => {
     own(c, t, params.id);
     const body = (await request.json().catch(() => ({}))) as { version?: number; reason?: string };
-    const doc = sendBack(c.st, String(params.id), versionOf(request, body), typeof body.reason === 'string' ? body.reason : '', ACTOR);
+    const doc = sendBack(c.st, String(params.id), versionOf(request, body), typeof body.reason === 'string' ? body.reason : '', by(request));
     done(c);
     return HttpResponse.json(doc);
   })),
@@ -169,7 +168,7 @@ export const docsWriteHandlers = [
   http.post('*/bff/v1/docs/:type/:id/cancel', ({ request, params }) => guarded(String(params.type), P('cancel'), async (c, t) => {
     own(c, t, params.id);
     const body = (await request.json()) as { version?: number; reasonCode: string; reasonText: string };
-    const doc = cancel(c.st, String(params.id), versionOf(request, body), body.reasonCode, body.reasonText, ACTOR);
+    const doc = cancel(c.st, String(params.id), versionOf(request, body), body.reasonCode, body.reasonText, by(request));
     done(c);
     return HttpResponse.json(doc);
   })),
@@ -179,7 +178,7 @@ export const docsWriteHandlers = [
     own(c, t, params.id);
     const body = ((await request.json().catch(() => ({}))) ?? {}) as { date?: string; reason?: string };
     if (body.date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(body.date))) throw new MockError(422, 'ledger.reverse_date', 'วันที่กลับรายการไม่ถูกต้อง');
-    const r = reverseJv(c.st, String(params.id), ACTOR, { ...(body.date ? { date: body.date } : {}), ...(typeof body.reason === 'string' && body.reason.trim() ? { reason: body.reason.trim() } : {}) });
+    const r = reverseJv(c.st, String(params.id), by(request), { ...(body.date ? { date: body.date } : {}), ...(typeof body.reason === 'string' && body.reason.trim() ? { reason: body.reason.trim() } : {}) });
     done(c);
     return HttpResponse.json(publicDoc(r), { status: 201 });
   })),
@@ -187,14 +186,14 @@ export const docsWriteHandlers = [
   http.post('*/bff/v1/docs/PR/:id/pay', ({ request, params }) => guarded('PR', 'doc.PR.pay', async (c) => {
     own(c, 'PR', params.id);
     const b = ((await request.json().catch(() => ({}))) ?? {}) as { accountId?: string; date?: string; version?: number };
-    const doc = payRun(c.st, c.company.id, String(params.id), { ...(typeof b.accountId === 'string' && b.accountId ? { accountId: b.accountId } : {}), date: b.date as string, version: versionOf(request, b) }, ACTOR);
+    const doc = payRun(c.st, c.company.id, String(params.id), { ...(typeof b.accountId === 'string' && b.accountId ? { accountId: b.accountId } : {}), date: b.date as string, version: versionOf(request, b) }, by(request));
     done(c);
     return HttpResponse.json(doc);
   })),
   http.post('*/bff/v1/docs/PR/:id/unpay', ({ request, params }) => guarded('PR', 'doc.PR.pay', async (c) => {
     own(c, 'PR', params.id);
     const b = ((await request.json().catch(() => ({}))) ?? {}) as { reason?: string; version?: number };
-    const doc = unpayRun(c.st, c.company.id, String(params.id), { reason: typeof b.reason === 'string' ? b.reason : '', version: versionOf(request, b) }, ACTOR);
+    const doc = unpayRun(c.st, c.company.id, String(params.id), { reason: typeof b.reason === 'string' ? b.reason : '', version: versionOf(request, b) }, by(request));
     done(c);
     return HttpResponse.json(doc);
   })),
@@ -247,7 +246,7 @@ export const docsWriteHandlers = [
       refuseInactive(c, target.type, stored.proposed.header && keepOmitted(target, stored.proposed.header), target.header); // I2: the account may have been closed since the plan was made
       try { current = buildPlan(c.st, stored.docId, stored.proposed, c.perms); } catch { throw planStale(); } // the world moved since the plan: stale, not a raw engine error
       for (const s of current.steps) if (!c.perms.includes(s.permission)) return forbidden(s.permission);
-      const result = executePlan(c.st, planId, planHash, ACTOR, c.perms);
+      const result = executePlan(c.st, planId, planHash, by(request), c.perms);
       done(c);
       return HttpResponse.json(result);
     } catch (e) {
@@ -262,7 +261,7 @@ export const docsWriteHandlers = [
     if (!Object.hasOwn(CLASS, body.targetType)) throw new MockError(422, 'doc.conversion_not_allowed', 'ประเภทเอกสารปลายทางไม่ถูกต้อง');
     const need = `doc.${body.targetType}.create`;
     if (!c.perms.includes(need)) return forbidden(need);
-    const doc = convert(c.st, String(params.id), body.targetType, body.lines, ACTOR);
+    const doc = convert(c.st, String(params.id), body.targetType, body.lines, by(request));
     done(c);
     return HttpResponse.json(doc, { status: 201 });
   })),
@@ -270,7 +269,7 @@ export const docsWriteHandlers = [
   http.post('*/bff/v1/docs/:type/:id/marks', ({ request, params }) => generic(String(params.type), P('issue'), async (c, t) => {
     own(c, t, params.id);
     const body = (await request.json()) as { mark: MarkKey; version?: number; reason?: string };
-    const doc = setMark(c.st, String(params.id), body.mark, versionOf(request, body), ACTOR, body.reason);
+    const doc = setMark(c.st, String(params.id), body.mark, versionOf(request, body), by(request), body.reason);
     done(c);
     return HttpResponse.json(doc);
   })),
@@ -278,7 +277,7 @@ export const docsWriteHandlers = [
   http.post('*/bff/v1/docs/:type/:id/close-remainder', ({ request, params }) => generic(String(params.type), P('issue'), async (c, t) => {
     own(c, t, params.id);
     const body = (await request.json()) as { version?: number; reason?: string };
-    const doc = closeRemainder(c.st, String(params.id), versionOf(request, body), body.reason ?? '', ACTOR);
+    const doc = closeRemainder(c.st, String(params.id), versionOf(request, body), body.reason ?? '', by(request));
     done(c);
     return HttpResponse.json(doc);
   })),
@@ -311,16 +310,16 @@ export const docsWriteHandlers = [
   })),
   http.post('*/bff/v1/docs/:type/:id/attachments', ({ request, params }) => guarded(String(params.type), P('create'), async (c, t) => {
     const d = own(c, t, params.id);
-    const a = addAttachment(c.st, d, (await request.json()) as { category: AttachmentCategory; name: string; mime: string; dataUrl: string }, ACTOR);
+    const a = addAttachment(c.st, d, (await request.json()) as { category: AttachmentCategory; name: string; mime: string; dataUrl: string }, by(request));
     if (!saveState(c.st)) { // the bytes went in but the record of them did not: undo, never claim a file the next read would not find
       discardAttachment(c.st, a.id);
       return problem(507, 'attachment.storage_full', 'พื้นที่เก็บไฟล์ตัวอย่างเต็ม — ลบไฟล์แนบเก่าหรือรีเซ็ตข้อมูลตัวอย่าง');
     }
     return HttpResponse.json(a, { status: 201 });
   })),
-  http.delete('*/bff/v1/docs/:type/:id/attachments/:attId', ({ params }) => guarded(String(params.type), P('create'), (c, t) => {
+  http.delete('*/bff/v1/docs/:type/:id/attachments/:attId', ({ request, params }) => guarded(String(params.type), P('create'), (c, t) => {
     const d = own(c, t, params.id);
-    removeAttachment(c.st, d, String(params.attId), ACTOR);
+    removeAttachment(c.st, d, String(params.attId), by(request));
     done(c);
     return new HttpResponse(null, { status: 204 });
   })),
@@ -330,7 +329,7 @@ export const docsWriteHandlers = [
     const body = (await request.json().catch(() => ({}))) as { copy?: boolean; employee?: string };
     const c = ctx(); // the body was awaited: read the state again so two quick prints (two tabs) see each other and only one is the original
     const doc = own(c, t, params.id);
-    const r = markPrinted(c.st, doc, body.copy === true, ACTOR, t === 'WT' && PAPER_RAW.WT && !['draft', 'pending', 'approved'].includes(doc.status) ? PAPER_RAW.WT(c, publicDoc(doc), false) : undefined, body.employee); // 50 tawi: frozen at the first print (I7); PY3 m2: `employee` = one payslip of a run (not the run's print)
+    const r = markPrinted(c.st, doc, body.copy === true, by(request), t === 'WT' && PAPER_RAW.WT && !['draft', 'pending', 'approved'].includes(doc.status) ? PAPER_RAW.WT(c, publicDoc(doc), false) : undefined, body.employee); // 50 tawi: frozen at the first print (I7); PY3 m2: `employee` = one payslip of a run (not the run's print)
     done(c);
     return HttpResponse.json(r);
   })),
@@ -346,7 +345,7 @@ export const docsWriteHandlers = [
   http.get('*/bff/v1/assets/unregistered', () => guarded('FA', 'doc.FA.read', (c) => HttpResponse.json({ items: unregisteredCapex(c.st, c.company.id) }))),
   http.post('*/bff/v1/assets', ({ request }) => guarded('FA', 'doc.FA.create', async (c) => {
     const b = ((await request.json().catch(() => ({}))) ?? {}) as { source?: never; name?: string; salvage?: string; lifeMonths?: number; startDate?: string };
-    const fa = activateAsset(c.st, c.company.id, { source: b.source as never, ...(typeof b.name === 'string' ? { name: b.name } : {}), ...(typeof b.salvage === 'string' ? { salvage: b.salvage } : {}), ...(b.lifeMonths !== undefined ? { lifeMonths: b.lifeMonths } : {}), ...(typeof b.startDate === 'string' ? { startDate: b.startDate } : {}) }, ACTOR);
+    const fa = activateAsset(c.st, c.company.id, { source: b.source as never, ...(typeof b.name === 'string' ? { name: b.name } : {}), ...(typeof b.salvage === 'string' ? { salvage: b.salvage } : {}), ...(b.lifeMonths !== undefined ? { lifeMonths: b.lifeMonths } : {}), ...(typeof b.startDate === 'string' ? { startDate: b.startDate } : {}) }, by(request));
     done(c);
     return HttpResponse.json(publicDoc(fa), { status: 201 });
   })),
@@ -357,14 +356,14 @@ export const docsWriteHandlers = [
     const inv = c.company.vatRegistered ? 'TI' : 'IV';
     if (b.kind === 'sale') for (const v of ['create', 'issue']) if (!c.perms.includes(`doc.${inv}.${v}`)) return forbidden(`doc.${inv}.${v}`); // the sale issues the invoice: its rights too
     if (b.kind === 'sale' && saleNeedsApproval(c.st, c.company.id, b.proceeds) && !c.perms.includes(`doc.${inv}.approve`)) return forbidden(`doc.${inv}.approve`); // a policy-gated invoice is approved by whoever may, not by the dispose command
-    const fa = disposeAsset(c.st, c.company.id, String(params.id), { date: String(b.date), kind: b.kind as 'sale', ...(b.proceeds !== undefined ? { proceeds: b.proceeds } : {}), ...(b.buyerId ? { buyerId: b.buyerId } : {}) }, ACTOR);
+    const fa = disposeAsset(c.st, c.company.id, String(params.id), { date: String(b.date), kind: b.kind as 'sale', ...(b.proceeds !== undefined ? { proceeds: b.proceeds } : {}), ...(b.buyerId ? { buyerId: b.buyerId } : {}) }, by(request));
     done(c);
     return HttpResponse.json(publicDoc(fa));
   })),
   http.post('*/bff/v1/docs/FA/:id/undispose', ({ request, params }) => guarded('FA', 'doc.FA.cancel', async (c) => {
     const d = own(c, 'FA', params.id);
     staleVersion(d, (((await request.json().catch(() => ({}))) ?? {}) as { version?: number }).version);
-    const fa = reverseDisposal(c.st, c.company.id, String(params.id), ACTOR);
+    const fa = reverseDisposal(c.st, c.company.id, String(params.id), by(request));
     done(c);
     return HttpResponse.json(publicDoc(fa));
   })),
@@ -372,7 +371,7 @@ export const docsWriteHandlers = [
     const d = own(c, 'FA', params.id);
     const b = ((await request.json().catch(() => ({}))) ?? {}) as { name?: string; salvage?: string; lifeMonths?: number; startDate?: string; version?: number };
     staleVersion(d, b.version);
-    const fa = reviseAsset(c.st, c.company.id, String(params.id), { ...(typeof b.name === 'string' ? { name: b.name } : {}), ...(typeof b.salvage === 'string' ? { salvage: b.salvage } : {}), ...(b.lifeMonths !== undefined ? { lifeMonths: b.lifeMonths } : {}), ...(typeof b.startDate === 'string' ? { startDate: b.startDate } : {}) }, ACTOR);
+    const fa = reviseAsset(c.st, c.company.id, String(params.id), { ...(typeof b.name === 'string' ? { name: b.name } : {}), ...(typeof b.salvage === 'string' ? { salvage: b.salvage } : {}), ...(b.lifeMonths !== undefined ? { lifeMonths: b.lifeMonths } : {}), ...(typeof b.startDate === 'string' ? { startDate: b.startDate } : {}) }, by(request));
     done(c);
     return HttpResponse.json(publicDoc(fa));
   })),
@@ -383,7 +382,7 @@ export const docsWriteHandlers = [
   })),
   http.post('*/bff/v1/depreciation/runs', ({ request }) => guarded('DP', 'doc.DP.issue', async (c) => {
     const b = ((await request.json().catch(() => ({}))) ?? {}) as { month?: string };
-    const dp = runDepreciation(c.st, c.company.id, String(b.month), ACTOR);
+    const dp = runDepreciation(c.st, c.company.id, String(b.month), by(request));
     done(c);
     return HttpResponse.json(publicDoc(dp), { status: 201 });
   })),
@@ -391,7 +390,7 @@ export const docsWriteHandlers = [
     const d = own(c, 'DP', params.id);
     const b = ((await request.json().catch(() => ({}))) ?? {}) as { version?: number };
     staleVersion(d, b.version);
-    const dp = reviseDp(c.st, d.id, ACTOR);
+    const dp = reviseDp(c.st, d.id, by(request));
     done(c);
     return HttpResponse.json(publicDoc(dp));
   })),

@@ -333,6 +333,7 @@ export function compute(st: MockState, companyId: string, type: DocType, raw: Bo
 
 /** `opts.id` is used verbatim (seed runner only; handlers never pass it). */
 export function createDraft(st: MockState, companyId: string, type: DocType, body: Body, actor: Actor, idempotencyKey: string, opts?: { id?: string }): Doc {
+  if (actor.kind === 'agent' && policyOf(st, companyId, type).mode === 'off') throw new MockError(403, 'agent.forbidden_action', 'agent สร้างเอกสารประเภทนี้ไม่ได้ (นโยบาย agent ปิดอยู่หรือไม่รองรับประเภทนี้)'); // HC2c: policy Off = no draft
   const key = `${companyId}|${type}|${idempotencyKey}`;
   const prior = st.idempotency?.[key];
   if (prior && st.docs.some((d) => d.id === prior)) return publicDoc(getDoc(st, prior));

@@ -1,8 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { handlers } from '../handlers';
+import { agentGate } from '../handlers/me';
+import { setSettings } from '../settings';
+import { resetState } from '../store';
+import { testServer } from '../test-server';
 import { PERMISSIONS_BY_ROLE } from '../permissions';
 import { AGENT, USER } from '../fixtures/documents';
-import { buildSeedState } from '../store';
-import { setPolicy } from '../records/connect';
+import { buildSeedState, loadState } from '../store';
+import { POLICY_TYPES, policyView, setPolicy } from '../records/connect';
 import { reviewDraft, routeOf, getReport } from './agent-review';
 import { approve } from './approval';
 import { approveAndIssue, cancel, createDraft, deleteDraft, issue, reissue, revise, updateDraft } from './commands';
@@ -295,5 +300,36 @@ describe('HC2b: the issue gate re-checks token expiry and the CURRENT policy; ow
     const c = reviewDraft(st, AGENT, d.id).checks.find((x) => x.code === 'period_closed');
     expect(c?.severity).toBe('error');
     expect(c?.message).toContain('ปีบัญชี');
+  });
+});
+
+describe('HC2c: types outside the policy table are never an agent\'s; every write handler carries the request\'s actor', () => {
+  it('B1: an agent cannot create a JV (or any type outside POLICY_TYPES); a JV draft made another way cannot be agent-issued; the policy view lists only POLICY_TYPES', () => {
+    const st = buildSeedState();
+    for (const t of ['JV', 'PR', 'OB', 'FA', 'DP', 'WT'] as const) expect([t, code(() => createDraft(st, V, t, { header: { documentDate: '2026-10-14' }, lines: [] }, AGENT, `x-${t}`))]).toEqual([t, 'agent.forbidden_action']);
+    expect(code(() => createDraft(st, V, 'QT', { header: { documentDate: '2026-10-14' }, lines: [] }, AGENT, 'x-qt'))).not.toBe('agent.forbidden_action'); // a listed type is not refused by this rule
+    const jv = createDraft(st, V, 'JV', { header: { documentDate: '2026-10-14' }, lines: [] }, USER, 'jv-user');
+    const row = st.docs.find((d) => d.id === jv.id)!;
+    row.createdBy = AGENT; // even an "agent" JV draft with a clean, current, unexpired auto report is refused: its policy is Off
+    row.agentReportId = 'ar-jv';
+    st.agentReports!.push({ id: 'ar-jv', companyId: V, docId: jv.id, docType: 'JV', partyName: '', version: 1, docVersion: row.version, createdAt: '2026-10-14T00:00:00Z', expiresAt: new Date(Date.now() + 600_000).toISOString(), agentName: AGENT.name, totals: row.totals, journal: { entries: [] }, checks: [], route: 'auto', policy: { mode: 'auto', cap: '50000.00' } });
+    expect(code(() => issue(st, jv.id, row.version, AGENT))).toBe('agent.review_required');
+    const listed = policyView(st, V).items.map((r) => r.docType);
+    expect(listed.every((t) => POLICY_TYPES.includes(t))).toBe(true);
+    expect(listed).not.toContain('JV');
+  });
+  describe('m1: with the gate out of the way, the HTTP handlers still pass the agent actor to the engine', () => {
+    beforeAll(() => testServer.listen({ onUnhandledFrame: 'error' }));
+    afterEach(() => testServer.resetHandlers());
+    afterAll(() => testServer.close());
+    it('approve over HTTP as an agent is refused by the ENGINE (agent.forbidden_action), not by the gate', async () => {
+      localStorage.clear(); resetState(); setSettings({ companyKey: 'vat', role: 'accountant', screenState: 'normal' });
+      testServer.resetHandlers(...handlers.filter((h) => h !== agentGate)); // the allowlist is switched off for this test
+      const st = loadState();
+      const pending = st.docs.find((d) => d.status === 'pending' && d.type !== 'FA')!;
+      const r = await fetch(`http://localhost/bff/v1/docs/${pending.type}/${pending.id}/approve`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-teas-actor': 'agent' }, body: JSON.stringify({ version: pending.version }) });
+      expect([r.status, ((await r.json()) as { code: string }).code]).toEqual([403, 'agent.forbidden_action']);
+      expect(loadState().docs.find((d) => d.id === pending.id)!.status).toBe('pending'); // and nothing changed
+    });
   });
 });

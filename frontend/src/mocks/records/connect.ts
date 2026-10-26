@@ -182,6 +182,7 @@ export function decideConsent(st: MockState, actor: Actor, companyId: string, ow
 // ---- the agent policy (§8.4) ----
 export const defaultPolicy = (type: DocType): { mode: PolicyMode; cap: Money; version: number } => ({ mode: CLASS[type] === 'T' ? 'human' : 'auto', cap: DEFAULT_CAP, version: 1 });
 export const policyOf = (st: MockState, companyId: string, type: DocType): { mode: PolicyMode; cap: Money; version: number } => {
+  if (!POLICY_TYPES.includes(type)) return { mode: 'off', cap: DEFAULT_CAP, version: 1 }; // HC2c: a type outside the policy table (JV, payroll, opening balance, assets, certificates ...) is never an agent's: Off, and not settable
   const s = (st.agentPolicies ?? []).find((p) => p.companyId === companyId && p.docType === type);
   return s ? { mode: s.mode, cap: s.cap, version: s.version } : defaultPolicy(type);
 };
