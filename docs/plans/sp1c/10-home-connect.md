@@ -127,7 +127,7 @@ issued printable documents, `doc.<T>.read`), messages, `screens.ts`.
 - [ ] Parity audit: walk Appendix C line by line against the group files' "Parity coverage" tables; every row is built
   or listed as dropped in SP0 §1.4 (S1). Record the ticked list in `docs/specs/` as the SP1c parity checklist (one
   file, from `_TEMPLATE.md`).
-- [ ] Send Ham: Home inbox and KPIs, TEAS Connect and agent policy, platform screens, the parity checklist, open items
+- [x] Send Ham: Home inbox and KPIs, TEAS Connect and agent policy, platform screens, the parity checklist, open items
   O-1 … O-8, and every **Ham**-marked design decision not yet ruled (D-11, D-13 if still open).
-- [ ] AskUserQuestion "SP1c mockup approve (all screens)?" — approve / approve with changes / rework. Record in
+- [x] AskUserQuestion "SP1c mockup approve (all screens)?" — approve / approve with changes / rework. Record in
   `STATUS.md`; on approval SP1c is done and SP2 (contract freeze) starts.

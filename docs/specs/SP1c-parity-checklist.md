@@ -313,3 +313,6 @@ Docs only. Existence of every cited route / file was checked by Glob / Grep; no 
 
 - 2026-10-26 — drafted from Appendix C (`docs/discovery/01-ui-feature-inventory.md` 1137–1167) against group tables 01–10.
   Group 00 has no Parity table (it builds the kit / engine every row relies on).
+
+## Ham ruling 2026-10-26
+The 9 MISSING flexibility rows (FG-01b, FG-05c, FG-06a, FG-06b, FG-07b, FG-10f, FG-10h, FG-11b, FG-16) are DEFERRED to SP2+ (backlog). D-37 confirmed. Member-owned API keys / consent accepted. Agent cap per document; running per-period total is an SP2 item.
