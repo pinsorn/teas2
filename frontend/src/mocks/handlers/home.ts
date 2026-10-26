@@ -16,7 +16,7 @@ export const homeHandlers = [
     if (!HOME_NEEDS[section](perms)) return forbidden(`home.${section}`);
     const empty = s.screenState === 'empty', c = company.id;
     switch (section) {
-      case 'kpis': return HttpResponse.json(empty ? { cash: '0.00', ar: '0.00', ap: '0.00', vatThisMonth: company.vatRegistered ? '0.00' : null } : homeKpis(st, c));
+      case 'kpis': return HttpResponse.json(empty ? { cash: '0.00', ar: '0.00', ap: '0.00', vatThisMonth: company.vatRegistered ? '0.00' : null } : homeKpis(st, c, perms));
       case 'approvals': return HttpResponse.json(empty ? [] : homeApprovals(st, c, perms, USER));
       case 'drafts': return HttpResponse.json(empty ? [] : homeDrafts(st, c, perms));
       case 'overdue': return HttpResponse.json(empty ? [] : homeOverdue(st, c, perms));

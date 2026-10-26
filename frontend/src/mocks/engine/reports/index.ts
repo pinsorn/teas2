@@ -45,6 +45,9 @@ const BUILDERS: Partial<Record<ReportKind, (st: MockState, companyId: string, p:
   'vat-output-register': vatOutputRegister,
   'vat-input-register': vatInputRegister,
 };
+/** M8: a VAT register of a month not yet filed is the filing's preview, with the same right (`tax.filing.preview`). The right the request lacks, or undefined. The reports endpoint and Home's VAT tile share it. */
+export const vatRegisterRight = (st: MockState, companyId: string, kind: string, perms: string[], period?: string): string | undefined =>
+  kind.startsWith('vat-') && !perms.includes('tax.filing.preview') && !st.filings.some((f) => f.companyId === companyId && f.form === 'PP30' && f.period === period) ? 'tax.filing.preview' : undefined;
 export const isBuilt = (k: string): k is ReportKind => Object.hasOwn(BUILDERS, k);
 export const buildReport = (st: MockState, companyId: string, kind: ReportKind, p: Record<string, string>, perms: string[] = []) => BUILDERS[kind]!(st, companyId, p, perms);
 

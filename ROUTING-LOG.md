@@ -83,3 +83,5 @@
 | 2026-10-19 | SP1c GST consolidated gate (typecheck, lint, unit, build, Playwright --workers=1) | haiku-gate-runner | Tier 3 run-and-report |
 | 2026-10-19 | SP1c flaky templates e2e (CI run 39180806907) | sonnet-implementer (fresh) | root-cause a flaky test in new ST4 code before merge |
 | 2026-10-26 | SP1c HC1 implement (axe settle + role-aware Home, inbox, alerts, KPIs) | sonnet-implementer (fresh) | new group; Opus review after (approval actions, KPI identities) |
+| 2026-10-26 | SP1c HC1 review (KPI identities, approval inbox, role-aware sections, axe settle) | opus-reviewer (fresh) | approval actions + money figures |
+| 2026-10-26 | SP1c HC1a fix round (tile gates, agent digest, agent rows, cash COA, deadlines, axe bound) | sonnet-implementer (warm, HC1 worker) | Opus REJECT HC1 |

@@ -19,7 +19,7 @@ function homeRequests(page: Page): string[] {
   return seen;
 }
 const SECTIONS = {
-  operator: ['agent', 'alerts', 'bank', 'drafts', 'overdue'],
+  operator: ['agent', 'alerts', 'approvals', 'bank', 'drafts', 'kpis', 'overdue'],
   accountant: ['agent', 'alerts', 'approvals', 'bank', 'deadlines', 'drafts', 'kpis', 'overdue'],
   admin: ['alerts', 'bank', 'kpis'],
 } as const;

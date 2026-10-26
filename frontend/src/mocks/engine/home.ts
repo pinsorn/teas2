@@ -1,11 +1,19 @@
 import { DESCRIPTORS } from '@/descriptors';
 import { LIVE, isTypeAvailable } from '@/domain/doc-types';
+import type { FilingForm } from '@/domain/filings';
 import type { Actor, DocSummary, DocType, HomeAgentDigest, HomeAlert, HomeApproval, HomeDeadline, HomeKpis } from '@/domain/types';
 import type { MockState } from '../store';
 import { approvalRequiredOf, refuseSelfApproval } from './approval';
 import { checklistOf } from './close';
-import { getFiling, unfiledForms } from './filings';
-import { boxOf, getPp30, prevMonth } from './filings/pp30';
+import { getFiling } from './filings';
+import { PND_FORMS, pndRows } from './filings/pnd-wht';
+import { deriveRows, runsOf } from './filings/pnd1';
+import { pp36Rows } from './filings/pp36';
+import { isFiledPeriod } from './purchase-vat';
+import { monthLabelTh } from './periods';
+import { reportPermission } from '@/domain/reports';
+import { vatRegisterRight } from './reports';
+import { boxOf, getPp30, nextMonth, prevMonth } from './filings/pp30';
 import { formName } from './filings/pnd1';
 import { today } from './log';
 import { fromSatang, toSatang } from './money';
@@ -28,31 +36,40 @@ const summary = (d: Stored): DocSummary => ({
 const days = (later: string, earlier: string) => Math.round((Date.parse(`${later.slice(0, 10)}T00:00:00Z`) - Date.parse(`${earlier.slice(0, 10)}T00:00:00Z`)) / 86_400_000);
 const agingTotal = (m: { rows: { kind: string; cells: Record<string, string> }[] }) => m.rows.find((r) => r.kind === 'total')?.cells.total ?? '0.00';
 
-export function homeKpis(st: MockState, companyId: string): HomeKpis {
+/** Each tile needs the right of the engine that owns it; a tile the role may not see is null (like the non-VAT tile). */
+export function homeKpis(st: MockState, companyId: string, perms: string[]): HomeKpis {
   const asOf = today(), month = asOf.slice(0, 7);
-  const codes = [...new Set(st.bankAccounts.filter((b) => b.companyId === companyId).map((b) => b.accountCode))];
+  const codes = st.accounts.filter((a) => a.companyId === companyId && a.postable && (a.subClass === 'cash' || a.subClass === 'bank')).map((a) => a.code);
   const vat = st.companies.find((c) => c.id === companyId)?.vatRegistered;
-  const boxes = vat ? getPp30(st, companyId, month).boxes : [];
+  // the VAT registers' own gate: tax.read, and the filing preview right for a month not yet filed
+  const vatOk = !!vat && perms.includes(reportPermission('vat-output-register')) && !vatRegisterRight(st, companyId, 'vat-output-register', perms, month);
+  const arap = perms.includes('report.arap.read');
+  const boxes = vatOk ? getPp30(st, companyId, month).boxes : [];
   return {
-    cash: fromSatang(codes.reduce((n, c) => n + glBalance(st, companyId, c, asOf), 0)),
-    ar: agingTotal(arAging(st, companyId, { asOf })),
-    ap: agingTotal(apAging(st, companyId, { asOf })),
-    vatThisMonth: vat ? fromSatang(boxOf(boxes, '5') - boxOf(boxes, '7')) : null,
+    cash: perms.includes('bank.read') || perms.includes('ledger.read') ? fromSatang(codes.reduce((n, c) => n + glBalance(st, companyId, c, asOf), 0)) : null,
+    ar: arap ? agingTotal(arAging(st, companyId, { asOf })) : null,
+    ap: arap ? agingTotal(apAging(st, companyId, { asOf })) : null,
+    vatThisMonth: vatOk ? fromSatang(boxOf(boxes, '5') - boxOf(boxes, '7')) : null,
   };
 }
 
-/** Pending documents whose FROZEN policy wants approval and that this actor may approve (the right, and the frozen self-approval rule: the same refusal the approve command raises). */
+/** Pending documents whose FROZEN policy wants approval and that this actor may approve (the right, the right to read, and the frozen self-approval rule: the same refusal the approve command raises),
+ *  plus the drafts an agent made, for whoever may issue them (a link to the document, never an inline action: HC2 narrows this to the human route). */
 export function homeApprovals(st: MockState, companyId: string, perms: string[], actor: Actor): HomeApproval[] {
-  const out: HomeApproval[] = [];
+  const out: HomeApproval[] = [], vat = st.companies.find((c) => c.id === companyId)?.vatRegistered ?? false;
   for (const d of mine(st, companyId)) {
+    if (!isTypeAvailable(d.type, vat) || !perms.includes(`doc.${d.type}.read`)) continue;
+    if (d.status === 'draft' && d.createdBy.kind === 'agent' && perms.includes(`doc.${d.type}.issue`)) {
+      out.push({ id: d.id, type: d.type, number: d.number, partyName: d.party?.name ?? '', total: d.totals.total, version: d.version, requester: d.createdBy.name,
+        ageDays: Math.max(0, days(today(), d.header.documentDate)), reason: 'agent', ...(d.agentReportId ? { agentReportId: d.agentReportId } : {}) });
+      continue;
+    }
     if (d.status !== 'pending' || !d.approval || !perms.includes(`doc.${d.type}.approve`)) continue;
     if (!approvalRequiredOf(st, d, payoutOf(st, companyId, d))) continue;
     try { refuseSelfApproval(st, d, actor); } catch { continue; }
-    const agent = d.createdBy.kind === 'agent';
     out.push({
       id: d.id, type: d.type, number: d.number, partyName: d.party?.name ?? '', total: d.totals.total, version: d.version,
       requester: d.approval.submittedBy.name, ageDays: Math.max(0, days(today(), d.approval.submittedAt)),
-      ...(agent ? { reason: 'agent', ...(d.agentReportId ? { agentReportId: d.agentReportId } : {}) } : {}),
     });
   }
   return out.sort((a, b) => b.ageDays - a.ageDays || a.id.localeCompare(b.id));
@@ -67,20 +84,33 @@ export const homeOverdue = (st: MockState, companyId: string, perms: string[]): 
     .filter((d) => (['TI', 'IV', 'PB', 'EX'] as DocType[]).includes(d.type) && (d.status === 'issued' || d.status === 'partly_settled') && toSatang(d.outstanding ?? '0.00') > 0 && !!d.header.dueDate && d.header.dueDate < today())
     .map(summary);
 
-/** The returns of the last ended month that are owed and not finalized, with the due date the filing itself states. */
+/** Per form, the owed periods AFTER the form's latest finalized period (earlier ones are settled history; the filing chain), up to last month; a form never finalized starts at the company's first month with activity. Overdue first, labelled with the month. */
 export function homeDeadlines(st: MockState, companyId: string): HomeDeadline[] {
-  const period = prevMonth(today().slice(0, 7)), out: HomeDeadline[] = [];
-  for (const form of unfiledForms(st, companyId, period)) {
-    try { out.push({ form: formName(form), due: getFiling(st, companyId, form, period).dueDate }); } catch { /* a form with no model yet is not listed */ }
+  const last = prevMonth(today().slice(0, 7)), out: HomeDeadline[] = [];
+  const first = mine(st, companyId).filter((d) => d.status !== 'draft').map((d) => d.header.documentDate.slice(0, 7)).sort()[0];
+  const vat = !!st.companies.find((c) => c.id === companyId)?.vatRegistered;
+  const latest = (f: FilingForm) => st.filings.filter((x) => x.companyId === companyId && x.form === f).map((x) => x.period).sort().at(-1);
+  for (let m = first ?? last; m <= last; m = nextMonth(m)) {
+    const owed: FilingForm[] = [];
+    if (vat) owed.push('PP30');
+    for (const f of PND_FORMS) if (pndRows(st, companyId, f, m).length) owed.push(f);
+    if (pp36Rows(st, companyId, m).length) owed.push('PP36');
+    if (runsOf(st, companyId, m).length) { owed.push('PND1'); if (deriveRows(runsOf(st, companyId, m), 'sso').length) owed.push('SSO1-10'); }
+    for (const form of owed) {
+      if (isFiledPeriod(st, companyId, m, form) || m < (latest(form) ?? '')) continue;
+      try { out.push({ form: `${formName(form)} ${monthLabelTh(m)}`, due: getFiling(st, companyId, form, m).dueDate }); } catch { /* a form with no model yet is not listed */ }
+    }
   }
-  return out.sort((a, b) => a.due.localeCompare(b.due) || a.form.localeCompare(b.form));
+  const now = today();
+  return out.sort((a, b) => Number(b.due < now) - Number(a.due < now) || a.due.localeCompare(b.due) || a.form.localeCompare(b.form));
 }
 
 export const homeBank = (st: MockState, companyId: string): number => st.bankLines.filter((l) => l.companyId === companyId && l.status === 'unmatched').length;
 
+/** posted = agent documents issued today (mock today); waiting = agent drafts and documents pending approval. */
 export function homeAgent(st: MockState, companyId: string, perms: string[]): HomeAgentDigest {
-  const a = readable(st, companyId, perms).filter((d) => d.createdBy.kind === 'agent' && !['cancelled', 'replaced'].includes(d.status));
-  return { posted: a.filter((d) => d.status !== 'draft').length, waiting: a.filter((d) => d.status === 'draft').length };
+  const a = readable(st, companyId, perms).filter((d) => d.createdBy.kind === 'agent');
+  return { posted: a.filter((d) => LIVE.includes(d.status) && d.issuedAt?.slice(0, 10) === today()).length, waiting: a.filter((d) => d.status === 'draft' || d.status === 'pending').length };
 }
 
 /** Each alert needs the right of the report / screen it opens; a role without any gets none (and the section is not queried). */

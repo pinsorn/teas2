@@ -261,7 +261,8 @@ export interface CorrectionResult { affected: { docId: string; type: DocType; nu
 
 /** HC1: Home is one query per section. */
 export type HomeSection = 'kpis' | 'approvals' | 'drafts' | 'overdue' | 'deadlines' | 'bank' | 'agent' | 'alerts';
-export interface HomeKpis { cash: Money; ar: Money; ap: Money; vatThisMonth: Money | null }
+/** A tile the role may not see (the right of the engine behind it), or the VAT tile of a non-VAT company, is null. */
+export interface HomeKpis { cash: Money | null; ar: Money | null; ap: Money | null; vatThisMonth: Money | null }
 /** A pending document the signed-in user may approve: the requester and the age come from the approval trail (submittedBy / submittedAt), the amount is the document's total. */
 export interface HomeApproval { id: string; type: DocType; number?: string; partyName: string; total: Money; version: number; requester: string; ageDays: number;
   /** why it waits: set for an agent-routed document */ reason?: string; agentReportId?: string }

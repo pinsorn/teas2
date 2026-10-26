@@ -1,7 +1,7 @@
 import { HttpResponse, http } from 'msw';
 import { reportPermission } from '@/domain/reports';
 import { MockError } from '../engine/log';
-import { buildReport, isBuilt, reportCsv } from '../engine/reports';
+import { buildReport, isBuilt, reportCsv, vatRegisterRight } from '../engine/reports';
 import { ctx, forbidden, problem, screenGate } from './common';
 
 const DATE_KEYS = ['asOf', 'from', 'to'];
@@ -18,7 +18,8 @@ async function run(kind: string, url: URL) {
   if (!isBuilt(kind)) return problem(404, 'report.not_built', 'รายงานนี้ยังไม่เปิดให้ใช้งาน');
   const p = Object.fromEntries(url.searchParams);
   if (DATE_KEYS.some((k) => p[k] && !isDate(p[k]))) return problem(422, 'report.bad_param', 'วันที่ไม่ถูกต้อง');
-  if (kind.startsWith('vat-') && !perms.includes('tax.filing.preview') && !st.filings.some((f) => f.companyId === company.id && f.form === 'PP30' && f.period === p.period)) return forbidden('tax.filing.preview'); // M8: a month not yet filed is the filing's preview, with the same right
+  const preview = vatRegisterRight(st, company.id, kind, perms, p.period);
+  if (preview) return forbidden(preview);
   if (kind === 'bank-reconciliation') { // one account's report: it needs the bank right too, and the account named
     if (!perms.includes('bank.read')) return forbidden('bank.read');
     if (!p.account) return problem(422, 'report.bad_param', 'ต้องระบุบัญชีธนาคาร');

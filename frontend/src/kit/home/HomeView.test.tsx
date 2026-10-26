@@ -53,14 +53,14 @@ describe('role-aware Home: a section the role cannot see is absent AND never que
       expect(seen.filter((s) => !want.includes(s as never))).toEqual([]);
     });
   }
-  it('the roles really differ (the operator has no KPI strip, the accountant has the inbox, the admin neither)', () => {
-    expect(homeSectionsFor(PERMISSIONS_BY_ROLE.operator)).not.toContain('kpis');
+  it('the roles really differ (the operator has the cash tile only, the accountant the inbox, the admin no inbox)', () => {
+    expect(homeSectionsFor(PERMISSIONS_BY_ROLE.operator)).not.toContain('deadlines');
     expect(homeSectionsFor(PERMISSIONS_BY_ROLE.accountant)).toEqual(expect.arrayContaining(['kpis', 'approvals']));
     expect(homeSectionsFor(PERMISSIONS_BY_ROLE.admin)).not.toContain('approvals');
   });
   it('the server refuses a section the role cannot see', async () => {
     setSettings({ role: 'operator' });
-    await expect(endpoints.getHome('kpis')).rejects.toMatchObject({ problem: { status: 403 } });
+    await expect(endpoints.getHome('deadlines')).rejects.toMatchObject({ problem: { status: 403 } });
   });
 });
 
@@ -88,6 +88,6 @@ describe('each section owns its state', () => {
   it('the KPI tiles show the engine figures', async () => {
     open('accountant');
     const ar = await screen.findByTestId('kpi-ar');
-    expect(ar.textContent).toBe(formatTHB(homeKpis(loadState(), 'co-vat').ar));
+    expect(ar.textContent).toBe(formatTHB(homeKpis(loadState(), 'co-vat', PERMISSIONS_BY_ROLE.accountant).ar!));
   });
 });

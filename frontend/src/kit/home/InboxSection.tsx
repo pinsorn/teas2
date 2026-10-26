@@ -36,7 +36,7 @@ function ApprovalRow({ a }: { a: HomeApproval }) {
   const label = `${a.type} ${a.number ?? tc('draftNoNumber')}`.trim();
   // the same commands as the document page; a stale version reloads the inbox so a retry sends the current one
   const refresh = () => qc.invalidateQueries({ queryKey: [companyId] });
-  const after = { onSuccess: async () => { await refresh(); setBackOpen(false); }, onError: (e: unknown) => { if (e instanceof ApiError && e.code === 'doc.version_conflict') void refresh(); } };
+  const after = { onSuccess: async () => { await refresh(); setBackOpen(false); }, onError: () => { void refresh(); } }; // any refusal (stale version, a right withdrawn, already approved) reloads the inbox
   const approve = useMutation({ ...after, mutationFn: () => endpoints.approveDoc(a.type, a.id, a.version) });
   const approveIssue = useMutation({ ...after, mutationFn: () => endpoints.approveAndIssueDoc(a.type, a.id, a.version) });
   const sendBack = useMutation({ ...after, mutationFn: (reason: string) => endpoints.sendBackDoc(a.type, a.id, a.version, reason) });
@@ -58,11 +58,11 @@ function ApprovalRow({ a }: { a: HomeApproval }) {
         </div>
         <div className="shrink-0 text-right tabular-nums">{formatTHB(a.total)}</div>
       </div>
-      <div className="flex flex-wrap gap-2">
+      {a.reason === 'agent' ? null : <div className="flex flex-wrap gap-2">
         {both && <Button size="sm" disabled={busy} aria-label={`${ta('approveAndIssue')} ${label}`} onClick={() => { approveIssue.reset(); approveIssue.mutate(); }}>{ta('approveAndIssue')}</Button>}
         <Button size="sm" variant={both ? 'outline' : 'default'} disabled={busy} aria-label={`${ta('approve')} ${label}`} onClick={() => { approve.reset(); approve.mutate(); }}>{ta('approve')}</Button>
         <Button size="sm" variant="outline" disabled={busy} aria-label={`${ta('sendBack')} ${label}`} onClick={() => { sendBack.reset(); setBackOpen(true); }}>{ta('sendBack')}</Button>
-      </div>
+      </div>}
       {error ? <Alert variant="destructive" role="alert"><AlertTitle>{error instanceof ApiError ? error.problem.title : tp('default')}</AlertTitle></Alert> : null}
       {backOpen ? <SendBackDialog docLabel={label} busy={sendBack.isPending} error={sendBack.error} onCancel={() => setBackOpen(false)} onConfirm={(r) => sendBack.mutate(r)} /> : null}
     </li>

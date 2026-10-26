@@ -10,8 +10,7 @@ export function KpiStrip() {
   return (
     <HomeSectionShell id="h-kpis" title={t('label')} q={q} isEmpty={() => false} empty="" rows={1}>
       {(k) => {
-        const tiles: [string, string][] = [['cash', k.cash], ['ar', k.ar], ['ap', k.ap]];
-        if (k.vatThisMonth !== null) tiles.push(['vat', k.vatThisMonth]);
+        const tiles = ([['cash', k.cash], ['ar', k.ar], ['ap', k.ap], ['vat', k.vatThisMonth]] as const).flatMap(([key, v]) => (v === null ? [] : [[key, v] as [string, string]]));
         return (
           <dl aria-label={t('label')} className="grid grid-cols-2 gap-x-6 gap-y-3 lg:grid-cols-4">
             {tiles.map(([key, value]) => (
