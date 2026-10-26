@@ -99,15 +99,18 @@ it('RP2a m5: the statement party is found by typing; switching tab drops it (a c
   const { ReportTabs } = await import('@/app/(app)/reports/reports-tabs');
   const { useRouter } = await import('@/test/next-navigation');
   __setSearch('tab=cs&from=2026-01-01&to=2026-10-14');
+  const realReplaceState = window.history.replaceState.bind(window.history); // a filter writes the URL through history (as Next syncs it into useSearchParams): feed the mock the same way
+  const spy = vi.spyOn(window.history, 'replaceState').mockImplementation((d, u, url) => { realReplaceState(d, u, url); __setSearch(new URL(String(url), 'http://localhost').search); });
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={qc}><ReportTabs page="arap" /></QueryClientProvider>);
   const box = await screen.findByRole('combobox', { name: /ลูกค้า/ });
   await userEvent.type(box, 'C10');
   const opt = await screen.findByRole('option', { name: /C10/ });
   await userEvent.click(opt);
-  await waitFor(() => expect(String(useRouter().replace.mock.calls.at(-1)?.[0])).toContain('party=pc-10'));
+  await waitFor(() => expect(window.location.search).toContain('party=pc-10'));
   await userEvent.click(screen.getByRole('tab', { name: /เจ้าหนี้ตามผู้ขาย|ผู้ขาย|vendor/i }));
   const last = String(useRouter().replace.mock.calls.at(-1)?.[0]);
   expect(last).toContain('tab=vl');
   expect(last).not.toContain('party=');
+  spy.mockRestore();
 });

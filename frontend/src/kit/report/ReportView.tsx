@@ -1,7 +1,7 @@
 'use client';
 import { useQuery } from '@tanstack/react-query';
 import { DownloadIcon, PrinterIcon } from 'lucide-react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -33,7 +33,6 @@ export function ReportView(p: ReportViewProps) {
 function Inner({ kind, params: specs, defaults, exportable = true }: ReportViewProps) {
   const t = useTranslations();
   const dyn = t as unknown as (key: string, v: Record<string, string>) => string; // server-supplied label keys are not statically known
-  const router = useRouter();
   const pathname = usePathname();
   const search = useSearchParams();
   const { me, isError: meFailed, error: meError, refetch: refetchMe } = useMe();
@@ -60,7 +59,8 @@ function Inner({ kind, params: specs, defaults, exportable = true }: ReportViewP
       const u = new URLSearchParams(latest.current.toString());
       // an empty value stays in the URL when the key has a default: absent = use the default, present-and-empty = the user cleared it
       for (const [k, v] of Object.entries(next)) if (v || defaults[k]) u.set(k, v); else u.delete(k);
-      router.replace(`${pathname}?${u}`);
+      // history, not router.replace: a filter only rewrites the query (Next syncs useSearchParams), while router.replace re-commits the page and blanks <title> for a moment
+      window.history.replaceState(null, '', `${pathname}?${u}`);
     }, DEBOUNCE_MS);
   };
 

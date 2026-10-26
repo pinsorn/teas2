@@ -95,3 +95,4 @@
 | 2026-10-26 | SP1c GHC parity checklist (docs only) | sonnet-implementer (fresh) | read-heavy audit, parallel with read-only review |
 | 2026-10-26 | SP1c HC3a fix round (anchored session gate, extend / relogin states, public links counterparty types + type check, minors) | sonnet-implementer (warm, HC3 worker) | Opus REJECT HC3 |
 | 2026-10-26 | SP1c GHC consolidated gate | haiku-gate-runner | Tier 3 run-and-report |
+| 2026-10-27 | SP1c CI axe failures root cause (payroll run new contrast, outstanding PO title) | sonnet-implementer (fresh, systematic-debugging) | recurring CI-only failures block PR #17 merge |
