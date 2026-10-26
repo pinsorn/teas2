@@ -96,9 +96,9 @@ export function createKey(st: MockState, actor: Actor, companyId: string, owner:
 }
 
 /** Rotate = a new key with the same name / kind / scopes / expiry / owner; the OLD key is revoked in the same command. */
-export function rotateKey(st: MockState, actor: Actor, companyId: string, id: string, version: unknown, secret?: string, who?: string): ApiKeyCreated {
+export function rotateKey(st: MockState, actor: Actor, companyId: string, id: string, version: unknown, secret?: string): ApiKeyCreated {
   refuseAgent(actor);
-  const old = keyOf(st, companyId, id, who);
+  const old = keyOf(st, companyId, id, actor.id); // HC2b N2: a new key carries the OLD key's owner rights, so only that owner may ask for it; anyone else (the manager too) gets a 404
   if (version !== old.version) throw conflict();
   if (statusOf(old) === 'revoked') throw new MockError(409, 'connect.key_revoked', 'คีย์นี้ถูกเพิกถอนแล้ว สร้างคีย์ใหม่แทน');
   if (statusOf(old) === 'expired') throw new MockError(409, 'connect.key_expired', 'คีย์นี้หมดอายุแล้ว สร้างคีย์ใหม่แทน (หมุนเวียนคีย์ที่หมดอายุไม่ได้)');
@@ -134,11 +134,12 @@ export function authenticateKey(st: MockState, secret: string, companyId: string
 
 // ---- connected OAuth apps and the consent screen ----
 const publicApp = (a: StoredApp): OAuthAppRow => ({ id: a.id, version: a.version, name: a.name, ownerName: a.ownerName, scopes: a.scopes, connectedAt: a.connectedAt, ...(a.revokedAt ? { revokedAt: a.revokedAt } : {}) });
-export const listApps = (st: MockState, companyId: string): OAuthAppRow[] => (st.oauthApps ?? []).filter((a) => a.companyId === companyId && !a.revokedAt).map(publicApp);
+/** `who` = a member sees only the apps they consented to (absent = connect.manage: all). */
+export const listApps = (st: MockState, companyId: string, who?: string): OAuthAppRow[] => (st.oauthApps ?? []).filter((a) => a.companyId === companyId && !a.revokedAt && (!who || a.ownerId === who)).map(publicApp);
 
-export function revokeApp(st: MockState, actor: Actor, companyId: string, id: string, version: unknown): OAuthAppRow {
+export function revokeApp(st: MockState, actor: Actor, companyId: string, id: string, version: unknown, who?: string): OAuthAppRow {
   refuseAgent(actor);
-  const a = (st.oauthApps ?? []).find((x) => x.id === id && x.companyId === companyId);
+  const a = (st.oauthApps ?? []).find((x) => x.id === id && x.companyId === companyId && (!who || x.ownerId === who));
   if (!a) throw new MockError(404, 'record.not_found', 'ไม่พบแอปที่เชื่อมต่อนี้');
   if (version !== a.version) throw conflict();
   if (a.revokedAt) return publicApp(a);

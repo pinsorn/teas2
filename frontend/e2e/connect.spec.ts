@@ -12,9 +12,8 @@ const call = (page: Page, method: string, path: string, body?: unknown) =>
 
 // HC2a: any member has their own keys; the connected apps and the agent policy are the administrator's (connect.manage)
 screenContract({ name: 'connect keys', path: '/settings/connect', heading: 'TEAS Connect', company: 'both', roles: ['admin', 'accountant'], states: ['loading', 'error', 'forbidden'] });
-for (const [tab, path] of [['apps', '/settings/connect?tab=apps'], ['policy', '/settings/connect?tab=policy']] as const) {
-  screenContract({ name: `connect ${tab}`, path, heading: 'TEAS Connect', company: 'both', roles: ['admin'], states: ['loading', 'error', 'forbidden'], forbiddenRole: 'accountant' });
-}
+screenContract({ name: 'connect apps', path: '/settings/connect?tab=apps', heading: 'TEAS Connect', company: 'both', roles: ['admin', 'accountant'], states: ['loading', 'error', 'forbidden'] }); // HC2b n1: a member sees the apps they consented to
+screenContract({ name: 'connect policy', path: '/settings/connect?tab=policy', heading: 'TEAS Connect', company: 'both', roles: ['admin'], states: ['loading', 'error', 'forbidden'], forbiddenRole: 'accountant' });
 // the stored review report of the agent's draft: read with the document type's right (the administrator holds none); the other company has no such report
 screenContract({ name: 'agent report', path: '/agent-reports/ar-1', heading: 'รายงานการตรวจของ agent', company: 'vat', otherCompany: 'not-found', states: ['loading', 'error', 'forbidden'], forbiddenRole: 'admin' });
 // the consent page lives outside the app shell
@@ -89,7 +88,7 @@ test('a member (the accountant) has their own keys tab only; approve / cancel / 
   await page.goto(`/settings/connect?${ACC}`);
   await expect(page.getByRole('heading', { level: 1, name: 'TEAS Connect' })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'คีย์ API' })).toBeVisible();
-  await expect(page.getByRole('tab', { name: 'แอปที่เชื่อมต่อ' })).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: 'แอปที่เชื่อมต่อ' })).toHaveCount(1); // their own apps (HC2b n1)
   await expect(page.getByRole('tab', { name: 'นโยบาย agent' })).toHaveCount(0);
   await expect(page.getByText('คีย์ของคุณเอง')).toBeVisible();
   await page.getByRole('button', { name: 'สร้างคีย์' }).click();
@@ -103,7 +102,7 @@ test('a member (the accountant) has their own keys tab only; approve / cancel / 
     const r = await call(page, 'POST', '/connect/keys', { name: 'x', kind: 'rest', scopes: [sc] });
     expect([sc, r.status, r.json.code]).toEqual([sc, 422, 'connect.scope_forbidden']);
   }
-  expect((await call(page, 'GET', '/connect/apps')).status).toBe(403);
+  expect((await call(page, 'GET', '/connect/policy')).status).toBe(403);
   await shot(page, 'hc2a-member-keys-desktop');
 });
 

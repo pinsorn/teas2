@@ -45,13 +45,13 @@ function Inner() {
   if (meFailed && !me) return <ErrorState error={meError} onRetry={() => void refetchMe()} />;
   if (!me) return <LoadingState />;
   const id = me.activeCompanyId;
-  const manage = me.permissions.includes('connect.manage'); // a member sees their own keys; the apps and the policy are the manager's (a direct link to them answers 403)
+  const manage = me.permissions.includes('connect.manage'); // a member sees their own keys and the apps they consented to; the policy is the manager's (a direct link to it answers 403)
   return (
     <div className="grid gap-4">
       <div><h1 className="text-title font-semibold">{t('title')}</h1><p className="text-body text-muted-foreground">{t('lead')}</p></div>
       <Tabs value={tab} onValueChange={(v) => { const u = new URLSearchParams(search.toString()); u.set('tab', v); router.replace(`${pathname}?${u}`); }}>
         <TabsList aria-label={t('tabs.label')} className="h-auto flex-wrap group-data-horizontal/tabs:h-auto">
-          {TABS.filter((k) => k === 'keys' || manage).map((k) => <TabsTrigger key={k} value={k} className="h-8 flex-auto">{t(`tabs.${k}`)}</TabsTrigger>)}
+          {TABS.filter((k) => k !== 'policy' || manage).map((k) => <TabsTrigger key={k} value={k} className="h-8 flex-auto">{t(`tabs.${k}`)}</TabsTrigger>)}
         </TabsList>
         <TabsContent value="keys"><KeysTab companyId={id} manage={manage} /></TabsContent>
         <TabsContent value="apps"><AppsTab companyId={id} /></TabsContent>

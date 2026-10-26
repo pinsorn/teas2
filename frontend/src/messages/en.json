@@ -1945,6 +1945,7 @@
     "report": {
       "title": "Agent review report",
       "draft": "Draft",
+      "gone": "This document has been deleted. The report is kept as a record only.",
       "forVersion": "This report is for version {n}",
       "moved": "The document has moved on (this report is for version {n}, it is now version {now}). Do not rely on it; the agent must submit it again.",
       "by": "Submitted by {agent} for {owner} · report {version}",

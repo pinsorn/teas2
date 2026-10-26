@@ -5,7 +5,7 @@ import { buildSeedState } from '../store';
 import { setPolicy } from '../records/connect';
 import { reviewDraft, routeOf, getReport } from './agent-review';
 import { approve } from './approval';
-import { approveAndIssue, cancel, createDraft, issue, reissue, revise, updateDraft } from './commands';
+import { approveAndIssue, cancel, createDraft, deleteDraft, issue, reissue, revise, updateDraft } from './commands';
 import { checkInvariants } from './invariants';
 import { homeApprovals } from './home';
 import { withFixedClock } from './log';
@@ -246,5 +246,54 @@ describe('HC2a m4: the catalogue gaps', () => {
     c.hist('2026-10-01', 'QT', '1000000.00'); // a big quotation does not make a big TI normal, and a tiny QT does not make it abnormal
     c.hist('2026-10-01', 'TI', '1000000.00');
     expect(codes(reviewDraft(c.st, AGENT, 'ti-002'))).not.toContain('over_3x');
+  });
+});
+
+describe('HC2b: the issue gate re-checks token expiry and the CURRENT policy; own drafts only; closed year', () => {
+  let k = 0;
+  const auto = (st: ReturnType<typeof buildSeedState>) => {
+    const qt = st.docs.find((d) => d.type === 'QT' && d.status === 'issued')!;
+    const d = withFixedClock('2026-10-14T10:00:00+07:00', () => createDraft(st, V, 'QT', { header: { ...qt.header, documentDate: '2026-10-14' }, lines: qt.lines.map((l) => ({ ...l, unitPrice: (Number(l.unitPrice) - ++k).toFixed(2) })) }, AGENT, `gate-${k}`));
+    expect(reviewDraft(st, AGENT, d.id).route).toBe('auto');
+    return d;
+  };
+  it('N1: a policy switched to Off (or to Human, or a lower cap) after the review refuses the issue; so does an expired token', () => {
+    const st = buildSeedState();
+    const a = auto(st);
+    setPolicy(st, USER, V, 'QT', { mode: 'off', cap: '50000.00', version: 1 });
+    expect(code(() => issue(st, a.id, a.version, AGENT))).toBe('agent.review_required');
+    setPolicy(st, USER, V, 'QT', { mode: 'human', cap: '50000.00', version: 2 });
+    expect(code(() => issue(st, a.id, a.version, AGENT))).toBe('agent.review_required');
+    setPolicy(st, USER, V, 'QT', { mode: 'auto', cap: '1.00', version: 3 }); // the amount now exceeds the cap
+    expect(code(() => issue(st, a.id, a.version, AGENT))).toBe('agent.review_required');
+    setPolicy(st, USER, V, 'QT', { mode: 'auto', cap: '50000.00', version: 4 });
+    const rep = st.agentReports!.find((r) => r.id === st.docs.find((d) => d.id === a.id)!.agentReportId)!;
+    rep.expiresAt = '2026-01-01T00:00:00.000Z'; // the 15-minute token has run out
+    expect(code(() => issue(st, a.id, a.version, AGENT))).toBe('agent.review_required');
+    rep.expiresAt = new Date(Date.now() + 60_000).toISOString();
+    expect(issue(st, a.id, a.version, AGENT).status).toBe('issued'); // back to a valid state: it issues
+  });
+  it('N4: an agent edits or deletes only a draft it created, and only while it is a draft', () => {
+    const st = buildSeedState();
+    const own = auto(st);
+    const person = st.docs.find((d) => d.type === 'TI' && d.status === 'draft' && d.createdBy.kind === 'user')!;
+    const pending = st.docs.find((d) => d.status === 'pending')!;
+    const other: typeof AGENT = { ...AGENT, id: 'ag-2' };
+    for (const d of [person, pending]) {
+      expect([d.id, code(() => updateDraft(st, d.id, { header: d.header, lines: d.lines }, d.version, AGENT))]).toEqual([d.id, 'agent.forbidden_action']);
+      expect([d.id, code(() => deleteDraft(st, d.id, d.version, AGENT))]).toEqual([d.id, 'agent.forbidden_action']);
+    }
+    expect(code(() => updateDraft(st, own.id, { header: own.header, lines: own.lines }, own.version, other))).toBe('agent.forbidden_action'); // another agent's draft
+    expect(st.docs.find((d) => d.id === pending.id)!.status).toBe('pending'); // nothing was pushed back
+    expect(updateDraft(st, own.id, { header: own.header, lines: own.lines }, own.version, AGENT).status).toBe('draft');
+    expect(code(() => deleteDraft(st, person.id, person.version, USER))).toBeUndefined(); // a person may delete a person's draft
+  });
+  it('n3: a date in a closed YEAR is an error in the review checks', () => {
+    const st = buildSeedState();
+    st.yearCloses.push({ id: 'yc-t', companyId: V, year: 2026, date: '2026-12-31', closedAt: '2026-10-14T00:00:00Z', closedBy: USER, net: '0.00', journal: [] });
+    const d = draftLike(st, 'ti-002', { date: '2026-09-10' }); // the month itself is open: only the year is closed
+    const c = reviewDraft(st, AGENT, d.id).checks.find((x) => x.code === 'period_closed');
+    expect(c?.severity).toBe('error');
+    expect(c?.message).toContain('ปีบัญชี');
   });
 });

@@ -19,8 +19,11 @@ import { CLASS } from '../fixtures/documents';
 import { refuseInactiveBank } from '../records/bank-accounts';
 import { saveState } from '../store';
 import { ctx, forbidden, persist, problem, screenGate } from './common';
+import { actorFor } from './me';
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1', name: 'สมศรี บัญชีดี' };
+/** Create / update / delete / issue may be an agent's (the gate in me.ts lets only those through); everything else is always the signed-in user. */
+const by = (req: Request): Actor => actorFor(req);
 
 /** vatOverride (correction notes) and allocation targetNumber are engine-set only: never accepted from an API caller. */
 const WHT_MODES = ['deduct', 'grossup_once', 'grossup_always'];
@@ -102,7 +105,7 @@ export const docsWriteHandlers = [
     const key = request.headers.get('Idempotency-Key') ?? crypto.randomUUID();
     const body = stripOverrides((await request.json()) as Body);
     refuseInactive(c, t, body?.header); // the shape of the request, refused where it enters: a new document does not pick a closed account
-    const doc = createDraft(c.st, c.company.id, t, body, ACTOR, key);
+    const doc = createDraft(c.st, c.company.id, t, body, by(request), key);
     done(c);
     return HttpResponse.json(doc, { status: 201 });
   })),
@@ -111,7 +114,7 @@ export const docsWriteHandlers = [
     const stored = own(c, t, params.id);
     const body = stripOverrides((await request.json()) as Body & { version?: number });
     refuseInactive(c, t, body?.header, stored.header); // keeping the account it already has is fine
-    const doc = updateDraft(c.st, String(params.id), body, versionOf(request, body), ACTOR);
+    const doc = updateDraft(c.st, String(params.id), body, versionOf(request, body), by(request));
     done(c);
     return HttpResponse.json(doc);
   })),
@@ -119,7 +122,7 @@ export const docsWriteHandlers = [
   http.delete('*/bff/v1/docs/:type/:id', ({ request, params }) => generic(String(params.type), P('create'), (c, t) => {
     own(c, t, params.id);
     const q = new URL(request.url).searchParams.get('version');
-    deleteDraft(c.st, String(params.id), versionOf(request, q ? { version: Number(q) } : undefined), ACTOR);
+    deleteDraft(c.st, String(params.id), versionOf(request, q ? { version: Number(q) } : undefined), by(request));
     done(c);
     return new HttpResponse(null, { status: 204 });
   })),
@@ -127,7 +130,7 @@ export const docsWriteHandlers = [
   http.post('*/bff/v1/docs/:type/:id/issue', ({ request, params }) => generic(String(params.type), P('issue'), async (c, t) => {
     own(c, t, params.id);
     const body = (await request.json().catch(() => ({}))) as { version?: number };
-    const doc = issue(c.st, String(params.id), versionOf(request, body), ACTOR);
+    const doc = issue(c.st, String(params.id), versionOf(request, body), by(request));
     done(c);
     return HttpResponse.json(doc);
   })),

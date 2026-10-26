@@ -11,6 +11,7 @@ import { beforeJvCancel, dimensionProblems, journalProblem, jvBalance, jvCalc, j
 import { afterRevision, refuseClosed, refuseRejected, withAcceptedStamp } from './marks';
 import { MockError, diffBody, isPinned, logActivity, logAudit, stamp, today } from './log';
 import { fromSatang, toSatang } from './money';
+import { policyOf } from '../records/connect';
 import { adjustSnapshot, hasSnapshot, isNote, noteHeader, noteMissing, noteProblem, withNoteVat } from './notes';
 import { allocateNumber } from './numbering';
 import { whtInactiveProblem } from './wht';
@@ -346,8 +347,9 @@ export function createDraft(st: MockState, companyId: string, type: DocType, bod
 function agentIssueGate(st: MockState, d: Stored, actor: Actor): void {
   if (actor.kind !== 'agent') return;
   const r = st.agentReports?.find((x) => x.id === d.agentReportId);
-  if (!r || r.docVersion !== d.version || r.route !== 'auto' || r.checks.some((k) => k.severity === 'error')) {
-    throw new MockError(409, 'agent.review_required', 'agent ออกเอกสารเองได้เฉพาะร่างที่รายงานการตรวจฉบับปัจจุบันให้ออกอัตโนมัติและไม่มีข้อผิดพลาด ให้ส่งตรวจใหม่หรือให้คนอนุมัติ');
+  const pol = policyOf(st, d.companyId, d.type); // HC2b: the policy NOW, not the one the report was made under
+  if (!r || r.docVersion !== d.version || r.route !== 'auto' || r.checks.some((k) => k.severity === 'error') || stamp() > r.expiresAt || pol.mode !== 'auto' || toSatang(d.totals.total) > toSatang(pol.cap)) {
+    throw new MockError(409, 'agent.review_required', 'agent ออกเอกสารเองได้เฉพาะร่างที่รายงานการตรวจฉบับปัจจุบันให้ออกอัตโนมัติ ไม่มีข้อผิดพลาด ยังไม่หมดอายุ และนโยบายปัจจุบันยังเป็นอัตโนมัติและยอดไม่เกินวงเงิน ให้ส่งตรวจใหม่หรือให้คนอนุมัติ');
   }
 }
 
@@ -355,8 +357,14 @@ function agentIssueGate(st: MockState, d: Stored, actor: Actor): void {
 const moneyChanged = (d: Stored, total: Money, body: Body): boolean =>
   total !== d.totals.total || !sameLines(body.lines, d.lines) || fiscalAllocations(body.allocations) !== fiscalAllocations(d.allocations);
 
+/** HC2b: an agent edits or deletes only a draft IT created, and only while it is a draft (it never pushes an approved or pending document back, nor touches a person's draft). */
+function agentOwnDraft(d: Stored, actor: Actor): void {
+  if (actor.kind === 'agent' && !(d.status === 'draft' && d.createdBy.kind === 'agent' && d.createdBy.id === actor.id)) throw new MockError(403, 'agent.forbidden_action', 'agent แก้ไขหรือลบได้เฉพาะฉบับร่างที่ agent สร้างเอง');
+}
+
 export function updateDraft(st: MockState, id: string, raw: Body, version: number, actor: Actor): Doc {
   const d = getDoc(st, id);
+  agentOwnDraft(d, actor);
   if (d.status === 'pending') throw new MockError(409, 'approval.pending', 'เอกสารนี้รออนุมัติ แก้ไขไม่ได้ ให้ผู้อนุมัติส่งกลับแก้ไขก่อน');
   if (d.status !== 'draft' && d.status !== 'approved') throw new MockError(409, 'doc.not_draft', 'แก้ไขได้เฉพาะเอกสารฉบับร่าง');
   checkVersion(d, version);
@@ -374,6 +382,7 @@ export function updateDraft(st: MockState, id: string, raw: Body, version: numbe
 
 export function deleteDraft(st: MockState, id: string, version: number, actor: Actor): void {
   const d = getDoc(st, id);
+  agentOwnDraft(d, actor);
   if (d.status !== 'draft') throw new MockError(409, 'doc.not_draft', d.status === 'pending' || d.status === 'approved' ? 'ลบเอกสารที่ส่งอนุมัติแล้วไม่ได้ ให้ผู้อนุมัติส่งกลับแก้ไขก่อน แล้วลบฉบับร่าง' : 'ลบได้เฉพาะเอกสารฉบับร่าง');
   checkVersion(d, version);
   st.docs = st.docs.filter((x) => x.id !== id);
