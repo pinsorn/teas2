@@ -31,7 +31,7 @@ export default function OnboardingPage() {
   const locale = useLocale();
   const router = useRouter();
   const qc = useQueryClient();
-  const { me } = useMe();
+  const { account: me } = useMe();
   const [i, setI] = useState(0);
   const [f, setF] = useState<Form>({ legalNameTh: '', taxId: '', branchCode: '00000', address: '', vat: '', month: 1, template: 'sme-th', kind: 'bank', accountName: '', bankName: 'kbank', accountNo: '', cutoff: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});

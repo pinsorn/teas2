@@ -105,11 +105,25 @@ public sealed class LinkService(TeasDbContext db, TenantScope scope, TimeProvide
     {
         if (l.CreatedBy == UserLinks.Operator) return true;
         if (!Guid.TryParse(l.CreatedBy, out var issuer)) return false;
+        if (l.Kind == UserLinks.Invite) return l.CompanyId is { } c && (await ManagedByAsync(issuer, ct)).Contains(c);
+        return await ManagesAccountAsync(issuer, l.UserId!.Value, loginEmail, memberEmail, ct);
+    }
+
+    /// <summary>The P0c whole-account rule: the issuer holds users.manage in EVERY company where the account has a membership of any state (by user id, by the login email as a pending invite, or by the membership email). Needs a transaction; reads under system scope.</summary>
+    async Task<bool> ManagesAccountAsync(Guid issuer, Guid? user, string? loginEmail, string? memberEmail, CancellationToken ct)
+    {
         var managed = await ManagedByAsync(issuer, ct);
-        if (l.Kind == UserLinks.Invite) return l.CompanyId is { } c && managed.Contains(c);
         var theirs = await Q.ManyAsync(db, "SELECT DISTINCT company_id FROM teas.company_members WHERE user_id = @u OR email = @e::citext OR email = @m::citext",
-            r => r.GetGuid(0), ct, TxSql.P("u", l.UserId!.Value), TxSql.P("e", loginEmail ?? ""), TxSql.P("m", memberEmail ?? ""));
+            r => r.GetGuid(0), ct, Q.N("u", NpgsqlDbType.Uuid, user), TxSql.P("e", loginEmail ?? ""), TxSql.P("m", memberEmail ?? ""));
         return theirs.All(managed.Contains);
+    }
+
+    /// <summary>At ISSUE of a reset link or a two-step reset (routes 24 / 25): the same rule that is re-checked when the link is used. Call inside the command transaction.</summary>
+    public async Task<bool> IssuerManagesAccountAsync(Guid issuer, Guid? accountUser, string memberEmail, CancellationToken ct = default)
+    {
+        using var _ = scope.EnterSystem("link-issue");
+        var loginEmail = accountUser is { } u ? await Q.ScalarAsync<string>(db, "SELECT email::text FROM teas.users WHERE id = @u", ct, TxSql.P("u", u)) : null;
+        return await ManagesAccountAsync(issuer, accountUser, loginEmail, memberEmail, ct);
     }
 
     /// <summary>Null = invalid, whatever the reason. Reads only. Call inside a transaction.</summary>

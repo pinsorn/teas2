@@ -669,21 +669,21 @@ nothing; invites create a pending member + an invite link (route 14 accepts it);
 member; `totp-reset` refused on yourself. `CompanyFactory.Create` runs `TenantScope.Enter(newId, adminUserId)` BEFORE
 inserting the `companies` row (its policy is `WITH CHECK (id = teas.current_company())`) and the admin member in the same
 transaction; a test asserts both rows exist afterwards (a factory that inserts first would fail WITH CHECK, not no-op).
-- [ ] **Step 1: Failing tests** — S15 (all ST1 review probes: role edit removing the last admin, pending invite not
+- [x] **Step 1: Failing tests** (backend done: MeAndCompanyTests + UsersAndRolesTests, 35 tests, mutation-checked; see task-P8-report.md) — S15 (all ST1 review probes: role edit removing the last admin, pending invite not
   counted, self-demotion via user and via role edit), S17 on company sections (backlog B-2), `Me` for a user with two
   memberships and a custom role (`roleName`), `Me.activeCompanyId = null` without membership, switch to a company you
   are not an active member of → 404, `company.switch` audited, every write audited with `before` / `after` without
   pictures, agent refused with `agent.forbidden_setting` before the body is read.
-- [ ] **Drop the P0 `Me` narrowing:** `domain/types.ts` re-exports `Me` with `activeCompanyId: string` (an exception to
+- [x] **Drop the P0 `Me` narrowing** (done: `Me` is the contract type; `useMe().me` is `CompanyMe` or undefined, `account` is the raw Me; `<CompanyGate>` in the (app) layout redirects null to /onboarding and mounts nothing; 4 files edited + 2 new, no call-site churn; typecheck/lint/vitest 186 files 2879 passed/build/freeze/layout green; CompanyGate.test.tsx): `domain/types.ts` re-exports `Me` with `activeCompanyId: string` (an exception to
   "old files re-export verbatim", master plan §2.2). P8 removes it, makes `useMe` handle `activeCompanyId === null`
   (`router.replace('/onboarding')`, no company screens mounted); drop the narrowed `Me.activeCompanyId` and handle null (to /onboarding), and fixes the ~100 call sites that then need a string.
-- [ ] **Steps 2–5**, gates as P4 + conformance. **Step 6: Controller commits**
+- [~] **Steps 2–5** (backend half done: build -warnaserror 0/0, Integration 238/238 twice, Architecture 25/25, Domain 58/58, OpenAPI artifact identical, conformance lines for routes 15-29, typecheck ok, freeze + layout ok; the frontend half "Drop the P0 Me narrowing" remains), gates as P4 + conformance. **Step 6: Controller commits**
   `feat(platform): me, company switch, company settings, users and roles`.
 
 ### Task P9: API keys, agent surface, MCP host, tool generator
 
 **Depends on:** P8; ADR-0005 accepted. **Blast cap:** 20 files. **Tier 2:** Opus review (security).
-**Files:** migration `0006_api_keys`, `src/Teas.App/Platform/Keys/**`, `src/Teas.Api/Auth/ApiKeyHandler.cs`,
+**Files:** migration `0007_api_keys` (P8 took `0006_company_profile`), `src/Teas.App/Platform/Keys/**`, `src/Teas.Api/Auth/ApiKeyHandler.cs`,
 `src/Teas.Api/Endpoints/KeysEndpoints.cs` (routes 30–33), `src/Teas.Api/Machine/**` (`/api/v1` and `/mcp` groups,
 `whoami`, tool generator), tests S10–S12, conformance lines.
 **Rules:** §4.6, HC2 rulings 1–2 and the HC2 review rounds (member-owned keys; `connect.manage` sees and revokes all;
@@ -732,7 +732,7 @@ characters.
 | Q8 | Lockout per email lets anyone lock a known user out for 15 min; keep (as approved in HC3) plus the per-IP limit | Keep |
 | Q9 | Agents never approve, cancel or correct any document type (HC2, stricter than §8.5) — record in ADR-0005 | Approve |
 
-**Backlog (SP4.6 jobs):** prune `auth_failures` (rows not locked and older than 24 h) and revoked / absolute-expired `sessions` rows.
+**Backlog (SP4.6 jobs):** sweep blobs under `TEAS_FILES_DIR` that no `files` row references (a rolled-back image save leaves one); prune `auth_failures` (rows not locked and older than 24 h) and revoked / absolute-expired `sessions` rows.
 
 ## 13. Attempt log
 
