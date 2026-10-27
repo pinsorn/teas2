@@ -264,3 +264,22 @@ Entry format — terse, greppable by symptom:
 - Symptom: a permission-gated test route answers 200 / 422 to a caller without the right.
 - Root cause: `Program.cs` adds `RouteAuthorization` before the test host's `IStartupFilter` routing runs, so at that point the test endpoint is not yet matched (`GetEndpoint()` is null) and the middleware passes through.
 - Fix: `PlatformTestHost` adds `UseMiddleware<RouteAuthorization>()` right after its own `UseRouting()` (and its `TestAuth` before `next(app)` stands in for authentication).
+
+## `citext = @param` is case-SENSITIVE (a lower-case lookup misses an upper-case email)
+- Symptom: an invite / login for `USER@Example.Test` does not find the user row stored as `user@example.test`, although the column is `citext`.
+- Root cause: Npgsql sends a `string` parameter as `text`; PostgreSQL resolves `citext = text` as `text = text` (citext -> text is the implicit cast), so the comparison loses its case-insensitivity.
+- Fix: cast the parameter: `WHERE email = @e::citext` (done in AuthService / LinkService / the CLI, P7). `ON CONFLICT (email)` and column-to-column comparisons are unaffected.
+
+## `ExecuteScalar` returns `DateTime` for `timestamptz`, not `DateTimeOffset` (InvalidCastException)
+- Symptom: `(DateTimeOffset?)await cmd.ExecuteScalarAsync()` throws InvalidCastException on a timestamptz column.
+- Fix: read through a reader with `GetFieldValue<DateTimeOffset>(i)` (P7 `Q.ScalarAsync`). Parameters must be UTC (`offset 0`; `TimeProvider.GetUtcNow()` is).
+
+## A race test of two fast HTTP requests proves nothing unless something holds them at the decisive line
+- Symptom: a mutation that removes the guarded `UPDATE` (e.g. the TOTP `totp_last_step < @s` predicate) leaves a "two concurrent requests, one winner" test green.
+- Root cause: in-process requests take milliseconds; the second one reads the already-updated row, so the sequential check (`Totp.Match(..., lastStep)`) refuses it and the SQL guard is never exercised.
+- Fix: park both requests at a barrier after they read and before they claim (P7 `GatedProtector` in `AuthHost`: a barrier inside `ISecretProtector.Unprotect`, which runs between the user read and the UPDATE). Then removing the SQL guard turns the test red.
+
+## Architecture test `EveryErrorCodeLiteralInSourceIsInTheRegistry` flags `const string ItemKey = "teas.session"`
+- Symptom: the scan lists a Teas.Api file with an "unregistered code".
+- Root cause: any `const string X = "lower.dotted"` is taken for an error code (the regex `const string \w+ = "[a-z][a-z0-9_]*\.[a-z0-9_.]+"`).
+- Fix: name such constants without the dotted lower-case shape (P7: `HttpContext.Items` key `TeasSession`).

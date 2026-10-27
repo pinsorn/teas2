@@ -7,3 +7,7 @@ teas.__EFMigrationsHistory EF history, owned by the migrator; teas_app has SELEC
 teas.auth_events         global append-only security log (no company yet at login time)
 teas.permissions         global permission catalog, written only by the migrator catalog sync (teas_app: SELECT)
 teas.role_templates      global system role templates, same sync (teas_app: SELECT)
+teas.recovery_codes      global: belongs to a user, read while signing in (no company yet)
+teas.login_challenges    global: the second-factor step between password and session
+teas.auth_failures       global: the lockout counter, keyed by a hash of the email (an unknown email has one too)
+teas.user_links          global: invite / reset links are resolved before any session exists (token hash lookup)

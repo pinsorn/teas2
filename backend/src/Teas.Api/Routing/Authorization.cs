@@ -31,9 +31,9 @@ public static class RouteDeclaration
 
 public static class RouteGuards
 {
-    /// <summary>The BFF secret check, then RouteAuthorization. Both are decided by endpoint metadata, never by path.</summary>
+    /// <summary>The BFF secret check, then session authentication (fills the actor and the company scope), then RouteAuthorization. All decided by endpoint metadata, never by path.</summary>
     public static IApplicationBuilder UseTeasRouteGuards(this IApplicationBuilder app) =>
-        app.UseMiddleware<BffSecretMiddleware>().UseMiddleware<RouteAuthorization>();
+        app.UseMiddleware<BffSecretMiddleware>().UseMiddleware<Teas.Api.Endpoints.SessionAuthentication>().UseMiddleware<RouteAuthorization>();
 }
 
 /// <summary>

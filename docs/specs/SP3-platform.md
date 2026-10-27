@@ -650,11 +650,12 @@ architecture test). Permission and agent refusals are decided before `Idempotenc
 `bootstrap-admin`, `reset-mfa`, `reset-password`, tests S1–S6, conformance lines for routes 1–14.
 **Rules:** §4.4; the reset-link issuer is mandatory: a link without a stored issuer is the single 404 (it cannot be re-checked at use); HC3 rulings 1, 3, 4 and the HC3 review items (F12); the auth audit company rule: the session's active
 company, else the user's first active membership, else only `auth_events`.
-- [ ] **Step 1: Failing tests** — S1–S6; relogin keeps nothing of another user; a link works once, a superseded link
+- [x] **Step 1: Failing tests** (done 2026-10-27; red = missing `Totp` / `AuthCli` / `UserLinks` types, then green + mutation-checked, see task-P7-report.md) — S1–S6; relogin keeps nothing of another user; a link works once, a superseded link
   fails, an expired link fails, all with the same 404; bootstrap CLI prints one link and stores only its hash;
   `reset-mfa` clears TOTP + recovery codes and revokes sessions.
-- [ ] **Steps 2–5**, gates as P4 + conformance. **Step 6: Controller commits**
+- [x] **Steps 2–5** (worker done 2026-10-27: build -warnaserror 0/0, Integration 195/195 twice, Architecture 25/25, Domain 58/58, OpenAPI artifact identical to docs/api/openapi.v1.json, typecheck + lint + vitest 2877, freeze + layout ok; 25 of 26 files; see task-P7-report.md), gates as P4 + conformance. **Step 6: Controller commits**
   `feat(platform): sign-in, sessions, two-step verification and set-password links`.
+- **Built as (later tasks rely on it):** `UserLinks.IssueAsync(conn, tx, kind, userId, companyId, memberId, createdBy, now)` issues invite / reset links (P8 calls it inside its transaction); `user_links.created_by` is the issuing user's id or `operator` (the CLI), anything else is the single 404; the use-time issuer check covers an invite (issuer holds `users.manage` in the issuing company) and a reset (issuer holds it in every company of the account); a deactivated member's invite / reset link is refused at use (P8 should still supersede the rows on deactivate). New env: `TEAS_DP_KEYS_DIR` (required outside Development), `TEAS_PUBLIC_URL` (CLI link base, default `http://localhost:3000`; link path `/link/<token>`), `TEAS_AUTH_RATE_LIMIT` (default 20, tests only).
 
 ### Task P8: Me, company switch, company settings, users and roles
 
@@ -701,7 +702,7 @@ characters.
 `frontend/src/mocks/browser.ts` / handler wrapper (passthrough of live routes in `hybrid`), `kit/auth/TotpEnrol.tsx`
 (QR from `uri`; one exact-pinned QR dependency with its reason in the report), `deploy/compose.ci.yml`,
 `.github/workflows/backend.yml` `compose` job, `frontend/e2e/platform-live.spec.ts`.
-**Rules:** §4.8; S7; `mock` stays the default build (the mockup preview is unchanged). `TEAS_FILES_DIR` is required outside Development, on a persistent volume (P6).
+**Rules:** §4.8; S7; `mock` stays the default build (the mockup preview is unchanged). `TEAS_FILES_DIR` is required outside Development, on a persistent volume (P6); so is `TEAS_DP_KEYS_DIR` (P7: without the key ring every restart makes the stored TOTP secrets unreadable). The API sees the BFF's address for every user: the BFF must forward the client IP and the API must trust it only after the BFF-secret check, or the per-IP `/auth/*` limit (20 / min) is one bucket for everybody (P7 open question 1).
 - [ ] **Step 1: Failing tests** — proxy (`proxy.test.ts` names `POST /auth/links/{token}` explicitly in the cross-site check, JSON content type + Origin, even though route 14 is `auth: public`): strips `x-teas-actor` and a forged `X-Teas-Bff`, adds the secret, refuses a
   cross-origin POST; hybrid e2e on the composed stack (CI): log in, see memberships, switch company, change password,
   enrol TOTP, invite a user and set their password through the link, create / rotate / revoke a key; the rest of the
