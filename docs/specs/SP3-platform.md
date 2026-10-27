@@ -520,15 +520,16 @@ agent gate follows `ROUTES.agent` on platform paths), `IsoDate` / `Money` moved 
 `LIVE_ROUTES: { method, path }[]`. **Freeze guard (C0):** it hashes `contract/platform.ts` AND every local file it
 imports: `route-spec.ts`, `scalars.ts`, and `DocType` from `domain/types.ts` (listed as a guarded dependency until
 `documents.ts` owns it).
-- [ ] **Step 1: Failing tests** — every `ROUTES` entry has an MSW handler and every MSW handler under `/auth`, `/me`,
+- [x] **Step 1: Failing tests** — every `ROUTES` entry has an MSW handler and every MSW handler under `/auth`, `/me`,
   `/settings/companies`, `/settings/users`, `/settings/roles`, `/settings/default-notes`, `/connect/keys` has a `ROUTES`
   entry (parse `handler.info.method` / `.path`); `PERMISSION_CODES` = the `th.json#permissions` keys; every code in
   `SYSTEM_ROLES` is in the catalog; `agentForbidden` = §4.5; `Membership` carries `roleName` for a custom role; every
   `screens.ts` name key exists in both message files; set-password page: invalid link → the one Thai message.
   e2e: `/link/<fixture-token>` sets a password; axe clean.
-- [ ] **Step 2: Run → FAIL. Step 3: Implement. Step 4: Run → PASS. Step 5:** `corepack pnpm typecheck`, `lint`, focused
+- [x] **Step 2: Run → FAIL. Step 3: Implement. Step 4: Run → PASS. Step 5:** `corepack pnpm typecheck`, `lint`, focused
   `test`, `e2e platform shell screens --workers=1` (nothing on :3100 first). Controller runs the full unit suite.
-- [ ] **Step 6: Controller commits** `feat(contract): freeze the platform contract v1.0`, then the `FROZEN.json` entry.
+- [x] **Step 6: Controller commits** `feat(contract): freeze the platform contract v1.0`, then the `FROZEN.json` entry.
+  **Contract frozen: platform 1.0** (C0 guard `tools/check-contract-freeze.mjs`; `FROZEN.json` sha256 `0e97e488...` over `platform.ts` + `route-spec.ts` + `scalars.ts` + `DocType` in `domain/types.ts`); commit: the C0 commit on `feat/sp3-platform` (ADR-0003).
 
 ### Task P1: Backend scaffold and CI
 
@@ -633,7 +634,7 @@ architecture test).
 `src/Teas.Domain/Platform/Totp.cs`, `src/Teas.App/Platform/Auth/**`, `src/Teas.Api/Endpoints/AuthEndpoints.cs` (routes
 1–14), session authentication handler, rate limiter config, Data Protection setup (`TEAS_DP_KEYS_DIR`), migrator verbs
 `bootstrap-admin`, `reset-mfa`, `reset-password`, tests S1–S6, conformance lines for routes 1–14.
-**Rules:** §4.4; HC3 rulings 1, 3, 4 and the HC3 review items (F12); the auth audit company rule: the session's active
+**Rules:** §4.4; the reset-link issuer is mandatory: a link without a stored issuer is the single 404 (it cannot be re-checked at use); HC3 rulings 1, 3, 4 and the HC3 review items (F12); the auth audit company rule: the session's active
 company, else the user's first active membership, else only `auth_events`.
 - [ ] **Step 1: Failing tests** — S1–S6; relogin keeps nothing of another user; a link works once, a superseded link
   fails, an expired link fails, all with the same 404; bootstrap CLI prints one link and stores only its hash;
@@ -646,7 +647,7 @@ company, else the user's first active membership, else only `auth_events`.
 **Depends on:** P7. **Blast cap:** 20 files. **Tier 2:** Opus review.
 **Files:** `src/Teas.App/Platform/Companies/**` (incl. system `CompanyFactory`), `Members/**`, `Roles/**`,
 `src/Teas.Api/Endpoints/{Me,CompanySettings,Users,Roles}Endpoints.cs` (routes 15–29), tests, conformance lines.
-**Rules:** §4.5 (last admin, effective rights); ST1 rulings: identity edit needs `confirm: true`; VAT status read-only
+**Rules:** at link use (route 14 and GET info) also re-check that the issuer still holds `users.manage` in the issuing company (a demoted or deactivated issuer's links die with the single 404); §4.5 (last admin, effective rights); ST1 rulings: identity edit needs `confirm: true`; VAT status read-only
 here (`company.vat_readonly`); fiscal start month ≠ 1 → `company.fiscal_year_unsupported` (ADR-0006 interim); images per
 §4.7 Files; company sections share `companies.version` (one save bumps it; a stale section save → 409); a refusal writes
 nothing; invites create a pending member + an invite link (route 14 accepts it); reset-link refused for an inactive
@@ -660,7 +661,7 @@ transaction; a test asserts both rows exist afterwards (a factory that inserts f
   pictures, agent refused with `agent.forbidden_setting` before the body is read.
 - [ ] **Drop the P0 `Me` narrowing:** `domain/types.ts` re-exports `Me` with `activeCompanyId: string` (an exception to
   "old files re-export verbatim", master plan §2.2). P8 removes it, makes `useMe` handle `activeCompanyId === null`
-  (`router.replace('/onboarding')`, no company screens mounted), and fixes the ~100 call sites that then need a string.
+  (`router.replace('/onboarding')`, no company screens mounted); drop the narrowed `Me.activeCompanyId` and handle null (to /onboarding), and fixes the ~100 call sites that then need a string.
 - [ ] **Steps 2–5**, gates as P4 + conformance. **Step 6: Controller commits**
   `feat(platform): me, company switch, company settings, users and roles`.
 

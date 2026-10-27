@@ -1,0 +1,9 @@
+{
+  "platform": {
+    "version": "1.0",
+    "sha256": "0e97e4888d7c18e5da55abf32f19d44310f39535164ad48776b69a0c8accf02e",
+    "files": ["platform.ts", "route-spec.ts", "scalars.ts", "../domain/types.ts#DocType"],
+    "approved": "2026-10-27",
+    "adrs": []
+  }
+}
