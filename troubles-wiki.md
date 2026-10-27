@@ -249,3 +249,8 @@ Entry format — terse, greppable by symptom:
 - Symptom: `dotnet build -warnaserror` fails `NU1903 Microsoft.OpenApi 2.0.0 ... GHSA-v5pm-xwqc-g5wc`; or `FileName format invalid, only Alphanumeric and "_ -" authorized`; or a package.json script that calls `pnpm run x` says `'pnpm' is not recognized`.
 - Root cause: `Microsoft.AspNetCore.OpenApi` 10.0.x pulls the vulnerable 2.0.0 transitively; `Microsoft.Extensions.ApiDescription.Server` refuses a `.` in `--file-name` (so the build emits `backend/artifacts/openapi.json`, CI copies it to `docs/api/openapi.v1.json`); under corepack `pnpm` is a shim that is not on PATH for child processes.
 - Fix: direct `PackageReference` + central pin of `Microsoft.OpenApi` 2.7.5 in the Api project; `--file-name openapi`; chain scripts with `npm run -s <script>`.
+
+## Architecture test `SystemScopeMachineryIsUsedOnlyFromTheAllowedPlaces` fails on an innocent method named `ApplyAsync`
+- Symptom: Architecture test lists a new file in Teas.App outside Platform/Auth|Jobs|Keys.
+- Root cause: it greps the whole `src` for the regex `\b(EnterSystem|ScopeState|ApplyAsync|ForEachCompanyAsync|SelfTestAsync|Attach)\s*\(`, so any method with one of those names trips it.
+- Fix: name your method differently (P4 `VersionedUpdate.UpdateAsync`).

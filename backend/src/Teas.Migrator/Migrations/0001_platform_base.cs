@@ -6,7 +6,7 @@ namespace Teas.Migrator.Migrations;
 
 /// <summary>Schema, helper functions, the base tables, RLS, append-only triggers and the teas_app grants (SP3 4.2).</summary>
 [DbContext(typeof(TeasDbContext))]
-[Migration(TeasDbContext.ExpectedSchema)]
+[Migration("0001_platform_base")]
 public sealed class PlatformBase : Migration
 {
     protected override void Up(MigrationBuilder mb)
