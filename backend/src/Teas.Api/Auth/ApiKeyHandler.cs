@@ -12,7 +12,7 @@ namespace Teas.Api.Auth;
 /// Authentication of the machine surface (/api/v1, /mcp), by endpoint metadata: a route carrying <see cref="MachineChannel"/> and declared "key". `Authorization: Bearer teas_&lt;kind&gt;_&lt;48 hex&gt;`
 /// is looked up by its sha256 (KeyService), refused in order: unknown 401 connect.key_invalid, revoked 401, expired 401, a key of the other kind 403 connect.key_kind_mismatch. The channel's kind
 /// is compared with the STORED kind of the key. On success the request runs in the key's company as the key's owner, and the actor is the agent (client api | mcp, the key's scopes in
-/// <see cref="ActorScopes"/> for RouteAuthorization). No credential at all is left to RouteAuthorization (401 auth.unauthenticated); no header, cookie or query value ever names an actor.
+/// <see cref="ActorScopes"/> for RouteAuthorization). No Bearer header (or another scheme) is 401 connect.key_invalid too; no header, cookie or query value ever names an actor.
 /// </summary>
 public sealed class ApiKeyAuthentication(RequestDelegate next)
 {
@@ -25,12 +25,12 @@ public sealed class ApiKeyAuthentication(RequestDelegate next)
         var sp = http.RequestServices;
         if (http.GetEndpoint()?.Metadata is not { } meta || meta.GetMetadata<MachineChannel>() is not { } channel || meta.GetMetadata<RouteSpec>() is not { Auth: "key" }
             || http.Items.ContainsKey(ItemKey)
-            || sp.GetService<KeyService>() is not { } keys || sp.GetService<AuditContext>() is not { } actor || sp.GetService<TenantScope>() is not { } scope || sp.GetService<ActorScopes>() is not { } scopes
-            || Bearer(http) is not { } secret)
+            || sp.GetService<KeyService>() is not { } keys || sp.GetService<AuditContext>() is not { } actor || sp.GetService<TenantScope>() is not { } scope || sp.GetService<ActorScopes>() is not { } scopes)
         {
             await next(http);
             return;
         }
+        var secret = Bearer(http) ?? throw new TeasException("connect.key_invalid");   // no Bearer header, or another scheme: no key was presented (SP3 8 step 4)
         var key = await keys.AuthenticateAsync(secret, http.RequestAborted);
         if (key.Kind != channel.Kind) throw new TeasException("connect.key_kind_mismatch");
         actor.Actor = new AuditActor("agent", key.Id.ToString(), key.Name, key.OwnerId.ToString(), key.OwnerName);
@@ -43,7 +43,7 @@ public sealed class ApiKeyAuthentication(RequestDelegate next)
         await next(http);
     }
 
-    /// <summary>The token of a Bearer header; null when there is no Authorization header or it is another scheme (no credential). An empty token is present-but-bad: "".</summary>
+    /// <summary>The token of a Bearer header; null when there is no Authorization header or it is another scheme. An empty token is "" (unknown).</summary>
     static string? Bearer(HttpContext http)
     {
         var h = http.Request.Headers.Authorization.ToString();

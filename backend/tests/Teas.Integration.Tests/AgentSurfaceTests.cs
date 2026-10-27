@@ -18,6 +18,7 @@ namespace Teas.Integration.Tests;
 sealed class WrongMachineRoutes : IStartupFilter
 {
     public sealed record Body(string Name);
+    public sealed class EchoBody { public required string Name { get; init; } }
 
     public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
     {
@@ -28,6 +29,8 @@ sealed class WrongMachineRoutes : IStartupFilter
         {
             e.MapMethods("/api/v1/_t/notagent", ["POST"], (Body b) => Results.Ok(new { b.Name }))
                 .WithMetadata(new RouteSpec("POST", "/api/v1/_t/notagent", "key", Agent: false, Audit: "test.notagent"), new MachineChannel("rest"));
+            e.MapMethods("/api/v1/_t/echo", ["POST"], (EchoBody b) => Results.Ok(new { b.Name }))
+                .WithMetadata(new RouteSpec("POST", "/api/v1/_t/echo", "key", Agent: true), new MachineChannel("rest"), new McpToolAttribute("echo", "echoes name"));
             e.MapMethods("/api/v1/_t/needs-bank", ["GET"], () => Results.Ok(new { ok = true }))
                 .WithMetadata(new RouteSpec("GET", "/api/v1/_t/needs-bank", "key", "bank.manage", Agent: true), new MachineChannel("rest"), new McpToolAttribute("needs_bank", "needs bank.manage"));
         });
@@ -126,7 +129,7 @@ public sealed class AgentSurfaceTests(AuthFixture fx) : IClassFixture<AuthFixtur
         Assert.Equal(company.ToString(), who.Str("companyId"));
         // no key, only the header: nobody
         var bare = await K.WhoAmI(H, null, ("x-teas-actor", admin.Id.ToString()));
-        Assert.Equal((HttpStatusCode.Unauthorized, "auth.unauthenticated"), (bare.Status, bare.Code));
+        Assert.Equal((HttpStatusCode.Unauthorized, "connect.key_invalid"), (bare.Status, bare.Code));
     }
 
     [Fact]
@@ -232,7 +235,7 @@ public sealed class AgentSurfaceTests(AuthFixture fx) : IClassFixture<AuthFixtur
             return new Res(m, await m.Content.ReadAsStringAsync());
         }
         var list = await Rpc(weak.Secret, "tools/list");
-        Assert.Equal(["needs_bank", "whoami"], list.Json.GetProperty("result").GetProperty("tools").EnumerateArray().Select(t => t.GetProperty("name").GetString()!).Order());
+        Assert.Equal(["echo", "needs_bank", "whoami"], list.Json.GetProperty("result").GetProperty("tools").EnumerateArray().Select(t => t.GetProperty("name").GetString()!).Order());
 
         var refused = await Rpc(weak.Secret, "tools/call", new { name = "needs_bank", arguments = new { } });
         Assert.Equal(HttpStatusCode.OK, refused.Status);
@@ -243,6 +246,43 @@ public sealed class AgentSurfaceTests(AuthFixture fx) : IClassFixture<AuthFixtur
         var ok = await Rpc(strong.Secret, "tools/call", new { name = "needs_bank", arguments = new { } });
         Assert.False(ok.Json.GetProperty("result").GetProperty("isError").GetBoolean());
         Assert.True(JsonDocument.Parse(Text(ok)).RootElement.GetProperty("ok").GetBoolean());
+    }
+
+    [Fact]
+    public async Task P9aArgumentsThatDoNotBindAreAToolErrorRecordInvalid_AndANotificationIsNeverExecuted()
+    {
+        using var f = H.Factory.WithWebHostBuilder(b => b.ConfigureServices(s => s.AddSingleton<IStartupFilter>(new WrongMachineRoutes())));
+        var (company, _, token, _) = await P8.AdminAsync(H);
+        var (_, op, _) = await P8.MemberAsync(H, company, "operator");
+        var weak = await K.CreateAsync(H, op, "mcp", ["party.read"]);
+        async Task<Res> Rpc(object body)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, "/mcp") { Content = JsonContent(body) };
+            req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + weak.Secret);
+            using var m = await f.CreateClient().SendAsync(req);
+            return new Res(m, await m.Content.ReadAsStringAsync());
+        }
+        foreach (var args in new object[] { new { }, new { name = 5 } })
+        {
+            var bad = await Rpc(new { jsonrpc = "2.0", id = 7, method = "tools/call", @params = new { name = "echo", arguments = args } });
+            Assert.Equal((HttpStatusCode.OK, 7, true), (bad.Status, bad.Json.GetProperty("id").GetInt32(), bad.Json.GetProperty("result").GetProperty("isError").GetBoolean()));
+            Assert.Equal("record.invalid", JsonDocument.Parse(Text(bad)).RootElement.GetProperty("code").GetString());
+        }
+        var ok = await Rpc(new { jsonrpc = "2.0", id = 8, method = "tools/call", @params = new { name = "echo", arguments = new { name = "x" } } });
+        Assert.False(ok.Json.GetProperty("result").GetProperty("isError").GetBoolean(), ok.Raw);
+        // no id = a notification: not executed (needs_bank would leave a rejected row), 202, no body
+        var note = await Rpc(new { jsonrpc = "2.0", method = "tools/call", @params = new { name = "needs_bank", arguments = new { } } });
+        Assert.Equal((HttpStatusCode.Accepted, ""), (note.Status, note.Raw));
+        Assert.Equal(0, await H.ScalarAsync<long>("SELECT count(*) FROM teas.audit_log WHERE company_id = @c AND result = 'rejected'", P("c", company)));
+    }
+
+    [Fact]
+    public void P9aAnMcpToolRouteWithPathParametersIsRefusedAtStartup()
+    {
+        var app = WebApplication.CreateBuilder().Build();
+        var spec = new RouteSpec("GET", "/api/v1/x/{id}", "key", Agent: true);
+        Assert.Throws<InvalidOperationException>(() => app.MapMachine("rest", spec, [McpTool("x", "y")] (string id) => id));
+        app.MapMachine("rest", spec, (string id) => id);   // a plain agent route with a parameter is fine: it is not a tool
     }
 
     static HttpContent JsonContent(object o) => System.Net.Http.Json.JsonContent.Create(o);

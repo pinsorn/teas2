@@ -17,6 +17,8 @@ public static class RouteBuilder
         var prefix = kind == "mcp" ? "/mcp" : "/api/v1";
         if (!spec.Agent || spec.Auth != "key" || spec.Path != prefix && !spec.Path.StartsWith(prefix + "/", StringComparison.Ordinal))
             throw new InvalidOperationException($"{spec.Method} {spec.Path}: only an agent route declared \"key\" under {prefix} may be mapped on the {kind} channel");
+        if (spec.Path.Contains('{') && handler.Method.GetCustomAttributes(typeof(McpToolAttribute), false).Length > 0)
+            throw new InvalidOperationException($"{spec.Path}: an MCP tool route cannot have path parameters (tool arguments are the body) until they are supported");
         return app.MapMethods(spec.Path, [spec.Method], handler).WithMetadata(spec, new MachineChannel(kind));
     }
 }

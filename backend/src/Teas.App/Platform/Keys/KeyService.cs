@@ -159,7 +159,7 @@ public sealed partial class KeyService(TeasDbContext db, TenantScope scope, IAud
         if (old.RevokedAt is not null) throw new TeasException("connect.key_revoked", status: 409);
         if (StatusOf(old) == KeyStatus.Expired) throw new TeasException("connect.key_expired", status: 409);
         if (!await ActiveMemberAsync(company, old.Owner, ct)) throw new TeasException("connect.owner_inactive");
-        var made = await InsertAsync(company, old.Owner, old.Name, old.Kind, old.Scopes, old.ExpiresOn, old.Id, "connect.key.rotate", ct);
+        var made = await InsertAsync(company, old.Owner, old.Name, old.Kind, [.. old.Scopes.Where(s => PermissionCatalog.CodeSet.Contains(s) && !AgentRules.AgentForbidden(s))], old.ExpiresOn, old.Id, "connect.key.rotate", ct);
         await RevokeRowAsync(old, ct);
         await tx.CommitAsync(ct);
         return made;

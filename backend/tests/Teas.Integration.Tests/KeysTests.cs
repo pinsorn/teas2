@@ -227,7 +227,9 @@ public sealed class KeyScopeTests(AuthFixture fx) : IClassFixture<AuthFixture>
         await Is("teas_sql_" + new string('a', 48), HttpStatusCode.Unauthorized, "connect.key_invalid");
         await Is("not-a-key", HttpStatusCode.Unauthorized, "connect.key_invalid");
         await Is(new string('x', 5000), HttpStatusCode.Unauthorized, "connect.key_invalid");
-        await Is(null, HttpStatusCode.Unauthorized, "auth.unauthenticated");   // no credential at all
+        await Is(null, HttpStatusCode.Unauthorized, "connect.key_invalid");   // no Bearer header at all (SP3 8 step 4)
+        var basic = await K.MachineAsync(H, HttpMethod.Get, "/api/v1/whoami", null, null, ("Authorization", "Basic dXNlcjpwYXNz"));
+        Assert.True((basic.Status, basic.Code) == (HttpStatusCode.Unauthorized, "connect.key_invalid"), basic.Raw);   // another scheme
         // a session cookie is no key
         var cookie = await H.Client.SendAsync(new HttpRequestMessage(HttpMethod.Get, "/api/v1/whoami") { Headers = { { "Cookie", $"{AuthHost.CookieName}={token}" } } });
         Assert.Equal(HttpStatusCode.Unauthorized, cookie.StatusCode);
@@ -248,6 +250,17 @@ public sealed class KeyScopeTests(AuthFixture fx) : IClassFixture<AuthFixture>
         // a revoked / expired key of the wrong kind says it is dead first (it reveals nothing about kinds)
         var onMcp = await K.MachineAsync(H, HttpMethod.Post, "/mcp", revoked, new { });
         Assert.True(onMcp.Status == HttpStatusCode.Unauthorized && onMcp.Code == "connect.key_revoked", onMcp.Raw);
+    }
+
+    [Fact]
+    public async Task P9aRotateDropsCopiedScopesThatAreForbiddenOrNotInTheCatalog()
+    {
+        var (company, owner, token, _) = await P8.AdminAsync(H);
+        var (id, _) = await K.InsertAsync(H, company, owner.Id, "rest", ["party.read", "users.manage", "doc.IV.approve", "no.such_code"]);
+        var r = await H.Post($"/connect/keys/{id}/rotate", new { version = 1 }, token);
+        Assert.Equal(HttpStatusCode.Created, r.Status);
+        Assert.Equal(["party.read"], r.Json.GetProperty("key").GetProperty("scopes").EnumerateArray().Select(x => x.GetString()!));
+        Assert.Equal(["party.read"], (await H.ScalarAsync<string[]>("SELECT scopes FROM teas.api_keys WHERE id = @i", P("i", Guid.Parse(r.Json.GetProperty("key").GetProperty("id").GetString()!))))!);
     }
 
     [Fact]

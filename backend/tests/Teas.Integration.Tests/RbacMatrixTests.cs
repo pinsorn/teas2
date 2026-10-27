@@ -232,9 +232,9 @@ public sealed class RbacMatrixTests : IAsyncLifetime
             .Select(e => (spec: e.Metadata.GetMetadata<RouteSpec>(), path: Regex.Replace(e.RoutePattern.RawText!, @"\{[^}]+\}", Guid.NewGuid().ToString())))
             .Where(r => r.spec?.Permission is not null && !r.spec.Agent && r.path.Contains("/_t/")).ToList();   // the test routes answer 200 / 201 on success; the real routes are in UsersAndRolesTests (real sessions)
         Assert.True(routes.Count >= 5, "routes found: " + routes.Count);
-        // every REAL permission route must be covered by a matrix of its own: /settings/ by UsersAndRolesTests, /connect/ (P9, member-owned keys, rules inside the service) by KeyLifecycleTests; a new one fails here until listed
+        // every REAL permission route must be covered by a matrix of its own: /settings/ by UsersAndRolesTests; P9's /connect/keys declare no permission (rules are inside KeyService, matrix in KeyLifecycleTests) so they never reach this check; a new permission route fails here until listed
         var uncovered = f.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
-            .Where(e => e.Metadata.GetMetadata<RouteSpec>()?.Permission is not null && !e.RoutePattern.RawText!.Contains("/_t/") && e.RoutePattern.RawText != "/outside/perm" && !e.RoutePattern.RawText!.StartsWith("/internal/v1/settings/", StringComparison.Ordinal) && !e.RoutePattern.RawText.StartsWith("/internal/v1/connect/", StringComparison.Ordinal))
+            .Where(e => e.Metadata.GetMetadata<RouteSpec>()?.Permission is not null && !e.RoutePattern.RawText!.Contains("/_t/") && e.RoutePattern.RawText != "/outside/perm" && !e.RoutePattern.RawText!.StartsWith("/internal/v1/settings/", StringComparison.Ordinal))
             .Select(e => e.RoutePattern.RawText).ToList();
         Assert.Empty(uncovered);
 

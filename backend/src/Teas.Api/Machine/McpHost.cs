@@ -48,7 +48,7 @@ static class McpHost
             case "ping": return Success(id, new { });
             case "tools/list":
                 return Success(id, new { tools = Tools(h).Select(t => new { name = t.Name, description = t.Description, inputSchema = InputSchema(t.Endpoint) }).ToList() });
-            case "tools/call": return await CallAsync(h, id, p);
+            case "tools/call": return id is null ? Results.StatusCode(StatusCodes.Status202Accepted) : await CallAsync(h, id, p);   // a notification is never executed
             case { } method when id is null || method.StartsWith("notifications/", StringComparison.Ordinal): return Results.StatusCode(StatusCodes.Status202Accepted);
             default: return Failure(id, -32601, "Method not found");
         }
@@ -79,7 +79,10 @@ static class McpHost
         if (tool.Spec.Method is not ("GET" or "HEAD" or "DELETE"))
         {
             sub.Request.ContentType = "application/json";
-            sub.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(args.ValueKind == JsonValueKind.Object ? args.GetRawText() : "{}"));
+            var bytes = Encoding.UTF8.GetBytes(args.ValueKind == JsonValueKind.Object ? args.GetRawText() : "{}");
+            sub.Request.Body = new MemoryStream(bytes);
+            sub.Request.ContentLength = bytes.Length;
+            sub.Features.Set<IHttpRequestBodyDetectionFeature>(new HasBody());   // a bare DefaultHttpContext has none, and the minimal-API binder then sees "no body"
         }
         if (h.Request.Headers.TryGetValue("Idempotency-Key", out var key)) sub.Request.Headers["Idempotency-Key"] = key;
         foreach (var (k, value) in h.Items) sub.Items[k] = value;
@@ -94,15 +97,19 @@ static class McpHost
             text = Encoding.UTF8.GetString(output.ToArray());
             error = sub.Response.StatusCode >= 400;
         }
-        catch (TeasException e)
+        catch (Exception e) when (e is TeasException or BadHttpRequestException or JsonException)
         {
-            text = JsonSerializer.Serialize(new { code = e.Code, status = e.Status, title = ErrorCodes.All[e.Code].En, detail = e.Detail }, JsonSerializerOptions.Web);
+            // arguments that do not bind are the same record.invalid a REST body gets, as a tool error (the JSON-RPC envelope stays intact)
+            var t = e as TeasException ?? new TeasException("record.invalid");
+            text = JsonSerializer.Serialize(new { code = t.Code, status = t.Status, title = ErrorCodes.All[t.Code].En, detail = t.Detail }, JsonSerializerOptions.Web);
             error = true;
         }
         var result = new Dictionary<string, object?> { ["content"] = new[] { new { type = "text", text } }, ["isError"] = error };
         if (!error && text.Length > 0 && TryParse(text) is { } structured) result["structuredContent"] = structured;
         return Success(id, result);
     }
+
+    sealed class HasBody : IHttpRequestBodyDetectionFeature { public bool CanHaveBody => true; }
 
     static JsonElement? TryParse(string text)
     {
