@@ -244,5 +244,8 @@ export const SCREENS: Screen[] = [
   { name: 'publicDoc', route: '/p/c41f9a7be2d05863fa1c7e9b3d28a5f60b94e1d7', company: 'both', states: false }, // HC3: the fixture public token of the issued, unpaid tax invoice (mocks/engine/auth.ts FIXTURE_TOKENS)
   { name: 'publicQt', route: '/p/7be3a05d9c1f4286e0b7d35a1f89c264d0e5a3b8', company: 'both', states: false },
   { name: 'publicInvalid', route: '/p/this-link-was-revoked', company: 'both', states: false }, // HC3: one plain page for an unknown / revoked link
+  { name: 'linkInvite', route: '/link/inv-5c1e8a3f7b2d4690', company: 'both', states: false }, // SP3 Q4: set a password from an invite link (outside the app shell; the fixture token of mocks/records/users.ts)
+  { name: 'linkReset', route: '/link/rst-9d4b2f6a1c7e3850', company: 'both', states: false }, // the same page from a password-reset link
+  { name: 'linkInvalid', route: '/link/this-link-is-used', company: 'both', states: false }, // an unknown, used or expired link: ONE plain message
   { name: 'styleGuide', route: '/style-guide', company: 'both', states: false },
 ];

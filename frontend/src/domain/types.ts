@@ -1,7 +1,12 @@
 import type { FilingForm } from './filings';
-export type Money = string;   // decimal string, 2 dp: "64200.00"
+import type { Actor, ApiProblem, AuditEntry, Company, CompanySettings, Me as ContractMe, Membership, Page, RoleRow, StaffMember, UserRow } from '@/contract/platform';
+// SP3 P0: the platform types live in the frozen contract; this file re-exports them so no import in the app changes.
+export type { Actor, ApiProblem, AuditEntry, Company, CompanySettings, Membership, Page, RoleRow, StaffMember, UserRow };
+/** The app's view of `Me`: the contract allows `activeCompanyId: null` (no company yet -> /onboarding, SP3 P8 wires it); every screen mounts with a company, so it reads it as a string. */
+export type Me = Omit<ContractMe, 'activeCompanyId'> & { activeCompanyId: string };
+import type { IsoDate, Money } from '@/contract/scalars';
+export type { IsoDate, Money };
 export type Qty = string;     // decimal string, up to 4 dp
-export type IsoDate = string; // "2026-10-14"
 export type DocType = 'QT' | 'SO' | 'DO' | 'BL' | 'IV' | 'TI' | 'RC' | 'CN' | 'DN' | 'PO' | 'PB' | 'PCN' | 'PDN'
   | 'PV' | 'WT' | 'EX' | 'JV' | 'FA' | 'DP' | 'PR' | 'OB';
 export type CorrectionClass = 'N' | 'L' | 'T';
@@ -9,27 +14,7 @@ export type DocStatus = 'draft' | 'pending' | 'approved' | 'issued' | 'partly_se
 export type Role = 'operator' | 'accountant' | 'admin';
 export type TaxCode = 'S7' | 'Z0' | 'EX'; // standard 7 %, zero-rated, exempt
 
-export interface Company { id: string; legalNameTh: string; legalNameEn?: string; taxId: string; branchCode: string;
-  vatRegistered: boolean; address: string; phone?: string; /** ST1 (company settings): the SSO employer account, 10 digits; the สปส.1-10 cannot be filed without it (PY3) */ ssoEmployerAccountNo?: string;
-  /** ST1: the rest of the company profile. `fiscalYearStartMonth` is stored but the engine only supports 1 (calendar year) [SP-R]: any other value is refused (company.fiscal_year_unsupported). */
-  fiscalYearStartMonth: number; registrationNo?: string; tradeName?: string; email?: string; website?: string; paidUpCapital?: Money;
-  /** Images as data URLs (png / jpeg / webp <= 1 MB; the logo may also be svg). Papers do not print them yet (the snapshot at issue is ST3). */ logoDataUrl?: string; stampDataUrl?: string;
-  /** The note a blank new document of the type starts with. */ defaultNotes?: Partial<Record<DocType, string>>;
-  /** ST1b m3: bumped by every saved settings section; a save carrying an older one is a 409 (absent = 1). */ version?: number }
-/** ST1: a person's membership of one company (the mock's users list). `roleId` is a system role (operator / accountant / admin) or a custom role's id. Only a hash of a one-time link is kept. */
-export interface StaffMember { id: string; companyId: string; userId?: string; name: string; email: string; roleId: string; position?: string; signatureDataUrl?: string; active: boolean; version: number;
-  lastLoginAt?: string; invitePending: boolean; linkHash?: string }
-export type CompanySettings = Company & { fiscalYearLocked: boolean };
-export type UserRow = Omit<StaffMember, 'linkHash' | 'userId'> & { roleName: string };
-export interface RoleRow { id: string; version: number; active: true; system: boolean; name: string; description?: string; permissions: string[]; inUse: boolean;
-  /** Document types whose approval is on in this company (the matrix is judged against them). */ approvalTypes: DocType[];
-  /** Separation of duties: types with approval on that this role can both create and approve. A warning only: self-approval is a company setting (D-36). */ sodTypes: DocType[] }
 export interface CustomRole { id: string; companyId: string; name: string; description?: string; permissions: string[]; version: number }
-export interface Membership { companyId: string; companyName: string; role: Role }
-export interface Me { userId: string; displayName: string; memberships: Membership[]; activeCompanyId: string;
-  vatRegistered: boolean; permissions: string[];
-  /** The server's business date ("today" for document dates, ageing, as-of defaults); the browser clock is never a business date. */ businessDate: IsoDate }
-export interface Actor { kind: 'user' | 'agent'; id: string; name: string; ownerName?: string }
 
 export interface PartySummary { id: string; kind: 'customer' | 'vendor' | 'employee'; code: string; name: string; taxId?: string;
   branchCode?: string; vatRegistered: boolean; address?: string; paymentTermDays: number; defaultWhtTypeCode?: string;
@@ -188,7 +173,6 @@ export interface BankImport { id: string; accountId: string; fileName: string; f
 export interface DocSummary { id: string; type: DocType; number?: string; status: DocStatus; documentDate: IsoDate;
   partyName: string; total: Money; outstanding?: Money; dueDate?: IsoDate; reference?: string; createdByAgent: boolean; marks?: DocMarks; progress?: string;
   /** WT: the return the tax falls on, the income type, the income and the tax withheld (list columns) */ wht?: { form: string; incomeType: string; income: Money; tax: Money } }
-export interface Page<T> { items: T[]; nextCursor?: string; total?: number }
 
 export type LinkKind = 'converted_from' | 'settles' | 'adjusts' | 'groups' | 'replaces' | 'issues';
 /** `type` 'PRP' = the payment of a payroll run (PY3 m3); 'STL' = a settlement record (FN3), not a document: `number` is its id, `status` follows it (posted = issued, reversed = cancelled). */
@@ -226,9 +210,6 @@ export interface ScheduleRecord { id: string; companyId: string; version: number
 export interface ActivityEntry{ id: string; at: string; actor: Actor; action: string; detail?: string; reportId?: string }
 export interface FieldChange { path: string; before: string | null; after: string | null }
 export interface Revision { revision: number; at: string; actor: Actor; reason?: string; snapshot: Doc; diff: FieldChange[] }
-export interface AuditEntry { id: string; at: string; actor: Actor; companyId: string; command: string; target?: string;
-  before?: unknown; after?: unknown; result: 'ok' | 'rejected';
-  /** RP3: where the call came from; optional because an entry written before they existed has none. */ ip?: string; traceId?: string; client?: 'web' | 'mcp' | 'api' }
 
 export interface JournalLinePreview { accountCode: string; accountName: string; debit: Money; credit: Money;
   partyName?: string; /** RP1a: the party's id at posting (the name above is the snapshot the documents show); a line without it is never matched by id. */ partyId?: string;
@@ -274,8 +255,6 @@ export interface HomeAgentDigest { posted: number; waiting: number }
 export interface HomeData { kpis: HomeKpis; approvals: HomeApproval[]; drafts: DocSummary[]; overdue: DocSummary[]; deadlines: HomeDeadline[]; bank: number; agent: HomeAgentDigest; alerts: HomeAlert[] }
 export interface SearchHit { kind: 'doc' | 'party' | 'page'; id: string; label: string; href?: string } // no href: the type's screens are not built yet (shown as text)
 
-export interface ApiProblem { type?: string; title: string; status: number; code: string; detail?: string;
-  traceId?: string; fieldErrors?: Record<string, string[]> }
 
 /** One payslip as printed (PY2): income items, deductions, net and its words, year to date - ready-made by the server from the frozen slip. `nationalId` is masked (last four digits only). */
 export interface PayslipPaperModel { employeeId: string; name: string; nationalId?: string; period: string; payDate: IsoDate; proratedDays?: number; daysInMonth: number;

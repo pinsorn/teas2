@@ -406,3 +406,78 @@ test.describe('mobile (390 px)', () => {
     await shot(page, 'hc3-public-invalid-mobile');
   });
 });
+
+// SP3 P0 (Q4): the set-password page behind an invite / reset link, built for Ham's screenshot review before the backend.
+test.describe('set-password link page', () => {
+  const INVITE = 'inv-5c1e8a3f7b2d4690', RESET = 'rst-9d4b2f6a1c7e3850', GOOD = 'Strong#Pass2026';
+  const ONE_MESSAGE = 'ลิงก์นี้ใช้ไม่ได้แล้วหรือหมดอายุ ขอลิงก์ใหม่จากผู้ดูแลระบบ';
+  const fits = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+  const fill = async (page: Page, pw: string, confirm = pw) => { await page.getByLabel('รหัสผ่านใหม่', { exact: true }).fill(pw); await page.getByLabel('ยืนยันรหัสผ่านใหม่').fill(confirm); };
+
+  test('an invite link sets a password, then points to sign-in; axe clean; desktop and 390 px', async ({ page }) => {
+    await page.goto(`/link/${INVITE}`);
+    await expect(page.getByRole('heading', { level: 1, name: 'ตั้งรหัสผ่านเพื่อเริ่มใช้งาน' })).toBeVisible();
+    await expect(page.getByText('newcomer@maliwan.example').first()).toBeVisible();
+    await axeClean(page);
+    await shot(page, 'sp3-link-invite-desktop');
+    await fill(page, 'weak');
+    await page.getByRole('button', { name: 'ตั้งรหัสผ่าน' }).click();
+    await expect(page.getByTestId('link-error')).toContainText('อย่างน้อย 10 ตัวอักษร');
+    await axeClean(page);
+    await shot(page, 'sp3-link-error-desktop');
+    await fill(page, GOOD, 'Different#Pass1');
+    await page.getByRole('button', { name: 'ตั้งรหัสผ่าน' }).click();
+    await expect(page.getByTestId('link-error')).toContainText('ไม่ตรงกัน');
+    await fill(page, GOOD);
+    await page.getByRole('button', { name: 'ตั้งรหัสผ่าน' }).click();
+    await expect(page.getByTestId('link-done')).toBeVisible();
+    await axeClean(page);
+    await shot(page, 'sp3-link-done-desktop');
+    await page.getByRole('link', { name: 'ไปหน้าเข้าสู่ระบบ' }).click();
+    await expect(page).toHaveURL(/\/login$/);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/link/${INVITE}`);
+    await expect(page.getByRole('heading', { level: 1, name: 'ตั้งรหัสผ่านเพื่อเริ่มใช้งาน' })).toBeVisible();
+    expect(await fits(page)).toBe(true);
+    await shot(page, 'sp3-link-invite-mobile');
+    await fill(page, 'weak');
+    await page.getByRole('button', { name: 'ตั้งรหัสผ่าน' }).click();
+    await expect(page.getByTestId('link-error')).toBeVisible();
+    expect(await fits(page)).toBe(true);
+    await shot(page, 'sp3-link-error-mobile');
+  });
+
+  test('a reset link shows the reset wording; an unknown link is the one plain message; both axe clean', async ({ page }) => {
+    await page.goto(`/link/${RESET}`);
+    await expect(page.getByRole('heading', { level: 1, name: 'ตั้งรหัสผ่านใหม่' })).toBeVisible();
+    await axeClean(page);
+    await shot(page, 'sp3-link-reset-desktop');
+    await page.goto('/link/this-link-is-used');
+    await expect(page.getByTestId('link-invalid')).toHaveText(ONE_MESSAGE);
+    await expect(page.getByLabel('รหัสผ่านใหม่', { exact: true })).toHaveCount(0);
+    await axeClean(page);
+    await shot(page, 'sp3-link-invalid-desktop');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.reload();
+    await expect(page.getByTestId('link-invalid')).toBeVisible();
+    expect(await fits(page)).toBe(true);
+    await shot(page, 'sp3-link-invalid-mobile');
+    await page.goto(`/link/${RESET}`);
+    await expect(page.getByRole('heading', { level: 1, name: 'ตั้งรหัสผ่านใหม่' })).toBeVisible();
+    await shot(page, 'sp3-link-reset-mobile');
+  });
+
+  test('a link made by an invite works end to end and is spent after use', async ({ page }) => {
+    await page.goto('/?role=admin&company=vat&state=normal');
+    await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible(); // the mock worker is up once the page mounts
+    const made = await call(page, 'POST', '/settings/users', { name: 'ผู้ใช้ใหม่', email: 'fresh@maliwan.example', roleId: 'operator' });
+    const url = String((made.json as { link?: string }).link), token = url.split('/link/')[1];
+    await page.goto(`/link/${token}`);
+    await fill(page, GOOD);
+    await page.getByRole('button', { name: 'ตั้งรหัสผ่าน' }).click();
+    await expect(page.getByTestId('link-done')).toBeVisible();
+    await page.goto(`/link/${token}`);
+    await expect(page.getByTestId('link-invalid')).toHaveText(ONE_MESSAGE);
+  });
+});

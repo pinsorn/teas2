@@ -1,11 +1,13 @@
 import { HttpResponse, http } from 'msw';
-import type { Me } from '@/domain/types';
+import { ROUTES, type Me, type Membership } from '@/contract/platform';
 import { setSettings } from '../settings';
 import { today } from '../engine/log';
-import type { Actor } from '@/domain/types';
+import type { Actor, Role } from '@/domain/types';
 import { AGENT, USER } from '../fixtures/documents';
 import { authHandlers, sessionGate } from './auth';
 import { ctx, problem, screenGate } from './common';
+import { isSystemRole } from '../permissions';
+import { SYSTEM_ROLE_NAMES } from '../records/roles';
 
 /** An agent's calls reach the mock with this header (over MCP in the real system); everything from the web app is the signed-in user. */
 export const ACTOR_HEADER = 'x-teas-actor';
@@ -20,19 +22,30 @@ export const AGENT_ALLOWED: { method: string; path: RegExp }[] = [
   { method: 'POST', path: /^\/docs\/[A-Za-z]+\/[^/]+\/(issue|agent-review)$/ },
   { method: 'GET', path: /^\/(?!connect\/|oauth\/)/ },
 ];
+const PLATFORM_ROUTES = ROUTES.filter((r) => r.auth !== 'key').map((r) => ({ method: r.method, agent: r.agent, re: new RegExp('^' + r.path.replace(/{[^}]+}/g, '[^/]+') + '$') }));
 export const agentGate = http.all('*/bff/v1/*', ({ request }) => {
   if (request.headers.get(ACTOR_HEADER) !== 'agent') return undefined;
   const path = new URL(request.url).pathname.replace(/^.*\/bff\/v1/, '');
-  if (AGENT_ALLOWED.some((a) => a.method === request.method && a.path.test(path))) return undefined;
+  const route = PLATFORM_ROUTES.find((r) => r.method === request.method && r.re.test(path)); // P0a: a platform path follows its frozen ROUTES row; later modules keep the rule below until their own freeze
+  if (route ? route.agent : AGENT_ALLOWED.some((a) => a.method === request.method && a.path.test(path))) return undefined;
   if (path.startsWith('/settings/')) return problem(403, 'agent.forbidden_setting', 'ตัวแทน (agent) เปลี่ยนการตั้งค่าไม่ได้ ต้องให้ผู้ใช้ทำเอง'); // §8.5: a settings write keeps its own code
   return problem(403, 'agent.forbidden_action', 'ตัวแทน (agent) ทำรายการนี้ไม่ได้ ต้องให้ผู้ใช้ทำเอง');
 });
 
+/** The wire membership: the role by id and name. A system role is the toolbar's in the active company; a CUSTOM role given to u-1 (settings > users) shows by its own name. */
+const roleOf = (st: ReturnType<typeof ctx>['st'], companyId: string, system: Role): Pick<Membership, 'roleId' | 'roleName'> => {
+  const mine = st.staff.find((m) => m.companyId === companyId && m.userId === 'u-1');
+  if (mine && !isSystemRole(mine.roleId)) return { roleId: mine.roleId, roleName: st.roles.find((r) => r.id === mine.roleId && r.companyId === companyId)?.name ?? mine.roleId };
+  return { roleId: system, roleName: SYSTEM_ROLE_NAMES[system] };
+};
+
 export const buildMe = (): Me => {
   const { st, s, company, perms } = ctx();
+
+  if (!st.memberships.length) return { userId: 'u-1', displayName: 'สมศรี บัญชีดี', memberships: [], activeCompanyId: null, vatRegistered: false, permissions: [], businessDate: today() }; // no company yet: the app sends such a user to /onboarding (SP3 P8)
   return {
     userId: 'u-1', displayName: 'สมศรี บัญชีดี', activeCompanyId: company.id, vatRegistered: company.vatRegistered, permissions: perms, businessDate: today(),
-    memberships: st.memberships.map((m) => ({ companyId: m.companyId, companyName: m.companyName, role: m.companyId === company.id ? s.role : m.role })),
+    memberships: st.memberships.map((m) => ({ companyId: m.companyId, companyName: m.companyName, ...roleOf(st, m.companyId, m.companyId === company.id ? s.role : m.role) })),
   };
 };
 

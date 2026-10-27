@@ -1,5 +1,5 @@
 import type {
-  ActivityEntry, Allocation, ApprovalPolicy, Attachment, AuditEntry, BankImport, BankJournal, BankLine, ChainEdge, Company, CorrectionPlan, CustomRole, StaffMember, Doc, DocHeader, DocLine, ItemSummary, JournalPreview, Membership, Money, PaperModel, PartySummary, PayrollPayment, PrintTemplate, Revision, Role, ScheduleRecord, SettlementRecord,
+  ActivityEntry, Allocation, ApprovalPolicy, Attachment, AuditEntry, BankImport, BankJournal, BankLine, ChainEdge, Company, CorrectionPlan, CustomRole, StaffMember, Doc, DocHeader, DocLine, ItemSummary, JournalPreview, Money, PaperModel, PartySummary, PayrollPayment, PrintTemplate, Revision, Role, ScheduleRecord, SettlementRecord,
 } from '@/domain/types';
 import { DOC_TYPES, LIVE } from '@/domain/doc-types';
 import { recomputeSettlement } from './engine/commands';
@@ -41,7 +41,7 @@ export interface MockState {
   /** ST1: the people of each company (memberships with a name, role, position, signature) and its custom roles; the three system roles are code (mocks/permissions.ts). */
   staff: StaffMember[];
   roles: CustomRole[];
-  memberships: (Membership & { userId: string })[];
+  memberships: { userId: string; companyId: string; companyName: string; role: Role }[]; // engine-internal (SP3 P0): the wire `Membership` (roleId / roleName) is mapped in handlers/me.ts
   /** `active` (default true) and `version` (default 1) are the master record's; documents keep their own party snapshot. */
   parties: (PartySummary & { companyId: string; active?: boolean; version?: number })[];
   /** `version` (default 1) is the master record's. */

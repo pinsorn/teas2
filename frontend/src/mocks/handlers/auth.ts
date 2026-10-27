@@ -5,6 +5,7 @@ import { FieldErrors } from '../engine/company';
 import { activeLinkCount, changePassword, confirmEnrol, createPublicLink, currentSession, currentUserId, DEMO, demoRecovery, listSessions, login, logout, onboard, profileOf, relogin, resolvePublicLink, revokePublicLinks, revokeSession, startEnrol, verifyTotp } from '../engine/auth';
 import { publicDoc } from '../engine/commands';
 import { MockError } from '../engine/log';
+import { consumeLink, linkInfo } from '../records/users';
 import { AGENT, USER } from '../fixtures/documents';
 import { getSession, setSession, setSettings } from '../settings';
 import { ctx, forbidden, persist, problem } from './common';
@@ -39,7 +40,7 @@ async function run(req: Request, write: boolean, fn: (c: C, actor: Actor) => Res
 
 /** The toolbar's session state decides what the signed-in app may do. When the session is expired or signed out EVERYTHING is 401 except this EXACT method + path list (HC3a B1: anchored, no prefixes - enrolment, the sessions list / revoke and extend are NOT on it). An agent has no browser session. */
 const OPEN: [string, RegExp][] = [
-  ['POST', /^\/auth\/login$/], ['POST', /^\/auth\/totp$/], ['POST', /^\/auth\/relogin$/], ['GET', /^\/auth\/session$/], ['POST', /^\/auth\/logout$/], ['GET', /^\/auth\/demo$/], ['GET', /^\/public\/p\/[^/]+$/],
+  ['POST', /^\/auth\/login$/], ['POST', /^\/auth\/totp$/], ['POST', /^\/auth\/relogin$/], ['GET', /^\/auth\/session$/], ['POST', /^\/auth\/logout$/], ['GET', /^\/auth\/demo$/], ['GET', /^\/auth\/links\/[^/]+$/], ['POST', /^\/auth\/links\/[^/]+$/], ['GET', /^\/public\/p\/[^/]+$/],
 ];
 export const sessionGate = http.all('*/bff/v1/*', ({ request }) => {
   if (isAgent(request)) return undefined;
@@ -91,6 +92,10 @@ export const authHandlers = [
   })),
   // the mock's demo identities, so a person reviewing the mockup knows what to type; a real backend has no such route
   http.get('*/bff/v1/auth/demo', ({ request }) => run(request, false, (c) => HttpResponse.json({ email: DEMO.email, password: DEMO.password, totpEmail: DEMO.totpEmail, totpPassword: DEMO.totpPassword, totpCode: DEMO.totpCode, recoveryCode: demoRecovery(c.st) }))),
+
+  // Q4 (routes 13-14): the invite / reset link page. Public (no session); the token is the path of ITS OWN page, never logged or audited.
+  http.get('*/bff/v1/auth/links/:token', ({ request, params }) => run(request, false, (c) => HttpResponse.json(linkInfo(c.st, String(params.token))))),
+  http.post('*/bff/v1/auth/links/:token', ({ request, params }) => run(request, true, async (c) => { const live = getSession() === 'active' || getSession() === 'expiring' ? currentSession(c.st) : undefined; consumeLink(c.st, String(params.token), await bodyOf(request), live); return HttpResponse.json({ status: 'ok' }); })),
 
   http.get('*/bff/v1/auth/profile', ({ request }) => run(request, false, (c) => HttpResponse.json(profileOf(c.st, currentUserId(c.st))))),
   http.post('*/bff/v1/auth/password', ({ request }) => run(request, true, async (c, a) => {

@@ -93,7 +93,7 @@ test('users: an invite link is shown once and never again; the last administrato
   const linkDialog = page.getByRole('dialog', { name: /ลิงก์สำหรับ/ });
   await expect(linkDialog.getByText('ลิงก์เชิญ (ใช้ได้ 7 วัน)')).toBeVisible();
   const link = await linkDialog.getByRole('textbox').inputValue();
-  expect(link).toMatch(/\/invite\/[\w-]{16,}$/);
+  expect(link).toMatch(/\/link\/[\w-]{16,}$/);
   await shot(page, 'users-link');
   await linkDialog.getByRole('button', { name: 'เสร็จสิ้น' }).click();
   await expect(page.getByRole('row', { name: /ใหม่ ทดสอบ.*รอรับคำเชิญ/ })).toBeVisible();

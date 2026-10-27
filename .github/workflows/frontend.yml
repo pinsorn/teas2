@@ -8,10 +8,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 } # the contract freeze guard compares FROZEN.json with origin/main
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
       - run: node --test tools/check-repo-layout.test.mjs
       - run: node tools/check-repo-layout.mjs | grep -x 'repo layout ok'
+      - run: node --test tools/check-contract-freeze.test.mjs
+      - run: node tools/check-contract-freeze.mjs | grep -x 'contract freeze ok'
   web:
     runs-on: ubuntu-latest
     defaults:

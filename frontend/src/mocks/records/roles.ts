@@ -69,11 +69,12 @@ export function updateRole(st: MockState, actor: Actor, companyId: string, id: s
   return out;
 }
 
-export function deleteRole(st: MockState, actor: Actor, companyId: string, id: string): void {
+export function deleteRole(st: MockState, actor: Actor, companyId: string, id: string, version?: number): void {
   refuseAgent(actor);
   if (isSystemRole(id)) throw new MockError(409, 'role.system_readonly', 'บทบาทของระบบลบไม่ได้');
   const r = st.roles.find((x) => x.id === id && x.companyId === companyId);
   if (!r) throw notFound();
+  if (version !== undefined && version !== r.version) throw new MockError(409, 'record.version_conflict', 'ข้อมูลนี้ถูกแก้ไขโดยผู้อื่นแล้ว โหลดข้อมูลใหม่ก่อนลบ'); // route 29: ?version= is required by the route (the handler always passes it)
   if (inUse(st, companyId, id)) throw new MockError(409, 'role.in_use', `ลบบทบาท ${r.name} ไม่ได้ เพราะมีผู้ใช้ใช้อยู่ เปลี่ยนบทบาทของผู้ใช้ก่อน`);
   const before = shape(listRoles(st, companyId).find((x) => x.id === id));
   st.roles = st.roles.filter((x) => x !== r);

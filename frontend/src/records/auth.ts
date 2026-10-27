@@ -1,13 +1,11 @@
 import type { DocType, IsoDate, PaperModel } from '@/domain/types';
 import { api } from '@/lib/api/client';
+import type { LoginResult, ProfileView, SessionRow, SessionState } from '@/contract/platform';
+export type { LoginResult, ProfileView, SessionRow, SessionState };
 
 // SP1c HC3: the wire of the platform screens (D-32: auth is mock-only; the mock engine is mocks/engine/auth.ts).
 // A password, a TOTP code, a recovery code or a public token never goes into a URL: they travel in a POST body (the token of a public link is the path of ITS OWN page, by design).
 
-export type SessionState = 'active' | 'expiring' | 'expired' | 'out';
-export type LoginResult = { status: 'ok' } | { status: 'totp_required'; challenge: string };
-export interface ProfileView { userId: string; email: string; displayName: string; totpEnabled: boolean; recoveryRemaining: number }
-export interface SessionRow { id: string; device: string; ip: string; createdAt: string; lastSeenAt: string; current: boolean }
 export interface OnboardBody { legalNameTh: string; taxId: string; branchCode: string; address: string; vatRegistered: boolean; fiscalYearStartMonth: number; template: string;
   bank: { kind: 'bank' | 'cash'; accountName: string; bankName?: string; accountNo?: string }; cutoff: IsoDate }
 export interface Demo { email: string; password: string; totpEmail: string; totpPassword: string; totpCode: string; recoveryCode?: string }

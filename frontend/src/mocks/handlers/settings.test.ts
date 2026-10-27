@@ -49,7 +49,7 @@ describe('settings wire (ST1)', () => {
     const r = await call('POST', '/settings/users', { name: 'คนใหม่', email: 'new@maliwan.example', roleId: 'operator' });
     expect(r.status).toBe(201);
     const made = await json(r);
-    expect(made.link).toMatch(/\/invite\//);
+    expect(made.link).toMatch(/\/link\//);
     const token = String(made.link).split('/').pop()!;
     for (let i = 0; i < 2; i++) {
       const text = await (await call('GET', '/settings/users')).text();
@@ -58,7 +58,7 @@ describe('settings wire (ST1)', () => {
     }
     expect(JSON.stringify(localStorage)).not.toContain(token);
     const reset = await json(await call('POST', '/settings/users/usr-vat-3/reset-link'));
-    expect(reset.link).toMatch(/\/reset\//);
+    expect(reset.link).toMatch(/\/link\//);
     expect(await (await call('GET', '/settings/users')).text()).not.toContain(String(reset.link).split('/').pop()!);
   });
   it('the last admin: deactivating or demoting is 409 user.last_admin', async () => {
