@@ -305,3 +305,23 @@ Entry format — terse, greppable by symptom:
 ## A long heredoc with backticks, angle brackets and quotes aborts the whole Bash call
 - Symptom: `unexpected EOF while looking for matching` and NOTHING of the command ran (both files of a two-file heredoc were missing).
 - Fix: write source files with the Write tool; use Bash heredocs only for short, quote-free snippets (a node script file is fine for scripted edits).
+
+## `next start` / the BFF: Next fills `x-forwarded-for` from the socket when the request has none
+- Symptom: `proxy.ts` sees `x-forwarded-for: ::1` (the peer) on a request that carried none, so a "no header = no client IP" assumption is false.
+- Fix: that is fine by design - `forwardHeaders` forwards the rightmost entry as `X-Teas-Client-Ip`, so a direct hit names the peer and Traefik's header (set, not appended, by default) names the client; `TEAS_TRUSTED_PROXY_HOPS` moves the hop when a CDN is in front. Probed with a stub upstream through a real `next start` (the vitest test only sees headers).
+
+## A CI/dev SQL seed under `deploy/` cannot call `set_config` (architecture test F3)
+- Symptom: `RlsContextIsSetOnlyInTenantScope` fails with the path of a new `.sql` file.
+- Fix: do not exempt it. A CI-only seed runs as the Postgres superuser of the service container (bypasses RLS, needs no tenant scope) and ends with a row-count probe, e.g. `deploy/db/seed-ci.sql`.
+
+## `fetch` to port 9 (or 1, 7, 19 ...) in a vitest test: "bad port"
+- Symptom: every request fails with `TypeError: fetch failed ... bad port` before MSW or the network is involved.
+- Fix: undici blocks the WHATWG "bad ports"; use an unused high port (e.g. 59999) as the "nothing listens here" target.
+
+## `deploy/frontend/Dockerfile` failed `next build` since P3 (missing generated OpenAPI types)
+- Symptom: type error on `src/contract/generated/openapi.ts` in the image build (git-ignored file, not in the `frontend/` context).
+- Fix: copy `docs/api/openapi.v1.json` to `/docs/api/` and run `pnpm gen:api` before `pnpm build` (done in P10).
+
+## Playwright mock suite: `settings-company-users` "state loading / error" x3 screens fail at HEAD (before P10)
+- Symptom: 6 failures `data-screen-state="loading|error"` not found for company settings, users and roles (main renders empty); every other test in the spec passes.
+- Root cause: not P10 - reproduced on a clean `git archive HEAD` of the stacked branch. Likely from the P8 frontend change (routes 17-29 are real-shaped; the screens no longer honour the toolbar `state`). Open for the controller.

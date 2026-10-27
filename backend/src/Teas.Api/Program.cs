@@ -14,8 +14,17 @@ using Teas.Domain;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddTeasOpenApi().AddTeasProblems();
-// A link token travels in the request path: the hosting "Request starting" line would write it to the log (SP3 S2).
-builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
+// A link token travels in the request path: the hosting "Request starting" line would write it, and at any level below None the hosting layer opens a
+// log scope (RequestPath) that a scope-including provider prints on every line (SP3 S2, P10). None creates neither. The console never includes scopes.
+builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.None);
+builder.Logging.AddSimpleConsole(o => o.IncludeScopes = false);
+// With the hosting logger silenced ASP.NET no longer creates the request Activity by itself (it did so only because that logger was enabled), and every audit row
+// would get trace_id NULL (AuditTests failed on CI, which has no other subscriber). Listen to the hosting ActivitySource ourselves; no exporter, nothing is sent anywhere.
+System.Diagnostics.ActivitySource.AddActivityListener(new System.Diagnostics.ActivityListener
+{
+    ShouldListenTo = s => s.Name == "Microsoft.AspNetCore",
+    Sample = (ref System.Diagnostics.ActivityCreationOptions<System.Diagnostics.ActivityContext> _) => System.Diagnostics.ActivitySamplingResult.AllData,
+});
 // An expected failure (a TeasException: 401 / 404 / 429 ...) is not an Error log with a stack trace; a real 500 is logged by ProblemHandling.
 builder.Logging.AddFilter("Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware", LogLevel.None);
 
@@ -25,14 +34,22 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration["TEAS_DP_KEYS_DIR"])) dataP
 builder.Services.AddSingleton<ISecretProtector, DataProtectionSecretProtector>();
 
 // SP3 4.4: 20 requests / minute per IP on /auth/* (TEAS_AUTH_RATE_LIMIT overrides the number; tests only). Over the limit = 429 http.rate_limited.
+// The IP is the browser's: the BFF forwards it in X-Teas-Client-Ip and BffSecretMiddleware applies it only after the secret check.
+// P10: /api/v1 and /mcp (machine routes, no BFF) are limited per peer too, 300 / minute shared by the two (TEAS_MACHINE_RATE_LIMIT). Behind Traefik the peer is the
+// proxy: set ASPNETCORE_FORWARDEDHEADERS_ENABLED=true there (the framework then takes the client from X-Forwarded-For, so Traefik must overwrite what a client sends).
 var authLimit = int.TryParse(builder.Configuration["TEAS_AUTH_RATE_LIMIT"], out var configured) && configured > 0 ? configured : 20;
+var machineLimit = int.TryParse(builder.Configuration["TEAS_MACHINE_RATE_LIMIT"], out var machineConfigured) && machineConfigured > 0 ? machineConfigured : 300;
 builder.Services.AddRateLimiter(o =>
 {
     o.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(http =>
-        http.Request.Path.StartsWithSegments("/internal/v1/auth") && !(HttpMethods.IsGet(http.Request.Method) && http.Request.Path.Value!.TrimEnd('/').Equals("/internal/v1/auth/session", StringComparison.OrdinalIgnoreCase))   // the expiry dialog polls GET /auth/session
-            ? RateLimitPartition.GetFixedWindowLimiter(http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                _ => new FixedWindowRateLimiterOptions { PermitLimit = authLimit, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 })
-            : RateLimitPartition.GetNoLimiter("none"));
+    {
+        var ip = http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        if (http.Request.Path.StartsWithSegments("/internal/v1/auth") && !(HttpMethods.IsGet(http.Request.Method) && http.Request.Path.Value!.TrimEnd('/').Equals("/internal/v1/auth/session", StringComparison.OrdinalIgnoreCase)))   // the expiry dialog polls GET /auth/session
+            return RateLimitPartition.GetFixedWindowLimiter("auth:" + ip, _ => new FixedWindowRateLimiterOptions { PermitLimit = authLimit, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 });
+        if (http.Request.Path.StartsWithSegments("/api/v1") || http.Request.Path.StartsWithSegments("/mcp"))
+            return RateLimitPartition.GetFixedWindowLimiter("machine:" + ip, _ => new FixedWindowRateLimiterOptions { PermitLimit = machineLimit, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 });
+        return RateLimitPartition.GetNoLimiter("none");
+    });
     o.OnRejected = (_, _) => throw new TeasException("http.rate_limited");   // rendered by UseTeasProblems, which is earlier in the pipeline
 });
 
