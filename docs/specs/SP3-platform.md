@@ -716,6 +716,7 @@ characters.
 - [ ] Tier 2 escalated review (`.claude/workflows/tier2-review.js`, lenses: security, tenancy / RLS, contract
   conformance, audit) — platform is extreme blast radius.
 - [ ] Staging deploy + §8 probe through the public domain (Coolify, O-2).
+- [ ] **Deploy settings (binding, P10a):** the API runs with `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` AND the API and web ports are reachable only through Traefik (no other container or host path: the forwarded-headers trust is trust-any, so a direct path would let a client name its own address); `TEAS_TRUSTED_PROXY_HOPS` on the web service equals the real proxy count in front of it (1 = Traefik only; 2 with a CDN); `TEAS_FILES_DIR` and `TEAS_DP_KEYS_DIR` are on persistent volumes; `TEAS_BFF_SECRET` is set on both services; the web logs show no `/auth/links/` token (instrumentation.ts redacts Next's `Failed to proxy` line).
 - [ ] DoD §9 ticked with evidence; parity rows ticked; demo to Ham.
 
 ## 12. Open questions for Ham

@@ -2,7 +2,7 @@
 import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LIVE_ROUTES, isLiveRoute } from './contract/live-routes';
-import { ROUTES } from './contract/platform';
+import { ERROR_CODES, ROUTES } from './contract/platform';
 import { clientIp, forwardHeaders, proxy } from './proxy';
 
 // SP3 4.8 / S7: the BFF. Pure header and decision logic; the rewrite itself is Next's.
@@ -70,6 +70,9 @@ describe('forwardHeaders', () => {
 });
 
 describe('proxy', () => {
+  it('every code it answers with is registered in the frozen contract', () => {
+    for (const c of ['http.403', 'http.500', 'record.not_found']) expect(ERROR_CODES).toHaveProperty([c]);
+  });
   it('rewrites a live route to the internal surface with the secret, the query kept', () => {
     const res = proxy(req('GET', '/connect/keys?x=1', { headers: { 'x-teas-actor': 'agent', 'x-teas-bff': 'forged' } }))!;
     expect(rewritten(res)).toBe('http://api:8080/internal/v1/connect/keys?x=1');
@@ -88,12 +91,22 @@ describe('proxy', () => {
     vi.stubEnv('NEXT_PUBLIC_API_MODE', 'live');
     expect(rewritten(proxy(req('GET', '/docs/QT')))).toBe('http://api:8080/internal/v1/docs/QT');
   });
-  it('an unconfigured BFF answers 503 and forwards nothing', async () => {
+  it('an unconfigured BFF answers 500 http.500 (a registered code) and forwards nothing', async () => {
     vi.stubEnv('TEAS_BFF_SECRET', '');
     const res = proxy(req('GET', '/me'))!;
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(500);
     expect(rewritten(res)).toBeUndefined();
-    expect((await res.json()).code).toBe('http.503');
+    expect((await res.json()).code).toBe('http.500');
+  });
+
+  it('a path that is not exactly under /bff/v1 is a 404 and nothing is forwarded (dot segments, a longer first segment)', async () => {
+    for (const raw of ['/bff/v1/a/../../internal/v1/me', '/bff/v1/../xy/me', '/bff/v1x/me', '/bff/v1/%2e%2e/%2e%2e/internal/v1/me']) {
+      const res = proxy(new NextRequest(`${APP}${raw}`, { headers: { origin: APP } }));
+      expect(res.status, raw).toBe(404);
+      expect(rewritten(res), raw).toBeUndefined();
+    }
+    expect((await proxy(new NextRequest(`${APP}/bff/v1/a/../../internal/v1/me`)).json()).code).toBe('record.not_found');
+    expect(proxy(new NextRequest(`${APP}/bff/v1`)).status).not.toBe(404); // the bare prefix is still ours (not a live route: left to Next)
   });
 
   describe('S7 - a mutating request needs a JSON content type and this app as Origin', () => {

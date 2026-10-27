@@ -18,6 +18,13 @@ builder.Services.AddTeasOpenApi().AddTeasProblems();
 // log scope (RequestPath) that a scope-including provider prints on every line (SP3 S2, P10). None creates neither. The console never includes scopes.
 builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.None);
 builder.Logging.AddSimpleConsole(o => o.IncludeScopes = false);
+// With the hosting logger silenced ASP.NET no longer creates the request Activity by itself (it did so only because that logger was enabled), and every audit row
+// would get trace_id NULL (AuditTests failed on CI, which has no other subscriber). Listen to the hosting ActivitySource ourselves; no exporter, nothing is sent anywhere.
+System.Diagnostics.ActivitySource.AddActivityListener(new System.Diagnostics.ActivityListener
+{
+    ShouldListenTo = s => s.Name == "Microsoft.AspNetCore",
+    Sample = (ref System.Diagnostics.ActivityCreationOptions<System.Diagnostics.ActivityContext> _) => System.Diagnostics.ActivitySamplingResult.AllData,
+});
 // An expected failure (a TeasException: 401 / 404 / 429 ...) is not an Error log with a stack trace; a real 500 is logged by ProblemHandling.
 builder.Logging.AddFilter("Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware", LogLevel.None);
 

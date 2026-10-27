@@ -12,8 +12,9 @@ const ACTOR_HEADER = 'x-teas-actor'; // mock only: must never reach the API
 const CLIENT_IP_HEADER = 'x-teas-client-ip';
 const MUTATING = (method: string) => !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase());
 
-const problem = (status: 403 | 503, title: string) =>
-  NextResponse.json({ status, code: `http.${status}`, title }, { status, headers: { 'cache-control': 'no-store' } });
+// Only codes already in the frozen ERROR_CODES: http.403 (CSRF), http.500 (the BFF is not configured), record.not_found (a path that is not under the prefix).
+const problem = (status: 403 | 404 | 500, code: 'http.403' | 'http.500' | 'record.not_found', title: string) =>
+  NextResponse.json({ status, code, title }, { status, headers: { 'cache-control': 'no-store' } });
 
 /** The client address from X-Forwarded-For: the entry the `hops`-th trusted proxy from the right appended (default 1 = the proxy directly in front of this server). */
 export function clientIp(xff: string | null, hops: number): string | undefined {
@@ -42,17 +43,20 @@ function appOrigin(request: NextRequest): string {
 
 export function proxy(request: NextRequest): NextResponse {
   const mode = process.env.NEXT_PUBLIC_API_MODE ?? 'mock';
-  const path = request.nextUrl.pathname.slice(PREFIX.length) || '/';
+  const full = request.nextUrl.pathname;
+  // the URL is already normalised (dot segments resolved): anything that left the prefix (`/bff/v1/a/../../internal/v1/me`, `/bff/v1x`) is not ours to forward
+  if (full !== PREFIX && !full.startsWith(PREFIX + '/')) return problem(404, 'record.not_found', 'Not found');
+  const path = full.slice(PREFIX.length) || '/';
   if (mode !== 'live' && (mode !== 'hybrid' || !isLiveRoute(request.method, path))) return NextResponse.next();
 
   // CSRF: every state change (route 14 `POST /auth/links/{token}` included: `auth: public` is about who may call it, not about who may forge it)
   if (MUTATING(request.method)) {
     const json = (request.headers.get('content-type') ?? '').toLowerCase().startsWith('application/json');
-    if (!json || request.headers.get('origin') !== appOrigin(request)) return problem(403, 'Forbidden');
+    if (!json || request.headers.get('origin') !== appOrigin(request)) return problem(403, 'http.403', 'Forbidden');
   }
   const base = process.env.TEAS_API_INTERNAL_URL?.replace(/\/+$/, '');
   const secret = process.env.TEAS_BFF_SECRET;
-  if (!base || !secret) return problem(503, 'The server is not configured');
+  if (!base || !secret) return problem(500, 'http.500', 'The server is not configured');
   return NextResponse.rewrite(new URL(`${base}/internal/v1${path}${request.nextUrl.search}`), { request: { headers: forwardHeaders(request, secret) } });
 }
 

@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -141,5 +142,30 @@ public class BffSecretTests
         // and what the production console prints can never include scopes, whatever the configuration says
         Assert.False(f.Services.GetRequiredService<IOptionsMonitor<Microsoft.Extensions.Logging.Console.SimpleConsoleFormatterOptions>>().CurrentValue.IncludeScopes);
         Assert.Equal("simple", f.Services.GetRequiredService<IOptionsMonitor<Microsoft.Extensions.Logging.Console.ConsoleLoggerOptions>>().CurrentValue.FormatterName);
+    }
+}
+
+public class TraceIdTests
+{
+    sealed class Capture : IStartupFilter
+    {
+        public static string? TraceId, Source;
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.Use(async (ctx, n) => { TraceId = System.Diagnostics.Activity.Current?.TraceId.ToString(); Source = System.Diagnostics.Activity.Current?.Source.Name; await n(); });
+            next(app);
+        };
+    }
+
+    // P10a: silencing the hosting logger category once stopped the request Activity from being created, so every audit row got trace_id NULL
+    // (AuditTests failed on CI, where no other listener exists). The API registers its own listener; this holds with no logging and no OpenTelemetry.
+    [Fact]
+    public async Task EveryRequestHasAnActivityWhateverTheHostingLogLevelIs()
+    {
+        Capture.TraceId = null;
+        using var f = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b.ConfigureServices(s => s.AddSingleton<IStartupFilter>(new Capture())));
+        await f.CreateClient().GetAsync("/health/live");
+        Assert.False(string.IsNullOrEmpty(Capture.TraceId));
+        Assert.Equal("Microsoft.AspNetCore", Capture.Source);   // made by the hosting ActivitySource our listener samples, not by whatever ambient subscriber a dev box or test runner happens to have
     }
 }
