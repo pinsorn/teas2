@@ -85,6 +85,56 @@ public class ArchitectureTests
         Assert.Empty(bad);
     }
 
+    // Carry from the P1 review: Program.cs may silence RS0030 exactly once, around exactly one statement that creates the system clock.
+    [Fact]
+    public void ProgramCsHasExactlyOneRs0030WindowAroundOneSystemClockStatement()
+    {
+        var text = File.ReadAllText(Path.Combine(Backend, "src", "Teas.Api", "Program.cs"));
+        var disables = Regex.Matches(text, @"^[ \t]*#[ \t]*pragma[ \t]+warning[ \t]+disable[^\n]*$", RegexOptions.Multiline);
+        var restores = Regex.Matches(text, @"^[ \t]*#[ \t]*pragma[ \t]+warning[ \t]+restore[^\n]*$", RegexOptions.Multiline);
+        Assert.Single(disables);
+        Assert.Single(restores);
+        Assert.Matches(@"RS0030", disables[0].Value);
+        Assert.True(disables[0].Index < restores[0].Index, "restore must follow disable");
+        var window = text[(disables[0].Index + disables[0].Length)..restores[0].Index];
+        Assert.Equal(1, window.Count(ch => ch == ';'));
+        Assert.Contains("TimeProvider.System", window);
+        Assert.DoesNotMatch(@"Date(Time|TimeOffset)\s*\.\s*(Utc)?(Now|Today)", window);
+    }
+
+    // F3: the RLS context is written only by TenantScope.cs (transaction-local set_config); nowhere else in the repo.
+    [Fact]
+    public void RlsContextIsSetOnlyInTenantScope()
+    {
+        var sep = Path.DirectorySeparatorChar;
+        var allowed = Path.Combine(Backend, "src", "Teas.App", "Platform", "TenantScope.cs");
+        var self = Path.Combine(Backend, "tests", "Teas.Architecture.Tests", "ArchitectureTests.cs");
+        var repo = Directory.GetParent(Backend)!.FullName;
+        var bad = new[] { "backend", "deploy", "tools" }
+            .Select(d => Path.Combine(repo, d)).Where(Directory.Exists)
+            .SelectMany(d => Directory.EnumerateFiles(d, "*", SearchOption.AllDirectories))
+            .Where(f => !f.Contains($"{sep}obj{sep}") && !f.Contains($"{sep}bin{sep}") && !f.Contains($"{sep}node_modules{sep}") && f != allowed && f != self)
+            .Where(f => Path.GetExtension(f).ToLowerInvariant() is ".cs" or ".sql" or ".ps1" or ".sh" or ".mjs" or ".json" or ".txt")
+            .Where(f => Regex.IsMatch(File.ReadAllText(f), @"set_config|\bSET\s+(LOCAL\s+|SESSION\s+)?app\.", RegexOptions.IgnoreCase))
+            .ToList();
+        Assert.Empty(bad);
+    }
+
+    // SP3 4.3: system scope bypasses the company filter, so it is entered only in Platform/Auth, Platform/Jobs, Platform/Keys and the migrator.
+    [Fact]
+    public void SystemScopeMachineryIsUsedOnlyFromTheAllowedPlaces()
+    {
+        var src = Path.Combine(Backend, "src");
+        var definition = Path.Combine(src, "Teas.App", "Platform", "TenantScope.cs");
+        string[] allowed = ["/Platform/Auth/", "/Platform/Jobs/", "/Platform/Keys/", "/Teas.Migrator/", "/Teas.Api/Startup/StartupGuards.cs"];
+        var bad = Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") && f != definition)
+            .Where(f => Regex.IsMatch(File.ReadAllText(f), @"\b(EnterSystem|ScopeState|ApplyAsync|ForEachCompanyAsync|SelfTestAsync|Attach)\s*\("))
+            .Where(f => !allowed.Any(a => f.Replace('\\', '/').Contains(a)))
+            .ToList();
+        Assert.Empty(bad);
+    }
+
     [Fact]
     public void ControlSnippetBuilds()
     {

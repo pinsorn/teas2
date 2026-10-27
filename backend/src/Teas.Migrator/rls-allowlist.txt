@@ -1,0 +1,6 @@
+# Relations WITHOUT row-level security (SP3 4.2). One per line: <schema>.<table> <reason>.
+# Every other table in any non-system schema must have RLS enabled + forced and at least one policy; a materialized
+# view cannot have RLS at all, so it is refused unless listed here (architecture test + startup guard).
+teas.users                 global identity across companies
+teas.sessions              global, resolved before any company is known
+teas.__EFMigrationsHistory EF history, owned by the migrator; teas_app has SELECT only (F7)

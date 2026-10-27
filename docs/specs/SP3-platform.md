@@ -104,7 +104,11 @@ CREATE POLICY tenant ON teas.<t>
   teas.company_members m WHERE m.company_id = companies.id AND m.user_id = teas.current_user_id() AND m.active AND NOT
   m.invite_pending)) WITH CHECK (id = teas.current_company())`; `company_members`: `USING (company_id =
   teas.current_company() OR user_id = teas.current_user_id() OR teas.is_system()) WITH CHECK (company_id =
-  teas.current_company())` (the company switcher lists a user's memberships across companies).
+  teas.current_company())` (the company switcher lists a user's memberships across companies). **P2a ruling (M2):** the widening
+  is SELECT-only. For these two tables the policy is split: `tenant_select` carries the widened USING; `tenant_insert`
+  (WITH CHECK), `tenant_update` (USING `id`/`company_id = current_company() OR is_system()`, same WITH CHECK) and
+  `tenant_delete` (same USING) use the narrow predicate. Reason: one FOR ALL policy would let company A's session UPDATE or
+  DELETE a row it may merely see (its own membership row in B, company B itself).
 - Global tables (no RLS) are listed in `backend/src/Teas.Migrator/rls-allowlist.txt`, one per line with a reason. An
   architecture test queries `pg_class` / `pg_policy` on the migrated template: every table in schema `teas` is either
   on the allow-list, or has `relrowsecurity AND relforcerowsecurity` and ≥ 1 policy (SP0 §10.3).
@@ -149,7 +153,7 @@ Schema sketch (P2 creates the base, later tasks add their tables; types: ids `uu
 | Integration tests | harness: `teas_test_admin` clones; tests: `teas_app` | as the code under test | — | — | harness asserts the role (F1) |
 
 `TenantScope` API: `Enter(Guid companyId, Guid? userId)`, `EnterSystem(string reason)` (reason logged with the trace;
-an architecture test allows `EnterSystem` only in `Platform/Auth`, `Platform/Jobs`, `Platform/Keys`, `Migrator`),
+an architecture test allows `EnterSystem(`, `ScopeState(`, `ApplyAsync(` and `ForEachCompanyAsync(` only in `Platform/Auth`, `Platform/Jobs`, `Platform/Keys`, `Migrator` and `Teas.Api/Startup/StartupGuards` (the startup RLS self-test needs system scope); `ScopeState`, `ApplyAsync`, `ForEachCompanyAsync` are internal to `Teas.App`; a scope change while a transaction is open is applied to it at once and restored on dispose),
 `ForEachCompany`. Implementation: an EF Core `DbTransactionInterceptor` issues `SELECT set_config('app.company_id',
 $1, true), set_config('app.user_id', $2, true), set_config('app.system', $3, true)` on `TransactionStarted`.
 
@@ -561,11 +565,11 @@ filter, `tests/Teas.Integration.Tests/Harness/**` (template DB, per-class clone,
 non-allow-listed table, so P2 ships `TenantRowFactory` (test project) with one method per tenant table that inserts a
 valid row with its foreign keys for a given company; a tenant table without a factory method fails the generated test
 (every later task that adds a tenant table adds its factory method).
-- [ ] **Step 1: Failing tests** — S8 (secret header), S9 (two companies; read / write / no-GUC per tenant table,
+- [x] **Step 1: Failing tests** (done 2026-10-27; mutation-checked, see task-P2-report.md) — S8 (secret header), S9 (two companies; read / write / no-GUC per tenant table,
   generated from the allow-list complement), S16 (start as a role with BYPASSRLS → refuses; wrong schema → refuses);
   allow-list test fails when a new table lacks RLS (feed it a throwaway table in the test); `ForEachCompany` updates
   rows in two companies and a plain `UPDATE` under the migrator role updates 0 (documents F5).
-- [ ] **Steps 2–5**, gates: build, architecture, integration. **Step 6: Controller commits**
+- [~] **Steps 2–5**, gates: build, architecture, integration. (worker: all green on a scratch PG 18 at port 5433; NOT yet run on the dev box PG at 5432, which needs the postgres password; step 6 is the controller) **Step 6: Controller commits**
   `feat(platform): roles, migrator, row-level security harness and startup guards`.
 
 ### Task P3: Error contract and the OpenAPI → TypeScript pipeline
@@ -591,7 +595,7 @@ first), `frontend/.gitignore` (`src/contract/generated/`), `frontend/src/contrac
 `src/Teas.App/Platform/Idempotency/**`, `src/Teas.App/Platform/Concurrency/VersionedUpdate.cs`,
 `src/Teas.App/Platform/Audit/**`, a test-only command endpoint (registered only in the test host) to exercise them,
 `AuditTests`, `IdempotencyTests`, `ConcurrencyTests`.
-**Rules:** §4.7 Idempotency / Concurrency / Audit; S14, S17.
+**Rules:** §4.7 Idempotency / Concurrency / Audit; S14, S17. Never `ROLLBACK TO SAVEPOINT` a savepoint taken inside a `TenantScope` after leaving that scope (GUCs follow savepoints); re-enter the scope after any manual savepoint rollback (P2 review R3-2).
 - [ ] **Step 1: Failing tests** — same key twice (sequential) → one effect, identical replay; same key twice
   (parallel, barrier) → one effect; same key, different body → 422 `idempotency.key_reused`; missing key → 400; a
   command that throws after the claim leaves no idempotency row and no audit row; two parallel updates at the same
