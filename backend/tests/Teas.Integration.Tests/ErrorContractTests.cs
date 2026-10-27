@@ -56,6 +56,7 @@ public sealed class ErrorContractTests
         e.MapGet("/internal/v1/_t/overflow", () => Money.Of(10000000000000000m));
         e.MapGet("/internal/v1/_t/shapes", () => new Shapes { Name = "s" });
         e.MapGet("/internal/v1/_t/pos", () => new Pos("p"));
+        e.MapGet("/internal/v1/_t/page", () => new Page<Inner> { Items = [] });
         e.MapPost("/internal/v1/_t/pos", (Pos p) => p.N is null ? "absent" : "n:" + p.N);
         e.MapOpenApi("/_t/openapi.json");
     };
@@ -268,6 +269,37 @@ public sealed class ErrorContractTests
         using var f = Host();
         var opts = f.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Http.Json.JsonOptions>>().Value.SerializerOptions;
         Assert.Throws<InvalidOperationException>(() => opts.GetTypeInfo(typeof(BadRequired)));
+    }
+
+    public sealed record Page<T> { public required List<T> Items { get; init; } public Inner? Extra { get; init; } public int? Total { get; init; } }
+    public static class NsX { public sealed record Twin { public required int A { get; init; } } }
+    public static class NsY { public sealed record Twin { public required int B { get; init; } } }
+
+    [Fact]
+    public async Task OmittedWhenNullIsKeyedByTheComponentNameSoAGenericPageIsHandledToo()
+    {
+        using var f = Host();
+        var doc = JsonDocument.Parse(await f.CreateClient().GetStringAsync("/_t/openapi.json")).RootElement;
+        var page = doc.GetProperty("components").GetProperty("schemas").GetProperty("PageOfInner");
+        Assert.Equal(["items"], page.GetProperty("required").EnumerateArray().Select(x => x.GetString()!).ToArray());
+        var props = page.GetProperty("properties");
+        Assert.Equal("#/components/schemas/Inner", props.GetProperty("extra").GetProperty("$ref").GetString());
+        Assert.Equal("integer", props.GetProperty("total").GetProperty("type").GetString());
+    }
+
+    [Fact]
+    public async Task TwoTypesSharingAComponentNameFailDocumentGenerationNamingBoth()
+    {
+        using var f = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+            b.ConfigureServices(s => s.AddSingleton<IStartupFilter>(new TestRoutes(e =>
+            {
+                e.MapGet("/internal/v1/_t/x", () => new NsX.Twin { A = 1 });
+                e.MapGet("/internal/v1/_t/y", () => new NsY.Twin { B = 1 });
+            }))));
+        var provider = f.Services.GetRequiredKeyedService<Microsoft.AspNetCore.OpenApi.IOpenApiDocumentProvider>("v1");
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => provider.GetOpenApiDocumentAsync(CancellationToken.None));
+        Assert.Contains("NsX+Twin", ex.Message);
+        Assert.Contains("NsY+Twin", ex.Message);
     }
 
     static JsonElement Resolve(JsonElement doc, JsonElement schema)

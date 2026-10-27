@@ -27,9 +27,19 @@ public static class OpenApiSetup
             o.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
             o.SerializerOptions.TypeInfoResolver = (o.SerializerOptions.TypeInfoResolver ?? new DefaultJsonTypeInfoResolver()).WithAddedModifier(OmitWhenNull);
         });
+        var ids = new System.Collections.Concurrent.ConcurrentDictionary<string, Type>(); // component name -> the type that owns it
+        string? RefId(JsonTypeInfo ti)
+        {
+            var id = OpenApiOptions.CreateDefaultSchemaReferenceId(ti);
+            var owner = Nullable.GetUnderlyingType(ti.Type) ?? ti.Type; // Money? and Money are one component
+            if (id is not null && ids.GetOrAdd(id, owner) != owner)
+                throw new InvalidOperationException($"OpenAPI component name \"{id}\" is used by two types: {ids[id].FullName} and {owner.FullName}. Rename one DTO; names are not auto-qualified.");
+            return id;
+        }
         var omitted = new System.Collections.Concurrent.ConcurrentDictionary<string, System.Collections.Concurrent.ConcurrentBag<string>>(); // component name -> members the serializer omits when null
         return services.AddOpenApi("v1", o =>
         {
+            o.CreateSchemaReferenceId = RefId;
             o.ShouldInclude = d => d.RelativePath?.StartsWith(Prefix.TrimStart('/') + "/", StringComparison.Ordinal) == true;
             o.AddSchemaTransformer(async (schema, ctx, ct) =>
             {
@@ -54,7 +64,7 @@ public static class OpenApiSetup
                     {
                         if (!props.TryGetValue(p.Name, out var ps)) continue;
                         if (IsOptional(p.PropertyType, out var a)) { if (ps is OpenApiSchema target) await DescribeOptional(target, a, ctx, ct); }
-                        else if (OmitsNull(p)) { props[p.Name] = WithoutNull(ps); omitted.GetOrAdd(ctx.JsonTypeInfo.Type.Name, _ => new()).Add(p.Name); }
+                        else if (OmitsNull(p)) { props[p.Name] = WithoutNull(ps); omitted.GetOrAdd(RefId(ctx.JsonTypeInfo) ?? ctx.JsonTypeInfo.Type.Name, _ => new()).Add(p.Name); }
                     }
             });
             o.AddDocumentTransformer(async (doc, ctx, ct) =>
