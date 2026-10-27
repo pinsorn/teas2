@@ -543,6 +543,8 @@ Owned elsewhere, built on this kernel (listed so the owners inherit them; the ha
 | C-10 | §5.8 | a correction in a closed period posts in the current open period | not into a closed YEAR: refused (AC6 "final means final", notes-only edits included) | ADR-0008 |
 | C-11 | §5.3 | journal line has `tax_code`, `source_line` | no tax code on lines (registers read documents, I12); source line kept as `source_line_id` | this spec |
 
+**Obligation (SP3 P3a, ruling 5):** the first SP4.1 route that can emit `money.out_of_range` (422, thrown by `Money.Of`) adds that code to its module contract (an ADR and a contract version bump); it is a backend-only code in the .NET registry until then.
+
 ## 10. Definition of Done (SP0 §11.5)
 
 - [ ] Descriptors complete — n/a (no document type here; the JV is SP4.2); every guard of §7 has its exit and a test

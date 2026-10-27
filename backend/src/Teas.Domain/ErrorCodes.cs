@@ -63,18 +63,22 @@ public static class ErrorCodes
     };
 }
 
-/// <summary>A domain failure with a registered code; the API renders it as ApiProblem.</summary>
+/// <summary>A domain failure with a registered code; the API renders it as ApiProblem. <paramref name="status"/> may only be the row's
+/// Status or AltStatus (a code with two statuses, e.g. connect.key_revoked 401 on use / 409 on rotate); default = the row's Status.</summary>
 public class TeasException : Exception
 {
-    public TeasException(string code, string? detail = null, IReadOnlyDictionary<string, string[]>? fieldErrors = null) : base(detail ?? code)
+    public TeasException(string code, string? detail = null, IReadOnlyDictionary<string, string[]>? fieldErrors = null, int? status = null) : base(detail ?? code)
     {
-        if (!ErrorCodes.All.ContainsKey(code)) throw new ArgumentException($"Unregistered error code '{code}'.", nameof(code));
+        if (!ErrorCodes.All.TryGetValue(code, out var entry)) throw new ArgumentException($"Unregistered error code '{code}'.", nameof(code));
+        if (status is { } s && s != entry.Status && s != entry.AltStatus) throw new ArgumentException($"{code} has no status {s}.", nameof(status));
         Code = code;
+        Status = status ?? entry.Status;
         Detail = detail;
         FieldErrors = fieldErrors;
     }
 
     public string Code { get; }
+    public int Status { get; }
     public string? Detail { get; }
     public IReadOnlyDictionary<string, string[]>? FieldErrors { get; }
 }
