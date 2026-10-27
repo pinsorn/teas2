@@ -324,4 +324,44 @@ public sealed class RlsTests : IAsyncLifetime
         inner.Dispose();
         outer.Dispose();
     }
+
+    async Task KillBackendOfAsync(TeasDbContext ctx)
+    {
+        var pid = (await ctx.Database.SqlQueryRaw<int>("SELECT pg_backend_pid() AS \"Value\"").ToListAsync())[0];
+        await _db.AsAppAsync(ScopeState.None, (c, tx) => Sql(c, tx, "SELECT pg_terminate_backend(@p)", ("p", pid)));
+        await Task.Delay(300);
+    }
+
+    // R3-1: a failed apply must not leave the entered scope as the state of the next transaction (fail-open).
+    [Fact]
+    public async Task R3_FailedEnterSystemLeavesThePreviousScopeForTheNextTransaction()
+    {
+        var a = Guid.NewGuid();
+        await _db.AsAppAsync(In(a), Insert("companies", a), commit: true);
+        var scope = new TenantScope();
+        await using var ctx = NewContext(scope);
+        var tx = await ctx.Database.BeginTransactionAsync();
+        await KillBackendOfAsync(ctx);
+        Assert.ThrowsAny<Exception>(() => scope.EnterSystem("lookup"));
+        Assert.False(scope.Current.System);
+        try { await tx.DisposeAsync(); } catch (Exception) { /* the connection is dead by design */ }
+        await ctx.Database.CloseConnectionAsync();
+
+        await using var next = await ctx.Database.BeginTransactionAsync();
+        Assert.Equal(0, (await ctx.Database.SqlQueryRaw<long>("SELECT count(*) AS \"Value\" FROM teas.companies").ToListAsync())[0]);   // not system
+    }
+
+    [Fact]
+    public async Task R3_FailedNestedEnterKeepsTheOuterScope()
+    {
+        var b = Guid.NewGuid();
+        var scope = new TenantScope();
+        await using var ctx = NewContext(scope);
+        var outer = scope.Enter(b, null);   // deliberately not disposed: its restore would hit the dead connection too
+        await using var tx = await ctx.Database.BeginTransactionAsync();
+        await KillBackendOfAsync(ctx);
+        Assert.ThrowsAny<Exception>(() => scope.Enter(Guid.NewGuid(), null));
+        Assert.Equal(b, scope.Current.CompanyId);
+        GC.KeepAlive(outer);
+    }
 }

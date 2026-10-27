@@ -595,7 +595,7 @@ first), `frontend/.gitignore` (`src/contract/generated/`), `frontend/src/contrac
 `src/Teas.App/Platform/Idempotency/**`, `src/Teas.App/Platform/Concurrency/VersionedUpdate.cs`,
 `src/Teas.App/Platform/Audit/**`, a test-only command endpoint (registered only in the test host) to exercise them,
 `AuditTests`, `IdempotencyTests`, `ConcurrencyTests`.
-**Rules:** §4.7 Idempotency / Concurrency / Audit; S14, S17.
+**Rules:** §4.7 Idempotency / Concurrency / Audit; S14, S17. Never `ROLLBACK TO SAVEPOINT` a savepoint taken inside a `TenantScope` after leaving that scope (GUCs follow savepoints); re-enter the scope after any manual savepoint rollback (P2 review R3-2).
 - [ ] **Step 1: Failing tests** — same key twice (sequential) → one effect, identical replay; same key twice
   (parallel, barrier) → one effect; same key, different body → 422 `idempotency.key_reused`; missing key → 400; a
   command that throws after the claim leaves no idempotency row and no audit row; two parallel updates at the same

@@ -23,6 +23,8 @@ internal readonly record struct ScopeState(Guid? CompanyId, Guid? UserId, bool S
 /// repo for it). Enter / EnterSystem set the state; if a transaction is already active on the context the new state is
 /// applied to it at once, and disposing the scope re-applies the previous state (H1).
 /// Scoped per request and bound to ONE DbContext; it is not AsyncLocal. Scopes nest and must be disposed in reverse order.
+/// GUCs follow savepoints: never ROLLBACK TO SAVEPOINT a savepoint taken inside a scope after leaving that scope; re-enter the
+/// scope after any manual savepoint rollback.
 /// </summary>
 public sealed class TenantScope
 {
@@ -46,7 +48,8 @@ public sealed class TenantScope
     IDisposable Swap(ScopeState next)
     {
         var previous = Current;
-        Set(next);
+        try { Set(next); }
+        catch { Current = previous; throw; }   // a failed apply must not leave the new scope as the state of the NEXT transaction (fail-open)
         return new Restore(this, previous, ++_depth);
     }
 

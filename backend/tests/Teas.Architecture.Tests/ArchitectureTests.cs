@@ -129,7 +129,7 @@ public class ArchitectureTests
         string[] allowed = ["/Platform/Auth/", "/Platform/Jobs/", "/Platform/Keys/", "/Teas.Migrator/", "/Teas.Api/Startup/StartupGuards.cs"];
         var bad = Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories)
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") && f != definition)
-            .Where(f => Regex.IsMatch(File.ReadAllText(f), @"\b(EnterSystem|ScopeState|ApplyAsync|ForEachCompanyAsync)\s*\("))
+            .Where(f => Regex.IsMatch(File.ReadAllText(f), @"\b(EnterSystem|ScopeState|ApplyAsync|ForEachCompanyAsync|SelfTestAsync|Attach)\s*\("))
             .Where(f => !allowed.Any(a => f.Replace('\\', '/').Contains(a)))
             .ToList();
         Assert.Empty(bad);
