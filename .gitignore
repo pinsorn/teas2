@@ -29,3 +29,5 @@ Thumbs.db
 *.swp
 # local Claude settings
 .claude/settings.local.json
+*.sln.DotSettings.user
+backend/artifacts/

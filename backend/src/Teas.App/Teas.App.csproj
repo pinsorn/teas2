@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Teas.Domain\Teas.Domain.csproj" />
+  </ItemGroup>
+</Project>

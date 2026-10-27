@@ -1,0 +1,22 @@
+name: backend
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { global-json-file: backend/global.json }
+      - run: dotnet build Teas.sln -c Release -warnaserror
+      - run: dotnet test tests/Teas.Domain.Tests -c Release --no-build
+      - run: dotnet test tests/Teas.Architecture.Tests -c Release --no-build
+      - run: dotnet test tests/Teas.Integration.Tests -c Release --no-build

@@ -235,3 +235,7 @@ Entry format — terse, greppable by symptom:
 ## Agent requests: the allowlist in `mocks/handlers/me.ts` is the only guard outside document writes
 - Fact (HC2 review r4): `docs-write.ts` passes `actorFor(request)`, so the engine also refuses an agent there; the bank, settlements, periods, filings, schedules, records and settings handlers still pass the fixed user to the engine.
 - Consequence: widening an `AGENT_ALLOWED` regex lets an agent reach those engines dressed as the signed-in user. Any new agent route needs its handler to pass `actorFor(request)` first.
+
+## Backend architecture tests rebuild real projects (canary)
+- Fact: `CanaryClockCallFailsTheRealProjectBuild` builds each `Teas.*` project in Release with an injected `DateTime.Now` file (hook in `backend/Directory.Build.props`, file under `<project>/obj/teas-canary/`). The suite takes ~40–50 s and rewrites `obj/Release` intermediates while it runs.
+- Consequence: on Windows, an IDE or a second `dotnet build` of the same project at the same moment can contend for files. Run the architecture tests alone (CI builds first, then tests with `--no-build`).

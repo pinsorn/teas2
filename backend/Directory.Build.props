@@ -1,0 +1,21 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- SP3 4.7 Clock: BannedSymbols.txt bans the wall-clock APIs in every project (TimeProvider only). -->
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)BannedSymbols.txt" />
+  </ItemGroup>
+  <!-- Test hook only: the architecture canary injects a DateTime.Now file into ONE project. Accepted only from this
+       project's own obj/teas-canary/ folder, so an env var or -p: naming any other file does nothing. -->
+  <PropertyGroup>
+    <TeasCanaryDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', 'obj', 'teas-canary'))</TeasCanaryDir>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(TeasCanaryFile)' != '' And '$(MSBuildProjectName)' == '$(TeasCanaryProject)' And $([System.String]::Copy('$(TeasCanaryFile)').StartsWith('$(TeasCanaryDir)', System.StringComparison.OrdinalIgnoreCase))"><Compile Include="$(TeasCanaryFile)" /></ItemGroup>
+</Project>
