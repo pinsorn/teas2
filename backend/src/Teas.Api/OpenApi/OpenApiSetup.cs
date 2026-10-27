@@ -15,6 +15,13 @@ namespace Teas.Api.OpenApi;
 /// omitted when null and its schema says so (not required, no "null"); an optional member whose null means something
 /// (absent = unchanged, null = remove) is <see cref="Optional{T}"/>, schema type [null, T], not required.
 /// </summary>
+/// <summary>Marks a never-instantiated type that stands for a union of response shapes in the OpenAPI document (oneOf of <see cref="Arms"/>).</summary>
+[AttributeUsage(AttributeTargets.Class)]
+public sealed class OneOfAttribute(params Type[] arms) : Attribute
+{
+    public Type[] Arms { get; } = arms;
+}
+
 public static class OpenApiSetup
 {
     public const string Prefix = "/internal/v1";
@@ -44,6 +51,16 @@ public static class OpenApiSetup
             o.AddSchemaTransformer(async (schema, ctx, ct) =>
             {
                 var type = Nullable.GetUnderlyingType(ctx.JsonTypeInfo.Type) ?? ctx.JsonTypeInfo.Type;
+                if (type.GetCustomAttributes(typeof(OneOfAttribute), false).FirstOrDefault() is OneOfAttribute union)
+                {
+                    // a union answer (e.g. LoginResult): the marker type is a oneOf of its arms, each its own component
+                    var arms = new List<IOpenApiSchema>();
+                    foreach (var arm in union.Arms) arms.Add(await ctx.GetOrCreateSchemaAsync(arm, null, ct));
+                    schema.Type = null;
+                    schema.Properties?.Clear();
+                    schema.OneOf = arms;
+                    return;
+                }
                 if (type == typeof(Money))
                 {
                     schema.Type = JsonSchemaType.String;

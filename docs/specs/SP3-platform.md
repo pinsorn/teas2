@@ -175,11 +175,11 @@ $1, true), set_config('app.user_id', $2, true), set_config('app.system', $3, tru
   secret 160-bit random, Base32; stored encrypted with ASP.NET Data Protection (purpose `teas.totp.v1`), key ring on
   the volume `TEAS_DP_KEYS_DIR` (backed up separately from the DB). Enrolment: `pending` secret until a correct code;
   then 8 recovery codes `RCV-XXXX-XXXX` (alphabet `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`) returned once, stored with
-  `PasswordHasher`, each usable once.
+  `PasswordHasher`, each usable once. **P7a / P7b:** routes 9 and 10 (every enrolment, first or replacing) need a sign-in from the last 10 minutes (`sessions.created_at`), else 403 `auth.forbidden`; a successful re-enrolment revokes every other session of the user.
 - **Login failures:** unknown email and wrong password give the same 401 `auth.invalid_credentials` and run one dummy
   hash verification (timing). Counter per `sha256(lower(trim(email)))` over login, TOTP step, relogin and the
   current-password check: 5 consecutive → `locked_until = now + 15 min`, answer 429 `auth.locked` (the failure that
-  locks already says so); success clears it. Plus ASP.NET rate limiter: 20 / min per IP on `/auth/*`.
+  locks already says so); success clears it. **P7a:** the attempt is RESERVED before it is checked (one atomic upsert returns its number n; n above 5 = locked, nothing is verified), so a parallel burst buys at most 5 checks; a right password whose second factor is still to come is refunded, and a right current password clears the counter. Plus ASP.NET rate limiter: 20 / min per IP on `/auth/*` (after the BFF-secret check; `GET /auth/session`, the public poll, is exempt).
 - **Links (new, Q4; amended P0a):** invite (7 days) and reset (24 h): 256-bit token, stored hashed with its kind and
   `expires_at` **stored at issue** (never recomputed on read), single use; a newer link of the SAME kind for the same
   member supersedes the older. `GET /auth/links/{token}` → `LinkInfo` (with `existingAccount`).
@@ -385,7 +385,7 @@ Agent column: "no" means the route is not mapped on `/api/v1` / `/mcp`; an agent
 |---|---|---|---|---|---|---|---|---|---|
 | 1 | POST `/auth/login` | public | — | no | — | `{email,password}` → `LoginResult` | invalid_credentials, locked | `auth.login` + auth_events | P7 |
 | 2 | POST `/auth/totp` | public | — | no | — | `{challenge, code \| recoveryCode}` → `{status:'ok'}` | challenge_invalid, totp_invalid, locked | `auth.login` | P7 |
-| 3 | GET `/auth/session` | public | — | no | — | → `{state, email?, expiresInSec?}` (email only for a live session) | — | — | P7 |
+| 3 | GET `/auth/session` | public | — | no | — | → `{state, email?, expiresInSec?}` (email only for a session that is not `out`: active, expiring or expired) | — | — | P7 |
 | 4 | POST `/auth/session/extend` | session (active / expiring) | — | no | — | → `{state:'active'}` | session_expired, unauthenticated | — | P7 |
 | 5 | POST `/auth/logout` | public | — | no | — | → `{state:'out'}` | — | `auth.logout` | P7 |
 | 6 | POST `/auth/relogin` | session-or-expired (expired only) | — | no | — | `{password, code?, recoveryCode?}` → `{status:'ok'\|'totp_required'}` | unauthenticated, not_expired, invalid_credentials, totp_invalid, locked | `auth.login` | P7 |
@@ -650,11 +650,12 @@ architecture test). Permission and agent refusals are decided before `Idempotenc
 `bootstrap-admin`, `reset-mfa`, `reset-password`, tests S1–S6, conformance lines for routes 1–14.
 **Rules:** §4.4; the reset-link issuer is mandatory: a link without a stored issuer is the single 404 (it cannot be re-checked at use); HC3 rulings 1, 3, 4 and the HC3 review items (F12); the auth audit company rule: the session's active
 company, else the user's first active membership, else only `auth_events`.
-- [ ] **Step 1: Failing tests** — S1–S6; relogin keeps nothing of another user; a link works once, a superseded link
+- [x] **Step 1: Failing tests** (done 2026-10-27; red = missing `Totp` / `AuthCli` / `UserLinks` types, then green + mutation-checked, see task-P7-report.md) — S1–S6; relogin keeps nothing of another user; a link works once, a superseded link
   fails, an expired link fails, all with the same 404; bootstrap CLI prints one link and stores only its hash;
   `reset-mfa` clears TOTP + recovery codes and revokes sessions.
-- [ ] **Steps 2–5**, gates as P4 + conformance. **Step 6: Controller commits**
+- [x] **Steps 2–5** (worker done 2026-10-27: build -warnaserror 0/0, Integration 195/195 twice, Architecture 25/25, Domain 58/58, OpenAPI artifact identical to docs/api/openapi.v1.json, typecheck + lint + vitest 2877, freeze + layout ok; 25 of 26 files; see task-P7-report.md), gates as P4 + conformance. **Step 6: Controller commits**
   `feat(platform): sign-in, sessions, two-step verification and set-password links`.
+- **Built as (later tasks rely on it):** `UserLinks.IssueAsync(conn, tx, kind, userId, companyId, memberId, createdBy, now)` issues invite / reset links (P8 calls it inside its transaction); `user_links.created_by` is the issuing user's id or `operator` (the CLI), anything else is the single 404; the use-time issuer check covers an invite (issuer holds `users.manage` in the issuing company) and a reset (issuer holds it in every company of the account); a deactivated member's invite / reset link is refused at use (P8 should still supersede the rows on deactivate). New env: `TEAS_DP_KEYS_DIR` (required outside Development), `TEAS_PUBLIC_URL` (CLI link base, default `http://localhost:3000`; link path `/link/<token>`), `TEAS_AUTH_RATE_LIMIT` (default 20, tests only).
 
 ### Task P8: Me, company switch, company settings, users and roles
 
@@ -701,7 +702,7 @@ characters.
 `frontend/src/mocks/browser.ts` / handler wrapper (passthrough of live routes in `hybrid`), `kit/auth/TotpEnrol.tsx`
 (QR from `uri`; one exact-pinned QR dependency with its reason in the report), `deploy/compose.ci.yml`,
 `.github/workflows/backend.yml` `compose` job, `frontend/e2e/platform-live.spec.ts`.
-**Rules:** §4.8; S7; `mock` stays the default build (the mockup preview is unchanged). `TEAS_FILES_DIR` is required outside Development, on a persistent volume (P6).
+**Rules:** §4.8; S7; `mock` stays the default build (the mockup preview is unchanged). `TEAS_FILES_DIR` is required outside Development, on a persistent volume (P6); so is `TEAS_DP_KEYS_DIR` (P7: without the key ring every restart makes the stored TOTP secrets unreadable). The API sees the BFF's address for every user: the BFF must forward the client IP and the API must trust it only after the BFF-secret check, or the per-IP `/auth/*` limit (20 / min) is one bucket for everybody (P7 open question 1). The production logger must not include request-path scopes, or must redact `/auth/links/` paths (a link token travels in the path).
 - [ ] **Step 1: Failing tests** — proxy (`proxy.test.ts` names `POST /auth/links/{token}` explicitly in the cross-site check, JSON content type + Origin, even though route 14 is `auth: public`): strips `x-teas-actor` and a forged `X-Teas-Bff`, adds the secret, refuses a
   cross-origin POST; hybrid e2e on the composed stack (CI): log in, see memberships, switch company, change password,
   enrol TOTP, invite a user and set their password through the link, create / rotate / revoke a key; the rest of the
@@ -730,6 +731,8 @@ characters.
 | Q7 | Logo / stamp / signature stay base64 data URLs on the wire (≤ 1 MB, as approved in ST1); the server stores them as files | Approve |
 | Q8 | Lockout per email lets anyone lock a known user out for 15 min; keep (as approved in HC3) plus the per-IP limit | Keep |
 | Q9 | Agents never approve, cancel or correct any document type (HC2, stricter than §8.5) — record in ADR-0005 | Approve |
+
+**Backlog (SP4.6 jobs):** prune `auth_failures` (rows not locked and older than 24 h) and revoked / absolute-expired `sessions` rows.
 
 ## 13. Attempt log
 

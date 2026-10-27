@@ -8,7 +8,7 @@ namespace Teas.App;
 public sealed class TeasDbContext(DbContextOptions<TeasDbContext> options) : DbContext(options)
 {
     /// <summary>The migration id this build expects (a test asserts it equals the migrator's last migration).</summary>
-    public const string ExpectedSchema = "0004_files_jobs";
+    public const string ExpectedSchema = "0005_auth";
 
     protected override void OnModelCreating(ModelBuilder b) => b.HasDefaultSchema("teas");
 
@@ -30,6 +30,11 @@ public static class TeasDataExtensions
         services.AddScoped<Platform.Rights.EffectiveRights>();
         services.AddScoped<Platform.Files.IFileStore, Platform.Files.FileStore>();   // needs a FileStoreOptions (TEAS_FILES_DIR) from the host
         services.AddScoped<Platform.Jobs.IdempotencyCleanupJob>();
+        services.AddSingleton(new Platform.Auth.PasswordService());   // made at startup: its dummy hash must not be computed inside the first unknown-email login
+        services.AddScoped<Platform.Auth.SessionService>();
+        services.AddScoped<Platform.Auth.AuthAudit>();
+        services.AddScoped<Platform.Auth.AuthService>();
+        services.AddScoped<Platform.Auth.LinkService>();   // needs an ISecretProtector (AuthService) from the host
         services.AddSingleton(sp => new Platform.Jobs.JobRunner(sp.GetRequiredService<IServiceScopeFactory>(), sp.GetRequiredService<TimeProvider>(), connectionString));
         services.AddDbContext<TeasDbContext>((sp, o) =>
         {

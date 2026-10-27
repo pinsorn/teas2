@@ -4,9 +4,369 @@
     "title": "Teas.Api | v1",
     "version": "1.0.0"
   },
-  "paths": { },
+  "paths": {
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResultBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/totp": {
+      "post": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusOk"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/session": {
+      "get": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/session/extend": {
+      "post": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtendedBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoggedOutBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/relogin": {
+      "post": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReloginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReloginBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/profile": {
+      "get": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/password": {
+      "post": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusOk"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/totp/enrol": {
+      "post": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrolStarted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/totp/enrol/verify": {
+      "post": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrolVerifyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryCodesBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/sessions": {
+      "get": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionsBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/sessions/{id}/revoke": {
+      "post": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignedOutBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/links/{token}": {
+      "get": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkInfo"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPasswordBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusOk"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
   "components": {
     "schemas": {
+      "ActiveState": {
+        "enum": [
+          "active"
+        ]
+      },
       "ApiProblem": {
         "required": [
           "title",
@@ -45,10 +405,375 @@
           }
         }
       },
+      "EnrolStarted": {
+        "required": [
+          "secret",
+          "uri"
+        ],
+        "type": "object",
+        "properties": {
+          "secret": {
+            "type": "string"
+          },
+          "uri": {
+            "type": "string"
+          }
+        }
+      },
+      "EnrolVerifyBody": {
+        "required": [
+          "code"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        }
+      },
+      "ExtendedBody": {
+        "required": [
+          "state"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/ActiveState"
+          }
+        }
+      },
+      "LinkInfo": {
+        "required": [
+          "kind",
+          "email",
+          "expiresAt",
+          "existingAccount"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/LinkKind"
+          },
+          "email": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "existingAccount": {
+            "type": "boolean"
+          },
+          "companyName": {
+            "type": "string"
+          }
+        }
+      },
+      "LinkKind": {
+        "enum": [
+          "invite",
+          "reset"
+        ]
+      },
+      "LoggedOutBody": {
+        "required": [
+          "state"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/OutState"
+          }
+        }
+      },
+      "LoginBody": {
+        "required": [
+          "email",
+          "password"
+        ],
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "LoginResultBody": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/StatusOk"
+          },
+          {
+            "$ref": "#/components/schemas/LoginTotpRequired"
+          }
+        ]
+      },
+      "LoginTotpRequired": {
+        "required": [
+          "status",
+          "challenge"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/TotpRequiredStatus"
+          },
+          "challenge": {
+            "type": "string"
+          }
+        }
+      },
       "Money": {
         "pattern": "^-?(0|[1-9][0-9]{0,15})\\.[0-9]{2}$",
         "type": "string"
+      },
+      "OkStatus": {
+        "enum": [
+          "ok"
+        ]
+      },
+      "OutState": {
+        "enum": [
+          "out"
+        ]
+      },
+      "PasswordBody": {
+        "required": [
+          "current",
+          "next",
+          "confirm"
+        ],
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": "string"
+          },
+          "next": {
+            "type": "string"
+          },
+          "confirm": {
+            "type": "string"
+          }
+        }
+      },
+      "ProfileView": {
+        "required": [
+          "userId",
+          "email",
+          "displayName",
+          "totpEnabled",
+          "recoveryRemaining"
+        ],
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "totpEnabled": {
+            "type": "boolean"
+          },
+          "recoveryRemaining": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "RecoveryCodesBody": {
+        "required": [
+          "recoveryCodes"
+        ],
+        "type": "object",
+        "properties": {
+          "recoveryCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ReloginBody": {
+        "required": [
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ReloginStatus"
+          }
+        }
+      },
+      "ReloginRequest": {
+        "required": [
+          "password"
+        ],
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "recoveryCode": {
+            "type": "string"
+          }
+        }
+      },
+      "ReloginStatus": {
+        "enum": [
+          "ok",
+          "totp_required"
+        ]
+      },
+      "SessionRow": {
+        "required": [
+          "id",
+          "device",
+          "ip",
+          "createdAt",
+          "lastSeenAt",
+          "current"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "device": {
+            "type": "string"
+          },
+          "ip": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastSeenAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "current": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SessionsBody": {
+        "required": [
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionRow"
+            }
+          }
+        }
+      },
+      "SessionState": {
+        "enum": [
+          "active",
+          "expiring",
+          "expired",
+          "out"
+        ]
+      },
+      "SessionStatus": {
+        "required": [
+          "state"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/SessionState"
+          },
+          "email": {
+            "type": "string"
+          },
+          "expiresInSec": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "SetPasswordBody": {
+        "required": [
+          "password",
+          "confirm"
+        ],
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string"
+          },
+          "confirm": {
+            "type": "string"
+          }
+        }
+      },
+      "SignedOutBody": {
+        "required": [
+          "signedOut"
+        ],
+        "type": "object",
+        "properties": {
+          "signedOut": {
+            "type": "boolean"
+          }
+        }
+      },
+      "StatusOk": {
+        "required": [
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/OkStatus"
+          }
+        }
+      },
+      "TotpBody": {
+        "required": [
+          "challenge"
+        ],
+        "type": "object",
+        "properties": {
+          "challenge": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "recoveryCode": {
+            "type": "string"
+          }
+        }
+      },
+      "TotpRequiredStatus": {
+        "enum": [
+          "totp_required"
+        ]
       }
     }
-  }
+  },
+  "tags": [
+    {
+      "name": "Teas.Api"
+    }
+  ]
 }

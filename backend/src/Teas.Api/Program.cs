@@ -1,12 +1,39 @@
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.RateLimiting;
 using Npgsql;
+using Teas.Api.Endpoints;
 using Teas.Api.OpenApi;
 using Teas.Api.Problems;
 using Teas.Api.Routing;
 using Teas.Api.Startup;
 using Teas.App;
+using Teas.App.Platform.Auth;
+using Teas.Domain;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddTeasOpenApi().AddTeasProblems();
+// A link token travels in the request path: the hosting "Request starting" line would write it to the log (SP3 S2).
+builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
+// An expected failure (a TeasException: 401 / 404 / 429 ...) is not an Error log with a stack trace; a real 500 is logged by ProblemHandling.
+builder.Logging.AddFilter("Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware", LogLevel.None);
+
+// SP3 4.4: TOTP secrets are encrypted with Data Protection (purpose teas.totp.v1); the key ring is on the volume TEAS_DP_KEYS_DIR, backed up apart from the database.
+var dataProtection = builder.Services.AddDataProtection().SetApplicationName("teas");
+if (!string.IsNullOrWhiteSpace(builder.Configuration["TEAS_DP_KEYS_DIR"])) dataProtection.PersistKeysToFileSystem(new DirectoryInfo(builder.Configuration["TEAS_DP_KEYS_DIR"]!));
+builder.Services.AddSingleton<ISecretProtector, DataProtectionSecretProtector>();
+
+// SP3 4.4: 20 requests / minute per IP on /auth/* (TEAS_AUTH_RATE_LIMIT overrides the number; tests only). Over the limit = 429 http.rate_limited.
+var authLimit = int.TryParse(builder.Configuration["TEAS_AUTH_RATE_LIMIT"], out var configured) && configured > 0 ? configured : 20;
+builder.Services.AddRateLimiter(o =>
+{
+    o.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(http =>
+        http.Request.Path.StartsWithSegments("/internal/v1/auth") && !(HttpMethods.IsGet(http.Request.Method) && http.Request.Path.Value!.TrimEnd('/').Equals("/internal/v1/auth/session", StringComparison.OrdinalIgnoreCase))   // the expiry dialog polls GET /auth/session
+            ? RateLimitPartition.GetFixedWindowLimiter(http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                _ => new FixedWindowRateLimiterOptions { PermitLimit = authLimit, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 })
+            : RateLimitPartition.GetNoLimiter("none"));
+    o.OnRejected = (_, _) => throw new TeasException("http.rate_limited");   // rendered by UseTeasProblems, which is earlier in the pipeline
+});
 
 #pragma warning disable RS0030 // composition root: the one place the real clock is created
 builder.Services.AddSingleton(TimeProvider.System);
@@ -32,6 +59,8 @@ if (!app.Environment.IsDevelopment() && !generatingDocs)
         throw new StartupGuardException($"TEAS_BFF_SECRET must be set and at least {BffSecretMiddleware.MinLength} characters");
     if (string.IsNullOrWhiteSpace(app.Configuration["TEAS_FILES_DIR"]))
         throw new StartupGuardException("TEAS_FILES_DIR must be set (the file volume); a relative default would lose files on redeploy");
+    if (string.IsNullOrWhiteSpace(app.Configuration["TEAS_DP_KEYS_DIR"]))
+        throw new StartupGuardException("TEAS_DP_KEYS_DIR must be set (the Data Protection key ring); without it every restart makes the stored TOTP secrets unreadable");
 }
 app.UseTeasProblems();
 
@@ -53,9 +82,10 @@ app.MapGet("/health/ready", async (CancellationToken ct) =>
 }).WithMetadata(Probe.Marker);
 app.MapGet("/version", () => Results.Ok(new { version = app.Configuration["TEAS_VERSION"] ?? "dev" })).WithMetadata(Probe.Marker);
 
-// The BFF-only surface. `ping` is the P2 probe route for S8; real routes arrive from P8 on.
+// The BFF-only surface. `ping` is the P2 probe route for S8; the auth routes (1-14) come from P7, the rest from P8 on.
 var internalV1 = app.MapGroup("/internal/v1").WithMetadata(BffOnly.Instance);
 internalV1.MapRoute(new RouteSpec("GET", "/ping", "public"), () => Results.Ok(new { ok = true })).ExcludeFromDescription(); // a probe, not a contract route
+internalV1.MapAuthRoutes();
 
 app.Run();
 
