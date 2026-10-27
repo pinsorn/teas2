@@ -187,6 +187,10 @@ $1, true), set_config('app.user_id', $2, true), set_config('app.system', $3, tru
     the membership, clears `invite_pending`, `user.accept_invite`; no password is read or changed); from anyone else
     (signed out, or another user) it is the one 404. A link must never set the password of an account that already
     has one: an invite is not proof of owning the email.
+  - **Whole-account actions (P0c):** reset-link (route 24) and totp-reset (route 25) take over an ACCOUNT, not a
+    membership, so the issuer must hold `users.manage` in EVERY company where the target user has an active or pending
+    membership; otherwise 403 `user.cross_company`. A reset / link resolves the account by `users.id` (the member's
+    `user_id`), never by the membership email, and a membership email never creates a login for an existing user.
   - **Known limitation (Ham 2026-10-27):** TEAS sends no email (SP0 section 1.4), so the inviting admin receives the
     link and can pre-claim an email that has no account yet. Accepted until email delivery exists. Exit: the server
     operator runs the CLI `reset-password --email` after verifying the owner's identity out of band; it writes an
@@ -352,7 +356,7 @@ export const agentForbidden: (code: string) => boolean;                  // §4.
 `connect.key_invalid` 401 · `connect.owner_inactive` 409 · `connect.key_kind_mismatch` 403 (new) ·
 `agent.forbidden_action` 403 · `agent.forbidden_setting` 403 · `idempotency.key_required` 400 (new) ·
 `idempotency.key_reused` 422 (new) · `http.rate_limited` 429 (new) · `storage.full` 507 · `http.500`. Added in P0a: `http.403` 403 (CSRF, S7) · `user.invite_pending` 409 (reset link for a
-member who has not accepted the invite) · `connect.wrong_company` 403 (a key used on another company: the mock's code, kept).
+member who has not accepted the invite) · `connect.wrong_company` 403 (a key used on another company: the mock's code, kept). Added in P0c: `user.cross_company` 403 (reset-link / totp-reset on a user who is also a member of a company the issuer does not manage).
 Retired with the mock: `user.not_pending`, `record.kind_unknown` (SP4.2 reclaims it), `mock.server_error`.
 
 ### 5.3 Routes (`ROUTES`; BFF path `/bff/v1` + path → API `/internal/v1` + path)
@@ -385,8 +389,8 @@ Agent column: "no" means the route is not mapped on `/api/v1` / `/mcp`; an agent
 | 21 | POST `/settings/users` | session | `users.manage` | no | — | `InviteBody` → `UserRow & {link}` (201; the only response with the link) | record.invalid | `user.invite` | P8 |
 | 22 | PUT `/settings/users/{id}` | session | `users.manage` | no | — / version-body | `UpdateMemberBody` → `UserRow` | not_found, last_admin, record.invalid, version_conflict | `user.update` | P8 |
 | 23 | POST `/settings/users/{id}/active` | session | `users.manage` | no | — / version-body | `{active, version}` → `UserRow` | not_found, last_admin, version_conflict | `user.activate` / `user.deactivate` | P8 |
-| 24 | POST `/settings/users/{id}/reset-link` | session | `users.manage` | no | — | → `{link}` | not_found, user.inactive, user.invite_pending | `user.reset_link` | P8 |
-| 25 | POST `/settings/users/{id}/totp-reset` (Q3) | session | `users.manage`, not self | no | — / version-body | `{version}` → `UserRow` | not_found, version_conflict | `user.totp_reset` | P8 |
+| 24 | POST `/settings/users/{id}/reset-link` | session | `users.manage` | no | — | → `{link}` | not_found, user.inactive, user.invite_pending, user.cross_company | `user.reset_link` | P8 |
+| 25 | POST `/settings/users/{id}/totp-reset` (Q3) | session | `users.manage`, not self | no | — / version-body | `{version}` → `UserRow` | not_found, version_conflict, user.cross_company | `user.totp_reset` | P8 |
 | 26 | GET `/settings/roles` | session | `users.manage` | no | — | → `{items: RoleRow[]}` | — | — | P8 |
 | 27 | POST `/settings/roles` | session | `users.manage` | no | — | `RoleBody` → `RoleRow` (201) | record.invalid | `role.create` | P8 |
 | 28 | PUT `/settings/roles/{id}` | session | `users.manage` | no | — / version-body | `UpdateRoleBody` → `RoleRow` | system_readonly, not_found, last_admin, record.invalid, version_conflict | `role.update` | P8 |
@@ -434,6 +438,7 @@ Mock routes removed: `GET /auth/demo`, `POST /settings/users/{id}/accept`, `/moc
 | second factor lost + recovery codes used up | cannot sign in | an admin runs `totp-reset` (route 25); the last admin: operator CLI `reset-mfa` (Q3) |
 | password forgotten | cannot sign in | admin reset link (route 24); the last admin: operator CLI `reset-password` |
 | invite pre-claimed by an admin (email had no account; no email is sent) | the real owner cannot set their own password | KNOWN LIMITATION: operator CLI `reset-password --email` after out-of-band identity check; writes `auth_events`, prints a one-time reset link (§4.4) |
+| `user.cross_company` | reset-link / totp-reset on a user who is also a member of a company the issuer does not manage | server operator CLI `reset-password --email` / `reset-mfa` after identity verification out of band |
 | Data-protection key ring lost | TOTP secrets undecryptable | recovery codes (hashed, independent of the key ring) sign in, then re-enrol; else admin `totp-reset` |
 | member deactivated in their active company | `Me.permissions = []` | switch company (the switcher lists active memberships only); none left = removed by design |
 | `idempotency.key_reused` | client reused a key with a new body | send a new key |

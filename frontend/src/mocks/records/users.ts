@@ -95,10 +95,23 @@ export function setUserActive(st: MockState, actor: Actor, companyId: string, id
   return shown(st, m, toolbarRole);
 }
 
+/** P0c: a member's account is found by the member's `userId` (the fixtures' un-accepted rows use their own id as the account id), NEVER by the membership email: an email never creates a second login for an existing user. */
+const accountOf = (st: MockState, m: StaffMember) => st.auth?.creds.find((c) => c.userId === (m.userId ?? m.id));
+/** P0c: reset-link and totp-reset take over a whole ACCOUNT, so the issuer must hold users.manage in EVERY company where the target has an active or pending membership; else 403 user.cross_company (exit: the server operator's CLI). */
+function crossCompany(st: MockState, actor: Actor, m: StaffMember): void {
+  const acct = accountOf(st, m)?.userId ?? m.userId;
+  const others = st.staff.filter((x) => x.companyId !== m.companyId && x.active && (x.email.toLowerCase() === m.email.toLowerCase() || (acct !== undefined && (x.userId ?? x.id) === acct)));
+  for (const x of others) {
+    const mine = st.staff.find((y) => y.companyId === x.companyId && y.userId === actor.id && y.active && !y.invitePending);
+    if (!mine || !permissionsOf(st, x.companyId, mine.roleId).includes('users.manage')) throw new MockError(403, 'user.cross_company', 'ผู้ใช้นี้เป็นสมาชิกบริษัทอื่นด้วย ทางออก: ให้ผู้ดูแลเซิร์ฟเวอร์รีเซ็ตด้วยคำสั่ง reset-password / reset-mfa หลังยืนยันตัวตน');
+  }
+}
+
 /** A password-reset link: shown once, replaced by the next one, kept only as a hash. */
 export function resetLink(st: MockState, actor: Actor, companyId: string, id: string): string {
   refuseAgent(actor);
   const m = mine(st, companyId, id);
+  crossCompany(st, actor, m);
   if (!m.active) throw new MockError(409, 'user.inactive', 'ผู้ใช้นี้ถูกปิดใช้งานอยู่ เปิดใช้งานก่อนจึงจะออกลิงก์ได้');
   if (m.invitePending) throw new MockError(409, 'user.invite_pending', 'ผู้ใช้นี้ยังไม่ได้รับคำเชิญ ใช้ลิงก์เชิญที่ออกไว้ (ออกคำเชิญใหม่ได้ทางการแก้ไข)');
   const token = crypto.randomUUID();
@@ -165,7 +178,7 @@ export function consumeLink(st: MockState, token: string, v: { password?: unknow
   if (typeof v.password !== 'string' || !STRENGTH.test(v.password)) throw new MockError(422, 'auth.password_weak', 'รหัสผ่านต้องยาวอย่างน้อย 10 ตัวอักษร และมีตัวพิมพ์เล็ก ตัวพิมพ์ใหญ่ และตัวเลข');
   if (!m) return; // a fixture token: nothing to change
   const a = (st.auth ??= { creds: [], sessions: [], current: '', failures: {}, challenges: {} });
-  let c = a.creds.find((x) => x.email.toLowerCase() === m.email.toLowerCase());
+  let c = accountOf(st, m);
   if (!c) a.creds.push((c = { userId: m.userId ?? m.id, email: m.email, displayName: m.name, passwordHash: '', recovery: [] }));
   c.passwordHash = hashOf(v.password);
   delete a.failures[hashOf(m.email.trim().toLowerCase())]; // a new password clears the lockout counter
@@ -181,8 +194,9 @@ export function resetTotp(st: MockState, actor: Actor, companyId: string, id: st
   refuseAgent(actor);
   const m = mine(st, companyId, id);
   if (m.userId === selfUserId) throw new MockError(403, 'auth.forbidden', 'รีเซ็ตการยืนยันตัวตนสองขั้นของตัวเองไม่ได้ ให้ผู้ดูแลระบบคนอื่นทำให้');
+  crossCompany(st, actor, m);
   if (version !== m.version) throw new MockError(409, 'record.version_conflict', 'ข้อมูลนี้ถูกแก้ไขโดยผู้อื่นแล้ว โหลดข้อมูลใหม่ก่อนบันทึก');
-  const c = st.auth?.creds.find((x) => x.email.toLowerCase() === m.email.toLowerCase());
+  const c = accountOf(st, m);
   if (c) {
     delete c.secretHash; delete c.pendingSecretHash; c.recovery = [];
     for (const s of st.auth!.sessions) if (s.userId === c.userId && !s.revokedAt) s.revokedAt = stamp();

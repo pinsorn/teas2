@@ -112,7 +112,7 @@ describe('screen index (backlog B-5)', () => {
     }
   });
   it('the new error codes have a Thai and an English title', () => {
-    for (const c of ['auth.link_invalid', 'connect.key_kind_mismatch', 'idempotency.key_required', 'idempotency.key_reused', 'http.rate_limited', 'http.403', 'user.invite_pending', 'connect.wrong_company']) {
+    for (const c of ['auth.link_invalid', 'connect.key_kind_mismatch', 'idempotency.key_required', 'idempotency.key_reused', 'http.rate_limited', 'http.403', 'user.invite_pending', 'connect.wrong_company', 'user.cross_company']) {
       const k = c.replaceAll('.', '_');
       expect((th.errorCodes as Record<string, string>)[k], `th ${c}`).toBeTruthy();
       expect((en.errorCodes as Record<string, string>)[k], `en ${c}`).toBeTruthy();
@@ -292,6 +292,9 @@ describe('links: P0a rulings', () => {
   it('a reset through a link revokes every session of that user', async () => {
     expect((await call('POST', '/auth/login', { email: 'somsri@maliwan.example', password: 'Somsri#2026ok' })).json).toMatchObject({ status: 'ok' });
     expect(loadState().auth!.sessions.some((s) => s.userId === 'u-1' && !s.revokedAt)).toBe(true);
+    const st = loadState();
+    st.staff.find((m) => m.id === 'usr-nonvat-1')!.roleId = 'admin'; // u-1 is in two companies: a whole-account reset needs users.manage in both (P0c)
+    saveState(st);
     const t = tokenOf(((await call('POST', '/settings/users/usr-vat-1/reset-link', {})).json as { link: string }).link);
     expect((await call('POST', `/auth/links/${t}`, { password: 'Fresh#Pass2026x', confirm: 'Fresh#Pass2026x' })).json).toEqual({ status: 'ok' });
     expect(loadState().auth!.sessions.filter((s) => s.userId === 'u-1').every((s) => s.revokedAt)).toBe(true);
@@ -311,5 +314,45 @@ describe('P0b: an invite never sets a password for an existing user, whatever it
     expect((await call('POST', `/auth/links/${t}`, { password: 'Attacker#Pass2026', confirm: 'Attacker#Pass2026' })).json).toMatchObject({ code: 'auth.link_invalid' });
     expect(loadState().auth!.creds.find((c) => c.email === email)!.passwordHash).toBe('');
     expect(loadState().staff.find((m) => m.id === made.id)!.invitePending).toBe(true);
+  });
+});
+
+describe('P0c: whole-account actions need users.manage in every company of the target', () => {
+  const login = (email: string, password: string) => call('POST', '/auth/login', { email, password });
+  it('wichai is in co-vat AND co-nonvat: the co-nonvat admin (no rights in co-vat) is refused reset-link and totp-reset; the account is untouched', async () => {
+    const st = loadState();
+    st.staff.find((m) => m.id === 'usr-vat-1')!.roleId = 'operator'; // the issuer u-1 manages nobody in co-vat
+    st.staff.find((m) => m.id === 'usr-nonvat-1')!.roleId = 'admin';
+    st.staff.push({ id: 'usr-nonvat-9', companyId: 'co-nonvat', userId: 'usr-vat-2', name: 'วิชัย ผู้ดูแลระบบ', email: 'wichai@maliwan.example', roleId: 'operator', active: true, version: 1, invitePending: false });
+    saveState(st);
+    setSettings({ companyKey: 'nonvat' });
+    const before = JSON.stringify(loadState().auth!.creds.find((c) => c.email === 'wichai@maliwan.example'));
+    expect((await call('POST', '/settings/users/usr-nonvat-9/reset-link', {})).json).toMatchObject({ status: 403, code: 'user.cross_company' });
+    expect((await call('POST', '/settings/users/usr-nonvat-9/totp-reset', { version: 1 })).json).toMatchObject({ code: 'user.cross_company' });
+    expect(JSON.stringify(loadState().auth!.creds.find((c) => c.email === 'wichai@maliwan.example'))).toBe(before);
+    expect(loadState().staff.find((m) => m.id === 'usr-nonvat-9')!.linkHash).toBeUndefined();
+  });
+  it('the same user managed in every company by the issuer is allowed; a single-company user is unaffected', async () => {
+    const st = loadState();
+    st.staff.find((m) => m.id === 'usr-nonvat-1')!.roleId = 'admin'; // u-1 holds users.manage in both companies
+    st.staff.push({ id: 'usr-nonvat-9', companyId: 'co-nonvat', userId: 'usr-vat-2', name: 'วิชัย ผู้ดูแลระบบ', email: 'wichai@maliwan.example', roleId: 'operator', active: true, version: 1, invitePending: false });
+    saveState(st);
+    expect((await call('POST', '/settings/users/usr-vat-2/reset-link', {})).status).toBe(200);
+    expect((await call('POST', '/settings/users/usr-vat-3/reset-link', {})).status).toBe(200); // napa: co-vat only
+    expect((await call('POST', '/settings/users/usr-vat-3/totp-reset', { version: 1 })).status).toBe(200);
+  });
+  it('a reset link resolves the account by userId: a membership email never creates a second login for u-1', async () => {
+    const st = loadState();
+    st.staff.find((m) => m.id === 'usr-vat-1')!.roleId = 'admin';
+    st.staff.find((m) => m.id === 'usr-nonvat-1')!.roleId = 'admin';
+    saveState(st);
+    setSettings({ companyKey: 'nonvat' });
+    const t = (((await call('POST', '/settings/users/usr-nonvat-1/reset-link', {})).json as { link: string }).link).split('/link/')[1];
+    expect((await call('POST', `/auth/links/${t}`, { password: 'Fresh#Pass2026x', confirm: 'Fresh#Pass2026x' })).json).toEqual({ status: 'ok' });
+    const creds = loadState().auth!.creds.filter((c) => c.userId === 'u-1');
+    expect(creds).toHaveLength(1);
+    expect(creds[0]!.email).toBe('somsri@maliwan.example');
+    expect((await login('somsri@baantonkhao.example', 'Fresh#Pass2026x')).json).toMatchObject({ code: 'auth.invalid_credentials' }); // no login under the membership email
+    expect((await login('somsri@maliwan.example', 'Fresh#Pass2026x')).json).toMatchObject({ status: 'ok' }); // the one account has the new password
   });
 });

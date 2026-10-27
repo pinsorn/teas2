@@ -117,6 +117,7 @@
     "idempotency_key_required": "This request needs an idempotency key (Idempotency-Key)",
     "idempotency_key_reused": "This idempotency key was already used with different data. Use a new one",
     "http_rate_limited": "Too many requests. Wait a moment and try again",
+    "user_cross_company": "This user is also a member of another company. Exit: ask the server operator to reset with the reset-password / reset-mfa command after verifying their identity",
     "http_403": "This request was refused (origin check)",
     "user_invite_pending": "This user has not accepted the invitation yet. Use the invite link instead of a password-reset link",
     "connect_wrong_company": "This key belongs to another company and cannot be used here"
