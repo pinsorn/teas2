@@ -26,6 +26,11 @@ public static class TenantRowFactory
                 "INSERT INTO teas.files (company_id, sha256, mime, size_bytes, name) VALUES (@c, 'ab', 'image/png', 1, 'f.png')"),
             ["jobs"] = (c, t, company) => Exec(c, t, company,
                 "INSERT INTO teas.jobs (company_id, kind) VALUES (@c, 'test.job')"),
+            ["api_keys"] = (c, t, company) => Exec(c, t, company, """
+                WITH u AS (INSERT INTO teas.users (email, display_name) VALUES (gen_random_uuid()::text || '@example.test', 'Owner') RETURNING id)
+                INSERT INTO teas.api_keys (company_id, name, kind, prefix, secret_hash, owner_user_id, scopes)
+                SELECT @c, 'Key', 'rest', 'teas_rest_abcd', sha256(convert_to(gen_random_uuid()::text, 'UTF8')), u.id, ARRAY['party.read'] FROM u
+                """),
         };
 
     /// <summary>The column the table's policy keys on.</summary>

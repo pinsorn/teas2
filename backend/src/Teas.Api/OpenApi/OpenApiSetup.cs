@@ -47,7 +47,7 @@ public static class OpenApiSetup
         return services.AddOpenApi("v1", o =>
         {
             o.CreateSchemaReferenceId = RefId;
-            o.ShouldInclude = d => d.RelativePath?.StartsWith(Prefix.TrimStart('/') + "/", StringComparison.Ordinal) == true;
+            o.ShouldInclude = d => d.RelativePath?.StartsWith(Prefix.TrimStart('/') + "/", StringComparison.Ordinal) == true || d.RelativePath?.StartsWith("api/v1/", StringComparison.Ordinal) == true;
             o.AddSchemaTransformer(async (schema, ctx, ct) =>
             {
                 var type = Nullable.GetUnderlyingType(ctx.JsonTypeInfo.Type) ?? ctx.JsonTypeInfo.Type;

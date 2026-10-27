@@ -121,6 +121,39 @@ public sealed class SecretsTests(AuthFixture fx) : IClassFixture<AuthFixture>
     }
 
     [Fact]
+    public async Task AnApiKeySecretIsStoredAsItsHashOnlyAndOnTheWireOnceByCreateAndRotate()
+    {
+        var (company, _, token, _) = await P8.AdminAsync(H);
+        var created = await K.CreateAsync(H, token, "rest", ["party.read"], "S1");
+        var mcp = await K.CreateAsync(H, token, "mcp", ["party.read"], "S1-mcp");
+        var rotated = await H.Post($"/connect/keys/{created.Id}/rotate", new { version = 1 }, token);
+        var secrets = new[] { created.Secret, mcp.Secret, rotated.Str("secret")! };
+        Assert.Equal(3, secrets.Distinct().Count());
+        var rpc = await K.RpcAsync(H, mcp.Secret, "tools/call", new { name = "whoami", arguments = new { } });
+        var later = new List<Res>
+        {
+            await H.Get("/connect/keys", token),
+            await H.Post($"/connect/keys/{mcp.Id}/revoke", new { version = 1 }, token), await K.WhoAmI(H, rotated.Str("secret")), rpc,
+            await K.WhoAmI(H, created.Secret),   // refused: the rotated-away key
+        };
+        var dump = await DumpAsync();
+        foreach (var s in secrets)
+        {
+            Assert.False(dump.Contains(s, StringComparison.Ordinal), "a key secret is stored in clear");
+            Assert.False(dump.Contains(Convert.ToHexString(Encoding.UTF8.GetBytes(s)), StringComparison.OrdinalIgnoreCase), "a key secret is stored as raw bytes");
+            Assert.False(dump.Contains(s[10..], StringComparison.Ordinal), "the hex part of a key secret is stored");
+            foreach (var r in later) Assert.False(r.Raw.Contains(s, StringComparison.Ordinal), $"a later response carries a key secret: {r.Raw}");
+            Assert.DoesNotContain(H.Logs.Lines, l => l.Contains(s, StringComparison.Ordinal) || l.Contains(s[10..], StringComparison.Ordinal));
+        }
+        Assert.Contains(created.Secret, created.Res.Raw);   // on the wire once, by the route that made it
+        Assert.Contains(secrets[2], rotated.Raw);
+        Assert.Equal(0, await H.ScalarAsync<long>("SELECT count(*) FROM teas.api_keys WHERE company_id = @c AND length(secret_hash) <> 32", P("c", company)));
+        Assert.DoesNotContain(dump.Split('\n').Where(l => l.StartsWith("audit_log ")), l => secrets.Any(s => l.Contains(s[10..], StringComparison.Ordinal)));
+        // a bearer header is never a log line either (request logging stays at warning)
+        Assert.DoesNotContain(H.Logs.Lines, l => l.Contains("Bearer teas_", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task TheLogLevelOfRequestLoggingKeepsLinkTokensOutOfTheLog()
     {
         var token = "tok-" + Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");

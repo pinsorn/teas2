@@ -689,10 +689,10 @@ transaction; a test asserts both rows exist afterwards (a factory that inserts f
 **Rules:** §4.6, HC2 rulings 1–2 and the HC2 review rounds (member-owned keys; `connect.manage` sees and revokes all;
 rotate owner-only; consent / apps / policy are SP4.10). Secret format `teas_<kind>_<48 hex>`, display prefix = first 14
 characters.
-- [ ] **Step 1: Failing tests** — S10, S11, S12; the tool list equals `agent` + `McpTool` routes; an MCP `whoami` call
+- [x] **Step 1: Failing tests** — S10, S11, S12; the tool list equals `agent` + `McpTool` routes; an MCP `whoami` call
   writes no audit row (GETs are not audited) and moves the key's `last_used_at`; a REST key on `/mcp` → 403
-  `connect.key_kind_mismatch`.
-- [ ] **Steps 2–5**, gates as P4 + conformance. **Step 6: Controller commits**
+  `connect.key_kind_mismatch`. (RED observed: 28 of 28 new tests failed on the missing routes before any implementation; KeyScopeTests, KeyLifecycleTests, AgentSurfaceTests, SecretsTests.)
+- [x] **Steps 2–5** (build -warnaserror 0/0; Integration 270/270 twice, Architecture 25/25, Domain 58/58; OpenAPI == docs/api/openapi.v1.json; FE typecheck + 75 contract vitest; mutations a/b/c RED; report .superpowers/sdd/sp3/task-P9-report.md), gates as P4 + conformance. **Step 6: Controller commits**
   `feat(platform): API keys, agent surface and MCP host`.
 
 ### Task P10: BFF proxy, live-route switch, compose smoke

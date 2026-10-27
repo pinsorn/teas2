@@ -2,8 +2,8 @@
 // A mismatch is a `tsc` error in `pnpm typecheck`. One line per route is added by the task that makes the route live, e.g.
 //   type _me = Assert<Same<Me, Gen.paths['/me']['get']['responses'][200]['content']['application/json']>>;
 // (routes.test.ts fails a documented route that has no line here). Not frozen: this file only reads the frozen ones.
-import type { ApiProblem, CompanyContactBody, CompanyFiscalBody, CompanyIdentityBody, CompanyImagesBody, CompanyNotesBody, CompanyPayrollBody, CompanySettings, InviteBody, LinkInfo,
-  LoginResult, Me, ProfileView, RoleBody, RoleRow, SessionRow, SessionState, SetPasswordBody, UpdateMemberBody, UpdateRoleBody, UserRow } from '../platform';
+import type { ApiKeyBody, ApiKeyCreated, ApiKeyRow, ApiKeysView, ApiProblem, CompanyContactBody, CompanyFiscalBody, CompanyIdentityBody, CompanyImagesBody, CompanyNotesBody, CompanyPayrollBody, CompanySettings, InviteBody, LinkInfo,
+  LoginResult, Me, ProfileView, RoleBody, RoleRow, SessionRow, SessionState, SetPasswordBody, UpdateMemberBody, UpdateRoleBody, UserRow, WhoAmI } from '../platform';
 import type { DocType } from '@/domain/types';
 import type { Money } from '../scalars';
 import type * as Gen from '../generated/openapi';
@@ -72,3 +72,13 @@ export type _roleUpdate = Assert<Same<RoleRow, Res<Gen.paths['/settings/roles/{i
 export type _roleUpdateReq = Assert<Same<UpdateRoleBody, Req<Gen.paths['/settings/roles/{id}']['put']>>>;
 export type _roleDelete = Assert<Same<{ ok: true }, Res<Gen.paths['/settings/roles/{id}']['delete']>>>;
 export type _roleDeleteQuery = Assert<Same<{ version: number }, Query<Gen.paths['/settings/roles/{id}']['delete']>>>;
+
+// ---- P9: routes 30-34 (API keys, whoami). Route 34 is a machine route: its documented path is the full /api/v1 path. ----
+export type _keys = Assert<Same<ApiKeysView, Res<Gen.paths['/connect/keys']['get']>>>;
+export type _keyCreate = Assert<Same<ApiKeyCreated, Res201<Gen.paths['/connect/keys']['post']>>>;
+export type _keyCreateReq = Assert<Same<ApiKeyBody, Req<Gen.paths['/connect/keys']['post']>>>;
+export type _keyRotate = Assert<Same<ApiKeyCreated, Res201<Gen.paths['/connect/keys/{id}/rotate']['post']>>>;
+export type _keyRotateReq = Assert<Same<{ version: number }, Req<Gen.paths['/connect/keys/{id}/rotate']['post']>>>;
+export type _keyRevoke = Assert<Same<ApiKeyRow, Res<Gen.paths['/connect/keys/{id}/revoke']['post']>>>;
+export type _keyRevokeReq = Assert<Same<{ version: number }, Req<Gen.paths['/connect/keys/{id}/revoke']['post']>>>;
+export type _whoami = Assert<Same<WhoAmI, Res<Gen.paths['/api/v1/whoami']['get']>>>;

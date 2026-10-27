@@ -32,9 +32,9 @@ public static class RouteDeclaration
 
 public static class RouteGuards
 {
-    /// <summary>The BFF secret check, then the rate limiter (after the secret, so a client-IP header set by the BFF can be trusted: P10), then session authentication (fills the actor and the company scope), then RouteAuthorization. All decided by endpoint metadata, never by path.</summary>
+    /// <summary>The BFF secret check, then the rate limiter (after the secret, so a client-IP header set by the BFF can be trusted: P10), then session authentication, then API-key authentication of the machine surface (each fills the actor and the company scope), then RouteAuthorization. All decided by endpoint metadata, never by path.</summary>
     public static IApplicationBuilder UseTeasRouteGuards(this IApplicationBuilder app) =>
-        app.UseMiddleware<BffSecretMiddleware>().UseRateLimiter().UseMiddleware<Teas.Api.Endpoints.SessionAuthentication>().UseMiddleware<RouteAuthorization>();
+        app.UseMiddleware<BffSecretMiddleware>().UseRateLimiter().UseMiddleware<Teas.Api.Endpoints.SessionAuthentication>().UseMiddleware<Teas.Api.Auth.ApiKeyAuthentication>().UseMiddleware<RouteAuthorization>();
 }
 
 /// <summary>
