@@ -7,7 +7,7 @@
 
 | | |
 |---|---|
-| Status | Draft for Ham, 2026-10-27 |
+| Status | Approved by Ham 2026-10-27 (rulings at the end) |
 | Owner | Ham |
 | Implements | `docs/specs/SP0-charter.md` §10.5 (OpenAPI → TS), §11.2 (SP2 row), §11.4 (module order), §11.5 (DoD), §11.6 (tiers); D-09 (mock replaced module by module) |
 | Inputs | SP1c mock as approved by Ham 2026-10-26 (main 1a79dd8): `frontend/src/domain/**`, `frontend/src/lib/api/**`, `frontend/src/records/**`, `frontend/src/mocks/handlers/**`; `docs/specs/SP1c-parity-checklist.md`; SP-R `docs/research/tax/DECISIONS.md` (branch `docs/sp-r`) |
@@ -284,3 +284,7 @@ contract (it uses `Actor`, `ApiProblem`, `Page`, version and idempotency convent
 | §10.7 | Files behind a storage interface | Images and attachments inline as base64 data URLs | §2.7 smells |
 | §11.4 | JV + reverse in SP4.1 | (plan conflict, not mock) JV needs the SP4.2 engine | Q-M2 / ADR-0007 |
 | §7.12 | Audit `result` ok / rejected | Only successful commands are written | SP3 D10 writes refused 403s out-of-band |
+
+## Ham rulings 2026-10-27
+
+Approved as recommended: Q-M1 (TS-first contract in `frontend/src/contract/`, frozen by hash, changed by ADR + version; conformance with the generated OpenAPI), Q-M2 (JV moves to SP4.2), Q-M3 (store the fiscal-year start month, accept only January for now), Q-M4 (agent cap per document AND a per-month running total per type), Q-M5 (deferred rows placed as in §5; FG-10h custom fields DROPPED — add to SP0 §1.4 via ADR-0008), Q-M6 (commit `docs/api/openapi.v1.json` as a generated doc, CI checks it), Q-M7 (one approval threshold per type through SP4.2), Q-M8 (write ADR-0008).

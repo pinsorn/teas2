@@ -688,3 +688,7 @@ characters.
 - 2026-10-27 — drafted (opus designer) from SP0, the SP1c mock at 1a79dd8 (handlers auth / connect / settings / me /
   records / common; engines auth, connect, users, roles, company, agent-review, log), the HC2 / HC3 / ST1 briefs and
   Opus reviews, troubles-wiki, and SP-R `DECISIONS.md`. Docs only; nothing built or run.
+
+## Ham rulings 2026-10-27
+
+SP3 approved — contract frozen at `1.0` when task P0 lands. Q1 server-side sessions (ADR-0004), Q2 idle 60 min / absolute 12 h / warning 2 min, Q3 admin "reset two-step" + operator CLI for the last admin, Q4 set-password page built in P0 for Ham screenshot review first, Q5 first user via the server command, Q7 images as data URLs on the wire, Q8 per-email lockout 15 min + per-IP limit, Q9 agents never approve / cancel / correct any type (ADR-0005). **Q6 (D-04-3 Thailand hosting) still open** — decides the server before launch, not SP3 code.
