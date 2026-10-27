@@ -5,11 +5,8 @@ using System.Text.RegularExpressions;
 
 namespace Teas.Domain;
 
-/// <summary>Thrown when an amount does not fit numeric(18,2). P3 maps <see cref="Code"/> to 422.</summary>
-public sealed class MoneyOutOfRangeException() : Exception("Amount exceeds 16 integer digits.")
-{
-    public string Code => "money.out_of_range";
-}
+/// <summary>Thrown when an amount does not fit numeric(18,2); the registry maps money.out_of_range to 422.</summary>
+public sealed class MoneyOutOfRangeException() : TeasException("money.out_of_range", "Amount exceeds 16 integer digits.");
 
 /// <summary>
 /// THB amount, always at most 2 dp and at most 16 integer digits (numeric(18,2)). The only way in is

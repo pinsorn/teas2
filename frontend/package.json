@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "next typegen && tsc --noEmit",
+    "gen:api": "openapi-typescript ../docs/api/openapi.v1.json -o src/contract/generated/openapi.ts",
+    "typecheck": "npm run -s gen:api && next typegen && tsc --noEmit",
     "test": "vitest run",
     "contract:check": "node ../tools/check-contract-freeze.mjs",
     "e2e": "playwright test"
@@ -47,6 +48,7 @@
     "eslint-config-next": "16.4.1",
     "jsdom": "30.1.2",
     "msw": "3.0.3",
+    "openapi-typescript": "7.13.0",
     "pdfjs-dist": "6.4.299",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3",

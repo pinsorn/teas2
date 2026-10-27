@@ -581,11 +581,11 @@ enum transformers), `src/Teas.Api/Routing/RouteSpec.cs` (builder + metadata; §4
 first), `frontend/.gitignore` (`src/contract/generated/`), `frontend/src/contract/conformance/platform.ts`,
 `frontend/src/contract/conformance/routes.test.ts`, CI OpenAPI-diff step.
 **Rules:** §4.7 Errors, §4.8 OpenAPI / conformance; a conformance line is added for each route as its task makes it live.
-- [ ] **Step 1: Failing tests** — every registry code has th + en titles (the registry test lists `money.out_of_range` → 422, thrown by `Money.Of`); an unregistered code literal in source fails
+- [x] **Step 1: Failing tests** — every registry code has th + en titles (the registry test lists `money.out_of_range` → 422, thrown by `Money.Of`); an unregistered code literal in source fails
   the architecture test; a thrown `TeasException` renders `ApiProblem` with `traceId`; `Money` appears in OpenAPI as the
   pattern string; a deliberately wrong DTO (`Money` as number) makes `pnpm typecheck` fail through the conformance file
   (prove with a scratch DTO in the test project, then remove).
-- [ ] **Steps 2–5**, gates: build, unit, architecture, OpenAPI diff, `gen:api` + `typecheck`. **Step 6: Controller
+- [x] **Steps 2–5** (worker done 2026-10-27, see task-P3-report.md), gates: build, unit, architecture, OpenAPI diff, `gen:api` + `typecheck`. **Step 6: Controller
   commits** `feat(platform): error contract and OpenAPI to TypeScript conformance`.
 
 ### Task P4: Idempotency, concurrency and audit primitives

@@ -3,6 +3,16 @@
     <ProjectReference Include="..\Teas.App\Teas.App.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.OpenApi" />
+    <PackageReference Include="Microsoft.Extensions.ApiDescription.Server" PrivateAssets="all" />
+  </ItemGroup>
+  <!-- SP3 4.8: every build emits the internal-group document to backend/artifacts/ (git-ignored); CI copies it to docs/api/openapi.v1.json and diffs. -->
+  <PropertyGroup>
+    <OpenApiDocumentsDirectory>$(MSBuildThisFileDirectory)..\..\artifacts</OpenApiDocumentsDirectory>
+    <OpenApiGenerateDocumentsOptions>--file-name openapi</OpenApiGenerateDocumentsOptions>
+  </PropertyGroup>
+  <ItemGroup>
     <!-- the startup guard reads the same allow-list the migrator and the architecture tests use -->
     <EmbeddedResource Include="..\Teas.Migrator\rls-allowlist.txt" LogicalName="rls-allowlist.txt" />
   </ItemGroup>

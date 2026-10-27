@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# generated from docs/api/openapi.v1.json by `pnpm gen:api` (SP3 4.8)
+/src/contract/generated/
