@@ -701,7 +701,7 @@ characters.
 `frontend/src/mocks/browser.ts` / handler wrapper (passthrough of live routes in `hybrid`), `kit/auth/TotpEnrol.tsx`
 (QR from `uri`; one exact-pinned QR dependency with its reason in the report), `deploy/compose.ci.yml`,
 `.github/workflows/backend.yml` `compose` job, `frontend/e2e/platform-live.spec.ts`.
-**Rules:** §4.8; S7; `mock` stays the default build (the mockup preview is unchanged).
+**Rules:** §4.8; S7; `mock` stays the default build (the mockup preview is unchanged). `TEAS_FILES_DIR` is required outside Development, on a persistent volume (P6).
 - [ ] **Step 1: Failing tests** — proxy (`proxy.test.ts` names `POST /auth/links/{token}` explicitly in the cross-site check, JSON content type + Origin, even though route 14 is `auth: public`): strips `x-teas-actor` and a forged `X-Teas-Bff`, adds the secret, refuses a
   cross-origin POST; hybrid e2e on the composed stack (CI): log in, see memberships, switch company, change password,
   enrol TOTP, invite a user and set their password through the link, create / rotate / revoke a key; the rest of the

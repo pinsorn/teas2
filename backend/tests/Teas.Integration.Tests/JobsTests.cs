@@ -132,6 +132,43 @@ public sealed class JobsTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AZombieRunThatFinishesAfterItsLeaseWasReapedDoesNotOverwriteTheNewerRun()
+    {
+        var company = await PlatformTestHost.NewCompanyAsync(_db);
+        var id = await EnqueueAsync(company);
+        var release1 = new TaskCompletionSource();
+        var release2 = new TaskCompletionSource();
+        var calls = 0;
+        _behaviour = async _ =>
+        {
+            if (Interlocked.Increment(ref calls) > 1) { await release2.Task; return """{"run":2}"""; }
+            await release1.Task;
+            return """{"run":1}""";
+        };
+        var first = NewRunner().RunJobAsync(company, id, default);   // claims, then waits inside its handler
+        while (calls < 1) await Task.Delay(20);
+        await _db.AsAppAsync(new ScopeState(company, null, false), async (c, t) =>
+        {
+            await using var cmd = new NpgsqlCommand("UPDATE teas.jobs SET started_at = @s WHERE id = @i", c, t);
+            cmd.Parameters.AddWithValue("s", T0 - JobRunner.Lease - TimeSpan.FromMinutes(1));   // its lease ran out
+            cmd.Parameters.AddWithValue("i", id);
+            return await cmd.ExecuteNonQueryAsync();
+        }, commit: true);
+        _clock.Advance(TimeSpan.FromSeconds(1));
+        var second = NewRunner().RunJobAsync(company, id, default);   // reaps the lease and is now running
+        while (calls < 2) await Task.Delay(20);
+        release1.SetResult();
+        Assert.True(await first);   // the zombie finishes while the newer run is still going, and must not write
+        var mid = await JobAsync(company, id);
+        Assert.Equal(("running", 2, null), (mid.Status, mid.Attempts, mid.Result));
+        release2.SetResult();
+        Assert.True(await second);
+        var job = await JobAsync(company, id);
+        Assert.Equal(("done", 2), (job.Status, job.Attempts));
+        Assert.Contains("2", job.Result);   // jsonb text: {"run": 2}
+    }
+
+    [Fact]
     public async Task AStaleRunningJobThatUsedItsLastAttemptFailsWithLeaseExpiredAndDoesNotRun()
     {
         var company = await PlatformTestHost.NewCompanyAsync(_db);
@@ -155,6 +192,18 @@ public sealed class JobsTests : IAsyncLifetime
         Assert.Equal(("queued", 0), (job.Status, job.Attempts));
         _behaviour = _ => Task.FromResult<string?>(null);
         Assert.Equal(1, await NewRunner().TickAsync(default));   // due again at once
+    }
+
+    [Fact]
+    public async Task ShutdownAfterTheHandlerReturnedNonJsonStillRequeuesTheJob()
+    {
+        var company = await PlatformTestHost.NewCompanyAsync(_db);
+        var id = await EnqueueAsync(company);
+        using var cts = new CancellationTokenSource();
+        _behaviour = _ => { cts.Cancel(); return Task.FromResult<string?>("not json"); };   // the result is validated after shutdown began
+        await Assert.ThrowsAnyAsync<Exception>(() => NewRunner().RunJobAsync(company, id, cts.Token));
+        var job = await JobAsync(company, id);
+        Assert.Equal(("queued", 0, null), (job.Status, job.Attempts, job.Result));
     }
 
     [Fact]

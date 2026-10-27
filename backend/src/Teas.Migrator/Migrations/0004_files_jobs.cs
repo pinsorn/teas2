@@ -38,6 +38,7 @@ public sealed class FilesJobs : Migration
               created_at timestamptz NOT NULL DEFAULT now(),
               PRIMARY KEY (company_id, id));
             CREATE INDEX jobs_due ON teas.jobs (run_at) WHERE status = 'queued';
+            CREATE INDEX jobs_running ON teas.jobs (started_at) WHERE status = 'running';
             """);
         mb.Sql(RlsSql.TenantTable("files"));
         mb.Sql(RlsSql.TenantTable("jobs"));

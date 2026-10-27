@@ -185,7 +185,7 @@ public sealed class JobRunner(IServiceScopeFactory scopes, TimeProvider clock, s
               attempts = attempts - @undo, run_at = CASE WHEN @st = 'queued' THEN @at ELSE run_at END, finished_at = @fin
             WHERE company_id = @c AND id = @i AND status = 'running' AND started_at = @started
             """,
-            TxSql.P("st", status), TxSql.P("interrupted", interrupted), Text("e", error), Text("r", result), TxSql.P("undo", interrupted ? 1 : 0),
+            TxSql.P("st", status), TxSql.P("interrupted", interrupted), Text("e", error), Text("r", status == "done" ? result : null), TxSql.P("undo", interrupted ? 1 : 0),
             TxSql.P("at", runAt), new NpgsqlParameter("fin", NpgsqlDbType.TimestampTz) { Value = status == "queued" ? DBNull.Value : now },
             TxSql.P("started", claimedAt), TxSql.P("c", company), TxSql.P("i", id));
         await done.ExecuteNonQueryAsync(CancellationToken.None);
