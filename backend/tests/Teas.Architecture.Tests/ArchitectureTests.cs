@@ -28,14 +28,43 @@ public class ArchitectureTests
     }
 
     [Fact]
-    public void ABannedClockCallFailsTheBuild()
+    public void ControlSnippetBuilds()
     {
         var clean = Build("var x = 1; _ = x;");
         Assert.True(clean.exit == 0, "control snippet must build: " + clean.output);
+    }
 
-        var planted = Build("_ = System.DateTime.Now;");
+    // One case per line of BannedSymbols.txt ("P:System.DateTime.Now;reason" -> System.DateTime.Now).
+    public static IEnumerable<object[]> BannedSymbols() =>
+        File.ReadAllLines(Path.Combine(Backend, "BannedSymbols.txt"))
+            .Where(l => l.Length > 0)
+            .Select(l => new object[] { l[2..l.IndexOf(';')] });
+
+    [Fact]
+    public void BannedSymbolsFileHasTheSixClockSymbols() => Assert.Equal(6, BannedSymbols().Count());
+
+    [Theory]
+    [MemberData(nameof(BannedSymbols))]
+    public void ABannedClockCallFailsTheBuild(string symbol)
+    {
+        var planted = Build($"_ = {symbol};");
         Assert.NotEqual(0, planted.exit);
         Assert.Contains("RS0030", planted.output);
+    }
+
+    // The analyzer and the banned list must reach every Teas.* project (evaluated items, not a text grep).
+    [Fact]
+    public void EveryProjectEvaluatesTheAnalyzerAndTheBannedList()
+    {
+        var projects = Directory.EnumerateFiles(Backend, "Teas.*.csproj", SearchOption.AllDirectories).ToList();
+        Assert.True(projects.Count >= 7, "expected the 7 Teas projects, found " + projects.Count);
+        foreach (var proj in projects)
+        {
+            var (exit, output) = Run("dotnet", $"msbuild \"{proj}\" -getItem:PackageReference -getItem:AdditionalFiles", Backend);
+            Assert.True(exit == 0, proj + ": " + output);
+            Assert.Contains("\"Microsoft.CodeAnalysis.BannedApiAnalyzers\"", output);
+            Assert.Contains("BannedSymbols.txt", output);
+        }
     }
 
     // Builds a throwaway project that uses the real BannedSymbols.txt and the pinned analyzer version.
@@ -58,13 +87,18 @@ public class ArchitectureTests
                 </Project>
                 """);
             File.WriteAllText(Path.Combine(dir, "C.cs"), "class C { void M() { " + statement + " } }");
-            var psi = new ProcessStartInfo("dotnet", "build -nodeReuse:false -p:UseSharedCompilation=false")
-            { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true };
-            using var p = Process.Start(psi)!;
-            var output = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
-            p.WaitForExit();
-            return (p.ExitCode, output);
+            return Run("dotnet", "build -nodeReuse:false -p:UseSharedCompilation=false", dir);
         }
         finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
+    }
+
+    static (int exit, string output) Run(string file, string args, string dir)
+    {
+        var psi = new ProcessStartInfo(file, args) { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true };
+        using var p = Process.Start(psi)!;
+        var err = p.StandardError.ReadToEndAsync();
+        var output = p.StandardOutput.ReadToEnd() + err.Result;
+        p.WaitForExit();
+        return (p.ExitCode, output);
     }
 }

@@ -68,7 +68,8 @@ backend/
 Pinned by P1: .NET SDK 10.0.x (`global.json`), EF Core 10 + Npgsql, `Microsoft.AspNetCore.OpenApi`,
 `Microsoft.Extensions.ApiDescription.Server` (build-time document), `ModelContextProtocol.AspNetCore`,
 `Microsoft.CodeAnalysis.BannedApiAnalyzers`, `Microsoft.Extensions.Identity.Core` (PasswordHasher only), xUnit,
-OpenTelemetry. Exact versions are chosen at scaffold and recorded in `Directory.Packages.props`; no floating versions.
+OpenTelemetry. Each task pins the packages it first uses (exact versions) in `Directory.Packages.props`; no floating versions.
+P1 pins only what it uses: SDK, BannedApiAnalyzers, xUnit, Mvc.Testing, TimeProvider.Testing.
 
 ### 4.2 Database: roles, schema, RLS
 
@@ -538,7 +539,7 @@ imports: `route-spec.ts`, `scalars.ts`, and `DocType` from `domain/types.ts` (li
 `Directory.Packages.props`, `BannedSymbols.txt`, `.editorconfig`, the four `src` and three `tests` projects (§4.1),
 `src/Teas.Api/Program.cs` (`/health/live`, `/version` from `TEAS_VERSION`), `src/Teas.Domain/Money.cs` (+ JSON
 converter, 2-dp string, half away from zero), `src/Teas.Domain/BusinessDate.cs`, `.github/workflows/backend.yml`.
-**Rules:** exact package versions; `TimeProvider` only (§4.7 Clock); architecture tests: banned APIs enforced, no source
+**Rules:** exact package versions (each task pins the packages it first uses); `TimeProvider` only (§4.7 Clock); architecture tests: banned APIs enforced, no source
 file > 600 lines without `// size-reason:` on line 1.
 - [ ] **Step 1: Failing tests** — `Money` round-trips `"64200.00"`, refuses `64200` (number) and `"1.005"`; rounding
   half away from zero; `BusinessDate` at 2026-10-27T17:30Z is 2026-10-28 (Bangkok); a planted `DateTime.Now` fails the

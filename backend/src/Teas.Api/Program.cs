@@ -7,7 +7,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 var app = builder.Build();
 
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
-app.MapGet("/version", () => Results.Ok(new { version = Environment.GetEnvironmentVariable("TEAS_VERSION") ?? "dev" }));
+app.MapGet("/version", () => Results.Ok(new { version = app.Configuration["TEAS_VERSION"] ?? "dev" }));
 
 app.Run();
 
