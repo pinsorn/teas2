@@ -13,7 +13,8 @@ import { PERMISSION_CODES, SYSTEM_ROLES, agentForbidden } from './platform';
 const file = join(process.cwd(), '..', 'backend', 'artifacts', 'permissions.json');
 
 describe.skipIf(!existsSync(file))('backend permission catalog vs the frozen contract', () => {
-  const backend = JSON.parse(readFileSync(file, 'utf8')) as {
+  // read lazily: a skipped describe body still runs at collection time
+  const backend = (existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : { permissions: [], roles: {} }) as {
     permissions: { code: string; area: string; agentForbidden: boolean }[];
     roles: Record<string, string[]>;
   };
