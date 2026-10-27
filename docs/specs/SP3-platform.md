@@ -188,8 +188,8 @@ $1, true), set_config('app.user_id', $2, true), set_config('app.system', $3, tru
     (signed out, or another user) it is the one 404. A link must never set the password of an account that already
     has one: an invite is not proof of owning the email.
   - **Whole-account actions (P0c):** reset-link (route 24) and totp-reset (route 25) take over an ACCOUNT, not a
-    membership, so the issuer must hold `users.manage` in EVERY company where the target user has an active or pending
-    membership; otherwise 403 `user.cross_company`. A reset / link resolves the account by `users.id` (the member's
+    membership, so the issuer must hold `users.manage` in EVERY company where the account has a membership, of ANY state
+    (active, deactivated or pending; matched by `user_id`, by a pending invite of the account's LOGIN email, or by the membership email); otherwise 403 `user.cross_company`. A reset / link resolves the account by `users.id` (the member's
     `user_id`), never by the membership email, and a membership email never creates a login for an existing user.
   - **Known limitation (Ham 2026-10-27):** TEAS sends no email (SP0 section 1.4), so the inviting admin receives the
     link and can pre-claim an email that has no account yet. Accepted until email delivery exists. Exit: the server
@@ -438,7 +438,7 @@ Mock routes removed: `GET /auth/demo`, `POST /settings/users/{id}/accept`, `/moc
 | second factor lost + recovery codes used up | cannot sign in | an admin runs `totp-reset` (route 25); the last admin: operator CLI `reset-mfa` (Q3) |
 | password forgotten | cannot sign in | admin reset link (route 24); the last admin: operator CLI `reset-password` |
 | invite pre-claimed by an admin (email had no account; no email is sent) | the real owner cannot set their own password | KNOWN LIMITATION: operator CLI `reset-password --email` after out-of-band identity check; writes `auth_events`, prints a one-time reset link (§4.4) |
-| `user.cross_company` | reset-link / totp-reset on a user who is also a member of a company the issuer does not manage | server operator CLI `reset-password --email` / `reset-mfa` after identity verification out of band |
+| `user.cross_company` | reset-link / totp-reset on a user who is also a member of a company the issuer does not manage | server operator CLI `reset-password --email` / `reset-mfa` after identity verification out of band | A stray invite of the email by another company also triggers it (the safe direction): the exit is that company deactivating the invite, or the operator CLI.
 | Data-protection key ring lost | TOTP secrets undecryptable | recovery codes (hashed, independent of the key ring) sign in, then re-enrol; else admin `totp-reset` |
 | member deactivated in their active company | `Me.permissions = []` | switch company (the switcher lists active memberships only); none left = removed by design |
 | `idempotency.key_reused` | client reused a key with a new body | send a new key |

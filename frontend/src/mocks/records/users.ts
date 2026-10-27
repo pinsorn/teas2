@@ -99,8 +99,9 @@ export function setUserActive(st: MockState, actor: Actor, companyId: string, id
 const accountOf = (st: MockState, m: StaffMember) => st.auth?.creds.find((c) => c.userId === (m.userId ?? m.id));
 /** P0c: reset-link and totp-reset take over a whole ACCOUNT, so the issuer must hold users.manage in EVERY company where the target has an active or pending membership; else 403 user.cross_company (exit: the server operator's CLI). */
 function crossCompany(st: MockState, actor: Actor, m: StaffMember): void {
-  const acct = accountOf(st, m)?.userId ?? m.userId;
-  const others = st.staff.filter((x) => x.companyId !== m.companyId && x.active && (x.email.toLowerCase() === m.email.toLowerCase() || (acct !== undefined && (x.userId ?? x.id) === acct)));
+  const a = accountOf(st, m), acct = a?.userId ?? m.userId;
+  // P0d: EVERY other membership of the account counts, whatever its state (active, deactivated, pending): it is the account's by userId, or a pending invite of the login email, or (extra key) it carries this membership's email
+  const others = st.staff.filter((x) => x.companyId !== m.companyId && ((acct !== undefined && (x.userId ?? x.id) === acct) || (x.invitePending && !!a && x.email.toLowerCase() === a.email.toLowerCase()) || x.email.toLowerCase() === m.email.toLowerCase()));
   for (const x of others) {
     const mine = st.staff.find((y) => y.companyId === x.companyId && y.userId === actor.id && y.active && !y.invitePending);
     if (!mine || !permissionsOf(st, x.companyId, mine.roleId).includes('users.manage')) throw new MockError(403, 'user.cross_company', 'ผู้ใช้นี้เป็นสมาชิกบริษัทอื่นด้วย ทางออก: ให้ผู้ดูแลเซิร์ฟเวอร์รีเซ็ตด้วยคำสั่ง reset-password / reset-mfa หลังยืนยันตัวตน');

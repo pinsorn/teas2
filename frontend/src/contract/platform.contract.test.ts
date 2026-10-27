@@ -356,3 +356,31 @@ describe('P0c: whole-account actions need users.manage in every company of the t
     expect((await login('somsri@maliwan.example', 'Fresh#Pass2026x')).json).toMatchObject({ status: 'ok' }); // the one account has the new password
   });
 });
+
+describe('P0d: every membership of the account counts, whatever its state', () => {
+  const alias = { id: 'usr-nonvat-9', companyId: 'co-nonvat', userId: 'usr-vat-2', name: 'วิชัย', email: 'wichai.alias@baantonkhao.example', roleId: 'operator', active: true, version: 1, invitePending: false };
+  const setup = (change: (st: ReturnType<typeof loadState>) => void) => {
+    const st = loadState();
+    st.staff.find((m) => m.id === 'usr-vat-1')!.roleId = 'operator'; // the issuer u-1 manages nobody in co-vat
+    st.staff.find((m) => m.id === 'usr-nonvat-1')!.roleId = 'admin';
+    st.staff.push({ ...alias });
+    change(st);
+    saveState(st);
+    setSettings({ companyKey: 'nonvat' });
+  };
+  const refused = async () => {
+    expect((await call('POST', '/settings/users/usr-nonvat-9/reset-link', {})).json).toMatchObject({ code: 'user.cross_company' });
+    expect((await call('POST', '/settings/users/usr-nonvat-9/totp-reset', { version: 1 })).json).toMatchObject({ code: 'user.cross_company' });
+  };
+  it('S1b: an alias membership email + a PENDING admin invite under the login email elsewhere -> refused', async () => {
+    setup((st) => {
+      st.staff = st.staff.filter((m) => m.id !== 'usr-vat-2');
+      st.staff.push({ id: 'usr-vat-9', companyId: 'co-vat', name: 'วิชัย', email: 'wichai@maliwan.example', roleId: 'admin', active: true, version: 1, invitePending: true });
+    });
+    await refused();
+  });
+  it('S2: a DEACTIVATED admin membership elsewhere still counts -> refused', async () => {
+    setup((st) => { st.staff.find((m) => m.id === 'usr-vat-2')!.active = false; });
+    await refused();
+  });
+});
