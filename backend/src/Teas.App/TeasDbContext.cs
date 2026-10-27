@@ -8,7 +8,7 @@ namespace Teas.App;
 public sealed class TeasDbContext(DbContextOptions<TeasDbContext> options) : DbContext(options)
 {
     /// <summary>The migration id this build expects (a test asserts it equals the migrator's last migration).</summary>
-    public const string ExpectedSchema = "0003_catalog";
+    public const string ExpectedSchema = "0004_files_jobs";
 
     protected override void OnModelCreating(ModelBuilder b) => b.HasDefaultSchema("teas");
 
@@ -28,6 +28,9 @@ public static class TeasDataExtensions
         services.AddSingleton<Platform.Rights.RightsCache>();
         services.AddScoped<Platform.Rights.ActorScopes>();
         services.AddScoped<Platform.Rights.EffectiveRights>();
+        services.AddScoped<Platform.Files.IFileStore, Platform.Files.FileStore>();   // needs a FileStoreOptions (TEAS_FILES_DIR) from the host
+        services.AddScoped<Platform.Jobs.IdempotencyCleanupJob>();
+        services.AddSingleton(sp => new Platform.Jobs.JobRunner(sp.GetRequiredService<IServiceScopeFactory>(), sp.GetRequiredService<TimeProvider>(), connectionString));
         services.AddDbContext<TeasDbContext>((sp, o) =>
         {
             TeasDbContext.Configure(o, connectionString);

@@ -14,7 +14,12 @@ builder.Services.AddSingleton(TimeProvider.System);
 
 // ConnectionStrings:Teas = the teas_app login. Without it only a Development host starts (health / version tests).
 var cs = builder.Configuration.GetConnectionString("Teas");
-if (!string.IsNullOrWhiteSpace(cs)) builder.Services.AddTeasData(cs);
+if (!string.IsNullOrWhiteSpace(cs))
+{
+    builder.Services.AddTeasData(cs);
+    builder.Services.AddSingleton(new Teas.App.Platform.Files.FileStoreOptions(builder.Configuration["TEAS_FILES_DIR"] ?? "files"));
+    builder.Services.AddHostedService<JobRunnerService>();
+}
 
 var app = builder.Build();
 // The build-time OpenAPI generator (ApiDescription.Server) runs this program past Build() with no configuration (tried: moving the
