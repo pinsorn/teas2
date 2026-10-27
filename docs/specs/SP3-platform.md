@@ -604,12 +604,12 @@ first), `frontend/.gitignore` (`src/contract/generated/`), `frontend/src/contrac
 `src/Teas.App/Platform/Audit/**`, a test-only command endpoint (registered only in the test host) to exercise them,
 `AuditTests`, `IdempotencyTests`, `ConcurrencyTests`.
 **Rules:** §4.7 Idempotency / Concurrency / Audit; S14, S17. Never `ROLLBACK TO SAVEPOINT` a savepoint taken inside a `TenantScope` after leaving that scope (GUCs follow savepoints); re-enter the scope after any manual savepoint rollback (P2 review R3-2).
-- [ ] **Step 1: Failing tests** — same key twice (sequential) → one effect, identical replay; same key twice
+- [x] **Step 1: Failing tests** — same key twice (sequential) → one effect, identical replay; same key twice
   (parallel, barrier) → one effect; same key, different body → 422 `idempotency.key_reused`; missing key → 400; a
   command that throws after the claim leaves no idempotency row and no audit row; two parallel updates at the same
   version → one 200 one 409; UPDATE / DELETE / TRUNCATE on `audit_log` raise as `teas_app` and as `teas_migrator`; a 403
   writes one `rejected` row.
-- [ ] **Steps 2–5**, gates: build, architecture, integration. **Step 6: Controller commits**
+- [x] **Steps 2–5** (worker done 2026-10-27, see task-P4-report.md; review fixes P4a, see task-P4a-report.md), gates: build, architecture, integration. **Step 6: Controller commits**
   `feat(platform): idempotency, versioned updates and append-only audit`.
 
 ### Task P5: Permission catalog, route metadata enforcement, RBAC matrix
@@ -621,7 +621,7 @@ cache), `src/Teas.Api/Routing/Authorization.cs`, `backend/artifacts/permissions.
 (generated: every registered route × the three system roles + a custom role → 403 iff the right is missing; 403 detail
 names the permission), `frontend/src/contract/permissions.backend.test.ts` (set-equality with `permissions.json`).
 **Rules:** §4.5; every route declares exactly one of `public` / `session` / a permission (an undeclared route fails the
-architecture test).
+architecture test). Permission and agent refusals are decided before `IdempotencyRunner.RunAsync` and inside the company scope: `IAudit.RecordRejectedAsync` refuses to run inside an open transaction and needs a company scope (P4 review #7).
 - [ ] **Step 1: Failing tests** — catalog = frozen codes; templates = frozen `SYSTEM_ROLES`; `AgentForbidden` matches
   the TS rule on every code; migrator sync is idempotent (run twice → same counts) and deletes a code removed from the
   catalog; RBAC matrix.

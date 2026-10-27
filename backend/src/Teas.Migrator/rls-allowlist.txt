@@ -4,3 +4,4 @@
 teas.users                 global identity across companies
 teas.sessions              global, resolved before any company is known
 teas.__EFMigrationsHistory EF history, owned by the migrator; teas_app has SELECT only (F7)
+teas.auth_events         global append-only security log (no company yet at login time)

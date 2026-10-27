@@ -18,6 +18,8 @@ public static class TenantRowFactory
                 "INSERT INTO teas.company_members (company_id, email, name, role_id) VALUES (@c, 'm-' || @c::text || '@example.test', 'Member', 'admin')"),
             ["audit_log"] = (c, t, company) => Exec(c, t, company,
                 "INSERT INTO teas.audit_log (company_id, actor_kind, actor_id, actor_name, command, target, result, client) VALUES (@c, 'user', 'u', 'U', 'test.cmd', 't', 'ok', 'web')"),
+            ["idempotency_records"] = (c, t, company) => Exec(c, t, company,
+                "INSERT INTO teas.idempotency_records (company_id, actor_id, key, route, request_hash, status_code) VALUES (@c, gen_random_uuid(), gen_random_uuid(), 'POST /t', 'h', 201)"),
         };
 
     /// <summary>The column the table's policy keys on.</summary>
