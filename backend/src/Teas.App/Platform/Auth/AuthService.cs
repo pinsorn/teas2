@@ -273,20 +273,20 @@ public sealed class AuthService(TeasDbContext db, TimeProvider clock, SessionSer
         await tx.CommitAsync(ct);
     }
 
-    /// <summary>When two-step is already on, (re)enrolling needs a sign-in from the last 10 minutes (a stolen session cannot swap the authenticator). True = it was on.</summary>
-    async Task<bool> RequireFreshSignInIfEnrolledAsync(SessionInfo s, CancellationToken ct)
+    /// <summary>EVERY enrolment (first or replacing) needs a sign-in from the last 10 minutes: a stolen session cannot turn two-step on with its own authenticator, nor swap the owner's. True = two-step was already on.</summary>
+    async Task<bool> RequireFreshSignInAsync(SessionInfo s, CancellationToken ct)
     {
         bool on;
         await using (var tx = await db.Database.BeginTransactionAsync(ct))
             on = await Q.ScalarAsync<bool>(db, "SELECT totp_secret_enc IS NOT NULL FROM teas.users WHERE id = @u", ct, TxSql.P("u", s.UserId));
-        if (on && clock.GetUtcNow() - s.CreatedAt > TimeSpan.FromMinutes(10)) throw new TeasException("auth.forbidden", "sign in again to change two-step verification");
+        if (clock.GetUtcNow() - s.CreatedAt > TimeSpan.FromMinutes(10)) throw new TeasException("auth.forbidden", "sign in again to change two-step verification");
         return on;
     }
 
     /// <summary>Step 1 of enrolment: a fresh 160-bit secret, kept encrypted as PENDING until a correct code proves the app has it.</summary>
     public async Task<(string Secret, string Uri)> StartEnrolAsync(SessionInfo s, RequestInfo req, CancellationToken ct = default)
     {
-        await RequireFreshSignInIfEnrolledAsync(s, ct);
+        await RequireFreshSignInAsync(s, ct);
         var secret = Totp.NewSecret();
         var b32 = Totp.ToBase32(secret);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -300,7 +300,7 @@ public sealed class AuthService(TeasDbContext db, TimeProvider clock, SessionSer
     /// <summary>Step 2: the right code turns two-step on, stores 8 recovery codes (hashed) and returns them. This return is the only time they exist in clear.</summary>
     public async Task<IReadOnlyList<string>> ConfirmEnrolAsync(SessionInfo s, string code, RequestInfo req, CancellationToken ct = default)
     {
-        var replacing = await RequireFreshSignInIfEnrolledAsync(s, ct);
+        var replacing = await RequireFreshSignInAsync(s, ct);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var pending = await Q.ScalarAsync<byte[]>(db, "SELECT totp_pending_enc FROM teas.users WHERE id = @u", ct, TxSql.P("u", s.UserId)) ?? throw new TeasException("auth.enrol_not_started");
         byte[] secret;

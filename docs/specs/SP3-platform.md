@@ -175,7 +175,7 @@ $1, true), set_config('app.user_id', $2, true), set_config('app.system', $3, tru
   secret 160-bit random, Base32; stored encrypted with ASP.NET Data Protection (purpose `teas.totp.v1`), key ring on
   the volume `TEAS_DP_KEYS_DIR` (backed up separately from the DB). Enrolment: `pending` secret until a correct code;
   then 8 recovery codes `RCV-XXXX-XXXX` (alphabet `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`) returned once, stored with
-  `PasswordHasher`, each usable once. **P7a:** when two-step is already on, routes 9 and 10 need a sign-in from the last 10 minutes (`sessions.created_at`), else 403 `auth.forbidden`; a successful re-enrolment revokes every other session of the user.
+  `PasswordHasher`, each usable once. **P7a / P7b:** routes 9 and 10 (every enrolment, first or replacing) need a sign-in from the last 10 minutes (`sessions.created_at`), else 403 `auth.forbidden`; a successful re-enrolment revokes every other session of the user.
 - **Login failures:** unknown email and wrong password give the same 401 `auth.invalid_credentials` and run one dummy
   hash verification (timing). Counter per `sha256(lower(trim(email)))` over login, TOTP step, relogin and the
   current-password check: 5 consecutive → `locked_until = now + 15 min`, answer 429 `auth.locked` (the failure that

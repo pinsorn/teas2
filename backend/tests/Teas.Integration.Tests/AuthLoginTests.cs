@@ -477,6 +477,20 @@ public sealed class AuthLoginTests(AuthFixture fx) : IClassFixture<AuthFixture>
     }
 
     [Fact]
+    public async Task EvenAFirstEnrolmentNeedsASignInFromTheLast10Minutes()
+    {
+        var u = await H.CreateUserAsync();
+        var t = await H.LoginAsync(u);
+        H.Clock.Advance(11 * Min);
+        var start = await H.Post("/auth/totp/enrol", token: t);
+        Assert.Equal((HttpStatusCode.Forbidden, "auth.forbidden"), (start.Status, start.Code));
+        Assert.Equal("auth.forbidden", (await H.Post("/auth/totp/enrol/verify", new { code = "123456" }, t)).Code);
+        Assert.Null(await H.ScalarAsync<byte[]>("SELECT totp_pending_enc FROM teas.users WHERE id = @u", P("u", u.Id)));   // nothing was written
+        var fresh = await H.LoginAsync(u);
+        Assert.Equal(HttpStatusCode.OK, (await H.Post("/auth/totp/enrol", token: fresh)).Status);
+    }
+
+    [Fact]
     public async Task ASessionOfADeactivatedMemberHasNoCompany()
     {
         var u = await H.CreateUserAsync();
