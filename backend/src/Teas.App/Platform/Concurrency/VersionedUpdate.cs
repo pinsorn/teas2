@@ -42,7 +42,9 @@ public static partial class VersionedUpdate
         {
             if (await cmd.ExecuteScalarAsync() is int version) return version;
         }
-        await using var probe = TxSql.Cmd(db, $"SELECT 1 FROM teas.{table} WHERE id = @_id", TxSql.P("_id", id));
+        // FOR UPDATE: Postgres then applies the UPDATE policy's USING too, so a row the user may see (companies / company_members SELECT
+        // policies are wider) but may not update answers 404, not 409.
+        await using var probe = TxSql.Cmd(db, $"SELECT 1 FROM teas.{table} WHERE id = @_id FOR UPDATE", TxSql.P("_id", id));
         throw new TeasException(await probe.ExecuteScalarAsync() is null ? "record.not_found" : "record.version_conflict");
     }
 }

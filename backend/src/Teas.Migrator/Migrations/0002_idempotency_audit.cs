@@ -37,7 +37,8 @@ public sealed class IdempotencyAudit : Migration
         mb.Sql(RlsSql.AppendOnly("auth_events"));
         mb.Sql(RlsSql.GrantApp("idempotency_records"));
         mb.Sql(RlsSql.GrantApp("auth_events", "SELECT, INSERT"));
-        mb.Sql("GRANT USAGE ON SEQUENCE teas.auth_events_id_seq TO teas_app;");
+        // identity inserts need no sequence privilege; 0001 granted one on audit_log's sequence, which would let teas_app call nextval()
+        mb.Sql("REVOKE USAGE ON SEQUENCE teas.audit_log_id_seq FROM teas_app;");
     }
 
     protected override void Down(MigrationBuilder mb) =>

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Teas.App.Platform;
 using Teas.Integration.Tests.Harness;
 
 namespace Teas.Integration.Tests;
@@ -55,6 +56,33 @@ public sealed class ConcurrencyTests : IAsyncLifetime
         var r = new HttpRequestMessage(HttpMethod.Put, $"/internal/v1/_t/company/{other}") { Content = JsonContent.Create(new { name = "x", version = 1 }) };
         r.Headers.Add("x-scope-company", company.ToString());
         var res = await f.CreateClient().SendAsync(r);
+        Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
+        Assert.Equal("record.not_found", await CodeAsync(res));
+    }
+
+    // Review #1: the 0-row probe must run under the UPDATE policy. A member of B scoped in A may SEE B's company row (wider SELECT policy) but not update it.
+    [Fact]
+    public async Task ARowTheUserCanSeeButNotUpdateIs404NotAConflict()
+    {
+        var a = await PlatformTestHost.NewCompanyAsync(_db);
+        var b = await PlatformTestHost.NewCompanyAsync(_db);
+        await _db.AsAppAsync(ScopeState.None, async (c, t) =>
+        {
+            await using var cmd = new Npgsql.NpgsqlCommand("INSERT INTO teas.users (id, email, display_name) VALUES (@u, 'tester@example.test', 'T')", c, t);
+            cmd.Parameters.AddWithValue("u", PlatformTestHost.User);
+            return await cmd.ExecuteNonQueryAsync();
+        }, commit: true);
+        await _db.AsAppAsync(new ScopeState(b, PlatformTestHost.User, false), async (c, t) =>
+        {
+            await using var cmd = new Npgsql.NpgsqlCommand("INSERT INTO teas.company_members (company_id, user_id, email, name, role_id) VALUES (@c, @u, 'tester@example.test', 'T', 'admin')", c, t);
+            cmd.Parameters.AddWithValue("c", b);
+            cmd.Parameters.AddWithValue("u", PlatformTestHost.User);
+            return await cmd.ExecuteNonQueryAsync();
+        }, commit: true);
+        using var f = PlatformTestHost.Create(_db);
+        var r = new HttpRequestMessage(HttpMethod.Put, $"/internal/v1/_t/company/{b}") { Content = JsonContent.Create(new { name = "x", version = 1 }) };
+        r.Headers.Add("x-scope-company", a.ToString());
+        var res = await f.CreateClient().SendAsync(r);   // scoped in A, B's row at its right version
         Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
         Assert.Equal("record.not_found", await CodeAsync(res));
     }

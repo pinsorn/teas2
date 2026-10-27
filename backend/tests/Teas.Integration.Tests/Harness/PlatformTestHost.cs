@@ -40,7 +40,7 @@ public static class PlatformTestHost
         };
     }
 
-    public sealed record Cmd(bool Fail = false, string? Data = null);
+    public sealed record Cmd(bool Fail = false, string? Data = null, int Status = 201, int HoldMs = 0);
     public sealed record Upd(string Name, int Version);
 
     static void Map(Microsoft.AspNetCore.Routing.IEndpointRouteBuilder e)
@@ -48,16 +48,21 @@ public static class PlatformTestHost
         // Idempotent command: one audit row 'test.effect' is its observable effect.
         e.MapPost("/internal/v1/_t/cmd/{company:guid}", async (Guid company, HttpRequest req, TenantScope scope, IdempotencyRunner idem, IAudit audit, AuditContext ctx, AsyncBarrier barrier) =>
         {
-            using var _ = scope.Enter(company, User);
-            ctx.Actor = new AuditActor("user", User.ToString(), "Tester");
+            var user = req.Headers.TryGetValue("x-actor", out var xa) ? Guid.Parse(xa.ToString()) : User;
+            using var _ = scope.Enter(company, user);
+            ctx.Actor = new AuditActor("user", user.ToString(), "Tester");
             var body = await new StreamReader(req.Body).ReadToEndAsync();
             if (req.Headers.ContainsKey("x-barrier")) await barrier.ArriveAsync();
+            var request = $"{req.Method} {req.Path}{req.QueryString}";   // the concrete request, not a template
             var key = Idempotency.ParseKey(req.Headers["Idempotency-Key"].FirstOrDefault());
             var cmd = JsonSerializer.Deserialize<Cmd>(body, JsonSerializerOptions.Web)!;
-            var res = await idem.RunAsync(key, "POST /_t/cmd", Idempotency.Hash("POST /_t/cmd", Encoding.UTF8.GetBytes(body)), async ct =>
+            var res = await idem.RunAsync(key, request, Idempotency.Hash(request, Encoding.UTF8.GetBytes(body)), async ct =>
             {
                 await audit.RecordAsync("test.effect", "t:1", null, new { cmd.Data }, ct);
+                if (cmd.HoldMs > 0) await Task.Delay(cmd.HoldMs, ct);
                 if (cmd.Fail) throw new TeasException("record.invalid");
+                if (cmd.Status == 204) return new StoredResponse(204, "");
+                if (cmd.Status != 201) return new StoredResponse(cmd.Status, "{}");   // a non-2xx result: the runner must refuse it
                 await Task.Delay(400, ct);   // the twin is blocked on the claim meanwhile
                 return new StoredResponse(201, JsonSerializer.Serialize(new { ok = true, effect = Guid.NewGuid() }));
             });

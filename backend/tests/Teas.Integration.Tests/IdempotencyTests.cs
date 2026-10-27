@@ -12,11 +12,12 @@ public sealed class IdempotencyTests : IAsyncLifetime
     public async Task InitializeAsync() => _db = await TestDb.CloneAsync();
     public async Task DisposeAsync() => await _db.DisposeAsync();
 
-    static HttpRequestMessage Post(Guid company, string? key, string body, bool barrier = false)
+    static HttpRequestMessage Post(Guid company, string? key, string body, bool barrier = false, string query = "", Guid? actor = null)
     {
-        var r = new HttpRequestMessage(HttpMethod.Post, $"/internal/v1/_t/cmd/{company}") { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+        var r = new HttpRequestMessage(HttpMethod.Post, $"/internal/v1/_t/cmd/{company}{query}") { Content = new StringContent(body, Encoding.UTF8, "application/json") };
         if (key is not null) r.Headers.Add("Idempotency-Key", key);
         if (barrier) r.Headers.Add("x-barrier", "1");
+        if (actor is { } a) r.Headers.Add("x-actor", a.ToString());
         return r;
     }
 
@@ -93,5 +94,79 @@ public sealed class IdempotencyTests : IAsyncLifetime
         var ok = await c.SendAsync(Post(company, key, """{"fail":false}"""));   // the failed attempt did not consume the key (even with another body)
         Assert.Equal(HttpStatusCode.Created, ok.StatusCode);
         Assert.Equal(1, await PlatformTestHost.CountAsync(_db, "audit_log", "command = 'test.effect' AND idempotency_key IS NOT NULL"));
+    }
+
+    [Fact]
+    public async Task TheSameKeyAndBodyOnADifferentConcretePathIs422KeyReused()
+    {
+        var company = await PlatformTestHost.NewCompanyAsync(_db);
+        using var f = PlatformTestHost.Create(_db);
+        var c = f.CreateClient();
+        var key = Guid.NewGuid().ToString();
+        Assert.Equal(HttpStatusCode.Created, (await c.SendAsync(Post(company, key, """{"data":"a"}""", query: "?x=1"))).StatusCode);
+        var res = await c.SendAsync(Post(company, key, """{"data":"a"}""", query: "?x=2"));
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, res.StatusCode);
+        Assert.Equal("idempotency.key_reused", await CodeAsync(res));
+    }
+
+    [Fact]
+    public async Task AnEmptyBodyCommandStoresNullAndReplaysAs204Empty()
+    {
+        var company = await PlatformTestHost.NewCompanyAsync(_db);
+        using var f = PlatformTestHost.Create(_db);
+        var c = f.CreateClient();
+        var key = Guid.NewGuid().ToString();
+        var first = await c.SendAsync(Post(company, key, """{"status":204}"""));
+        var second = await c.SendAsync(Post(company, key, """{"status":204}"""));
+        Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, second.StatusCode);
+        Assert.Equal("", await second.Content.ReadAsStringAsync());
+        Assert.Equal(1, await PlatformTestHost.CountAsync(_db, "idempotency_records", "status_code = 204 AND response IS NULL"));
+        Assert.Equal(1, await PlatformTestHost.CountAsync(_db, "audit_log", "command = 'test.effect'"));
+    }
+
+    [Fact]
+    public async Task ACommandReturningANon2xxThrowsAndRollsBack()
+    {
+        var company = await PlatformTestHost.NewCompanyAsync(_db);
+        using var f = PlatformTestHost.Create(_db);
+        var res = await f.CreateClient().SendAsync(Post(company, Guid.NewGuid().ToString(), """{"status":400}"""));
+        Assert.Equal(HttpStatusCode.InternalServerError, res.StatusCode);   // InvalidOperationException, not a stored 400
+        Assert.Equal(0, await PlatformTestHost.CountAsync(_db, "idempotency_records"));
+        Assert.Equal(0, await PlatformTestHost.CountAsync(_db, "audit_log"));
+    }
+
+    [Fact]
+    public async Task ASecondRequestBlockedBehindAFailingFirstRunsOnceTheFirstRollsBack()
+    {
+        var company = await PlatformTestHost.NewCompanyAsync(_db);
+        using var f = PlatformTestHost.Create(_db);
+        var key = Guid.NewGuid().ToString();
+        var a = f.CreateClient().SendAsync(Post(company, key, """{"fail":true,"holdMs":2500}"""));   // claims, holds, then fails
+        await Task.Delay(900);
+        var b = f.CreateClient().SendAsync(Post(company, key, """{"fail":false}"""));
+        await Task.Delay(700);
+        Assert.False(a.IsCompleted);
+        Assert.False(b.IsCompleted);   // B is blocked on A's claim
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, (await a).StatusCode);
+        Assert.Equal(HttpStatusCode.Created, (await b).StatusCode);
+        Assert.Equal(1, await PlatformTestHost.CountAsync(_db, "audit_log", "command = 'test.effect'"));
+        Assert.Equal(1, await PlatformTestHost.CountAsync(_db, "idempotency_records", "status_code = 201"));
+    }
+
+    [Fact]
+    public async Task TheSameKeyFromTwoActorsOrTwoCompaniesRunsIndependently()
+    {
+        var c1 = await PlatformTestHost.NewCompanyAsync(_db);
+        var c2 = await PlatformTestHost.NewCompanyAsync(_db);
+        using var f = PlatformTestHost.Create(_db);
+        var c = f.CreateClient();
+        var key = Guid.NewGuid().ToString();
+        Assert.Equal(HttpStatusCode.Created, (await c.SendAsync(Post(c1, key, """{"data":"a"}"""))).StatusCode);
+        Assert.Equal(HttpStatusCode.Created, (await c.SendAsync(Post(c1, key, """{"data":"a"}""", actor: Guid.NewGuid()))).StatusCode);   // another actor, same company
+        Assert.Equal(2, await PlatformTestHost.CountAsync(_db, "audit_log", "command = 'test.effect'"));
+        Assert.Equal(HttpStatusCode.Created, (await c.SendAsync(Post(c2, key, """{"data":"a"}"""))).StatusCode);   // another company
+        Assert.Equal(3, await PlatformTestHost.CountAsync(_db, "audit_log", "command = 'test.effect'"));
+        Assert.Equal(3, await PlatformTestHost.CountAsync(_db, "idempotency_records", "status_code = 201"));
     }
 }
