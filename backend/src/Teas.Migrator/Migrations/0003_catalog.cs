@@ -15,7 +15,8 @@ public sealed class Catalog : Migration
             CREATE TABLE teas.permissions (
               code text PRIMARY KEY,
               area text NOT NULL,
-              agent_forbidden boolean NOT NULL);
+              agent_forbidden boolean NOT NULL,
+              sort integer NOT NULL);   -- the catalog order, for display
             CREATE TABLE teas.role_templates (
               role_id text NOT NULL,
               permission_code text NOT NULL REFERENCES teas.permissions(code),

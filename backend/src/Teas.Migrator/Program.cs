@@ -48,15 +48,17 @@ public static class CatalogSync
         await using var conn = new NpgsqlConnection(migratorConnectionString);
         await conn.OpenAsync();
         await using var tx = await conn.BeginTransactionAsync();
+        await Run(conn, tx, "SELECT pg_advisory_xact_lock(5430003)");   // two migrators syncing at once queue here
         var pairs = roles.SelectMany(r => r.Value.Select(c => (role: r.Key, code: c))).ToList();
         var codes = catalog.Select(p => p.Code).ToArray();
         // templates first (they reference permissions), then drop codes the catalog no longer has, then upsert, then refill the templates
         await Run(conn, tx, "DELETE FROM teas.role_templates");
         await Run(conn, tx, "DELETE FROM teas.permissions WHERE code <> ALL(@codes)", P("codes", codes));
         await Run(conn, tx, """
-            INSERT INTO teas.permissions (code, area, agent_forbidden) SELECT * FROM unnest(@codes, @areas, @flags)
-            ON CONFLICT (code) DO UPDATE SET area = EXCLUDED.area, agent_forbidden = EXCLUDED.agent_forbidden
-            """, P("codes", codes), P("areas", catalog.Select(p => p.Area).ToArray()), P("flags", catalog.Select(p => p.AgentForbidden).ToArray()));
+            INSERT INTO teas.permissions (code, area, agent_forbidden, sort) SELECT * FROM unnest(@codes, @areas, @flags, @sorts)
+            ON CONFLICT (code) DO UPDATE SET area = EXCLUDED.area, agent_forbidden = EXCLUDED.agent_forbidden, sort = EXCLUDED.sort
+            """, P("codes", codes), P("areas", catalog.Select(p => p.Area).ToArray()), P("flags", catalog.Select(p => p.AgentForbidden).ToArray()),
+            P("sorts", Enumerable.Range(0, catalog.Count).ToArray()));
         await Run(conn, tx, "INSERT INTO teas.role_templates (role_id, permission_code) SELECT * FROM unnest(@roles, @pcodes)",
             P("roles", pairs.Select(p => p.role).ToArray()), P("pcodes", pairs.Select(p => p.code).ToArray()));
         await tx.CommitAsync();

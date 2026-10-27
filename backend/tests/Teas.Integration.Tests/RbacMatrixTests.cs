@@ -149,6 +149,7 @@ public sealed class RouteDeclarationTests
     [InlineData("session", null, false, true)]
     [InlineData("session", "party.read", false, true)]
     [InlineData("key", "party.read", true, true)]
+    [InlineData("key", "users.manage", true, false)]      // an agent route needing a code no agent can hold
     [InlineData("public", "party.read", false, false)]    // two declarations
     [InlineData("public", null, true, false)]             // a public agent route
     [InlineData("session", "no.such_code", false, false)] // a permission the catalog does not have
@@ -228,7 +229,6 @@ public sealed class RbacMatrixTests : IAsyncLifetime
         using var f = PlatformTestHost.Create(_db);
         var client = f.CreateClient();
         var routes = f.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
-            .Where(e => RouteDeclaration.IsContractPath(e.RoutePattern.RawText ?? ""))
             .Select(e => (spec: e.Metadata.GetMetadata<RouteSpec>(), path: Regex.Replace(e.RoutePattern.RawText!, @"\{[^}]+\}", Guid.NewGuid().ToString())))
             .Where(r => r.spec?.Permission is not null && !r.spec.Agent).ToList();
         Assert.True(routes.Count >= 5, "routes found: " + routes.Count);
@@ -253,13 +253,43 @@ public sealed class RbacMatrixTests : IAsyncLifetime
     }
 
     [Fact]
-    public void EveryRegisteredContractRouteIsDeclaredExactlyOnce()
+    public void EveryRegisteredEndpointIsDeclaredOrAProbe()
     {
         using var f = PlatformTestHost.Create(_db);
         var endpoints = f.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
-            .Where(e => RouteDeclaration.IsContractPath(e.RoutePattern.RawText ?? "")).ToList();
+            .Where(e => e.RoutePattern.RawText != "/outside/unmarked").ToList();   // the one deliberately undeclared endpoint, used by the next test
         Assert.True(endpoints.Count >= 10, "endpoints found: " + endpoints.Count);
-        Assert.Empty(endpoints.Where(e => RouteDeclaration.Problem(e.Metadata.GetMetadata<RouteSpec>()) is not null).Select(e => e.RoutePattern.RawText));
+        Assert.Contains(endpoints, e => e.Metadata.GetMetadata<Probe>() is not null);
+        Assert.Empty(endpoints.Where(e => e.Metadata.GetMetadata<Probe>() is null && RouteDeclaration.Problem(e.Metadata.GetMetadata<RouteSpec>()) is not null).Select(e => e.RoutePattern.RawText));
+    }
+
+    [Fact]
+    public async Task EnforcementFollowsTheMetadataNotThePath()
+    {
+        using var f = PlatformTestHost.Create(_db);
+        var client = f.CreateClient();
+        // a permission route mapped outside any group, with no actor: refused (401), not served
+        var anon = new HttpRequestMessage(HttpMethod.Get, "/outside/perm");
+        anon.Headers.Add("x-anon", "1");
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.SendAsync(anon)).StatusCode);
+        // with an actor: 403 without the right, 200 with it
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.SendAsync(Req(HttpMethod.Get, "/outside/perm", Guid.NewGuid()))).StatusCode);   // not a member
+        Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(Req(HttpMethod.Get, "/outside/perm", _users["operator"]))).StatusCode);
+        // an endpoint with no RouteSpec that is not a probe is refused, never served
+        Assert.Equal(HttpStatusCode.InternalServerError, (await client.GetAsync("/outside/unmarked")).StatusCode);
+    }
+
+    [Fact]
+    public async Task TheBffSecretIsCheckedBeforeAuthorizationAndWritesNoAuditRow()
+    {
+        using var f = PlatformTestHost.Create(_db);
+        // operator lacks users.manage; without X-Teas-Bff the answer is 401 and nothing is audited
+        using var bare = f.Server.CreateClient();
+        Assert.Equal(HttpStatusCode.Unauthorized, (await bare.SendAsync(Req(HttpMethod.Put, "/internal/v1/_t/rbac/users", _users["operator"]))).StatusCode);
+        Assert.Equal(0, await PlatformTestHost.CountAsync(_db, "audit_log"));
+        // with the secret the same request reaches authorization: 403 and one rejected row
+        Assert.Equal(HttpStatusCode.Forbidden, (await f.CreateClient().SendAsync(Req(HttpMethod.Put, "/internal/v1/_t/rbac/users", _users["operator"]))).StatusCode);
+        Assert.Equal(1, await PlatformTestHost.CountAsync(_db, "audit_log", "result = 'rejected'"));
     }
 
     [Fact]
@@ -338,11 +368,12 @@ public sealed class RbacMatrixTests : IAsyncLifetime
         var agent = Guid.NewGuid();
         async Task<HttpStatusCode> Call(string path, Guid owner, string scopes) =>
             (await client.SendAsync(Req(HttpMethod.Get, path, agent, headers: AsAgent(owner, scopes)))).StatusCode;
-        const string read = "/internal/v1/_t/agent/read", admin = "/internal/v1/_t/agent/admin";
+        const string read = "/internal/v1/_t/agent/read", bank = "/internal/v1/_t/agent/bank";
         Assert.Equal(HttpStatusCode.OK, await Call(read, _users["operator"], "party.read"));
         Assert.Equal(HttpStatusCode.Forbidden, await Call(read, _users["operator"], "item.read"));           // not in the key's scopes
         Assert.Equal(HttpStatusCode.Forbidden, await Call(read, _users["custom"], "bank.read"));             // scope the owner does not hold
-        Assert.Equal(HttpStatusCode.Forbidden, await Call(admin, _users["admin"], "users.manage"));          // owner holds it, an agent never can
+        Assert.Equal(HttpStatusCode.OK, await Call(bank, _users["admin"], "bank.manage"));
+        Assert.Equal(HttpStatusCode.Forbidden, await Call(bank, _users["admin"], "users.manage"));           // not the key's scope for this route (AgentForbidden itself: the AgentRules test)
         await Exec("UPDATE teas.company_members SET active = false, version = version + 1 WHERE company_id = @c AND user_id = @u", new NpgsqlParameter("u", _users["operator"]));
         Assert.Equal(HttpStatusCode.Forbidden, await Call(read, _users["operator"], "party.read"));          // a deactivated owner takes the key's rights with it
     }

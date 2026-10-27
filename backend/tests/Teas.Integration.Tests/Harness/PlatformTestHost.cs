@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Teas.Api.Routing;
+using Teas.Api.Startup;
 using Teas.App.Platform.Rights;
 using Microsoft.Extensions.DependencyInjection;
 using Teas.App;
@@ -39,7 +40,7 @@ public static class PlatformTestHost
             app.Use(TestAuth);   // ahead of the app's own pipeline: stands in for the P7 / P8 authentication that runs before RouteAuthorization
             next(app);
             app.UseRouting();
-            app.UseMiddleware<RouteAuthorization>();   // the app's own copy runs before these endpoints are routed, so the test routes get theirs here
+            app.UseTeasRouteGuards();   // the app's own copy runs before these endpoints are routed, so the test routes get theirs here
             app.UseEndpoints(Map);
         };
     }
@@ -51,7 +52,8 @@ public static class PlatformTestHost
     static async Task TestAuth(HttpContext http, Func<Task> next)
     {
         var path = http.Request.Path.Value ?? "";
-        if (!path.StartsWith("/internal/v1/_t", StringComparison.Ordinal) && !path.StartsWith("/internal/v1/settings/_t", StringComparison.Ordinal)) { await next(); return; }
+        var ours = path.StartsWith("/internal/v1/_t", StringComparison.Ordinal) || path.StartsWith("/internal/v1/settings/_t", StringComparison.Ordinal) || path == "/outside/perm";
+        if (!ours || http.Request.Headers.ContainsKey("x-anon")) { await next(); return; }   // x-anon: no actor at all
         var h = http.Request.Headers;
         var guid = System.Text.RegularExpressions.Regex.Match(path, "[0-9a-fA-F]{8}-[0-9a-fA-F-]{27}").Value;
         var company = h.TryGetValue("x-company", out var xc) ? xc.ToString() : guid;
@@ -73,7 +75,7 @@ public static class PlatformTestHost
 
     static void Map(Microsoft.AspNetCore.Routing.IEndpointRouteBuilder app)
     {
-        var e = app.MapGroup("/internal/v1");   // every test route is declared like a real one (RouteSpec), so RouteAuthorization decides it
+        var e = app.MapGroup("/internal/v1").WithMetadata(BffOnly.Instance);   // every test route is declared like a real one (RouteSpec), so RouteAuthorization decides it
         static async Task<IResult> Command(HttpRequest req, IdempotencyRunner idem)
         {
             var request = $"{req.Method} {req.Path}";
@@ -90,7 +92,10 @@ public static class PlatformTestHost
         e.MapRoute(new RouteSpec("GET", "/_t/rbac/any-member", "session"), () => Results.Ok());
         e.MapRoute(new RouteSpec("GET", "/settings/_t/probe", "session"), () => Results.Ok());
         e.MapRoute(new RouteSpec("GET", "/_t/agent/read", "key", "party.read", Agent: true), () => Results.Ok());
-        e.MapRoute(new RouteSpec("GET", "/_t/agent/admin", "key", "users.manage", Agent: true), () => Results.Ok());
+        e.MapRoute(new RouteSpec("GET", "/_t/agent/bank", "key", "bank.manage", Agent: true), () => Results.Ok());
+        // outside any group, so no path rule can see them: a spec makes the route enforced, no spec makes it refused
+        app.MapRoute(new RouteSpec("GET", "/outside/perm", "session", "party.read"), () => Results.Ok());
+        app.MapGet("/outside/unmarked", () => Results.Ok());
 
         // Idempotent command: one audit row 'test.effect' is its observable effect.
         e.MapRoute(new RouteSpec("POST", "/_t/cmd/{company:guid}", "session", IdempotencyRequired: true), async (Guid company, HttpRequest req, TenantScope scope, IdempotencyRunner idem, IAudit audit, AuditContext ctx, AsyncBarrier barrier) =>
@@ -140,11 +145,19 @@ public static class PlatformTestHost
         });
     }
 
-    public static WebApplicationFactory<Program> Create(DbClone db) => new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+    const string Secret = "0123456789abcdef0123456789abcdef";
+
+    /// <summary>Every client sends the BFF secret; <c>Server.CreateClient()</c> is the one without it.</summary>
+    sealed class BffFactory : WebApplicationFactory<Program>
+    {
+        protected override void ConfigureClient(HttpClient client) => client.DefaultRequestHeaders.Add(BffSecretMiddleware.Header, Secret);
+    }
+
+    public static WebApplicationFactory<Program> Create(DbClone db) => new BffFactory().WithWebHostBuilder(b =>
     {
         b.UseEnvironment("Staging");
         b.UseSetting("ConnectionStrings:Teas", db.AppCs);
-        b.UseSetting("TEAS_BFF_SECRET", "0123456789abcdef0123456789abcdef");
+        b.UseSetting("TEAS_BFF_SECRET", Secret);
         b.ConfigureServices(s =>
         {
             s.AddSingleton(new AsyncBarrier(2));

@@ -172,7 +172,9 @@ public class ArchitectureTests
     }
 
     // SP3 4.6 / P5: every contract route is registered through RouteBuilder.MapRoute, which carries its RouteSpec (public / session / a permission),
-    // and RouteAuthorization is wired into the pipeline. A raw Map* call is an undeclared route unless it is one of the probes outside the contract.
+    // and the route guards are wired into the pipeline. A raw Map* call is an undeclared route unless it is one of the probes outside the contract.
+    // This scan is a LINT (it does not chase every Map overload). The guarantee is the runtime rule in RouteAuthorization: an endpoint without a
+    // RouteSpec and without the Probe marker is refused, wherever it is mapped (integration test EnforcementFollowsTheMetadataNotThePath).
     static readonly Regex RawMap = new(@"\.Map(Get|Post|Put|Delete|Patch|Methods|Fallback)\s*\(\s*(""[^""]*"")?");
     static readonly string[] Probes = ["\"/health/live\"", "\"/health/ready\"", "\"/version\""];
 
@@ -191,7 +193,9 @@ public class ArchitectureTests
             .ToList();
         Assert.Empty(bad);
         Assert.Contains("MapRoute(", File.ReadAllText(Path.Combine(api, "Program.cs")));
-        Assert.Contains("UseMiddleware<RouteAuthorization>()", File.ReadAllText(Path.Combine(api, "Program.cs")));
+        var program = File.ReadAllText(Path.Combine(api, "Program.cs"));
+        Assert.Matches(@"(?m)^app\.UseTeasRouteGuards\(\);", program);   // unconditional: at column 0, not under an if
+        Assert.True(Regex.Matches(program, @"WithMetadata\(Probe\.Marker\)").Count >= 3, "health live, ready and version carry the Probe marker");
     }
 
     [Fact]

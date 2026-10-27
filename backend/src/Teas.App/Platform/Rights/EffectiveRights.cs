@@ -12,10 +12,11 @@ public sealed class ActorScopes
     public IReadOnlyCollection<string>? Values { get; set; }
 }
 
-/// <summary>Cached rights per (company, user), valid while the member row's version and the custom role's version are unchanged.</summary>
+/// <summary>Cached rights per (company, user), valid while the member row's version, its role id and the custom role's version are unchanged.
+/// Trusts that every write to company_members / custom_roles bumps version (a P8 rule).</summary>
 public sealed class RightsCache
 {
-    internal readonly ConcurrentDictionary<(Guid company, Guid user), (int member, int role, IReadOnlySet<string> rights)> Entries = new();
+    internal readonly ConcurrentDictionary<(Guid company, Guid user), (int member, int role, string roleId, IReadOnlySet<string> rights)> Entries = new();
 }
 
 /// <summary>
@@ -40,13 +41,13 @@ public sealed class EffectiveRights(TeasDbContext db, TenantScope scope, RightsC
         await using var rd = await cmd.ExecuteReaderAsync(ct);
         if (!await rd.ReadAsync(ct) || !rd.GetBoolean(2)) return None;
         int memberVersion = rd.GetInt32(0), roleVersion = rd.IsDBNull(3) ? 0 : rd.GetInt32(3);
-        if (cache.Entries.TryGetValue((company, user), out var hit) && hit.member == memberVersion && hit.role == roleVersion) return hit.rights;
-
         var roleId = rd.GetString(1);
+        if (cache.Entries.TryGetValue((company, user), out var hit) && hit.member == memberVersion && hit.role == roleVersion && hit.roleId == roleId) return hit.rights;
+
         IEnumerable<string> held = PermissionCatalog.SystemRoles.TryGetValue(roleId, out var template) ? template
             : rd.IsDBNull(4) ? [] : rd.GetFieldValue<string[]>(4);
         var rights = held.Where(PermissionCatalog.CodeSet.Contains).ToHashSet();
-        cache.Entries[(company, user)] = (memberVersion, roleVersion, rights);
+        cache.Entries[(company, user)] = (memberVersion, roleVersion, roleId, rights);
         return rights;
     }
 }
