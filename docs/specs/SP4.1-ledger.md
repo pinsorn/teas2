@@ -752,3 +752,7 @@ before `from`, party by id, filter note; GJ source labels: a document's `number 
   dimensions,expense-categories,…}.ts`, `mocks/handlers/**`, `mocks/fixtures/{coa,posting-profiles,expense-categories}.ts`),
   the 00 / 01 / 05 / 09 group plans, briefs, reports and Opus reviews (digested), and troubles-wiki. Docs only;
   nothing built or run.
+
+## Ham rulings 2026-10-27
+
+Approved as recommended: Q-L1 (control account binding permanent once posted; the false "move with a JV" exit text replaced), Q-L2 (class-fits-role re-checked at posting), Q-L4 (reversal default date as the mock; ADR-0008), Q-L5 (checklist items of modules not live show 0 + "ยังไม่เปิดใช้"), Q-L6 (§9 into ADR-0008). Q-L3 (refuse document dates before the opening-balance cut-off) is decided in SP4.11.

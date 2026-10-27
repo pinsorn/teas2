@@ -947,3 +947,7 @@ part of the 1.0 freeze.
   paper,attachments,chain,marks,locks,journal,log}.ts`, `mocks/records/{parties,items,bank-accounts,registry}.ts`,
   `mocks/handlers/**`, `mocks/store.ts`), the 00 / 01 / 02 (engine) / 05 AC1 / 09 group plans, briefs, reports and Opus
   reviews (digested), the parity checklist and troubles-wiki. Docs only; nothing built or run.
+
+## Ham rulings 2026-10-27
+
+Approved as recommended: Q-D1 (attachments as download links in lists), Q-D2 (one approval row per approvable type for every company, all OFF — the approvals page changes: mock screenshot to Ham before the freeze), Q-D3 (tax documents keep issue-time seller / look / customer; notes-only edits never re-take them), Q-D4 (fixed reason text after issue for now), Q-D5 (default bank account → SP4.11), Q-D6 (branch column fixed 00000), Q-D7 (no internal notes thread), Q-D8 (FG-05c / 06a / 06b / 10f after the freeze, once their mock screens are approved), Q-D9 (§9 into ADR-0008).
