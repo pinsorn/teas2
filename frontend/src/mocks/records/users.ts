@@ -1,8 +1,10 @@
+import type { LinkInfo } from '@/contract/platform';
 import type { Actor, StaffMember, UserRow } from '@/domain/types';
 import { FieldErrors, imageError, refuseAgent } from '../engine/company';
 import { MockError, logAudit, stamp } from '../engine/log';
 import { isSystemRole, permissionsOf } from '../permissions';
 import type { MockState } from '../store';
+import { hashOf } from './connect';
 import { SYSTEM_ROLE_NAMES } from './roles';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -57,7 +59,7 @@ export function inviteUser(st: MockState, actor: Actor, companyId: string, v: Va
     active: true, version: 1, invitePending: true, linkHash: hash(token) };
   st.staff.push(m);
   logAudit(st, actor, companyId, 'user.invite', m.id, undefined, shape(m));
-  return { row: toRow(st, m), link: `https://app.teas.example/invite/${token}` };
+  return { row: toRow(st, m), link: `https://app.teas.example/link/${token}` };
 }
 
 export function updateUser(st: MockState, actor: Actor, companyId: string, id: string, v: Values, toolbarRole?: string): UserRow {
@@ -99,7 +101,7 @@ export function resetLink(st: MockState, actor: Actor, companyId: string, id: st
   const token = crypto.randomUUID();
   m.linkHash = hash(token);
   logAudit(st, actor, companyId, 'user.reset_link', m.id, undefined, { linkIssued: true });
-  return `https://app.teas.example/reset/${token}`;
+  return `https://app.teas.example/link/${token}`;
 }
 
 /** ST1a M1 "ยืนยันคำเชิญ": the mock's stand-in for the invited person following their link, so an invited administrator can become a real one. Audited like any change. */
@@ -110,5 +112,59 @@ export function acceptInvite(st: MockState, actor: Actor, companyId: string, id:
   const before = shape(m);
   m.invitePending = false; delete m.linkHash; m.lastLoginAt = stamp();
   bump(st, actor, m, 'user.accept_invite', before);
+  return toRow(st, m);
+}
+
+// ---- SP3 P0 (Q4): the invite / reset link page. A link is single use; unknown, used and superseded are ONE answer (404 auth.link_invalid). ----
+export const LINK_INVALID = 'ลิงก์นี้ใช้ไม่ได้แล้วหรือหมดอายุ ขอลิงก์ใหม่จากผู้ดูแลระบบ';
+const linkGone = () => new MockError(404, 'auth.link_invalid', LINK_INVALID);
+/** Fixed tokens for the screenshot / e2e review (reusable: they spend nothing). */
+export const FIXTURE_LINKS: Record<string, LinkInfo> = {
+  'inv-5c1e8a3f7b2d4690': { kind: 'invite', email: 'newcomer@maliwan.example', companyName: 'บริษัท มะลิวัลย์ เทรดดิ้ง จำกัด', expiresAt: '2026-10-21T09:00:00.000Z' },
+  'rst-9d4b2f6a1c7e3850': { kind: 'reset', email: 'wichai@maliwan.example', expiresAt: '2026-10-15T09:00:00.000Z' },
+};
+const inMs = (ms: number) => new Date(Date.parse(stamp()) + ms).toISOString();
+const holder = (st: MockState, token: string): StaffMember | undefined => st.staff.find((m) => m.linkHash === hash(token));
+export function linkInfo(st: MockState, token: string): LinkInfo {
+  if (Object.hasOwn(FIXTURE_LINKS, token)) return FIXTURE_LINKS[token];
+  const m = holder(st, token);
+  if (!m) throw linkGone();
+  const company = st.companies.find((c) => c.id === m.companyId);
+  return m.invitePending
+    ? { kind: 'invite', email: m.email, ...(company ? { companyName: company.legalNameTh } : {}), expiresAt: inMs(7 * 86_400_000) }
+    : { kind: 'reset', email: m.email, expiresAt: inMs(24 * 3_600_000) };
+}
+const STRENGTH = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{10,}$/; // the same rule as a password change (SP3 4.4)
+/** Sets the password the link is for. An invite also accepts it (member active, account created); a refused attempt spends nothing. */
+export function setPasswordByLink(st: MockState, token: string, v: { password?: unknown; confirm?: unknown }): void {
+  const info = linkInfo(st, token);
+  if (v.password !== v.confirm) throw new MockError(422, 'auth.password_mismatch', 'รหัสผ่านและการยืนยันไม่ตรงกัน');
+  if (typeof v.password !== 'string' || !STRENGTH.test(v.password)) throw new MockError(422, 'auth.password_weak', 'รหัสผ่านต้องยาวอย่างน้อย 10 ตัวอักษร และมีตัวพิมพ์เล็ก ตัวพิมพ์ใหญ่ และตัวเลข');
+  const m = holder(st, token);
+  if (!m) return; // a fixture token: nothing to change
+  const a = (st.auth ??= { creds: [], sessions: [], current: '', failures: {}, challenges: {} });
+  let c = a.creds.find((x) => x.email.toLowerCase() === m.email.toLowerCase());
+  if (!c) a.creds.push((c = { userId: m.userId ?? m.id, email: m.email, displayName: m.name, passwordHash: '', recovery: [] }));
+  c.passwordHash = hashOf(v.password);
+  delete a.failures[hashOf(m.email.trim().toLowerCase())]; // a new password clears the lockout counter
+  const actor: Actor = { kind: 'user', id: c.userId, name: m.name };
+  const before = shape(m);
+  delete m.linkHash;
+  if (info.kind === 'invite') { m.invitePending = false; m.userId ??= c.userId; m.lastLoginAt = stamp(); bump(st, actor, m, 'user.accept_invite', before); }
+  else logAudit(st, actor, m.companyId, 'auth.password.reset', m.id);
+}
+
+/** Q3: an administrator clears another member's second factor and recovery codes (their sessions end); never on yourself. */
+export function resetTotp(st: MockState, actor: Actor, companyId: string, id: string, version: unknown, selfUserId: string): UserRow {
+  refuseAgent(actor);
+  const m = mine(st, companyId, id);
+  if (m.userId === selfUserId) throw new MockError(403, 'auth.forbidden', 'รีเซ็ตการยืนยันตัวตนสองขั้นของตัวเองไม่ได้ ให้ผู้ดูแลระบบคนอื่นทำให้');
+  if (version !== m.version) throw new MockError(409, 'record.version_conflict', 'ข้อมูลนี้ถูกแก้ไขโดยผู้อื่นแล้ว โหลดข้อมูลใหม่ก่อนบันทึก');
+  const c = st.auth?.creds.find((x) => x.email.toLowerCase() === m.email.toLowerCase());
+  if (c) {
+    delete c.secretHash; delete c.pendingSecretHash; c.recovery = [];
+    for (const s of st.auth!.sessions) if (s.userId === c.userId && !s.revokedAt) s.revokedAt = stamp();
+  }
+  bump(st, actor, m, 'user.totp_reset', shape(m));
   return toRow(st, m);
 }

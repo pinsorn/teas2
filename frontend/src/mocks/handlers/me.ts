@@ -1,11 +1,13 @@
 import { HttpResponse, http } from 'msw';
-import type { Me } from '@/domain/types';
+import type { Me, Membership } from '@/contract/platform';
 import { setSettings } from '../settings';
 import { today } from '../engine/log';
-import type { Actor } from '@/domain/types';
+import type { Actor, Role } from '@/domain/types';
 import { AGENT, USER } from '../fixtures/documents';
 import { authHandlers, sessionGate } from './auth';
 import { ctx, problem, screenGate } from './common';
+import { isSystemRole } from '../permissions';
+import { SYSTEM_ROLE_NAMES } from '../records/roles';
 
 /** An agent's calls reach the mock with this header (over MCP in the real system); everything from the web app is the signed-in user. */
 export const ACTOR_HEADER = 'x-teas-actor';
@@ -28,11 +30,20 @@ export const agentGate = http.all('*/bff/v1/*', ({ request }) => {
   return problem(403, 'agent.forbidden_action', 'ตัวแทน (agent) ทำรายการนี้ไม่ได้ ต้องให้ผู้ใช้ทำเอง');
 });
 
+/** The wire membership: the role by id and name. A system role is the toolbar's in the active company; a CUSTOM role given to u-1 (settings > users) shows by its own name. */
+const roleOf = (st: ReturnType<typeof ctx>['st'], companyId: string, system: Role): Pick<Membership, 'roleId' | 'roleName'> => {
+  const mine = st.staff.find((m) => m.companyId === companyId && m.userId === 'u-1');
+  if (mine && !isSystemRole(mine.roleId)) return { roleId: mine.roleId, roleName: st.roles.find((r) => r.id === mine.roleId && r.companyId === companyId)?.name ?? mine.roleId };
+  return { roleId: system, roleName: SYSTEM_ROLE_NAMES[system] };
+};
+
 export const buildMe = (): Me => {
   const { st, s, company, perms } = ctx();
+
+  if (!st.memberships.length) return { userId: 'u-1', displayName: 'สมศรี บัญชีดี', memberships: [], activeCompanyId: null, vatRegistered: false, permissions: [], businessDate: today() }; // no company yet: the app sends such a user to /onboarding (SP3 P8)
   return {
     userId: 'u-1', displayName: 'สมศรี บัญชีดี', activeCompanyId: company.id, vatRegistered: company.vatRegistered, permissions: perms, businessDate: today(),
-    memberships: st.memberships.map((m) => ({ companyId: m.companyId, companyName: m.companyName, role: m.companyId === company.id ? s.role : m.role })),
+    memberships: st.memberships.map((m) => ({ companyId: m.companyId, companyName: m.companyName, ...roleOf(st, m.companyId, m.companyId === company.id ? s.role : m.role) })),
   };
 };
 

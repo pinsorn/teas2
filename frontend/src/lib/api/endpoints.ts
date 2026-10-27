@@ -3,6 +3,7 @@ import type {
   DocType, HomeData, HomeSection, MarkKey, Money, OpenItem, ItemSummary, JournalPreview, Me, Page, PaperModel, PartySummary, Qty, RemainingLine, Revision, SearchHit,
   DepositRow, DocOpening, SettlementDifferenceRole, SettlementKind, SettlementRecord, DpRow, FaSource, IsoDate, ChecklistItem, PeriodsView, CompanySettings, RoleRow, UserRow,
 } from '@/domain/types';
+import type { InviteBody, LinkInfo, RoleBody, SetPasswordBody, UpdateMemberBody, UpdateRoleBody } from '@/contract/platform';
 import type { CitYearPatch, CitYearView, FilingForm, FilingHistoryItem, FilingModel, TaxPaymentLines } from '@/domain/filings';
 import type { RecordKind, RecordRow } from '@/domain/records';
 import type { FormCatalogue, ReportKind, ReportModel, VatThresholdWatch } from '@/domain/reports';
@@ -183,16 +184,21 @@ export const endpoints = {
   saveCompanySection: (id: string, section: string, body: Record<string, unknown>) => api<CompanySettings>('PUT', `/settings/companies/${encodeURIComponent(id)}/${section}`, body),
   listStaff: () => api<{ items: UserRow[] }>('GET', '/settings/users'),
   /** The only response that carries the one-time link. */
-  inviteStaff: (body: Record<string, unknown>) => api<UserRow & { link: string }>('POST', '/settings/users', body),
-  updateStaff: (id: string, body: Record<string, unknown>) => api<UserRow>('PUT', `/settings/users/${encodeURIComponent(id)}`, body),
+  inviteStaff: (body: InviteBody) => api<UserRow & { link: string }>('POST', '/settings/users', body),
+  updateStaff: (id: string, body: UpdateMemberBody) => api<UserRow>('PUT', `/settings/users/${encodeURIComponent(id)}`, body),
   setStaffActive: (id: string, active: boolean, version: number) => api<UserRow>('POST', `/settings/users/${encodeURIComponent(id)}/active`, { active, version }),
   /** The mock's "invite accepted" (the invited person following their link). */
   acceptStaff: (id: string) => api<UserRow>('POST', `/settings/users/${encodeURIComponent(id)}/accept`, {}),
   staffResetLink: (id: string) => api<{ link: string }>('POST', `/settings/users/${encodeURIComponent(id)}/reset-link`, {}),
   listRoles: () => api<{ items: RoleRow[] }>('GET', '/settings/roles'),
-  createRole: (body: Record<string, unknown>) => api<RoleRow>('POST', '/settings/roles', body),
-  updateRole: (id: string, body: Record<string, unknown>) => api<RoleRow>('PUT', `/settings/roles/${encodeURIComponent(id)}`, body),
-  deleteRole: (id: string) => api<{ ok: true }>('DELETE', `/settings/roles/${encodeURIComponent(id)}`),
+  createRole: (body: RoleBody) => api<RoleRow>('POST', '/settings/roles', body),
+  updateRole: (id: string, body: UpdateRoleBody) => api<RoleRow>('PUT', `/settings/roles/${encodeURIComponent(id)}`, body),
+  deleteRole: (id: string, version: number) => api<{ ok: true }>('DELETE', `/settings/roles/${encodeURIComponent(id)}?version=${version}`),
+  /** Q3 (route 25): an administrator clears another member's second factor. */
+  totpReset: (id: string, version: number) => api<UserRow>('POST', `/settings/users/${encodeURIComponent(id)}/totp-reset`, { version }),
+  /** Q4 (routes 13-14): the invite / reset link page (public: no session). */
+  linkInfo: (token: string) => api<LinkInfo>('GET', `/auth/links/${encodeURIComponent(token)}`),
+  setPassword: (token: string, body: SetPasswordBody) => api<{ status: 'ok' }>('POST', `/auth/links/${encodeURIComponent(token)}`, body),
   getDefaultNotes: () => api<Partial<Record<DocType, string>>>('GET', '/settings/default-notes'),
   getPaper: (type: DocType, id: string, copy = false) => api<PaperModel>('GET', `${d(type, id)}/paper${qs({ copy: copy ? 1 : undefined })}`),
 };

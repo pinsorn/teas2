@@ -1,0 +1,54 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setSettings } from '@/mocks/settings';
+import { resetState } from '@/mocks/store';
+import { testServer } from '@/mocks/test-server';
+import SetPasswordPage from './page';
+
+const token = vi.hoisted(() => ({ value: 'x' }));
+vi.mock('next/navigation', () => ({ useParams: () => ({ token: token.value }) }));
+beforeAll(() => testServer.listen({ onUnhandledFrame: 'error' }));
+afterEach(() => { cleanup(); testServer.resetHandlers(); });
+afterAll(() => testServer.close());
+beforeEach(() => { localStorage.clear(); resetState(); setSettings({ companyKey: 'vat', role: 'accountant', screenState: 'normal' }); });
+
+const show = (t: string) => { token.value = t; return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SetPasswordPage /></QueryClientProvider>); };
+const ONE_MESSAGE = 'ลิงก์นี้ใช้ไม่ได้แล้วหรือหมดอายุ ขอลิงก์ใหม่จากผู้ดูแลระบบ';
+
+describe('set-password page (Q4)', () => {
+  it('an unknown link shows the one Thai message and no form', async () => {
+    show('this-link-is-used');
+    expect(await screen.findByTestId('link-invalid')).toHaveTextContent(ONE_MESSAGE);
+    expect(screen.queryByLabelText('รหัสผ่านใหม่')).toBeNull();
+  });
+  it('an invite link names the account and the company, refuses a weak password with the server message, then confirms', async () => {
+    show('inv-5c1e8a3f7b2d4690');
+    expect(await screen.findByText(/newcomer@maliwan\.example/)).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('รหัสผ่านใหม่'), 'weak');
+    await userEvent.type(screen.getByLabelText('ยืนยันรหัสผ่านใหม่'), 'weak');
+    await userEvent.click(screen.getByRole('button', { name: 'ตั้งรหัสผ่าน' }));
+    expect(await screen.findByTestId('link-error')).toHaveTextContent('อย่างน้อย 10 ตัวอักษร');
+    await userEvent.clear(screen.getByLabelText('รหัสผ่านใหม่'));
+    await userEvent.clear(screen.getByLabelText('ยืนยันรหัสผ่านใหม่'));
+    await userEvent.type(screen.getByLabelText('รหัสผ่านใหม่'), 'Strong#Pass2026');
+    await userEvent.type(screen.getByLabelText('ยืนยันรหัสผ่านใหม่'), 'Strong#Pass2026');
+    await userEvent.click(screen.getByRole('button', { name: 'ตั้งรหัสผ่าน' }));
+    await waitFor(() => expect(screen.getByTestId('link-done')).toBeInTheDocument());
+    expect(screen.getByRole('link', { name: 'ไปหน้าเข้าสู่ระบบ' })).toHaveAttribute('href', '/login');
+  });
+  it('a reset link says so', async () => {
+    show('rst-9d4b2f6a1c7e3850');
+    expect(await screen.findByRole('heading', { level: 1, name: 'ตั้งรหัสผ่านใหม่' })).toBeInTheDocument();
+  });
+  it('a server failure is an error state with retry, not the invalid-link message', async () => {
+    setSettings({ screenState: 'error' }); // /auth/links is session-less, so force the failure with a mismatched handler
+    const { http, HttpResponse } = await import('msw');
+    testServer.use(http.get('*/bff/v1/auth/links/:token', () => HttpResponse.json({ code: 'http.500', title: 'ระบบขัดข้อง', status: 500 }, { status: 500 })));
+    show('inv-5c1e8a3f7b2d4690');
+    expect(await screen.findByText('ระบบขัดข้อง')).toBeInTheDocument();
+    expect(screen.queryByTestId('link-invalid')).toBeNull();
+    expect(screen.getByRole('button', { name: /ลองใหม่/ })).toBeInTheDocument();
+  });
+});

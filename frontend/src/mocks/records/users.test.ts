@@ -23,7 +23,7 @@ describe('users (ST1)', () => {
   it('invite: the link comes back ONCE; the row, the list, the state and the audit keep only a hash', () => {
     const st = seed();
     const { row, link } = inviteUser(st, USER, V, invite);
-    expect(link).toMatch(/^https:\/\/.+\/invite\/[\w-]{16,}$/);
+    expect(link).toMatch(/^https:\/\/.+\/link\/[\w-]{16,}$/);
     expect(row.invitePending).toBe(true);
     expect(JSON.stringify(listUsers(st, V))).not.toContain(token(link));
     expect(JSON.stringify(st.staff)).not.toContain(token(link));

@@ -1,6 +1,7 @@
 import { CLASS, isTypeAvailable } from '@/domain/doc-types';
 import { PERMISSIONS } from '@/domain/permissions';
 import type { Actor, DocType, IsoDate, Money } from '@/domain/types';
+import { agentForbidden } from '@/contract/platform';
 import type { ApiKeyBody, ApiKeyCreated, ApiKeyRow, ConsentInfo, ConsentResult, KeyKind, OAuthAppRow, PolicyMode, PolicyRow, PolicyView } from '@/records/connect';
 import { FieldErrors, refuseAgent } from '../engine/company';
 import { MockError, logAudit, stamp, today } from '../engine/log';
@@ -15,10 +16,8 @@ export interface StoredKey { id: string; companyId: string; name: string; kind: 
 export interface StoredApp { id: string; companyId: string; clientId: string; name: string; ownerId: string; ownerName: string; scopes: string[]; connectedAt: string; revokedAt?: string; version: number }
 export interface StoredPolicy { companyId: string; docType: DocType; mode: PolicyMode; cap: Money; version: number }
 
-/** §8.5: an agent never closes / reopens periods, finalizes filings, or changes settings, permissions, posting profiles, numbering or agent policy: those rights can never be a scope. */
-const NEVER_FOR_AGENT = ['settings.manage', 'users.manage', 'connect.manage', 'ledger.period.close', 'ledger.period.reopen', 'tax.filing.finalize', 'tax.settings.manage', 'ledger.posting.manage', 'ledger.coa.manage', 'ledger.schedule.manage'];
-/** §8.5 + HC2a: no key, app or agent ever holds these, whatever its owner holds: the §8.5 rights, and approve / cancel / correct of ANY document type (a person does those). */
-export const agentForbidden = (code: string): boolean => NEVER_FOR_AGENT.includes(code) || /^doc\.[A-Z]+\.(approve|cancel|correct)$/.test(code);
+/** §8.5 + HC2a: no key, app or agent ever holds these (the rule lives in the frozen contract, contract/platform.ts). */
+export { agentForbidden };
 export const HARD_LIMITS = ['period', 'filing', 'settings', 'permissions', 'posting', 'numbering', 'policy', 'cancelT', 'company'];
 export const POLICY_TYPES: DocType[] = ['QT', 'SO', 'DO', 'BL', 'IV', 'TI', 'RC', 'CN', 'DN', 'PO', 'PB', 'PCN', 'PDN', 'PV', 'EX'];
 export const DEFAULT_CAP = '50000.00'; // D-22: only the starting value

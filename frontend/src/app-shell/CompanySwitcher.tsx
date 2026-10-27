@@ -36,7 +36,7 @@ export function CompanySwitcher() {
         <DropdownMenuLabel>{t('heading')}</DropdownMenuLabel>
         {me?.memberships.map((m) => (
           <DropdownMenuItem key={m.companyId} disabled={switchTo.isPending} onSelect={() => m.companyId !== me.activeCompanyId && switchTo.mutate(m.companyId)}>
-            <span className="flex-1">{m.companyName}</span>
+            <span className="flex-1">{m.companyName}<span className="block text-xs text-muted-foreground">{m.roleName}</span></span>
             {m.companyId === me.activeCompanyId && <CheckIcon className="size-4" aria-hidden />}
           </DropdownMenuItem>
         ))}

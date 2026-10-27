@@ -62,6 +62,7 @@ function UsersInner() {
   const [form, setForm] = useState<{ row?: UserRow } | undefined>();
   const [link, setLink] = useState<{ label: string; name: string; url: string }>();
   const [confirm, setConfirm] = useState<UserRow>();
+  const [twoStep, setTwoStep] = useState<UserRow>();
   const [notice, setNotice] = useState<string>();
   const refresh = () => qc.invalidateQueries({ queryKey: key });
   const run = useMutation({
@@ -96,6 +97,7 @@ function UsersInner() {
                       <Button size="sm" variant="outline" aria-label={t('actions.edit', { name: r.name })} onClick={() => setForm({ row: r })}>{t('edit')}</Button>
                       {r.active && r.invitePending ? <Button size="sm" variant="outline" aria-label={t('actions.accept', { name: r.name })} onClick={() => run.mutate(() => endpoints.acceptStaff(r.id))}>{t('actions.acceptShort')}</Button> : null}
                       {r.active ? <Button size="sm" variant="outline" aria-label={t('actions.resetLink', { name: r.name })} onClick={() => run.mutate(async () => setLink({ label: t('link.resetLabel'), name: r.name, url: (await endpoints.staffResetLink(r.id)).link }))}>{t('actions.resetShort')}</Button> : null}
+                      {r.active && !r.invitePending ? <Button size="sm" variant="outline" aria-label={t('actions.totpReset', { name: r.name })} onClick={() => setTwoStep(r)}>{t('actions.totpShort')}</Button> : null}
                       {r.active
                         ? <Button size="sm" variant="outline" aria-label={t('actions.deactivate', { name: r.name })} onClick={() => setConfirm(r)}>{t('deactivateAction')}</Button>
                         : <Button size="sm" variant="outline" aria-label={t('actions.activate', { name: r.name })} onClick={() => run.mutate(() => endpoints.setStaffActive(r.id, true, r.version))}>{t('actions.activateShort')}</Button>}
@@ -109,6 +111,15 @@ function UsersInner() {
       )}
       {form ? <UserForm row={form.row} roles={roles.data?.items ?? []} onClose={() => setForm(undefined)} onDone={(url) => { setForm(undefined); void refresh(); if (url) setLink(url); }} /> : null}
       {link ? <LinkDialog {...link} onClose={() => setLink(undefined)} /> : null}
+      <AlertDialog open={!!twoStep} onOpenChange={(o) => { if (!o) setTwoStep(undefined); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader><AlertDialogTitle>{t('totpTitle', { name: twoStep?.name ?? '' })}</AlertDialogTitle><AlertDialogDescription>{t('totpBody')}</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('cancelShort')}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { const c = twoStep!; setTwoStep(undefined); run.mutate(() => endpoints.totpReset(c.id, c.version)); }}>{t('totpAction')}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog open={!!confirm} onOpenChange={(o) => { if (!o) setConfirm(undefined); }}>
         <AlertDialogContent>
           <AlertDialogHeader><AlertDialogTitle>{t('deactivateTitle', { name: confirm?.name ?? '' })}</AlertDialogTitle><AlertDialogDescription>{t('deactivateBody')}</AlertDialogDescription></AlertDialogHeader>
@@ -204,7 +215,7 @@ function RolesInner() {
   const [removing, setRemoving] = useState<RoleRow>();
   const [notice, setNotice] = useState<string>();
   const remove = useMutation({
-    mutationFn: (id: string) => endpoints.deleteRole(id),
+    mutationFn: (r: RoleRow) => endpoints.deleteRole(r.id, r.version),
     onMutate: () => setNotice(undefined),
     onSuccess: () => qc.invalidateQueries({ queryKey: key }),
     onError: (e) => setNotice(titleOf(e, t('title'))),
@@ -253,7 +264,7 @@ function RolesInner() {
           <AlertDialogHeader><AlertDialogTitle>{t('deleteTitle', { name: removing?.name ?? '' })}</AlertDialogTitle><AlertDialogDescription>{t('deleteBody')}</AlertDialogDescription></AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{tu('cancelShort')}</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { const r = removing!; setRemoving(undefined); remove.mutate(r.id); }}>{t('deleteAction')}</AlertDialogAction>
+            <AlertDialogAction onClick={() => { const r = removing!; setRemoving(undefined); remove.mutate(r); }}>{t('deleteAction')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

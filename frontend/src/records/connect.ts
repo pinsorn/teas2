@@ -1,16 +1,11 @@
-import type { DocTotals, DocType, IsoDate, JournalPreview, Money } from '@/domain/types';
+import type { DocTotals, DocType, JournalPreview, Money } from '@/domain/types';
 import { api } from '@/lib/api/client';
+import type { ApiKeyBody, ApiKeyCreated, ApiKeyRow, ApiKeysView, KeyKind, KeyStatus } from '@/contract/platform';
+export type { ApiKeyBody, ApiKeyCreated, ApiKeyRow, ApiKeysView, KeyKind, KeyStatus };
 
 // SP1c HC2: the wire of TEAS Connect (API keys, connected apps, the agent policy, the agent review report). The mock engines are mocks/records/connect.ts and mocks/engine/agent-review.ts.
 // A secret is on the wire exactly once: in the response of create / rotate. No other response carries it.
 
-export type KeyKind = 'rest' | 'mcp';
-export type KeyStatus = 'active' | 'revoked' | 'expired';
-export interface ApiKeyRow { id: string; version: number; name: string; kind: KeyKind; /** display prefix of the secret */ prefix: string; ownerName: string; scopes: string[]; scopeCount: number;
-  createdAt: string; lastUsedAt?: string; expiresAt?: IsoDate; revokedAt?: string; status: KeyStatus }
-export interface ApiKeysView { items: ApiKeyRow[]; /** what the signed-in owner may grant a key on this company */ scopeChoices?: string[] }
-export interface ApiKeyCreated { key: ApiKeyRow; /** shown once */ secret: string }
-export interface ApiKeyBody { name: string; kind: KeyKind; scopes: string[]; expiresAt?: IsoDate }
 
 export interface OAuthAppRow { id: string; version: number; name: string; ownerName: string; scopes: string[]; connectedAt: string; revokedAt?: string }
 export interface ConsentInfo { client: { id: string; name: string }; company: { id: string; name: string }; owner: { name: string }; requested: string[]; granted: string[]; notGranted: string[] }

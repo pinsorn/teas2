@@ -200,11 +200,11 @@ describe('me follows the active company', () => {
     expect((await post('/me/active-company', { companyId: 'co-nonvat' })).status).toBe(200);
     const me = await json('/me');
     expect(me.activeCompanyId).toBe('co-nonvat');
-    expect(me.memberships.find((m: { companyId: string }) => m.companyId === 'co-nonvat').role).toBe('admin');
+    expect(me.memberships.find((m: { companyId: string }) => m.companyId === 'co-nonvat').roleId).toBe('admin');
     expect(me.permissions).toEqual(PERMISSIONS_BY_ROLE.admin);
     setSettings({ role: 'operator' });
     const me2 = await json('/me');
-    expect(me2.memberships.find((m: { companyId: string }) => m.companyId === 'co-nonvat').role).toBe('operator');
+    expect(me2.memberships.find((m: { companyId: string }) => m.companyId === 'co-nonvat').roleId).toBe('operator');
     expect(me2.permissions).toEqual(PERMISSIONS_BY_ROLE.operator);
   });
 });

@@ -13,7 +13,8 @@ import { createRole, deleteRole, listRoles, updateRole } from '../records/roles'
 import { createDimensionType, createDimensionValue, deleteDimensionType, deleteDimensionValue, dimensionsView, listAccountRules, setAccountRules, updateDimensionType, updateDimensionValue } from '../records/dimensions';
 import { assetClassesOf, createCategory, deleteCategory, listCategories, updateCategory } from '../records/expense-categories';
 import { createPostingRule, deletePostingRule, listPostingRules, previewPosting, updatePostingRule } from '../records/posting-rules';
-import { acceptInvite, inviteUser, listUsers, resetLink, setUserActive, updateUser } from '../records/users';
+import { currentUserId } from '../engine/auth';
+import { acceptInvite, inviteUser, listUsers, resetLink, resetTotp, setUserActive, updateUser } from '../records/users';
 import { ctx, forbidden, persist, problem, screenGate } from './common';
 
 /** An agent's calls reach the mock with this header (over MCP in the real system); everything from the web app is the signed-in user. */
@@ -120,11 +121,16 @@ export const settingsHandlers = [
   http.post('*/bff/v1/settings/users/:id/accept', ({ request, params }) => guarded('item', 'users.manage', (c) => write(c, acceptInvite(c.st, actorOf(request), c.company.id, String(params.id))))), // ST1a M1: the mock's "invite accepted"
   http.post('*/bff/v1/settings/users/:id/reset-link', ({ request, params }) => guarded('item', 'users.manage', (c) => write(c, { link: resetLink(c.st, actorOf(request), c.company.id, String(params.id)) }))),
 
+  http.post('*/bff/v1/settings/users/:id/totp-reset', ({ request, params }) => guarded('item', 'users.manage', async (c) => { // Q3 (route 25): another member's lost second factor
+    const actor = actorOf(request), b = await bodyOf(request);
+    return write(c, resetTotp(c.st, actor, c.company.id, String(params.id), b.version, currentUserId(c.st)));
+  })),
+
   // ---- roles (users.manage) ----
   http.get('*/bff/v1/settings/roles', () => guarded('list', 'users.manage', (c) => HttpResponse.json({ items: listRoles(c.st, c.company.id) }))),
   http.post('*/bff/v1/settings/roles', ({ request }) => guarded('item', 'users.manage', async (c) => write(c, createRole(c.st, actorOf(request), c.company.id, await bodyOf(request)), 201))),
   http.put('*/bff/v1/settings/roles/:id', ({ request, params }) => guarded('item', 'users.manage', async (c) => write(c, updateRole(c.st, actorOf(request), c.company.id, String(params.id), await bodyOf(request))))),
-  http.delete('*/bff/v1/settings/roles/:id', ({ request, params }) => guarded('item', 'users.manage', (c) => { deleteRole(c.st, actorOf(request), c.company.id, String(params.id)); return write(c, { ok: true }); })),
+  http.delete('*/bff/v1/settings/roles/:id', ({ request, params }) => guarded('item', 'users.manage', (c) => { deleteRole(c.st, actorOf(request), c.company.id, String(params.id), Number(new URL(request.url).searchParams.get('version'))); return write(c, { ok: true }); })),
 
   // ---- ST2 posting rules (ledger.posting.manage); the id of a rule is `level|key|role` ----
   http.get('*/bff/v1/settings/posting/rules', () => guarded('list', 'ledger.posting.manage', (c) => HttpResponse.json(listPostingRules(c.st, c.company.id)))),
