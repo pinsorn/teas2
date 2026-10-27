@@ -286,6 +286,12 @@ public sealed class RbacMatrixTests : IAsyncLifetime
         using var bare = f.Server.CreateClient();
         Assert.Equal(HttpStatusCode.Unauthorized, (await bare.GetAsync("/internal/v1/_t/ungrouped")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await f.CreateClient().GetAsync("/internal/v1/_t/ungrouped")).StatusCode);
+        // decided on the request path, not the pattern: no leading slash, a wrong method and an unknown path are all the BFF's too
+        Assert.Equal(HttpStatusCode.Unauthorized, (await bare.GetAsync("/internal/v1/_t/noslash")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await f.CreateClient().GetAsync("/internal/v1/_t/noslash")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await bare.PostAsync("/internal/v1/ping", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, (await f.CreateClient().PostAsync("/internal/v1/ping", null)).StatusCode);   // with the secret the wrong method is the framework's 405
+        Assert.Equal(HttpStatusCode.Unauthorized, (await bare.GetAsync("/internal/v1/nope")).StatusCode);
     }
 
     [Fact]

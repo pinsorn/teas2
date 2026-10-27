@@ -20,10 +20,8 @@ public sealed class BffSecretMiddleware(RequestDelegate next, IConfiguration con
 
     public Task InvokeAsync(HttpContext http)
     {
-        // fail closed both ways: the marker, or a route pattern under /internal/v1 (a route mapped without the group is still the BFF's)
-        var endpoint = http.GetEndpoint();
-        var internalRoute = endpoint is RouteEndpoint { RoutePattern.RawText: { } raw } && (raw.Equals(Prefix, StringComparison.OrdinalIgnoreCase) || raw.StartsWith(Prefix + "/", StringComparison.OrdinalIgnoreCase));
-        if (endpoint?.Metadata.GetMetadata<BffOnly>() is null && !internalRoute) return next(http);
+        // fail closed both ways: the marker, or the REQUEST path under /internal/v1 (however the route was mapped; also a wrong method or an unknown path there)
+        if (http.GetEndpoint()?.Metadata.GetMetadata<BffOnly>() is null && !http.Request.Path.StartsWithSegments(Prefix, StringComparison.OrdinalIgnoreCase)) return next(http);
         var expected = config["TEAS_BFF_SECRET"];
         var given = http.Request.Headers[Header].ToString();
         if (expected is { Length: >= MinLength } && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(given)))

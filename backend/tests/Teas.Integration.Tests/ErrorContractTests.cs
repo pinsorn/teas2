@@ -72,15 +72,26 @@ public sealed class ErrorContractTests
         };
     }
 
-    static WebApplicationFactory<Program> Host() => new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
-        b.ConfigureServices(s => s.AddSingleton<IStartupFilter>(new TestRoutes(Routes))));
+    const string BffSecret = "0123456789abcdef0123456789abcdef";
+
+    /// <summary>Everything under /internal/v1 needs the BFF secret (S8): these hosts' clients send it.</summary>
+    sealed class BffFactory : WebApplicationFactory<Program>
+    {
+        protected override void ConfigureClient(HttpClient client) => client.DefaultRequestHeaders.Add("X-Teas-Bff", BffSecret);
+    }
+
+    static WebApplicationFactory<Program> Host() => new BffFactory().WithWebHostBuilder(b =>
+    {
+        b.UseSetting("TEAS_BFF_SECRET", BffSecret);
+        b.ConfigureServices(s => s.AddSingleton<IStartupFilter>(new TestRoutes(Routes)));
+    });
 
     // A non-Development host (Staging): the config guards run and ASP.NET's own "throw on bad request" default (Development only) is off.
-    static WebApplicationFactory<Program> StagingHost(DbClone db) => new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+    static WebApplicationFactory<Program> StagingHost(DbClone db) => new BffFactory().WithWebHostBuilder(b =>
     {
         b.UseEnvironment("Staging");
         b.UseSetting("ConnectionStrings:Teas", db.AppCs);
-        b.UseSetting("TEAS_BFF_SECRET", "0123456789abcdef0123456789abcdef");
+        b.UseSetting("TEAS_BFF_SECRET", BffSecret);
         b.ConfigureServices(s => s.AddSingleton<IStartupFilter>(new TestRoutes(Routes)));
     });
 
