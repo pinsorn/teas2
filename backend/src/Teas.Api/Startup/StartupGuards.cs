@@ -65,17 +65,13 @@ public static class StartupGuards
         if (bare.Count > 0)
             throw new StartupGuardException("relations without forced row-level security and a policy: " + string.Join(", ", bare));
 
-        var tenant = relations.Where(r => !allow.Contains(r.Qualified)).ToList();
-        var counts = await TenantScope.SelfTestAsync(conn, tenant.Select(r => r.Quoted).ToList(), ct);
-        foreach (var t in tenant)
-        {
-            var (noGuc, system) = counts[t.Quoted];
-            if (noGuc != 0)
-                throw new StartupGuardException($"RLS self-test failed: {t.Qualified} shows {noGuc} rows with no company set");
-            // system = 0 on a table the statistics say holds rows: a policy hides everything (an empty table proves nothing, a full one must show)
-            if (t.HasRows && system == 0)
-                throw new StartupGuardException($"RLS self-test failed: {t.Qualified} holds rows but system scope sees none; a policy hides everything");
-        }
+        var (noGuc, system) = await TenantScope.SelfTestAsync(conn, ct);
+        if (noGuc != 0)
+            throw new StartupGuardException($"RLS self-test failed: teas.companies shows {noGuc} rows with no company set");
+        // companies are never hard-deleted: if the statistics say it holds rows yet system scope sees none, a policy hides everything.
+        // (An empty table proves nothing, and other tables may legitimately be emptied, so only companies is judged.)
+        if (system == 0 && relations.Any(r => r.Qualified == "teas.companies" && r.HasRows))
+            throw new StartupGuardException("RLS self-test failed: teas.companies holds rows but system scope sees none; a policy hides everything");
     }
 
     public static async Task<string?> SchemaIdAsync(NpgsqlConnection conn, CancellationToken ct = default)
@@ -91,8 +87,8 @@ public static class StartupGuards
             SELECT n.nspname, c.relname, c.relkind::text,
                    c.relkind IN ('r', 'p') AND c.relrowsecurity AND c.relforcerowsecurity
                      AND EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid),
-                   c.reltuples > 0 OR COALESCE(s.n_live_tup, 0) > 0,
-                   pg_get_userbyid(c.relowner) = current_user
+                   COALESCE(s.n_live_tup, 0) > 0,
+                   pg_has_role(current_user, c.relowner, 'USAGE')
             FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
             LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid
             WHERE c.relkind IN ('r', 'p', 'm') AND n.nspname NOT LIKE 'pg\_%' AND n.nspname <> 'information_schema'

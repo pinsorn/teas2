@@ -63,6 +63,22 @@ public sealed class StartupGuardTests : IAsyncLifetime
         Assert.Contains("hides everything", e.Message);
     }
 
+    // R2-1: a tenant table that was emptied under system scope is not a hiding policy; startup still succeeds.
+    [Fact]
+    public async Task AnEmptiedCompaniesTableStillStarts()
+    {
+        var a = Guid.NewGuid();
+        await _db.AsAppAsync(new ScopeState(a, null, false), async (c, tx) => { await TenantRowFactory.Inserts["companies"](c, tx, a); return 0; }, commit: true);
+        await _db.AsAppAsync(new ScopeState(null, null, true), async (c, tx) =>
+        {
+            await using var cmd = new NpgsqlCommand("DELETE FROM teas.companies", c, tx);
+            Assert.Equal(1, await cmd.ExecuteNonQueryAsync());
+            return 0;
+        }, commit: true);
+        await AsMigrator("ANALYZE teas.companies");   // refresh n_live_tup deterministically
+        await StartupGuards.RunAsync(_db.AppCs);
+    }
+
     [Fact]
     public async Task WrongSchemaIsRefused()
     {

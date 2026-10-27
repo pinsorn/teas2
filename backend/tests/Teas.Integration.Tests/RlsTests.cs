@@ -268,4 +268,60 @@ public sealed class RlsTests : IAsyncLifetime
             Assert.Equal(0, await Count());                                // dispose: no scope again
         }
     }
+
+    static PostgresException? FindPg(Exception? e) { while (e != null && e is not PostgresException) e = e.InnerException; return e as PostgresException; }
+
+    TeasDbContext NewContext(TenantScope scope)
+    {
+        var options = new DbContextOptionsBuilder<TeasDbContext>();
+        TeasDbContext.Configure(options, _db.AppCs);
+        options.AddInterceptors(new TenantInterceptor(scope));
+        return new TeasDbContext(options.Options);
+    }
+
+    // R2-2a: an error inside a scope must reach the caller as itself, not as the 25P02 of the scope's restore.
+    [Fact]
+    public async Task R2_ErrorInsideAScopeSurfacesAsItselfNotAsAbortedTransaction()
+    {
+        var scope = new TenantScope();
+        await using var ctx = NewContext(scope);
+        await using var tx = await ctx.Database.BeginTransactionAsync();
+        var e = await Assert.ThrowsAnyAsync<Exception>(async () =>
+        {
+            using (scope.Enter(Guid.NewGuid(), null))
+                await ctx.Database.SqlQueryRaw<int>("SELECT 1 / 0 AS \"Value\"").ToListAsync();
+        });
+        Assert.Equal("22012", FindPg(e)?.SqlState);
+    }
+
+    // R2-2b: a transaction disposed without commit / rollback must not be touched through a stale reference,
+    // even when Npgsql hands the same transaction object to another context.
+    [Fact]
+    public async Task R2_StaleTransactionIsNeverReappliedToAnotherContext()
+    {
+        var a = Guid.NewGuid();
+        await _db.AsAppAsync(In(a), Insert("companies", a), commit: true);
+        var scope1 = new TenantScope();
+        await using (var ctx1 = NewContext(scope1))
+        {
+            await using var tx1 = await ctx1.Database.BeginTransactionAsync();
+        }   // disposed, never committed or rolled back explicitly
+        var scope2 = new TenantScope();
+        await using var ctx2 = NewContext(scope2);
+        await using var tx2 = await ctx2.Database.BeginTransactionAsync();
+        using (scope1.Enter(a, null))   // must neither throw nor leak company a into the other context's transaction
+            Assert.Equal(0, (await ctx2.Database.SqlQueryRaw<long>("SELECT count(*) AS \"Value\" FROM teas.companies").ToListAsync())[0]);
+    }
+
+    // N2
+    [Fact]
+    public void N2_ScopesDisposedOutOfOrderThrow()
+    {
+        var scope = new TenantScope();
+        var outer = scope.Enter(Guid.NewGuid(), null);
+        var inner = scope.EnterSystem("inner");
+        Assert.Throws<InvalidOperationException>(() => outer.Dispose());
+        inner.Dispose();
+        outer.Dispose();
+    }
 }

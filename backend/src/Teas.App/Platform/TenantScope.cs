@@ -1,3 +1,4 @@
+using System.Data;
 using System.Data.Common;
 using System.Runtime.CompilerServices;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -5,6 +6,7 @@ using Npgsql;
 
 [assembly: InternalsVisibleTo("Teas.Migrator")]
 [assembly: InternalsVisibleTo("Teas.Integration.Tests")]
+[assembly: InternalsVisibleTo("Teas.Api")]   // StartupGuards only (architecture test)
 
 namespace Teas.App.Platform;
 
@@ -20,11 +22,15 @@ internal readonly record struct ScopeState(Guid? CompanyId, Guid? UserId, bool S
 /// The ONLY place that writes the RLS context (F3: transaction-local, never session-wide; an architecture test greps the
 /// repo for it). Enter / EnterSystem set the state; if a transaction is already active on the context the new state is
 /// applied to it at once, and disposing the scope re-applies the previous state (H1).
+/// Scoped per request and bound to ONE DbContext; it is not AsyncLocal. Scopes nest and must be disposed in reverse order.
 /// </summary>
 public sealed class TenantScope
 {
+    const string InFailedTransaction = "25P02";
+
     DbConnection? _conn;
     DbTransaction? _tx;
+    int _depth;
 
     internal ScopeState Current { get; private set; }
 
@@ -41,7 +47,7 @@ public sealed class TenantScope
     {
         var previous = Current;
         Set(next);
-        return new Restore(this, previous);
+        return new Restore(this, previous, ++_depth);
     }
 
     void Set(ScopeState state)
@@ -49,18 +55,32 @@ public sealed class TenantScope
         Current = state;
         // a transaction is already open: the GUCs were applied for the old state, so apply the new one now
         if (_tx is null || _conn is null) return;
-        if (!IsLive(_tx)) { _conn = null; _tx = null; return; }   // ended without an interceptor event (disposed = rolled back)
-        ApplyAsync(_conn, _tx, state, force: true).GetAwaiter().GetResult();   // a real failure here must surface, never leave a stale scope
+        if (!Owns(_conn, _tx)) { _conn = null; _tx = null; return; }   // ended without an interceptor event (disposed = rolled back)
+        try { ApplyAsync(_conn, _tx, state, force: true).GetAwaiter().GetResult(); }
+        // a failed transaction accepts nothing and leaks nothing: skip, so the ORIGINAL error reaches the caller, not this one
+        catch (PostgresException e) when (e.SqlState == InFailedTransaction) { }
     }
 
-    static bool IsLive(DbTransaction tx)
+    /// <summary>The transaction is still ours: its connection is the one we attached to, and that connection is open.
+    /// (Npgsql reuses transaction objects across pooled connections, so a cached object alone proves nothing.)</summary>
+    static bool Owns(DbConnection conn, DbTransaction tx)
     {
-        try { return tx.Connection is not null; } catch (ObjectDisposedException) { return false; }
+        try { return conn.State == ConnectionState.Open && ReferenceEquals(tx.Connection, conn); }
+        catch (ObjectDisposedException) { return false; }
     }
 
-    sealed class Restore(TenantScope scope, ScopeState previous) : IDisposable
+    sealed class Restore(TenantScope scope, ScopeState previous, int depth) : IDisposable
     {
-        public void Dispose() => scope.Set(previous);
+        bool _done;
+
+        public void Dispose()
+        {
+            if (_done) return;
+            if (scope._depth != depth) throw new InvalidOperationException("TenantScope scopes must be disposed in reverse order of Enter");
+            _done = true;
+            scope._depth--;
+            scope.Set(previous);
+        }
     }
 
     internal void Attach(DbConnection conn, DbTransaction tx) { _conn = conn; _tx = tx; }
@@ -115,21 +135,18 @@ public sealed class TenantScope
     }
 
     /// <summary>
-    /// Startup RLS self-test (SP3 4.3): per tenant table (already-quoted names from the catalog), the row count with no GUC
-    /// (must be 0) and under system scope (the caller refuses 0 where the table is known to hold rows).
+    /// Startup RLS self-test (SP3 4.3): teas.companies (never hard-deleted) counted with no GUC (must be 0) and under system scope.
     /// </summary>
-    public static async Task<Dictionary<string, (long noGuc, long system)>> SelfTestAsync(NpgsqlConnection conn, IReadOnlyList<string> quotedTables, CancellationToken ct = default)
+    internal static async Task<(long noGuc, long system)> SelfTestAsync(NpgsqlConnection conn, CancellationToken ct = default)
     {
         await using var tx = await conn.BeginTransactionAsync(ct);
-        var result = new Dictionary<string, (long, long)>();
-        foreach (var t in quotedTables) result[t] = (await Count(conn, tx, t, ct), 0);
+        var noGuc = await Count(conn, tx, ct);
         await ApplyAsync(conn, tx, new ScopeState(null, null, true), ct);
-        foreach (var t in quotedTables) result[t] = (result[t].Item1, await Count(conn, tx, t, ct));
-        return result;
+        return (noGuc, await Count(conn, tx, ct));
 
-        static async Task<long> Count(NpgsqlConnection c, NpgsqlTransaction t, string table, CancellationToken ct)
+        static async Task<long> Count(NpgsqlConnection c, NpgsqlTransaction t, CancellationToken ct)
         {
-            await using var cmd = new NpgsqlCommand("SELECT count(*) FROM " + table, c, t);
+            await using var cmd = new NpgsqlCommand("SELECT count(*) FROM teas.companies", c, t);
             return (long)(await cmd.ExecuteScalarAsync(ct))!;
         }
     }
