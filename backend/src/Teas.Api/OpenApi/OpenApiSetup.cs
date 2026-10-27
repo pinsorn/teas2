@@ -27,6 +27,7 @@ public static class OpenApiSetup
             o.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
             o.SerializerOptions.TypeInfoResolver = (o.SerializerOptions.TypeInfoResolver ?? new DefaultJsonTypeInfoResolver()).WithAddedModifier(OmitWhenNull);
         });
+        var omitted = new System.Collections.Concurrent.ConcurrentDictionary<string, System.Collections.Concurrent.ConcurrentBag<string>>(); // component name -> members the serializer omits when null
         return services.AddOpenApi("v1", o =>
         {
             o.ShouldInclude = d => d.RelativePath?.StartsWith(Prefix.TrimStart('/') + "/", StringComparison.Ordinal) == true;
@@ -46,11 +47,15 @@ public static class OpenApiSetup
                     schema.Pattern = null;
                 }
                 if (IsOptional(type, out var arg)) await DescribeOptional(schema, arg, ctx, ct);
-                // an Optional<T> member's own node comes out empty ({}) when seen from the property, so describe it from the parent too
+                // Parent-level pass tied to the serializer: what it omits when null is `?: T` (oneOf [null, X] -> X, no null type);
+                // an Optional<T> member is described from here too (its own node comes out empty when seen from the property).
                 if (ctx.JsonTypeInfo.Kind == JsonTypeInfoKind.Object && schema.Properties is { } props)
                     foreach (var p in ctx.JsonTypeInfo.Properties)
-                        if (IsOptional(p.PropertyType, out var a) && props.TryGetValue(p.Name, out var ps) && ps is OpenApiSchema target)
-                            await DescribeOptional(target, a, ctx, ct);
+                    {
+                        if (!props.TryGetValue(p.Name, out var ps)) continue;
+                        if (IsOptional(p.PropertyType, out var a)) { if (ps is OpenApiSchema target) await DescribeOptional(target, a, ctx, ct); }
+                        else if (OmitsNull(p)) { props[p.Name] = WithoutNull(ps); omitted.GetOrAdd(ctx.JsonTypeInfo.Type.Name, _ => new()).Add(p.Name); }
+                    }
             });
             o.AddDocumentTransformer(async (doc, ctx, ct) =>
             {
@@ -62,6 +67,17 @@ public static class OpenApiSetup
                 doc.Components.Schemas ??= new Dictionary<string, IOpenApiSchema>();
                 doc.Components.Schemas["Money"] = await ctx.GetOrCreateSchemaAsync(typeof(Money), null, ct);
                 doc.Components.Schemas["ApiProblem"] = await ctx.GetOrCreateSchemaAsync(typeof(ApiProblem), null, ct);
+                // an enum component is the enum itself: the exporter lists null in it when the first use was Enum?, but nullability lives on the member
+                foreach (var comp in doc.Components.Schemas.Values.OfType<OpenApiSchema>())
+                    if (comp.Enum is { Count: > 0 } en && en.Any(x => x is null || x.GetValueKind() == System.Text.Json.JsonValueKind.Null))
+                    {
+                        comp.Enum = en.Where(x => x is not null && x.GetValueKind() != System.Text.Json.JsonValueKind.Null).ToList();
+                        comp.Type = comp.Type is { } ctype ? ctype & ~JsonSchemaType.Null : null;
+                    }
+                // the oneOf [null, X] wrapper for ref-typed members is added after the schema transformers ran, so the unwrap is repeated here
+                foreach (var (name, comp) in doc.Components.Schemas)
+                    if (comp is OpenApiSchema { Properties: { } cp } && omitted.TryGetValue(name, out var names))
+                        foreach (var n in names) if (cp.TryGetValue(n, out var v)) cp[n] = WithoutNull(v);
             });
         });
     }
@@ -79,38 +95,55 @@ public static class OpenApiSetup
     {
         var inner = await ctx.GetOrCreateSchemaAsync(arg, null, ct);
         schema.Properties?.Clear();
-        if (inner is OpenApiSchema s)
+        // a plain primitive folds the null into its type; an enum, object or $ref stays whole: oneOf [null, inner]
+        if (inner is OpenApiSchema { Type: { } t } s && s.Enum is not { Count: > 0 } && s.Properties is not { Count: > 0 } && s.OneOf is null && s.AnyOf is null && s.AllOf is null)
         {
-            schema.Type = (s.Type ?? 0) | JsonSchemaType.Null;
+            schema.OneOf = null;
+            schema.Type = t | JsonSchemaType.Null;
             schema.Format = s.Format;
             schema.Pattern = s.Pattern;
         }
-        else schema.OneOf = [new OpenApiSchema { Type = JsonSchemaType.Null }, inner];
+        else
+        {
+            schema.Type = null;
+            schema.OneOf = [new OpenApiSchema { Type = JsonSchemaType.Null }, inner];
+        }
     }
 
-    /// <summary>A required member is always written; an Optional is written when set; any other nullable member is omitted when null
-    /// (and declared non-nullable in the schema, because the schema must say what is serialized).</summary>
+    static IOpenApiSchema WithoutNull(IOpenApiSchema s)
+    {
+        if (s.OneOf is { Count: 2 } one && one.FirstOrDefault(x => x.Type == JsonSchemaType.Null) is { } nul) return one.First(x => x != nul);
+        if (s is OpenApiSchema { Type: { } t } plain)
+        {
+            if (t.HasFlag(JsonSchemaType.String) && (t.HasFlag(JsonSchemaType.Integer) || t.HasFlag(JsonSchemaType.Number))) { t &= ~JsonSchemaType.String; plain.Pattern = null; }
+            plain.Type = t & ~JsonSchemaType.Null;
+        }
+        return s;
+    }
+
+    /// <summary>One rule for the serializer and the schema: a member that is not required, not Optional and can be null is omitted when null.</summary>
+    static bool OmitsNull(JsonPropertyInfo p) =>
+        !typeof(IOptional).IsAssignableFrom(p.PropertyType)
+        && !(p.IsRequired || p.AssociatedParameter is { HasDefaultValue: false })
+        && !(p.PropertyType.IsValueType && Nullable.GetUnderlyingType(p.PropertyType) is null);
+
+    /// <summary>A required member is always written; an Optional is written when set (and may not be `required`); any other nullable member
+    /// is omitted when null, and the schema (see the transformer) says `?: T` for it.</summary>
     static void OmitWhenNull(JsonTypeInfo info)
     {
         if (info.Kind != JsonTypeInfoKind.Object) return;
-        for (var i = 0; i < info.Properties.Count; i++)
+        foreach (var p in info.Properties)
         {
-            var p = info.Properties[i];
-            if (typeof(IOptional).IsAssignableFrom(p.PropertyType)) { p.ShouldSerialize = (_, v) => v is IOptional { IsSet: true }; continue; }
-            if (p.IsRequired || p.AssociatedParameter is { HasDefaultValue: false }) continue;
-            if (p.PropertyType.IsValueType && Nullable.GetUnderlyingType(p.PropertyType) is null) continue;
-            p.ShouldSerialize = (_, v) => v is not null;
-            p.IsGetNullable = false;
-            p.IsSetNullable = false;
-            // The exporter always wraps Nullable<T> as oneOf [null, T]. A boxed Nullable<T> is a T or null, so describe the member as a plain T.
-            if (Nullable.GetUnderlyingType(p.PropertyType) is { } under && p.AssociatedParameter is null && p.AttributeProvider is System.Reflection.PropertyInfo pi)
+            if (typeof(IOptional).IsAssignableFrom(p.PropertyType))
             {
-                var np = info.CreateJsonPropertyInfo(under, p.Name);
-                np.Get = o => pi.GetValue(o) ?? Activator.CreateInstance(under); // the typed getter cannot return null for a T; ShouldSerialize hides the placeholder
-                np.Set = pi.CanWrite ? pi.SetValue : null;
-                np.ShouldSerialize = (o, _) => pi.GetValue(o) is not null;
-                np.Order = p.Order; np.IsRequired = false;
-                info.Properties[i] = np;
+                if (p.IsRequired) throw new InvalidOperationException($"{info.Type.Name}.{p.Name}: Optional<T> cannot be a required member.");
+                p.ShouldSerialize = (_, v) => v is IOptional { IsSet: true };
+            }
+            else if (OmitsNull(p))
+            {
+                p.ShouldSerialize = (_, v) => v is not null;
+                p.IsGetNullable = false;
+                p.IsSetNullable = false;
             }
         }
     }

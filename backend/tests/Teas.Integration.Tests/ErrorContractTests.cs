@@ -30,6 +30,19 @@ public sealed class ErrorContractTests
         public required Step Step { get; init; }
     }
     public sealed record Patch { public Optional<string?> Logo { get; init; } }
+    public sealed record Inner { public required int A { get; init; } }
+    public sealed record Shapes
+    {
+        public required string Name { get; init; }
+        public Inner? Child { get; init; }
+        public int? N { get; init; }
+        public Step? Kind { get; init; }
+        public Money? PaidUpCapital { get; init; }
+        public Optional<Step> Mode { get; init; }
+        public Optional<Inner> Sub { get; init; }
+    }
+    public sealed record Pos(string Name, int? N = null, Step? Kind = null);
+    public sealed record BadRequired { public required Optional<string?> Logo { get; init; } }
 
 
     static readonly Action<IEndpointRouteBuilder> Routes = e =>
@@ -41,6 +54,9 @@ public sealed class ErrorContractTests
         e.MapGet("/internal/v1/_t/logo", () => new Probe { Amount = Money.Of(12), Label = "x", Logo = new Optional<string?>(null), Step = Step.Done });
         e.MapPost("/internal/v1/_t/patch", (Patch p) => p.Logo.IsSet ? (p.Logo.Value is null ? "null" : "value:" + p.Logo.Value) : "absent");
         e.MapGet("/internal/v1/_t/overflow", () => Money.Of(10000000000000000m));
+        e.MapGet("/internal/v1/_t/shapes", () => new Shapes { Name = "s" });
+        e.MapGet("/internal/v1/_t/pos", () => new Pos("p"));
+        e.MapPost("/internal/v1/_t/pos", (Pos p) => p.N is null ? "absent" : "n:" + p.N);
         e.MapOpenApi("/_t/openapi.json");
     };
 
@@ -201,6 +217,57 @@ public sealed class ErrorContractTests
         Assert.Equal(["null", "string"], props.GetProperty("label").GetProperty("type").EnumerateArray().Select(x => x.GetString()!).Order().ToArray());
         // Optional<string?>: [null, string], not required (generated `logo?: string | null`)
         Assert.Equal(["null", "string"], Resolve(doc, props.GetProperty("logo")).GetProperty("type").EnumerateArray().Select(x => x.GetString()!).Order().ToArray());
+    }
+
+    [Fact]
+    public async Task OmittedWhenNullMembersAreOptionalAndNullFreeInTheSchemaWhateverTheirType()
+    {
+        using var f = Host();
+        var c = f.CreateClient();
+        Assert.Equal("""{"name":"s"}""", await c.GetStringAsync("/internal/v1/_t/shapes"));
+        Assert.Equal("""{"name":"p"}""", await c.GetStringAsync("/internal/v1/_t/pos"));
+        var doc = JsonDocument.Parse(await c.GetStringAsync("/_t/openapi.json")).RootElement;
+        JsonElement Body(string path) => Resolve(doc, doc.GetProperty("paths").GetProperty(path).GetProperty("get").GetProperty("responses").GetProperty("200").GetProperty("content").GetProperty("application/json").GetProperty("schema"));
+        var shapes = Body("/_t/shapes");
+        var sp = shapes.GetProperty("properties");
+        Assert.Equal(["name"], shapes.GetProperty("required").EnumerateArray().Select(x => x.GetString()!).ToArray());
+        // a `?: T` member is a bare ref / type with no null anywhere (object, int, enum, Money)
+        foreach (var name in new[] { "child", "n", "kind", "paidUpCapital" })
+            Assert.DoesNotContain("null", sp.GetProperty(name).ToString());
+        Assert.Equal("#/components/schemas/Inner", sp.GetProperty("child").GetProperty("$ref").GetString());
+        Assert.Equal("integer", sp.GetProperty("n").GetProperty("type").GetString());
+        Assert.Equal("#/components/schemas/Step", sp.GetProperty("kind").GetProperty("$ref").GetString());
+        Assert.DoesNotContain("null", Resolve(doc, sp.GetProperty("kind")).ToString()); // the enum component itself carries no null
+        Assert.Equal("#/components/schemas/Money", sp.GetProperty("paidUpCapital").GetProperty("$ref").GetString());
+        // a positional record with defaults behaves the same
+        var pos = Body("/_t/pos");
+        Assert.Equal(["name"], pos.GetProperty("required").EnumerateArray().Select(x => x.GetString()!).ToArray());
+        Assert.Equal("integer", pos.GetProperty("properties").GetProperty("n").GetProperty("type").GetString());
+        Assert.DoesNotContain("null", pos.GetProperty("properties").GetProperty("kind").ToString());
+        // Optional<enum> / Optional<object>: oneOf [null, X], not required
+        foreach (var (name, target) in new[] { ("mode", "#/components/schemas/Step"), ("sub", "#/components/schemas/Inner") })
+        {
+            var one = Resolve(doc, sp.GetProperty(name)).GetProperty("oneOf").EnumerateArray().ToArray();
+            Assert.Equal(2, one.Length);
+            Assert.Contains(one, x => x.TryGetProperty("type", out var t) && t.GetString() == "null");
+            Assert.Contains(one, x => x.TryGetProperty("$ref", out var r) && r.GetString() == target);
+        }
+    }
+
+    [Fact]
+    public async Task AnExplicitNullForAnOmittedWhenNullMemberIsAcceptedAsAbsent()
+    {
+        using var f = Host();
+        var res = await f.CreateClient().PostAsync("/internal/v1/_t/pos", new StringContent("""{"name":"x","n":null,"kind":null}""", System.Text.Encoding.UTF8, "application/json"));
+        Assert.Equal("absent", (await res.Content.ReadAsStringAsync()).Trim('"'));
+    }
+
+    [Fact]
+    public void OptionalOnARequiredMemberIsRefused()
+    {
+        using var f = Host();
+        var opts = f.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Http.Json.JsonOptions>>().Value.SerializerOptions;
+        Assert.Throws<InvalidOperationException>(() => opts.GetTypeInfo(typeof(BadRequired)));
     }
 
     static JsonElement Resolve(JsonElement doc, JsonElement schema)

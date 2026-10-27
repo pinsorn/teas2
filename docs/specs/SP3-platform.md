@@ -303,7 +303,10 @@ $1, true), set_config('app.user_id', $2, true), set_config('app.system', $3, tru
   `[JsonStringEnumMemberName]`, verified on net10, no custom converter). Serialization follows the contract and the document is not
   rewritten: a `required` member is always written (null as `null`) and stays required (`T | null` when nullable); any
   other nullable member is omitted when null (not required, no `null` in its schema, `?: T`); a member whose null means
-  "remove" (absent = unchanged) is `Optional<T>` (type `[null, T]`, not required, `?: T | null`).
+  "remove" (absent = unchanged) is `Optional<T>` (not required, `?: T | null`: type `[null, T]` for a primitive, `oneOf [null, T]`
+  for an enum, object or `$ref`). The omitted-when-null rule is one function used by the serializer and the schema, for value types,
+  enums, `Money`, objects and positional-record defaults alike. An explicit `null` in a request for a `?: T` member is accepted as
+  absent. `Optional<T>` on a `required` member is refused (the type info throws at first use).
 - **Conformance:** `frontend/src/contract/conformance/platform.ts`:
 
 ```ts
