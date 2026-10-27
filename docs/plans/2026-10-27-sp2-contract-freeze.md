@@ -49,6 +49,8 @@ the mock and `tsc` already compile against these types (the only drift gate that
 in `.github/workflows/frontend.yml`); one TS toolchain, no new root folder (`tools/check-repo-layout.mjs` allows
 `frontend/`, `backend/`, `docs/`, `tools/`).
 
+**Phase A notes (P0a):** (1) the freeze guard (C0) hashes the contract file AND every local file it imports (`route-spec.ts`, `scalars.ts` - `IsoDate` / `Money` live there - and `DocType` from `domain/types.ts`, a guarded dependency until `documents.ts` owns it): a change in a dependency is a contract change. (2) Exceptions to "the old files re-export verbatim": `domain/types.ts` exports `Me` with `activeCompanyId: string` (the contract allows `null`); SP3 task P8 removes the narrowing and handles `null` (to /onboarding).
+
 **Phase B — from SP3 on, per module as it goes live (§10.5):** .NET emits `openapi.json` at build →
 `openapi-typescript` (exact-pinned) generates `frontend/src/contract/generated/<module>.ts` (git-ignored, built by
 `pnpm gen:api`) → a **conformance file** `frontend/src/contract/conformance/<module>.ts` asserts, per route, that the

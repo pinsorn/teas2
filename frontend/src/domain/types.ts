@@ -4,9 +4,9 @@ import type { Actor, ApiProblem, AuditEntry, Company, CompanySettings, Me as Con
 export type { Actor, ApiProblem, AuditEntry, Company, CompanySettings, Membership, Page, RoleRow, StaffMember, UserRow };
 /** The app's view of `Me`: the contract allows `activeCompanyId: null` (no company yet -> /onboarding, SP3 P8 wires it); every screen mounts with a company, so it reads it as a string. */
 export type Me = Omit<ContractMe, 'activeCompanyId'> & { activeCompanyId: string };
-export type Money = string;   // decimal string, 2 dp: "64200.00"
+import type { IsoDate, Money } from '@/contract/scalars';
+export type { IsoDate, Money };
 export type Qty = string;     // decimal string, up to 4 dp
-export type IsoDate = string; // "2026-10-14"
 export type DocType = 'QT' | 'SO' | 'DO' | 'BL' | 'IV' | 'TI' | 'RC' | 'CN' | 'DN' | 'PO' | 'PB' | 'PCN' | 'PDN'
   | 'PV' | 'WT' | 'EX' | 'JV' | 'FA' | 'DP' | 'PR' | 'OB';
 export type CorrectionClass = 'N' | 'L' | 'T';

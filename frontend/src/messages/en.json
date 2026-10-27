@@ -116,7 +116,10 @@
     "connect_key_kind_mismatch": "This kind of key cannot be used on this channel (a REST key for REST, an MCP key for MCP)",
     "idempotency_key_required": "This request needs an idempotency key (Idempotency-Key)",
     "idempotency_key_reused": "This idempotency key was already used with different data. Use a new one",
-    "http_rate_limited": "Too many requests. Wait a moment and try again"
+    "http_rate_limited": "Too many requests. Wait a moment and try again",
+    "http_403": "This request was refused (origin check)",
+    "user_invite_pending": "This user has not accepted the invitation yet. Use the invite link instead of a password-reset link",
+    "connect_wrong_company": "This key belongs to another company and cannot be used here"
   },
   "problem": {
     "correctionUnrepresentable": "This change would need a credit or debit note of zero or less, so it cannot be issued as a note.",
@@ -2239,7 +2242,12 @@
       "doneReset": "Your password is changed. Sign in with the new password",
       "toLogin": "Go to sign in",
       "invalidTitle": "This link does not work",
-      "invalidBody": "This link no longer works or has expired. Ask an administrator for a new one"
+      "invalidBody": "This link no longer works or has expired. Ask an administrator for a new one",
+      "existingTitle": "Sign in to accept the invitation",
+      "existingLead": "You are invited to join {company}. The account {email} already exists: sign in with it, then come back to this link to accept",
+      "existingLeadNoCompany": "The account {email} already exists: sign in with it, then come back to this link to accept",
+      "accept": "Accept the invitation",
+      "doneExisting": "Invitation accepted. Switch to the new company from the company menu"
     },
     "publicLink": {
       "invalidTitle": "This link no longer works",

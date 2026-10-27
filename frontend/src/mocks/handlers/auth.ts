@@ -5,7 +5,7 @@ import { FieldErrors } from '../engine/company';
 import { activeLinkCount, changePassword, confirmEnrol, createPublicLink, currentSession, currentUserId, DEMO, demoRecovery, listSessions, login, logout, onboard, profileOf, relogin, resolvePublicLink, revokePublicLinks, revokeSession, startEnrol, verifyTotp } from '../engine/auth';
 import { publicDoc } from '../engine/commands';
 import { MockError } from '../engine/log';
-import { linkInfo, setPasswordByLink } from '../records/users';
+import { consumeLink, linkInfo } from '../records/users';
 import { AGENT, USER } from '../fixtures/documents';
 import { getSession, setSession, setSettings } from '../settings';
 import { ctx, forbidden, persist, problem } from './common';
@@ -95,7 +95,7 @@ export const authHandlers = [
 
   // Q4 (routes 13-14): the invite / reset link page. Public (no session); the token is the path of ITS OWN page, never logged or audited.
   http.get('*/bff/v1/auth/links/:token', ({ request, params }) => run(request, false, (c) => HttpResponse.json(linkInfo(c.st, String(params.token))))),
-  http.post('*/bff/v1/auth/links/:token', ({ request, params }) => run(request, true, async (c) => { setPasswordByLink(c.st, String(params.token), await bodyOf(request)); return HttpResponse.json({ status: 'ok' }); })),
+  http.post('*/bff/v1/auth/links/:token', ({ request, params }) => run(request, true, async (c) => { const live = getSession() === 'active' || getSession() === 'expiring' ? currentSession(c.st) : undefined; consumeLink(c.st, String(params.token), await bodyOf(request), live); return HttpResponse.json({ status: 'ok' }); })),
 
   http.get('*/bff/v1/auth/profile', ({ request }) => run(request, false, (c) => HttpResponse.json(profileOf(c.st, currentUserId(c.st))))),
   http.post('*/bff/v1/auth/password', ({ request }) => run(request, true, async (c, a) => {

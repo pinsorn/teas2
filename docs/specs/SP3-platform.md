@@ -175,11 +175,21 @@ $1, true), set_config('app.user_id', $2, true), set_config('app.system', $3, tru
   hash verification (timing). Counter per `sha256(lower(trim(email)))` over login, TOTP step, relogin and the
   current-password check: 5 consecutive → `locked_until = now + 15 min`, answer 429 `auth.locked` (the failure that
   locks already says so); success clears it. Plus ASP.NET rate limiter: 20 / min per IP on `/auth/*`.
-- **Links (new, Q4):** invite (7 days) and reset (24 h): 256-bit token, stored hashed, single use, a newer link of the
-  same kind for the same member supersedes the older. `GET /auth/links/{token}` → `LinkInfo`; `POST` sets the password
-  (and for an invite: finds or creates the `users` row by email, sets `company_members.user_id`, clears
-  `invite_pending`, audited `user.accept_invite` in that company). Unknown / used / expired / superseded → one answer
-  404 `auth.link_invalid`.
+- **Links (new, Q4; amended P0a):** invite (7 days) and reset (24 h): 256-bit token, stored hashed with its kind and
+  `expires_at` **stored at issue** (never recomputed on read), single use; a newer link of the SAME kind for the same
+  member supersedes the older. `GET /auth/links/{token}` → `LinkInfo` (with `existingAccount`).
+  - **New account** (invite whose email has no user, or a user without a password; and every reset): `POST` sets the
+    password. For an invite it finds or creates the `users` row by email, sets `company_members.user_id`, clears
+    `invite_pending`, audited `user.accept_invite` in that company. For a reset it clears the lockout counter, **revokes
+    every session of that user** and is audited `auth.password.reset`.
+  - **Existing account** (invite whose email already has a user WITH a password; `existingAccount: true`): the page
+    shows "sign in to accept" and NO password form. `POST` accepts only from a signed-in session of THAT user (links
+    the membership, clears `invite_pending`, `user.accept_invite`; no password is read or changed); from anyone else
+    (signed out, or another user) it is the one 404. A link must never set the password of an account that already
+    has one: an invite is not proof of owning the email.
+  - Unknown / used / expired / superseded / **of an inactive member** (deactivating a member clears their links; a
+    revoked membership likewise) → one answer 404 `auth.link_invalid`. A reset for a member who has not accepted the
+    invite is refused (`user.invite_pending` 409): the invite link stays the way in.
 - **Lost second factor (Q3):** `POST /settings/users/{id}/totp-reset` (`users.manage`, not on yourself) clears the
   member's user TOTP + recovery codes + revokes their sessions; the last admin's exit is the server CLI `reset-mfa`.
 - **Bootstrap (Q5):** `Teas.Migrator bootstrap-admin --email <e> --name <n>` creates the first user with
@@ -303,7 +313,7 @@ export interface Membership { companyId: string; companyName: string; roleId: st
 export interface Me { userId: string; displayName: string; memberships: Membership[];
   activeCompanyId: string | null;            // null = no membership yet (bootstrap admin) → /onboarding
   vatRegistered: boolean; permissions: string[]; businessDate: IsoDate }
-export interface LinkInfo { kind: 'invite' | 'reset'; email: string; companyName?: string; expiresAt: string }
+export interface LinkInfo { kind: 'invite' | 'reset'; email: string; companyName?: string; expiresAt: string; existingAccount: boolean } // existingAccount: sign in to accept, no password form (§4.4)
 export interface SetPasswordBody { password: string; confirm: string }
 export interface WhoAmI { actor: Actor; companyId: string; companyName: string; rights: string[] }
 export type CompanySection = 'identity' | 'contact' | 'payroll' | 'fiscal' | 'images' | 'notes';
@@ -337,7 +347,8 @@ export const agentForbidden: (code: string) => boolean;                  // §4.
 `connect.scope_exceeds` 422 · `connect.key_revoked` 401/409 (auth / rotate) · `connect.key_expired` 401/409 ·
 `connect.key_invalid` 401 · `connect.owner_inactive` 409 · `connect.key_kind_mismatch` 403 (new) ·
 `agent.forbidden_action` 403 · `agent.forbidden_setting` 403 · `idempotency.key_required` 400 (new) ·
-`idempotency.key_reused` 422 (new) · `http.rate_limited` 429 (new) · `storage.full` 507 · `http.500`.
+`idempotency.key_reused` 422 (new) · `http.rate_limited` 429 (new) · `storage.full` 507 · `http.500`. Added in P0a: `http.403` 403 (CSRF, S7) · `user.invite_pending` 409 (reset link for a
+member who has not accepted the invite) · `connect.wrong_company` 403 (a key used on another company: the mock's code, kept).
 Retired with the mock: `user.not_pending`, `record.kind_unknown` (SP4.2 reclaims it), `mock.server_error`.
 
 ### 5.3 Routes (`ROUTES`; BFF path `/bff/v1` + path → API `/internal/v1` + path)
@@ -360,7 +371,7 @@ Agent column: "no" means the route is not mapped on `/api/v1` / `/mcp`; an agent
 | 11 | GET `/auth/sessions` | session | — | no | — | → `{items: SessionRow[]}` | — | — | P7 |
 | 12 | POST `/auth/sessions/{id}/revoke` | session | own sessions | no | — | → `{signedOut}` | session_not_found | `auth.session.revoke` | P7 |
 | 13 | GET `/auth/links/{token}` | public | — | no | — | → `LinkInfo` | link_invalid | — | P7 |
-| 14 | POST `/auth/links/{token}` | public | — | no | — | `SetPasswordBody` → `{status:'ok'}` | link_invalid, password_mismatch, password_weak | `user.accept_invite` / `auth.password.reset` | P7 |
+| 14 | POST `/auth/links/{token}` | public (an existing-account invite needs the signed-in user, §4.4) | — | no | — | `SetPasswordBody` (ignored for an existing account) → `{status:'ok'}` | link_invalid, password_mismatch, password_weak | `user.accept_invite` / `auth.password.reset` | P7 |
 | 15 | GET `/me` | session | — | no | — | → `Me` | — | — | P8 |
 | 16 | POST `/me/active-company` | session | member of target | no | — | `{companyId}` → `Me` | company.not_found | `company.switch` | P8 |
 | 17 | GET `/settings/companies/{id}` | session | `settings.manage` | no | — | → `CompanySettings` | company.not_found | — | P8 |
@@ -370,7 +381,7 @@ Agent column: "no" means the route is not mapped on `/api/v1` / `/mcp`; an agent
 | 21 | POST `/settings/users` | session | `users.manage` | no | — | `InviteBody` → `UserRow & {link}` (201; the only response with the link) | record.invalid | `user.invite` | P8 |
 | 22 | PUT `/settings/users/{id}` | session | `users.manage` | no | — / version-body | `UpdateMemberBody` → `UserRow` | not_found, last_admin, record.invalid, version_conflict | `user.update` | P8 |
 | 23 | POST `/settings/users/{id}/active` | session | `users.manage` | no | — / version-body | `{active, version}` → `UserRow` | not_found, last_admin, version_conflict | `user.activate` / `user.deactivate` | P8 |
-| 24 | POST `/settings/users/{id}/reset-link` | session | `users.manage` | no | — | → `{link}` | not_found, user.inactive | `user.reset_link` | P8 |
+| 24 | POST `/settings/users/{id}/reset-link` | session | `users.manage` | no | — | → `{link}` | not_found, user.inactive, user.invite_pending | `user.reset_link` | P8 |
 | 25 | POST `/settings/users/{id}/totp-reset` (Q3) | session | `users.manage`, not self | no | — / version-body | `{version}` → `UserRow` | not_found, version_conflict | `user.totp_reset` | P8 |
 | 26 | GET `/settings/roles` | session | `users.manage` | no | — | → `{items: RoleRow[]}` | — | — | P8 |
 | 27 | POST `/settings/roles` | session | `users.manage` | no | — | `RoleBody` → `RoleRow` (201) | record.invalid | `role.create` | P8 |
@@ -490,6 +501,12 @@ messages `th.json` / `en.json` (new codes, `screens.name.*` gaps — backlog B-5
 exactly. The set-password page follows the existing auth pages (no shell, axe clean, loading / error / invalid-link
 states). `PERMISSION_CODES` / `SYSTEM_ROLES` / `agentForbidden` move from the mock into the contract and the mock
 imports them.
+**P0a (Opus review of P0, orchestrator rulings 2026-10-27):** existing-account invites (§4.4), links die with the member,
+stored expiry, reset revokes sessions, a table-driven test over `ROUTES` (agent / auth / permission per row; the mock's
+agent gate follows `ROUTES.agent` on platform paths), `IsoDate` / `Money` moved to `contract/scalars.ts`,
+`LIVE_ROUTES: { method, path }[]`. **Freeze guard (C0):** it hashes `contract/platform.ts` AND every local file it
+imports: `route-spec.ts`, `scalars.ts`, and `DocType` from `domain/types.ts` (listed as a guarded dependency until
+`documents.ts` owns it).
 - [ ] **Step 1: Failing tests** — every `ROUTES` entry has an MSW handler and every MSW handler under `/auth`, `/me`,
   `/settings/companies`, `/settings/users`, `/settings/roles`, `/settings/default-notes`, `/connect/keys` has a `ROUTES`
   entry (parse `handler.info.method` / `.path`); `PERMISSION_CODES` = the `th.json#permissions` keys; every code in
@@ -628,6 +645,9 @@ transaction; a test asserts both rows exist afterwards (a factory that inserts f
   memberships and a custom role (`roleName`), `Me.activeCompanyId = null` without membership, switch to a company you
   are not an active member of → 404, `company.switch` audited, every write audited with `before` / `after` without
   pictures, agent refused with `agent.forbidden_setting` before the body is read.
+- [ ] **Drop the P0 `Me` narrowing:** `domain/types.ts` re-exports `Me` with `activeCompanyId: string` (an exception to
+  "old files re-export verbatim", master plan §2.2). P8 removes it, makes `useMe` handle `activeCompanyId === null`
+  (`router.replace('/onboarding')`, no company screens mounted), and fixes the ~100 call sites that then need a string.
 - [ ] **Steps 2–5**, gates as P4 + conformance. **Step 6: Controller commits**
   `feat(platform): me, company switch, company settings, users and roles`.
 

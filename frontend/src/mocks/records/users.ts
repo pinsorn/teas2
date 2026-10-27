@@ -20,7 +20,7 @@ const mine = (st: MockState, companyId: string, id: string): StaffMember => {
 const roleExists = (st: MockState, companyId: string, id: string) => isSystemRole(id) || st.roles.some((r) => r.id === id && r.companyId === companyId);
 const roleName = (st: MockState, m: StaffMember) => (isSystemRole(m.roleId) ? SYSTEM_ROLE_NAMES[m.roleId] : st.roles.find((r) => r.id === m.roleId)?.name ?? m.roleId);
 const holdsAdmin = (st: MockState, m: StaffMember) => permissionsOf(st, m.companyId, m.roleId).includes('users.manage');
-const toRow = (st: MockState, m: StaffMember): UserRow => { const { linkHash: _h, userId: _u, ...rest } = m; void _h; void _u; return { ...rest, roleName: roleName(st, m) }; };
+const toRow = (st: MockState, m: StaffMember): UserRow => { const { linkHash: _h, linkKind: _k, linkExpiresAt: _e, userId: _u, ...rest } = m; void _h; void _k; void _e; void _u; return { ...rest, roleName: roleName(st, m) }; };
 /** The trail keeps who and what, never a picture or a link. */
 const shape = (m: StaffMember) => ({ name: m.name, email: m.email, roleId: m.roleId, position: m.position, hasSignature: !!m.signatureDataUrl, active: m.active });
 const bump = (st: MockState, actor: Actor, m: StaffMember, command: string, before: ReturnType<typeof shape>) => { m.version += 1; logAudit(st, actor, m.companyId, command, m.id, before, shape(m)); };
@@ -56,7 +56,8 @@ export function inviteUser(st: MockState, actor: Actor, companyId: string, v: Va
   const token = crypto.randomUUID();
   const n = Math.max(0, ...st.staff.filter((m) => m.companyId === companyId).map((m) => Number(m.id.split('-').at(-1)) || 0)) + 1;
   const m: StaffMember = { id: `usr-${companyId.slice(3)}-${n}`, companyId, name: text(v.name), email, roleId: v.roleId as string, ...(text(v.position) ? { position: text(v.position) } : {}),
-    active: true, version: 1, invitePending: true, linkHash: hash(token) };
+    active: true, version: 1, invitePending: true };
+  issue(m, 'invite', token);
   st.staff.push(m);
   logAudit(st, actor, companyId, 'user.invite', m.id, undefined, shape(m));
   return { row: toRow(st, m), link: `https://app.teas.example/link/${token}` };
@@ -89,6 +90,7 @@ export function setUserActive(st: MockState, actor: Actor, companyId: string, id
   if (!active) keepAnAdmin(st, actor, m, false, m.roleId);
   const before = shape(m);
   m.active = active;
+  if (!active) clearLink(m); // a deactivated member's link ends with the membership
   bump(st, actor, m, active ? 'user.activate' : 'user.deactivate', before);
   return shown(st, m, toolbarRole);
 }
@@ -98,8 +100,9 @@ export function resetLink(st: MockState, actor: Actor, companyId: string, id: st
   refuseAgent(actor);
   const m = mine(st, companyId, id);
   if (!m.active) throw new MockError(409, 'user.inactive', 'ผู้ใช้นี้ถูกปิดใช้งานอยู่ เปิดใช้งานก่อนจึงจะออกลิงก์ได้');
+  if (m.invitePending) throw new MockError(409, 'user.invite_pending', 'ผู้ใช้นี้ยังไม่ได้รับคำเชิญ ใช้ลิงก์เชิญที่ออกไว้ (ออกคำเชิญใหม่ได้ทางการแก้ไข)');
   const token = crypto.randomUUID();
-  m.linkHash = hash(token);
+  issue(m, 'reset', token);
   logAudit(st, actor, companyId, 'user.reset_link', m.id, undefined, { linkIssued: true });
   return `https://app.teas.example/link/${token}`;
 }
@@ -110,37 +113,55 @@ export function acceptInvite(st: MockState, actor: Actor, companyId: string, id:
   const m = mine(st, companyId, id);
   if (!m.invitePending) throw new MockError(409, 'user.not_pending', 'ผู้ใช้นี้รับคำเชิญแล้ว');
   const before = shape(m);
-  m.invitePending = false; delete m.linkHash; m.lastLoginAt = stamp();
+  m.invitePending = false; clearLink(m); m.lastLoginAt = stamp();
   bump(st, actor, m, 'user.accept_invite', before);
   return toRow(st, m);
 }
 
-// ---- SP3 P0 (Q4): the invite / reset link page. A link is single use; unknown, used and superseded are ONE answer (404 auth.link_invalid). ----
+// ---- SP3 P0 / P0a (Q4): the invite / reset link page. A link is single use and ends at an expiry stored at issue; unknown, used, expired, superseded and
+// "of an inactive member" are ONE answer (404 auth.link_invalid). An invite of an EXISTING account (a user with a password) sets no password: only that
+// signed-in user can accept it. ----
 export const LINK_INVALID = 'ลิงก์นี้ใช้ไม่ได้แล้วหรือหมดอายุ ขอลิงก์ใหม่จากผู้ดูแลระบบ';
 const linkGone = () => new MockError(404, 'auth.link_invalid', LINK_INVALID);
 /** Fixed tokens for the screenshot / e2e review (reusable: they spend nothing). */
 export const FIXTURE_LINKS: Record<string, LinkInfo> = {
-  'inv-5c1e8a3f7b2d4690': { kind: 'invite', email: 'newcomer@maliwan.example', companyName: 'บริษัท มะลิวัลย์ เทรดดิ้ง จำกัด', expiresAt: '2026-10-21T09:00:00.000Z' },
-  'rst-9d4b2f6a1c7e3850': { kind: 'reset', email: 'wichai@maliwan.example', expiresAt: '2026-10-15T09:00:00.000Z' },
+  'inv-5c1e8a3f7b2d4690': { kind: 'invite', email: 'newcomer@maliwan.example', companyName: 'บริษัท มะลิวัลย์ เทรดดิ้ง จำกัด', expiresAt: '2026-12-31T09:00:00.000Z', existingAccount: false },
+  'inv-8b2e4d6f1a3c7095': { kind: 'invite', email: 'somsri@maliwan.example', companyName: 'บริษัท บ้านต้นข้าว จำกัด', expiresAt: '2026-12-31T09:00:00.000Z', existingAccount: true },
+  'rst-9d4b2f6a1c7e3850': { kind: 'reset', email: 'wichai@maliwan.example', expiresAt: '2026-12-31T09:00:00.000Z', existingAccount: false },
 };
-const inMs = (ms: number) => new Date(Date.parse(stamp()) + ms).toISOString();
-const holder = (st: MockState, token: string): StaffMember | undefined => st.staff.find((m) => m.linkHash === hash(token));
+const LINK_TTL = { invite: 7 * 86_400_000, reset: 24 * 3_600_000 };
+const now = () => Date.parse(stamp());
+/** Stores what the member's one live link is for and when it ends (a newer link replaces the older). */
+const issue = (m: StaffMember, kind: 'invite' | 'reset', token: string) => { m.linkHash = hash(token); m.linkKind = kind; m.linkExpiresAt = new Date(now() + LINK_TTL[kind]).toISOString(); };
+const clearLink = (m: StaffMember) => { delete m.linkHash; delete m.linkKind; delete m.linkExpiresAt; };
+/** The member a LIVE link belongs to: active, with an unexpired link of a kind that still makes sense. */
+const holder = (st: MockState, token: string): StaffMember | undefined => {
+  const m = st.staff.find((x) => x.linkHash === hash(token));
+  return m && m.active && m.linkKind && m.linkExpiresAt && Date.parse(m.linkExpiresAt) > now() && (m.linkKind === 'invite') === m.invitePending ? m : undefined;
+};
+const credOfEmail = (st: MockState, email: string) => st.auth?.creds.find((c) => c.email.toLowerCase() === email.toLowerCase() && c.passwordHash);
 export function linkInfo(st: MockState, token: string): LinkInfo {
   if (Object.hasOwn(FIXTURE_LINKS, token)) return FIXTURE_LINKS[token];
   const m = holder(st, token);
   if (!m) throw linkGone();
   const company = st.companies.find((c) => c.id === m.companyId);
-  return m.invitePending
-    ? { kind: 'invite', email: m.email, ...(company ? { companyName: company.legalNameTh } : {}), expiresAt: inMs(7 * 86_400_000) }
-    : { kind: 'reset', email: m.email, expiresAt: inMs(24 * 3_600_000) };
+  return { kind: m.linkKind!, email: m.email, ...(m.linkKind === 'invite' && company ? { companyName: company.legalNameTh } : {}), expiresAt: m.linkExpiresAt!, existingAccount: m.linkKind === 'invite' && !!credOfEmail(st, m.email) };
 }
 const STRENGTH = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{10,}$/; // the same rule as a password change (SP3 4.4)
-/** Sets the password the link is for. An invite also accepts it (member active, account created); a refused attempt spends nothing. */
-export function setPasswordByLink(st: MockState, token: string, v: { password?: unknown; confirm?: unknown }): void {
+/** `session` = the user the browser is signed in as right now (a live session), else undefined. */
+export function consumeLink(st: MockState, token: string, v: { password?: unknown; confirm?: unknown }, session?: { userId: string }): void {
   const info = linkInfo(st, token);
+  const m = holder(st, token);
+  if (info.existingAccount) { // accept only from a signed-in session of THAT user; a password in the body is never read
+    const c = credOfEmail(st, info.email);
+    if (!m || !c || session?.userId !== c.userId) throw linkGone(); // fixtures (no member) and everyone else: the one answer
+    const before = shape(m);
+    clearLink(m); m.invitePending = false; m.userId ??= c.userId; m.lastLoginAt = stamp();
+    bump(st, { kind: 'user', id: c.userId, name: m.name }, m, 'user.accept_invite', before);
+    return;
+  }
   if (v.password !== v.confirm) throw new MockError(422, 'auth.password_mismatch', 'รหัสผ่านและการยืนยันไม่ตรงกัน');
   if (typeof v.password !== 'string' || !STRENGTH.test(v.password)) throw new MockError(422, 'auth.password_weak', 'รหัสผ่านต้องยาวอย่างน้อย 10 ตัวอักษร และมีตัวพิมพ์เล็ก ตัวพิมพ์ใหญ่ และตัวเลข');
-  const m = holder(st, token);
   if (!m) return; // a fixture token: nothing to change
   const a = (st.auth ??= { creds: [], sessions: [], current: '', failures: {}, challenges: {} });
   let c = a.creds.find((x) => x.email.toLowerCase() === m.email.toLowerCase());
@@ -149,9 +170,9 @@ export function setPasswordByLink(st: MockState, token: string, v: { password?: 
   delete a.failures[hashOf(m.email.trim().toLowerCase())]; // a new password clears the lockout counter
   const actor: Actor = { kind: 'user', id: c.userId, name: m.name };
   const before = shape(m);
-  delete m.linkHash;
+  clearLink(m);
   if (info.kind === 'invite') { m.invitePending = false; m.userId ??= c.userId; m.lastLoginAt = stamp(); bump(st, actor, m, 'user.accept_invite', before); }
-  else logAudit(st, actor, m.companyId, 'auth.password.reset', m.id);
+  else { for (const s of a.sessions) if (s.userId === c.userId && !s.revokedAt) s.revokedAt = stamp(); logAudit(st, actor, m.companyId, 'auth.password.reset', m.id); } // a reset ends every session of that user
 }
 
 /** Q3: an administrator clears another member's second factor and recovery codes (their sessions end); never on yourself. */

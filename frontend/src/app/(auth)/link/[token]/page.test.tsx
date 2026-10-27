@@ -51,4 +51,40 @@ describe('set-password page (Q4)', () => {
     expect(screen.queryByTestId('link-invalid')).toBeNull();
     expect(screen.getByRole('button', { name: /ลองใหม่/ })).toBeInTheDocument();
   });
+  it('an invite of an existing account has no password form: sign in first', async () => {
+    show('inv-8b2e4d6f1a3c7095');
+    expect(await screen.findByRole('heading', { level: 1, name: 'เข้าสู่ระบบเพื่อรับคำเชิญ' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('รหัสผ่านใหม่')).toBeNull();
+    expect(await screen.findByTestId('link-signin')).toHaveAttribute('href', '/login');
+  });
+  it('the owner of the existing account, signed in, accepts with one click', async () => {
+    setSettings({ companyKey: 'nonvat', role: 'admin' });
+    const post = (path: string, body: unknown) => fetch(new URL(`/bff/v1${path}`, window.location.origin), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
+    const made = await post('/settings/users', { name: 'ผู้รับเชิญ', email: 'somsri@maliwan.example', roleId: 'operator' }) as { link: string };
+    await post('/auth/login', { email: 'somsri@maliwan.example', password: 'Somsri#2026ok' });
+    show(made.link.split('/link/')[1]!);
+    await userEvent.click(await screen.findByTestId('link-accept'));
+    expect(await screen.findByTestId('link-done')).toHaveTextContent('รับคำเชิญเรียบร้อยแล้ว');
+  });
+  it('the success state wins over a later refetch (a used link answers 404)', async () => {
+    show('inv-5c1e8a3f7b2d4690');
+    await screen.findByLabelText('รหัสผ่านใหม่');
+    await userEvent.type(screen.getByLabelText('รหัสผ่านใหม่'), 'Strong#Pass2026');
+    await userEvent.type(screen.getByLabelText('ยืนยันรหัสผ่านใหม่'), 'Strong#Pass2026');
+    const { http, HttpResponse } = await import('msw');
+    testServer.use(http.get('*/bff/v1/auth/links/:token', () => HttpResponse.json({ code: 'auth.link_invalid', title: 'x', status: 404 }, { status: 404 })));
+    await userEvent.click(screen.getByRole('button', { name: 'ตั้งรหัสผ่าน' }));
+    await screen.findByTestId('link-done');
+    window.dispatchEvent(new Event('focus'));
+    document.dispatchEvent(new Event('visibilitychange'));
+    await new Promise((r) => setTimeout(r, 200));
+    expect(screen.getByTestId('link-done')).toBeInTheDocument();
+    expect(screen.queryByTestId('link-invalid')).toBeNull();
+  });
+  it('is never indexed and sends no referrer', async () => {
+    show('inv-5c1e8a3f7b2d4690');
+    await screen.findByLabelText('รหัสผ่านใหม่');
+    expect(document.querySelector('meta[name="robots"]')).toHaveAttribute('content', 'noindex, nofollow');
+    expect(document.querySelector('meta[name="referrer"]')).toHaveAttribute('content', 'no-referrer');
+  });
 });

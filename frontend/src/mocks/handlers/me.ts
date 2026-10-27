@@ -1,5 +1,5 @@
 import { HttpResponse, http } from 'msw';
-import type { Me, Membership } from '@/contract/platform';
+import { ROUTES, type Me, type Membership } from '@/contract/platform';
 import { setSettings } from '../settings';
 import { today } from '../engine/log';
 import type { Actor, Role } from '@/domain/types';
@@ -22,10 +22,12 @@ export const AGENT_ALLOWED: { method: string; path: RegExp }[] = [
   { method: 'POST', path: /^\/docs\/[A-Za-z]+\/[^/]+\/(issue|agent-review)$/ },
   { method: 'GET', path: /^\/(?!connect\/|oauth\/)/ },
 ];
+const PLATFORM_ROUTES = ROUTES.filter((r) => r.auth !== 'key').map((r) => ({ method: r.method, agent: r.agent, re: new RegExp('^' + r.path.replace(/{[^}]+}/g, '[^/]+') + '$') }));
 export const agentGate = http.all('*/bff/v1/*', ({ request }) => {
   if (request.headers.get(ACTOR_HEADER) !== 'agent') return undefined;
   const path = new URL(request.url).pathname.replace(/^.*\/bff\/v1/, '');
-  if (AGENT_ALLOWED.some((a) => a.method === request.method && a.path.test(path))) return undefined;
+  const route = PLATFORM_ROUTES.find((r) => r.method === request.method && r.re.test(path)); // P0a: a platform path follows its frozen ROUTES row; later modules keep the rule below until their own freeze
+  if (route ? route.agent : AGENT_ALLOWED.some((a) => a.method === request.method && a.path.test(path))) return undefined;
   if (path.startsWith('/settings/')) return problem(403, 'agent.forbidden_setting', 'ตัวแทน (agent) เปลี่ยนการตั้งค่าไม่ได้ ต้องให้ผู้ใช้ทำเอง'); // §8.5: a settings write keeps its own code
   return problem(403, 'agent.forbidden_action', 'ตัวแทน (agent) ทำรายการนี้ไม่ได้ ต้องให้ผู้ใช้ทำเอง');
 });

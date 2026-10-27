@@ -112,7 +112,7 @@ describe('screen index (backlog B-5)', () => {
     }
   });
   it('the new error codes have a Thai and an English title', () => {
-    for (const c of ['auth.link_invalid', 'connect.key_kind_mismatch', 'idempotency.key_required', 'idempotency.key_reused', 'http.rate_limited']) {
+    for (const c of ['auth.link_invalid', 'connect.key_kind_mismatch', 'idempotency.key_required', 'idempotency.key_reused', 'http.rate_limited', 'http.403', 'user.invite_pending', 'connect.wrong_company']) {
       const k = c.replaceAll('.', '_');
       expect((th.errorCodes as Record<string, string>)[k], `th ${c}`).toBeTruthy();
       expect((en.errorCodes as Record<string, string>)[k], `en ${c}`).toBeTruthy();
@@ -197,5 +197,103 @@ describe('invite / reset links (routes 13-14, Q4)', () => {
     expect((await call('GET', '/auth/links/inv-5c1e8a3f7b2d4690', undefined, { 'x-teas-actor': 'agent' })).status).toBe(403);
     expect((await call('POST', '/auth/links/inv-5c1e8a3f7b2d4690', { password: 'Strong#Pass2026', confirm: 'Strong#Pass2026' })).json).toEqual({ status: 'ok' });
     expect((await call('GET', '/auth/links/inv-5c1e8a3f7b2d4690')).status).toBe(200); // fixtures are reusable
+  });
+});
+
+// ---- P0a ----
+describe('every ROUTES row is enforced by the mock: agent flag, auth, permission', () => {
+  const rows = ROUTES.filter((r) => r.auth !== 'key');
+  const withBody = (m: string) => (m === 'POST' || m === 'PUT' ? {} : undefined);
+  it.each(rows.map((r) => [`${r.method} ${r.path}`, r] as const))('%s', async (_name, r) => {
+    const p = r.path.replace(/\{[^}]+\}/g, 'x');
+    const agent = await call(r.method, p, withBody(r.method), { 'x-teas-actor': 'agent' });
+    if (r.agent) expect(String(agent.json?.code ?? ''), 'an agent route').not.toMatch(/^agent\./);
+    else expect(agent, 'agent refused').toMatchObject({ status: 403, json: { code: p.startsWith('/settings/') ? 'agent.forbidden_setting' : 'agent.forbidden_action' } });
+    setSession('out');
+    const out = await call(r.method, p, withBody(r.method));
+    if (r.auth === 'public') expect(String(out.json?.code ?? ''), 'public').not.toMatch(/^auth\.(unauthenticated|session_expired)$/);
+    else expect(out, 'signed out').toMatchObject({ status: 401, json: { code: 'auth.unauthenticated' } });
+    setSession('active');
+    if (typeof r.permission === 'string') {
+      setSettings({ role: 'operator' }); // holds neither settings.manage nor users.manage
+      expect(await call(r.method, p, withBody(r.method)), 'without the permission').toMatchObject({ status: 403, json: { code: 'auth.forbidden' } });
+    }
+  });
+});
+
+describe('links: P0a rulings', () => {
+  const tokenOf = (url: unknown) => String(url).split('/link/')[1]!;
+  const invite = async (email: string) => (await call('POST', '/settings/users', { name: 'ผู้รับเชิญ', email, roleId: 'operator' })).json as { link: string; id: string; version: number };
+  const ATTACKER = 'Attacker#Pass2026';
+
+  it('an invite of an EXISTING account has no password form, and a stranger cannot take the account over', async () => {
+    setSettings({ companyKey: 'nonvat' });
+    const made = await invite('wichai@maliwan.example'); // wichai has an account with a password and two-step
+    const t = tokenOf(made.link);
+    expect((await call('GET', `/auth/links/${t}`)).json).toMatchObject({ kind: 'invite', existingAccount: true });
+    setSession('out');
+    expect((await call('POST', `/auth/links/${t}`, { password: ATTACKER, confirm: ATTACKER })).json).toMatchObject({ code: 'auth.link_invalid' });
+    expect((await call('POST', '/auth/login', { email: 'wichai@maliwan.example', password: ATTACKER })).json).toMatchObject({ code: 'auth.invalid_credentials' });
+    const cred = loadState().auth!.creds.find((c) => c.email === 'wichai@maliwan.example')!;
+    expect(cred.passwordHash).not.toBe('');
+    expect(loadState().staff.find((m) => m.id === made.id)!.invitePending).toBe(true);
+    // signed in as somebody ELSE (u-1): still refused
+    setSession('active');
+    expect((await call('POST', '/auth/login', { email: 'somsri@maliwan.example', password: 'Somsri#2026ok' })).json).toMatchObject({ status: 'ok' });
+    expect((await call('POST', `/auth/links/${t}`, { password: ATTACKER, confirm: ATTACKER })).json).toMatchObject({ code: 'auth.link_invalid' });
+  });
+  it('the signed-in owner of the account accepts it: membership linked, invite cleared, audited, no password changed', async () => {
+    setSettings({ companyKey: 'nonvat' });
+    const made = await invite('somsri@maliwan.example');
+    const t = tokenOf(made.link);
+    const before = loadState().auth!.creds.find((c) => c.email === 'somsri@maliwan.example')!.passwordHash;
+    expect((await call('POST', '/auth/login', { email: 'somsri@maliwan.example', password: 'Somsri#2026ok' })).json).toMatchObject({ status: 'ok' });
+    expect((await call('POST', `/auth/links/${t}`, { password: '', confirm: '' })).json).toEqual({ status: 'ok' });
+    const row = loadState().staff.find((m) => m.id === made.id)!;
+    expect(row).toMatchObject({ invitePending: false, userId: 'u-1' });
+    expect(row.linkHash).toBeUndefined();
+    expect(loadState().auth!.creds.find((c) => c.email === 'somsri@maliwan.example')!.passwordHash).toBe(before);
+    expect(loadState().audit.some((a) => a.command === 'user.accept_invite' && a.target === made.id)).toBe(true);
+    expect((await call('GET', `/auth/links/${t}`)).status).toBe(404);
+  });
+  it('deactivating a member ends their links (reset and invite): the one 404', async () => {
+    const made = await invite('gone@maliwan.example');
+    const t1 = tokenOf(made.link);
+    expect((await call('GET', `/auth/links/${t1}`)).status).toBe(200);
+    expect((await call('POST', `/settings/users/${made.id}/active`, { active: false, version: made.version })).status).toBe(200);
+    expect((await call('GET', `/auth/links/${t1}`)).json).toMatchObject({ code: 'auth.link_invalid' });
+    const t2 = tokenOf(((await call('POST', '/settings/users/usr-vat-3/reset-link', {})).json as { link: string }).link);
+    expect((await call('GET', `/auth/links/${t2}`)).status).toBe(200);
+    expect((await call('POST', '/settings/users/usr-vat-3/active', { active: false, version: 1 })).status).toBe(200);
+    expect((await call('GET', `/auth/links/${t2}`)).json).toMatchObject({ code: 'auth.link_invalid' });
+    expect((await call('POST', `/auth/links/${t2}`, { password: 'Strong#Pass2026', confirm: 'Strong#Pass2026' })).status).toBe(404);
+  });
+  it('the expiry is stored at issue: an expired link is the one 404, and reading does not move it', async () => {
+    const made = await invite('late@maliwan.example');
+    const t = tokenOf(made.link);
+    const a = (await call('GET', `/auth/links/${t}`)).json as unknown as LinkInfo;
+    const b = (await call('GET', `/auth/links/${t}`)).json as unknown as LinkInfo;
+    expect(b.expiresAt).toBe(a.expiresAt);
+    expect(Date.parse(a.expiresAt) - Date.now()).toBeGreaterThan(6.9 * 86_400_000);
+    const st = loadState();
+    st.staff.find((m) => m.id === made.id)!.linkExpiresAt = new Date(Date.now() - 1000).toISOString();
+    saveState(st);
+    expect((await call('GET', `/auth/links/${t}`)).json).toMatchObject({ code: 'auth.link_invalid' });
+  });
+  it('a reset for a pending invitee is refused; a newer reset supersedes only the older reset', async () => {
+    const made = await invite('pending@maliwan.example');
+    expect((await call('POST', `/settings/users/${made.id}/reset-link`, {})).json).toMatchObject({ code: 'user.invite_pending' });
+    expect((await call('GET', `/auth/links/${tokenOf(made.link)}`)).status).toBe(200); // the invite link stays the way in
+    const r1 = tokenOf(((await call('POST', '/settings/users/usr-vat-3/reset-link', {})).json as { link: string }).link);
+    const r2 = tokenOf(((await call('POST', '/settings/users/usr-vat-3/reset-link', {})).json as { link: string }).link);
+    expect((await call('GET', `/auth/links/${r1}`)).status).toBe(404);
+    expect((await call('GET', `/auth/links/${r2}`)).status).toBe(200);
+  });
+  it('a reset through a link revokes every session of that user', async () => {
+    expect((await call('POST', '/auth/login', { email: 'somsri@maliwan.example', password: 'Somsri#2026ok' })).json).toMatchObject({ status: 'ok' });
+    expect(loadState().auth!.sessions.some((s) => s.userId === 'u-1' && !s.revokedAt)).toBe(true);
+    const t = tokenOf(((await call('POST', '/settings/users/usr-vat-1/reset-link', {})).json as { link: string }).link);
+    expect((await call('POST', `/auth/links/${t}`, { password: 'Fresh#Pass2026x', confirm: 'Fresh#Pass2026x' })).json).toEqual({ status: 'ok' });
+    expect(loadState().auth!.sessions.filter((s) => s.userId === 'u-1').every((s) => s.revokedAt)).toBe(true);
   });
 });

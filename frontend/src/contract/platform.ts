@@ -1,7 +1,8 @@
 // SP3 platform contract, CONTRACT_VERSION 1.0 (docs/specs/SP3-platform.md section 5; master plan docs/plans/2026-10-27-sp2-contract-freeze.md section 2).
 // FROZEN once Ham approves the spec: a change is an ADR + Ham's approval + a version bump (plan section 2.4). Hash-checked via FROZEN.json.
 // A LEAF: type-only imports, no runtime import. The old paths (domain/types, records/auth, records/connect) re-export from here.
-import type { DocType, IsoDate, Money } from '@/domain/types';
+import type { DocType } from '@/domain/types'; // a guarded dependency of this file (the freeze guard hashes it with route-spec.ts and scalars.ts)
+import type { IsoDate, Money } from './scalars';
 import type { RouteSpec } from './route-spec';
 
 export const CONTRACT_VERSION = '1.0';
@@ -17,9 +18,9 @@ export interface Company { id: string; legalNameTh: string; legalNameEn?: string
   /** ST1b m3: bumped by every saved settings section; a save carrying an older one is a 409 (absent = 1). */ version?: number }
 /** ST1: a person's membership of one company (the mock's users list). `roleId` is a system role (operator / accountant / admin) or a custom role's id. Only a hash of a one-time link is kept. */
 export interface StaffMember { id: string; companyId: string; userId?: string; name: string; email: string; roleId: string; position?: string; signatureDataUrl?: string; active: boolean; version: number;
-  lastLoginAt?: string; invitePending: boolean; linkHash?: string }
+  lastLoginAt?: string; invitePending: boolean; linkHash?: string; /** P0a: what the one live link is for and when it ends, stored at issue (never recomputed on read). */ linkKind?: 'invite' | 'reset'; linkExpiresAt?: string }
 export type CompanySettings = Company & { fiscalYearLocked: boolean };
-export type UserRow = Omit<StaffMember, 'linkHash' | 'userId'> & { roleName: string };
+export type UserRow = Omit<StaffMember, 'linkHash' | 'linkKind' | 'linkExpiresAt' | 'userId'> & { roleName: string };
 export interface RoleRow { id: string; version: number; active: true; system: boolean; name: string; description?: string; permissions: string[]; inUse: boolean;
   /** Document types whose approval is on in this company (the matrix is judged against them). */ approvalTypes: DocType[];
   /** Separation of duties: types with approval on that this role can both create and approve. A warning only: self-approval is a company setting (D-36). */ sodTypes: DocType[] }
@@ -46,7 +47,9 @@ export interface Membership { companyId: string; companyName: string; roleId: st
 export interface Me { userId: string; displayName: string; memberships: Membership[];
   activeCompanyId: string | null;            // null = no membership yet (bootstrap admin) -> /onboarding
   vatRegistered: boolean; permissions: string[]; businessDate: IsoDate }
-export interface LinkInfo { kind: 'invite' | 'reset'; email: string; companyName?: string; expiresAt: string }
+/** existingAccount (invite only): the email already has a user with a password: the page asks to sign in (no password form); only that signed-in user can accept. */
+export interface LinkInfo { kind: 'invite' | 'reset'; email: string; companyName?: string; expiresAt: string; existingAccount: boolean }
+/** Ignored (send empty strings) when the link is an invite of an existing account: accepting sets no password. */
 export interface SetPasswordBody { password: string; confirm: string }
 export interface WhoAmI { actor: Actor; companyId: string; companyName: string; rights: string[] }
 export type CompanySection = 'identity' | 'contact' | 'payroll' | 'fiscal' | 'images' | 'notes';
@@ -136,9 +139,9 @@ export const ERROR_CODES = {
   'auth.not_expired': 409, 'auth.current_password_invalid': 422, 'auth.password_mismatch': 422, 'auth.password_weak': 422, 'auth.password_reuse': 422, 'auth.enrol_not_started': 409,
   'auth.session_not_found': 404, 'auth.link_invalid': 404, 'auth.forbidden': 403, 'company.not_found': 404, 'company.section_unknown': 404, 'company.confirm_required': 422,
   'company.vat_readonly': 422, 'company.fiscal_year_unsupported': 422, 'company.fiscal_year_locked': 409, 'record.invalid': 422, 'record.not_found': 404, 'record.version_conflict': 409,
-  'user.last_admin': 409, 'user.inactive': 409, 'role.system_readonly': 409, 'role.in_use': 409, 'connect.not_member': 403, 'connect.scope_forbidden': 422, 'connect.scope_exceeds': 422,
+  'user.last_admin': 409, 'user.inactive': 409, 'user.invite_pending': 409, 'role.system_readonly': 409, 'role.in_use': 409, 'connect.not_member': 403, 'connect.wrong_company': 403, 'connect.scope_forbidden': 422, 'connect.scope_exceeds': 422,
   'connect.key_revoked': [401, 409], 'connect.key_expired': [401, 409], 'connect.key_invalid': 401, 'connect.owner_inactive': 409, 'connect.key_kind_mismatch': 403,
-  'agent.forbidden_action': 403, 'agent.forbidden_setting': 403, 'idempotency.key_required': 400, 'idempotency.key_reused': 422, 'http.rate_limited': 429, 'storage.full': 507, 'http.500': 500,
+  'agent.forbidden_action': 403, 'agent.forbidden_setting': 403, 'idempotency.key_required': 400, 'idempotency.key_reused': 422, 'http.rate_limited': 429, 'http.403': 403, 'storage.full': 507, 'http.500': 500,
 } as const satisfies Record<string, number | readonly number[]>;
 export type ErrorCode = keyof typeof ERROR_CODES;
 
@@ -170,7 +173,7 @@ export const ROUTES: RouteSpec[] = [
   { method: 'POST', path: '/settings/users', auth: 'session', permission: 'users.manage', agent: false, ...none, request: 'InviteBody', response: 'UserRow & {link} (201; the only response with the link)', errors: ['record.invalid'], audit: 'user.invite' },
   { method: 'PUT', path: '/settings/users/{id}', auth: 'session', permission: 'users.manage', agent: false, ...body, request: 'UpdateMemberBody', response: 'UserRow', errors: ['record.not_found', 'user.last_admin', 'record.invalid', 'record.version_conflict'], audit: 'user.update' },
   { method: 'POST', path: '/settings/users/{id}/active', auth: 'session', permission: 'users.manage', agent: false, ...body, request: '{active, version}', response: 'UserRow', errors: ['record.not_found', 'user.last_admin', 'record.version_conflict'], audit: 'user.activate | user.deactivate' },
-  { method: 'POST', path: '/settings/users/{id}/reset-link', auth: 'session', permission: 'users.manage', agent: false, ...none, response: '{link}', errors: ['record.not_found', 'user.inactive'], audit: 'user.reset_link' },
+  { method: 'POST', path: '/settings/users/{id}/reset-link', auth: 'session', permission: 'users.manage', agent: false, ...none, response: '{link}', errors: ['record.not_found', 'user.inactive', 'user.invite_pending'], audit: 'user.reset_link' },
   { method: 'POST', path: '/settings/users/{id}/totp-reset', auth: 'session', permission: 'users.manage', rule: 'not self', agent: false, ...body, request: '{version}', response: 'UserRow', errors: ['record.not_found', 'record.version_conflict'], audit: 'user.totp_reset' },
   { method: 'GET', path: '/settings/roles', auth: 'session', permission: 'users.manage', agent: false, ...none, response: '{items: RoleRow[]}', errors: [] },
   { method: 'POST', path: '/settings/roles', auth: 'session', permission: 'users.manage', agent: false, ...none, request: 'RoleBody', response: 'RoleRow (201)', errors: ['record.invalid'], audit: 'role.create' },
