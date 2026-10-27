@@ -96,6 +96,7 @@ public static class PlatformTestHost
         // outside any group, so no path rule can see them: a spec makes the route enforced, no spec makes it refused
         app.MapRoute(new RouteSpec("GET", "/outside/perm", "session", "party.read"), () => Results.Ok());
         app.MapGet("/outside/unmarked", () => Results.Ok());
+        app.MapRoute(new RouteSpec("GET", "/internal/v1/_t/ungrouped", "public"), () => Results.Ok());   // under /internal/v1 but without the group and its BffOnly marker
 
         // Idempotent command: one audit row 'test.effect' is its observable effect.
         e.MapRoute(new RouteSpec("POST", "/_t/cmd/{company:guid}", "session", IdempotencyRequired: true), async (Guid company, HttpRequest req, TenantScope scope, IdempotencyRunner idem, IAudit audit, AuditContext ctx, AsyncBarrier barrier) =>

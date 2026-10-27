@@ -280,6 +280,24 @@ public sealed class RbacMatrixTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ARouteUnderInternalV1WithoutTheBffMarkerStillNeedsTheSecret()
+    {
+        using var f = PlatformTestHost.Create(_db);
+        using var bare = f.Server.CreateClient();
+        Assert.Equal(HttpStatusCode.Unauthorized, (await bare.GetAsync("/internal/v1/_t/ungrouped")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await f.CreateClient().GetAsync("/internal/v1/_t/ungrouped")).StatusCode);
+    }
+
+    [Fact]
+    public async Task TheFrameworksOwnEndpointsPassThrough_AWrongMethodIs405NotAnUndeclaredRoute500()
+    {
+        using var f = PlatformTestHost.Create(_db);
+        var client = f.CreateClient();
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, (await client.PostAsync("/internal/v1/ping", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, (await client.PostAsync("/health/live", null)).StatusCode);
+    }
+
+    [Fact]
     public async Task TheBffSecretIsCheckedBeforeAuthorizationAndWritesNoAuditRow()
     {
         using var f = PlatformTestHost.Create(_db);

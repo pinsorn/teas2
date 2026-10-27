@@ -50,7 +50,8 @@ public sealed class RouteAuthorization(RequestDelegate next)
 
     public async Task InvokeAsync(HttpContext http)
     {
-        if (http.GetEndpoint() is not { } endpoint) { await next(http); return; }
+        // only routes are decided: the framework's own endpoints (405 for a wrong method, a CORS preflight) pass through, they run no handler
+        if (http.GetEndpoint() is not RouteEndpoint endpoint) { await next(http); return; }
         if (endpoint.Metadata.GetMetadata<RouteSpec>() is not { } spec)
         {
             if (endpoint.Metadata.GetMetadata<Probe>() is not null) { await next(http); return; }

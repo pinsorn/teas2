@@ -16,10 +16,14 @@ public sealed class BffSecretMiddleware(RequestDelegate next, IConfiguration con
 {
     public const string Header = "X-Teas-Bff";
     public const int MinLength = 32;
+    const string Prefix = "/internal/v1";
 
     public Task InvokeAsync(HttpContext http)
     {
-        if (http.GetEndpoint()?.Metadata.GetMetadata<BffOnly>() is null) return next(http);
+        // fail closed both ways: the marker, or a route pattern under /internal/v1 (a route mapped without the group is still the BFF's)
+        var endpoint = http.GetEndpoint();
+        var internalRoute = endpoint is RouteEndpoint { RoutePattern.RawText: { } raw } && (raw.Equals(Prefix, StringComparison.OrdinalIgnoreCase) || raw.StartsWith(Prefix + "/", StringComparison.OrdinalIgnoreCase));
+        if (endpoint?.Metadata.GetMetadata<BffOnly>() is null && !internalRoute) return next(http);
         var expected = config["TEAS_BFF_SECRET"];
         var given = http.Request.Headers[Header].ToString();
         if (expected is { Length: >= MinLength } && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(given)))
