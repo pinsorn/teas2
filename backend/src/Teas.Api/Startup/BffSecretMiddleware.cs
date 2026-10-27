@@ -15,6 +15,9 @@ public sealed class BffOnly
 public sealed class BffSecretMiddleware(RequestDelegate next, IConfiguration config)
 {
     public const string Header = "X-Teas-Bff";
+    /// <summary>The address of the browser, set by the BFF (which strips what a browser sends under this name). Honoured only after the secret check below, and only on the BFF surface:
+    /// it becomes the connection's RemoteIpAddress, so the /auth limiter partition, sessions.ip and the audit ip name the user and not the BFF container.</summary>
+    public const string ClientIpHeader = "X-Teas-Client-Ip";
     public const int MinLength = 32;
     const string Prefix = "/internal/v1";
 
@@ -25,7 +28,10 @@ public sealed class BffSecretMiddleware(RequestDelegate next, IConfiguration con
         var expected = config["TEAS_BFF_SECRET"];
         var given = http.Request.Headers[Header].ToString();
         if (expected is { Length: >= MinLength } && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(given)))
+        {
+            if (System.Net.IPAddress.TryParse(http.Request.Headers[ClientIpHeader].ToString().Trim(), out var client)) http.Connection.RemoteIpAddress = client;   // a malformed or doubled value keeps the peer
             return next(http);
+        }
         http.Response.StatusCode = StatusCodes.Status401Unauthorized;
         return Task.CompletedTask;
     }

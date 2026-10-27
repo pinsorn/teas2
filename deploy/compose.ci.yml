@@ -1,0 +1,73 @@
+# CI only: the stack the `compose` job of .github/workflows/backend.yml brings up (Postgres -> migrator -> API -> web) to run the hybrid e2e
+# (frontend/e2e/platform-live.spec.ts). Docker is not available on the dev box, so this file is only ever exercised by GitHub Actions.
+# Not a deployment file: staging / prod are Coolify applications (P11). Every secret below is a throwaway for the CI run.
+#
+# The API and the migrator are NOT built into images here: the job runs `dotnet publish` on the runner into ../publish/ and mounts the output into the
+# stock ASP.NET runtime image (no Dockerfile for the backend exists yet; P11 adds the real one). The web image is deploy/frontend/Dockerfile, built
+# as the hybrid variant (mock worker + the live routes through proxy.ts).
+name: teas-ci
+
+x-secret: &bff_secret ci-bff-secret-0123456789abcdef0123456789abcdef
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_PASSWORD: ci-superuser
+    ports: ['127.0.0.1:5432:5432']   # the job runs psql from the runner (roles, database, seed, row-count probes)
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # one-shot tool container: `docker compose run --rm migrator migrate` / `bootstrap-admin --email ... --name ...` (the verbs of Teas.Migrator)
+  migrator:
+    image: mcr.microsoft.com/dotnet/aspnet:10.0
+    profiles: [tools]
+    working_dir: /app
+    entrypoint: ['dotnet', 'Teas.Migrator.dll']
+    volumes: ['../publish/migrator:/app:ro']
+    environment:
+      TEAS_MIGRATOR_CS: Host=postgres;Database=teas;Username=teas_migrator;Password=ci-role-pw
+      TEAS_PUBLIC_URL: http://localhost:3000   # the base of the set-password link the CLI prints
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    image: mcr.microsoft.com/dotnet/aspnet:10.0
+    working_dir: /app
+    entrypoint: ['dotnet', 'Teas.Api.dll']
+    volumes:
+      - ../publish/api:/app:ro
+      - api-files:/data/files          # TEAS_FILES_DIR: persistent (P6); a redeploy without it loses every stored image
+      - api-dp-keys:/data/dp-keys      # TEAS_DP_KEYS_DIR: persistent (P7); without the key ring a restart makes every stored TOTP secret unreadable
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production   # not Development: the startup guards and the Secure session cookie are on
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Teas: Host=postgres;Database=teas;Username=teas_app;Password=ci-role-pw
+      TEAS_BFF_SECRET: *bff_secret
+      TEAS_FILES_DIR: /data/files
+      TEAS_DP_KEYS_DIR: /data/dp-keys
+      TEAS_PUBLIC_URL: http://localhost:3000
+      TEAS_VERSION: ci
+    ports: ['127.0.0.1:8080:8080']     # the job probes /health, /version and the machine routes directly (staging goes through Traefik: P11)
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_MOCKING: enabled   # the mock worker still answers everything that is not a live route
+        NEXT_PUBLIC_API_MODE: hybrid
+    environment:
+      TEAS_API_INTERNAL_URL: http://api:8080
+      TEAS_BFF_SECRET: *bff_secret
+    ports: ['127.0.0.1:3000:3000']
+    depends_on: [api]
+
+volumes:
+  api-files:
+  api-dp-keys:

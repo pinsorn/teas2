@@ -2,6 +2,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
+import { encode } from 'uqr';
 import { Alert, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -29,50 +30,39 @@ export function DemoHint({ kind }: { kind: 'login' | 'totp' | 'enrol' }) {
   );
 }
 
-/** A placeholder for the QR code: a stable pattern from the secret, three finder squares. It is NOT scannable; the secret is shown beside it. */
-function QrPlaceholder({ secret }: { secret: string }) {
-  const N = 21;
-  const cells = useMemo(() => {
-    let h = 2166136261;
-    for (const c of secret) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
-    const out: [number, number][] = [];
-    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-      const finder = (x < 7 && y < 7) || (x >= N - 7 && y < 7) || (x < 7 && y >= N - 7);
-      h = Math.imul(h ^ (x * 31 + y), 16777619) >>> 0;
-      if (!finder && h % 3 === 0) out.push([x, y]);
-    }
-    return out;
-  }, [secret]);
-  const finder = (x: number, y: number) => <g key={`${x}${y}`}><rect x={x} y={y} width="7" height="7" /><rect x={x + 1} y={y + 1} width="5" height="5" fill="white" /><rect x={x + 2} y={y + 2} width="3" height="3" /></g>;
+/** The otpauth:// URI as a QR code an authenticator app can scan (uqr: exact-pinned, zero-dependency encoder; drawn as one SVG path, black on white with the 4-module quiet zone). */
+function Qr({ uri }: { uri: string }) {
+  const rows = useMemo(() => encode(uri, { ecc: 'M', border: 0 }).data, [uri]);
+  const d = rows.flatMap((row, y) => row.flatMap((on, x) => (on ? [`M${x} ${y}h1v1h-1z`] : []))).join('');
+  const n = rows.length;
   return (
-    <svg viewBox={`-1 -1 ${N + 2} ${N + 2}`} role="img" aria-label="QR code (ตัวอย่าง)" className="size-36 shrink-0 rounded border bg-white p-1" fill="black" shapeRendering="crispEdges">
-      {cells.map(([x, y]) => <rect key={`${x}-${y}`} x={x} y={y} width="1" height="1" />)}
-      {finder(0, 0)}{finder(N - 7, 0)}{finder(0, N - 7)}
+    <svg viewBox={`-4 -4 ${n + 8} ${n + 8}`} role="img" aria-label="QR code" className="size-40 shrink-0 rounded border bg-white" shapeRendering="crispEdges">
+      <path d={d} fill="black" />
     </svg>
   );
 }
 
-/** Two-step authentication: start (secret + QR placeholder), verify a code, then the recovery codes - shown ONCE in a dialog that can only be closed with its button. */
+/** Two-step authentication: start (QR code + secret), verify a code, then the recovery codes - shown ONCE in a dialog that can only be closed with its button. */
 export function TotpEnrol({ profile, onChanged }: { profile: ProfileView; onChanged: () => void }) {
   const t = useTranslations('auth.profile.totp');
-  const [secret, setSecret] = useState<string>();
+  const [enrol, setEnrol] = useState<{ secret: string; uri: string }>();
   const [code, setCode] = useState('');
   const [codes, setCodes] = useState<string[]>();
   const [copied, setCopied] = useState(false);
-  const start = useMutation({ mutationFn: authApi.startEnrol, onSuccess: (r) => { setSecret(r.secret); setCode(''); } });
-  const verify = useMutation({ mutationFn: () => authApi.verifyEnrol(code), onSuccess: (r) => { setCodes(r.recoveryCodes); setSecret(undefined); onChanged(); } });
+  const start = useMutation({ mutationFn: authApi.startEnrol, onSuccess: (r) => { setEnrol(r); setCode(''); } });
+  const verify = useMutation({ mutationFn: () => authApi.verifyEnrol(code), onSuccess: (r) => { setCodes(r.recoveryCodes); setEnrol(undefined); onChanged(); } });
   const problem = (e: unknown) => (e instanceof ApiError ? e.problem.title : t('failed'));
   return (
     <div className="grid gap-3">
       <p data-testid="totp-status">{profile.totpEnabled ? t('enabled', { count: profile.recoveryRemaining }) : t('disabled')}</p>
-      {secret ? (
+      {enrol ? (
         <form className="grid gap-3" onSubmit={(e) => { e.preventDefault(); if (/^\d{6}$/.test(code)) verify.mutate(); }}>
           <div className="flex flex-wrap items-start gap-4">
-            <QrPlaceholder secret={secret} />
+            <Qr uri={enrol.uri} />
             <div className="grid min-w-0 gap-1">
               <p className="text-small text-muted-foreground">{t('scan')}</p>
               <p className="text-small">{t('secretLabel')}</p>
-              <code data-testid="totp-secret" className="break-all rounded border bg-muted px-2 py-1 select-all">{secret}</code>
+              <code data-testid="totp-secret" className="break-all rounded border bg-muted px-2 py-1 select-all">{enrol.secret}</code>
             </div>
           </div>
           <div className="grid max-w-xs gap-1.5">
@@ -83,7 +73,7 @@ export function TotpEnrol({ profile, onChanged }: { profile: ProfileView; onChan
           <DemoHint kind="enrol" />
           <div className="flex gap-2">
             <Button type="submit" disabled={verify.isPending || code.length !== 6}>{t('verify')}</Button>
-            <Button type="button" variant="outline" onClick={() => { setSecret(undefined); verify.reset(); }}>{t('cancel')}</Button>
+            <Button type="button" variant="outline" onClick={() => { setEnrol(undefined); verify.reset(); }}>{t('cancel')}</Button>
           </div>
         </form>
       ) : (

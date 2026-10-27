@@ -697,17 +697,17 @@ characters.
 
 ### Task P10: BFF proxy, live-route switch, compose smoke
 
-**Depends on:** P9. **Blast cap:** 14 files.
+**Depends on:** P9. **Blast cap:** 18 files (14 + the backend client-IP trust, machine-route limiter and logger rule).
 **Files:** `frontend/src/proxy.ts` (+ `proxy.test.ts`), `frontend/src/contract/live-routes.ts` (routes 1–33),
 `frontend/src/mocks/browser.ts` / handler wrapper (passthrough of live routes in `hybrid`), `kit/auth/TotpEnrol.tsx`
 (QR from `uri`; one exact-pinned QR dependency with its reason in the report), `deploy/compose.ci.yml`,
 `.github/workflows/backend.yml` `compose` job, `frontend/e2e/platform-live.spec.ts`.
 **Rules:** a per-IP rate limit for `/api/v1` and `/mcp` (at the proxy, or on the machine routes: P9 adds none); §4.8; S7; `mock` stays the default build (the mockup preview is unchanged). `TEAS_FILES_DIR` is required outside Development, on a persistent volume (P6); so is `TEAS_DP_KEYS_DIR` (P7: without the key ring every restart makes the stored TOTP secrets unreadable). The API sees the BFF's address for every user: the BFF must forward the client IP and the API must trust it only after the BFF-secret check, or the per-IP `/auth/*` limit (20 / min) is one bucket for everybody (P7 open question 1). The production logger must not include request-path scopes, or must redact `/auth/links/` paths (a link token travels in the path).
-- [ ] **Step 1: Failing tests** — proxy (`proxy.test.ts` names `POST /auth/links/{token}` explicitly in the cross-site check, JSON content type + Origin, even though route 14 is `auth: public`): strips `x-teas-actor` and a forged `X-Teas-Bff`, adds the secret, refuses a
+- [~] **Step 1: Failing tests** (DONE and green locally: proxy.test.ts 17, live-routes.test.ts 4, BffSecretTests +4, all RED first; the hybrid e2e platform-live.spec.ts is written but runs ONLY in the CI `compose` job - never executed, no Docker here) — proxy (`proxy.test.ts` names `POST /auth/links/{token}` explicitly in the cross-site check, JSON content type + Origin, even though route 14 is `auth: public`): strips `x-teas-actor` and a forged `X-Teas-Bff`, adds the secret, refuses a
   cross-origin POST; hybrid e2e on the composed stack (CI): log in, see memberships, switch company, change password,
   enrol TOTP, invite a user and set their password through the link, create / rotate / revoke a key; the rest of the
   app still renders on MSW.
-- [ ] **Steps 2–5**, gates: frontend all, compose job in CI. **Step 6: Controller commits**
+- [~] **Steps 2–5** (frontend typecheck, lint, vitest 188 files / 2900, build, mock Playwright platform.spec 37 green; backend build -warnaserror 0/0, Domain 58, Architecture 25, Integration 278 on scratch PG 5433, OpenAPI equal, freeze + layout ok, both YAML files parse; proxy probed through a real `next start` against a stub upstream; CI-ONLY and still open: the `compose` job and platform-live.spec.ts; report .superpowers/sdd/sp3/task-P10-report.md), gates: frontend all, compose job in CI. **Step 6: Controller commits**
   `feat(platform): BFF proxy and the live-route switch`.
 
 ### Task P11: SP3 gate

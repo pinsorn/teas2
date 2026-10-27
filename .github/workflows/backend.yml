@@ -46,3 +46,80 @@ jobs:
       - name: OpenAPI document matches docs/api/openapi.v1.json
         working-directory: .
         run: diff backend/artifacts/openapi.json docs/api/openapi.v1.json
+
+  # SP3 P10: the hybrid e2e on the composed stack (deploy/compose.ci.yml): Postgres -> migrator -> API -> web (mock worker + live routes through
+  # proxy.ts). Docker only exists here, never on the dev box. Throwaway credentials, CI only.
+  compose:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      COMPOSE: docker compose -f deploy/compose.ci.yml
+      PGPASSWORD: ci-superuser
+      TEAS_E2E_ADMIN_EMAIL: admin@ci.example.test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { global-json-file: backend/global.json }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - name: Publish the API and the migrator (mounted into the stock ASP.NET image by the compose file)
+        run: |
+          dotnet publish backend/src/Teas.Api -c Release -o publish/api
+          dotnet publish backend/src/Teas.Migrator -c Release -o publish/migrator
+      - name: Postgres, database roles and the database
+        env: { TEAS_MIGRATOR_PW: ci-role-pw, TEAS_APP_PW: ci-role-pw }
+        run: |
+          $COMPOSE up -d --wait postgres
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f deploy/db/bootstrap-roles.sql
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE teas OWNER teas_migrator"
+      - name: Migrate, create the first admin (one-time link on stdout) and give them two companies
+        run: |
+          $COMPOSE run --rm -T migrator migrate
+          LINK="$($COMPOSE run --rm -T migrator bootstrap-admin --email "$TEAS_E2E_ADMIN_EMAIL" --name 'CI Admin')"
+          echo "$LINK" | grep -Ex 'http://localhost:3000/link/[A-Za-z0-9_-]+'   # exactly one line, nothing else on stdout
+          echo "TEAS_E2E_ADMIN_LINK=$LINK" >> "$GITHUB_ENV"
+          psql -h localhost -U postgres -d teas -v ON_ERROR_STOP=1 -v email="$TEAS_E2E_ADMIN_EMAIL" -f deploy/db/seed-ci.sql
+      - name: Start the API and the web (hybrid build)
+        run: |
+          $COMPOSE up -d --build api web
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:8080/health/ready && break; sleep 2; done
+          curl -fsS http://127.0.0.1:8080/health/ready | grep -F '"db":"ok"'
+          for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:3000/login && break; sleep 2; done
+      - name: Probe (SP3 section 8, step 4, on the composed topology - the public-domain version runs on staging in P11)
+        run: |
+          code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+          test "$(code http://127.0.0.1:8080/internal/v1/me)" = 401                       # S8: no BFF secret
+          test "$(code -H 'X-Teas-Bff: forged' http://127.0.0.1:8080/internal/v1/me)" = 401
+          test "$(curl -s http://localhost:3000/bff/v1/auth/session)" = '{"state":"out"}'  # through the BFF: the real API answers
+          test "$(code http://127.0.0.1:8080/api/v1/whoami)" = 401                        # a machine route without a key
+          test "$(code -X POST -H 'content-type: application/json' -H 'origin: https://evil.example' -d '{}' http://localhost:3000/bff/v1/auth/logout)" = 403   # S7
+          test "$(code -X POST -H 'content-type: text/plain' -H 'origin: http://localhost:3000' -d '{}' http://localhost:3000/bff/v1/auth/logout)" = 403
+          # a mock-only identity header from outside is stripped by the BFF
+          test "$(curl -s -H 'x-teas-actor: agent' http://localhost:3000/bff/v1/auth/session)" = '{"state":"out"}'
+      - name: Hybrid e2e (frontend/e2e/platform-live.spec.ts)
+        working-directory: frontend
+        env:
+          CI: 'true'
+          TEAS_E2E_BASE_URL: http://localhost:3000
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+          pnpm exec playwright test --workers=1
+      - name: Row counts after the e2e (not exit codes) and the persistent volumes
+        run: |
+          count() { psql -h localhost -U postgres -d teas -tAc "$1"; }
+          test "$(count "SELECT count(*) FROM teas.audit_log WHERE command = 'user.invite'")" -ge 1
+          test "$(count "SELECT count(*) FROM teas.audit_log WHERE command = 'connect.key.create'")" -ge 1
+          test "$(count "SELECT count(*) FROM teas.users WHERE totp_secret_enc IS NOT NULL")" -ge 1
+          $COMPOSE exec -T api sh -c 'ls /data/dp-keys | grep -q "^key-"'   # the Data Protection key ring lives on the volume
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: playwright-report-compose, path: frontend/playwright-report }
+      - name: Logs on failure
+        if: failure()
+        run: $COMPOSE logs --no-color --tail 200 api web
+      - name: Tear down
+        if: always()
+        run: $COMPOSE down -v
