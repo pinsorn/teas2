@@ -44,6 +44,7 @@ var cs = builder.Configuration.GetConnectionString("Teas");
 if (!string.IsNullOrWhiteSpace(cs))
 {
     builder.Services.AddTeasData(cs);
+    builder.Services.AddSingleton(new Teas.App.Platform.Members.PublicLinkBase(builder.Configuration["TEAS_PUBLIC_URL"] ?? "http://localhost:3000"));   // the base of the invite / reset links
     builder.Services.AddSingleton(new Teas.App.Platform.Files.FileStoreOptions(builder.Configuration["TEAS_FILES_DIR"] ?? "files"));
     if (builder.Configuration["TEAS_JOBS_DISABLED"] != "true") builder.Services.AddHostedService<JobRunnerService>();   // test hosts switch it off
 }
@@ -86,6 +87,10 @@ app.MapGet("/version", () => Results.Ok(new { version = app.Configuration["TEAS_
 var internalV1 = app.MapGroup("/internal/v1").WithMetadata(BffOnly.Instance);
 internalV1.MapRoute(new RouteSpec("GET", "/ping", "public"), () => Results.Ok(new { ok = true })).ExcludeFromDescription(); // a probe, not a contract route
 internalV1.MapAuthRoutes();
+internalV1.MapMeRoutes();
+internalV1.MapCompanySettingsRoutes();
+internalV1.MapUsersRoutes();
+internalV1.MapRolesRoutes();
 
 app.Run();
 

@@ -2,7 +2,9 @@
 // A mismatch is a `tsc` error in `pnpm typecheck`. One line per route is added by the task that makes the route live, e.g.
 //   type _me = Assert<Same<Me, Gen.paths['/me']['get']['responses'][200]['content']['application/json']>>;
 // (routes.test.ts fails a documented route that has no line here). Not frozen: this file only reads the frozen ones.
-import type { ApiProblem, LinkInfo, LoginResult, ProfileView, SessionRow, SessionState, SetPasswordBody } from '../platform';
+import type { ApiProblem, CompanyContactBody, CompanyFiscalBody, CompanyIdentityBody, CompanyImagesBody, CompanyNotesBody, CompanyPayrollBody, CompanySettings, InviteBody, LinkInfo,
+  LoginResult, Me, ProfileView, RoleBody, RoleRow, SessionRow, SessionState, SetPasswordBody, UpdateMemberBody, UpdateRoleBody, UserRow } from '../platform';
+import type { DocType } from '@/domain/types';
 import type { Money } from '../scalars';
 import type * as Gen from '../generated/openapi';
 
@@ -39,3 +41,34 @@ export type _revoke = Assert<Same<{ signedOut: boolean }, Res<Gen.paths['/auth/s
 export type _linkInfo = Assert<Same<LinkInfo, Res<Gen.paths['/auth/links/{token}']['get']>>>;
 export type _linkAccept = Assert<Same<OkBody, Res<Gen.paths['/auth/links/{token}']['post']>>>;
 export type _linkAcceptReq = Assert<Same<SetPasswordBody, Req<Gen.paths['/auth/links/{token}']['post']>>>;
+
+// ---- P8: routes 15-29 (me, company settings, users, roles). A 201 answer is read with Res201; the DELETE carries its version in the query string. ----
+type Res201<O> = O extends { responses: { 201: { content: { 'application/json': infer R } } } } ? R : never;
+type Query<O> = O extends { parameters: { query: infer Q } } ? Q : never;
+
+export type _me = Assert<Same<Me, Res<Gen.paths['/me']['get']>>>;
+export type _switch = Assert<Same<Me, Res<Gen.paths['/me/active-company']['post']>>>;
+export type _switchReq = Assert<Same<{ companyId: string }, Req<Gen.paths['/me/active-company']['post']>>>;
+export type _company = Assert<Same<CompanySettings, Res<Gen.paths['/settings/companies/{id}']['get']>>>;
+export type _companyPut = Assert<Same<CompanySettings, Res<Gen.paths['/settings/companies/{id}/{section}']['put']>>>;
+// one operation for the six sections: its body is the union of the six Company<Section>Body shapes
+export type _companyPutReq = Assert<Same<CompanyIdentityBody | CompanyContactBody | CompanyPayrollBody | CompanyFiscalBody | CompanyImagesBody | CompanyNotesBody,
+  Req<Gen.paths['/settings/companies/{id}/{section}']['put']>>>;
+export type _defaultNotes = Assert<Same<Partial<Record<DocType, string>>, Res<Gen.paths['/settings/default-notes']['get']>>>;
+export type _users = Assert<Same<{ items: UserRow[] }, Res<Gen.paths['/settings/users']['get']>>>;
+export type _invite = Assert<Same<UserRow & { link: string }, Res201<Gen.paths['/settings/users']['post']>>>;
+export type _inviteReq = Assert<Same<InviteBody, Req<Gen.paths['/settings/users']['post']>>>;
+export type _userUpdate = Assert<Same<UserRow, Res<Gen.paths['/settings/users/{id}']['put']>>>;
+export type _userUpdateReq = Assert<Same<UpdateMemberBody, Req<Gen.paths['/settings/users/{id}']['put']>>>;
+export type _active = Assert<Same<UserRow, Res<Gen.paths['/settings/users/{id}/active']['post']>>>;
+export type _activeReq = Assert<Same<{ active: boolean; version: number }, Req<Gen.paths['/settings/users/{id}/active']['post']>>>;
+export type _resetLink = Assert<Same<{ link: string }, Res<Gen.paths['/settings/users/{id}/reset-link']['post']>>>;
+export type _totpReset = Assert<Same<UserRow, Res<Gen.paths['/settings/users/{id}/totp-reset']['post']>>>;
+export type _totpResetReq = Assert<Same<{ version: number }, Req<Gen.paths['/settings/users/{id}/totp-reset']['post']>>>;
+export type _roles = Assert<Same<{ items: RoleRow[] }, Res<Gen.paths['/settings/roles']['get']>>>;
+export type _roleCreate = Assert<Same<RoleRow, Res201<Gen.paths['/settings/roles']['post']>>>;
+export type _roleCreateReq = Assert<Same<RoleBody, Req<Gen.paths['/settings/roles']['post']>>>;
+export type _roleUpdate = Assert<Same<RoleRow, Res<Gen.paths['/settings/roles/{id}']['put']>>>;
+export type _roleUpdateReq = Assert<Same<UpdateRoleBody, Req<Gen.paths['/settings/roles/{id}']['put']>>>;
+export type _roleDelete = Assert<Same<{ ok: true }, Res<Gen.paths['/settings/roles/{id}']['delete']>>>;
+export type _roleDeleteQuery = Assert<Same<{ version: number }, Query<Gen.paths['/settings/roles/{id}']['delete']>>>;

@@ -230,7 +230,7 @@ public sealed class RbacMatrixTests : IAsyncLifetime
         var client = f.CreateClient();
         var routes = f.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
             .Select(e => (spec: e.Metadata.GetMetadata<RouteSpec>(), path: Regex.Replace(e.RoutePattern.RawText!, @"\{[^}]+\}", Guid.NewGuid().ToString())))
-            .Where(r => r.spec?.Permission is not null && !r.spec.Agent).ToList();
+            .Where(r => r.spec?.Permission is not null && !r.spec.Agent && r.path.Contains("/_t/")).ToList();   // the test routes answer 200 / 201 on success; the real routes are in UsersAndRolesTests (real sessions)
         Assert.True(routes.Count >= 5, "routes found: " + routes.Count);
 
         var failures = new List<string>();

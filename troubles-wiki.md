@@ -283,3 +283,17 @@ Entry format — terse, greppable by symptom:
 - Symptom: the scan lists a Teas.Api file with an "unregistered code".
 - Root cause: any `const string X = "lower.dotted"` is taken for an error code (the regex `const string \w+ = "[a-z][a-z0-9_]*\.[a-z0-9_.]+"`).
 - Fix: name such constants without the dotted lower-case shape (P7: `HttpContext.Items` key `TeasSession`).
+
+## OpenAPI document build fails with "The JSON value could not be converted to Optional`1[System.String]"
+- Symptom: `dotnet build backend/src/Teas.Api` (the build-time document) fails inside `JsonSchemaExporter` for a request DTO.
+- Root cause: `Optional<T>` declared as a positional record parameter with a default (`Optional<string> X = default`): the schema exporter serializes the default value and cannot read it back.
+- Fix: declare it as an init property, the shape ErrorContractTests uses: `public Optional<string?> X { get; init; }`, with `public required int Version { get; init; }` for the members that must stay required in the schema (P8 `UpdateMemberBody`, `CompanyImagesBody`).
+
+## A derived record loses `required` on the inherited members in the OpenAPI schema
+- Symptom: `Same<UserRow & { link: string }, ...>` in the conformance file is false: every inherited member comes out optional in the generated type.
+- Root cause: the "required" rule reads the constructor parameter of the type being described (`AssociatedParameter`); a derived type's constructor does not carry the base record's parameters.
+- Fix: a response that is "row plus one member" is a flat positional record with all members (P8 `InvitedUserView`), not `: UserRowView`.
+
+## Test bodies: an anonymous object camel-cases a key that is data (`new { IV = "x" }` is sent as `iv`)
+- Symptom: a 422 "unknown document type iv" for `defaultNotes = new { IV = ... }`.
+- Fix: send data keys as a `Dictionary<string, string>` (dictionary keys are not renamed); anonymous objects are for property names.

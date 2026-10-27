@@ -358,10 +358,496 @@
           }
         }
       }
+    },
+    "/me": {
+      "get": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/active-company": {
+      "post": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActiveCompanyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/settings/companies/{id}": {
+      "get": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanySettingsView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/settings/companies/{id}/{section}": {
+      "put": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "section",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompanySectionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanySettingsView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/settings/default-notes": {
+      "get": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/settings/users": {
+      "get": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsersBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitedUserView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/settings/users/{id}": {
+      "put": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMemberBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRowView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/settings/users/{id}/active": {
+      "post": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActiveBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRowView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/settings/users/{id}/reset-link": {
+      "post": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/settings/users/{id}/totp-reset": {
+      "post": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRowView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/settings/roles": {
+      "get": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RolesBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/settings/roles/{id}": {
+      "put": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoleBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleView"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Teas.Api"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkTrueBody"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "ActiveBody": {
+        "required": [
+          "active",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ActiveCompanyBody": {
+        "required": [
+          "companyId"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string"
+          }
+        }
+      },
       "ActiveState": {
         "enum": [
           "active"
@@ -405,6 +891,273 @@
           }
         }
       },
+      "CompanyContactBody": {
+        "required": [
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "tradeName": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "website": {
+            "type": "string"
+          }
+        }
+      },
+      "CompanyFiscalBody": {
+        "required": [
+          "version",
+          "fiscalYearStartMonth"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "fiscalYearStartMonth": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "CompanyIdentityBody": {
+        "required": [
+          "version",
+          "confirm",
+          "legalNameTh",
+          "taxId",
+          "branchCode",
+          "address"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "confirm": {
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          },
+          "legalNameTh": {
+            "type": "string"
+          },
+          "taxId": {
+            "type": "string"
+          },
+          "branchCode": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "legalNameEn": {
+            "type": "string"
+          },
+          "registrationNo": {
+            "type": "string"
+          },
+          "paidUpCapital": {
+            "pattern": "^-?(0|[1-9][0-9]{0,15})\\.[0-9]{2}$",
+            "type": "string"
+          }
+        }
+      },
+      "CompanyImagesBody": {
+        "required": [
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "logoDataUrl": {
+            "$ref": "#/components/schemas/OptionalOfstring"
+          },
+          "stampDataUrl": {
+            "$ref": "#/components/schemas/OptionalOfstring"
+          }
+        }
+      },
+      "CompanyNotesBody": {
+        "required": [
+          "version",
+          "defaultNotes"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "defaultNotes": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "CompanyPayrollBody": {
+        "required": [
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "ssoEmployerAccountNo": {
+            "type": "string"
+          }
+        }
+      },
+      "CompanySectionBody": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/CompanyIdentityBody"
+          },
+          {
+            "$ref": "#/components/schemas/CompanyContactBody"
+          },
+          {
+            "$ref": "#/components/schemas/CompanyPayrollBody"
+          },
+          {
+            "$ref": "#/components/schemas/CompanyFiscalBody"
+          },
+          {
+            "$ref": "#/components/schemas/CompanyImagesBody"
+          },
+          {
+            "$ref": "#/components/schemas/CompanyNotesBody"
+          }
+        ]
+      },
+      "CompanySettingsView": {
+        "required": [
+          "id",
+          "legalNameTh",
+          "taxId",
+          "branchCode",
+          "vatRegistered",
+          "address",
+          "fiscalYearStartMonth",
+          "fiscalYearLocked"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "legalNameTh": {
+            "type": "string"
+          },
+          "taxId": {
+            "type": "string"
+          },
+          "branchCode": {
+            "type": "string"
+          },
+          "vatRegistered": {
+            "type": "boolean"
+          },
+          "address": {
+            "type": "string"
+          },
+          "fiscalYearStartMonth": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "fiscalYearLocked": {
+            "type": "boolean"
+          },
+          "legalNameEn": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "ssoEmployerAccountNo": {
+            "type": "string"
+          },
+          "registrationNo": {
+            "type": "string"
+          },
+          "tradeName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "website": {
+            "type": "string"
+          },
+          "paidUpCapital": {
+            "pattern": "^-?(0|[1-9][0-9]{0,15})\\.[0-9]{2}$",
+            "type": "string"
+          },
+          "logoDataUrl": {
+            "type": "string"
+          },
+          "stampDataUrl": {
+            "type": "string"
+          },
+          "defaultNotes": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "DocType": {
+        "enum": [
+          "QT",
+          "SO",
+          "DO",
+          "BL",
+          "IV",
+          "TI",
+          "RC",
+          "CN",
+          "DN",
+          "PO",
+          "PB",
+          "PCN",
+          "PDN",
+          "PV",
+          "WT",
+          "EX",
+          "JV",
+          "FA",
+          "DP",
+          "PR",
+          "OB"
+        ]
+      },
       "EnrolStarted": {
         "required": [
           "secret",
@@ -439,6 +1192,99 @@
         "properties": {
           "state": {
             "$ref": "#/components/schemas/ActiveState"
+          }
+        }
+      },
+      "InviteBody": {
+        "required": [
+          "name",
+          "email",
+          "roleId"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "roleId": {
+            "type": "string"
+          },
+          "position": {
+            "type": "string"
+          }
+        }
+      },
+      "InvitedUserView": {
+        "required": [
+          "id",
+          "companyId",
+          "name",
+          "email",
+          "roleId",
+          "active",
+          "version",
+          "invitePending",
+          "roleName",
+          "link"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "roleId": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "invitePending": {
+            "type": "boolean"
+          },
+          "roleName": {
+            "type": "string"
+          },
+          "link": {
+            "type": "string"
+          },
+          "position": {
+            "type": "string"
+          },
+          "signatureDataUrl": {
+            "type": "string"
+          },
+          "lastLoginAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "LinkBody": {
+        "required": [
+          "link"
+        ],
+        "type": "object",
+        "properties": {
+          "link": {
+            "type": "string"
           }
         }
       },
@@ -526,6 +1372,76 @@
           }
         }
       },
+      "MembershipView": {
+        "required": [
+          "companyId",
+          "companyName",
+          "roleId",
+          "roleName"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyName": {
+            "type": "string"
+          },
+          "roleId": {
+            "type": "string"
+          },
+          "roleName": {
+            "type": "string"
+          }
+        }
+      },
+      "MeView": {
+        "required": [
+          "userId",
+          "displayName",
+          "memberships",
+          "activeCompanyId",
+          "vatRegistered",
+          "permissions",
+          "businessDate"
+        ],
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "memberships": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MembershipView"
+            }
+          },
+          "activeCompanyId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "vatRegistered": {
+            "type": "boolean"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "businessDate": {
+            "type": "string"
+          }
+        }
+      },
       "Money": {
         "pattern": "^-?(0|[1-9][0-9]{0,15})\\.[0-9]{2}$",
         "type": "string"
@@ -533,6 +1449,26 @@
       "OkStatus": {
         "enum": [
           "ok"
+        ]
+      },
+      "OkTrueBody": {
+        "required": [
+          "ok"
+        ],
+        "type": "object",
+        "properties": {
+          "ok": {
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          }
+        }
+      },
+      "OptionalOfstring": {
+        "type": [
+          "null",
+          "string"
         ]
       },
       "OutState": {
@@ -635,6 +1571,100 @@
           "ok",
           "totp_required"
         ]
+      },
+      "RoleBody": {
+        "required": [
+          "name",
+          "permissions"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "RolesBody": {
+        "required": [
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleView"
+            }
+          }
+        }
+      },
+      "RoleView": {
+        "required": [
+          "id",
+          "version",
+          "active",
+          "system",
+          "name",
+          "permissions",
+          "inUse",
+          "approvalTypes",
+          "sodTypes"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "active": {
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          },
+          "system": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "inUse": {
+            "type": "boolean"
+          },
+          "approvalTypes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DocType"
+            }
+          },
+          "sodTypes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DocType"
+            }
+          },
+          "description": {
+            "type": "string"
+          }
+        }
       },
       "SessionRow": {
         "required": [
@@ -768,6 +1798,136 @@
         "enum": [
           "totp_required"
         ]
+      },
+      "UpdateMemberBody": {
+        "required": [
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "name": {
+            "type": "string"
+          },
+          "roleId": {
+            "type": "string"
+          },
+          "position": {
+            "type": "string"
+          },
+          "signatureDataUrl": {
+            "$ref": "#/components/schemas/OptionalOfstring"
+          }
+        }
+      },
+      "UpdateRoleBody": {
+        "required": [
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "UserRowView": {
+        "required": [
+          "id",
+          "companyId",
+          "name",
+          "email",
+          "roleId",
+          "active",
+          "version",
+          "invitePending",
+          "roleName"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "roleId": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "invitePending": {
+            "type": "boolean"
+          },
+          "roleName": {
+            "type": "string"
+          },
+          "position": {
+            "type": "string"
+          },
+          "signatureDataUrl": {
+            "type": "string"
+          },
+          "lastLoginAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "UsersBody": {
+        "required": [
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserRowView"
+            }
+          }
+        }
+      },
+      "VersionBody": {
+        "required": [
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
       }
     }
   },

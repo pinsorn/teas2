@@ -8,7 +8,7 @@ namespace Teas.App;
 public sealed class TeasDbContext(DbContextOptions<TeasDbContext> options) : DbContext(options)
 {
     /// <summary>The migration id this build expects (a test asserts it equals the migrator's last migration).</summary>
-    public const string ExpectedSchema = "0005_auth";
+    public const string ExpectedSchema = "0006_company_profile";
 
     protected override void OnModelCreating(ModelBuilder b) => b.HasDefaultSchema("teas");
 
@@ -35,6 +35,10 @@ public static class TeasDataExtensions
         services.AddScoped<Platform.Auth.AuthAudit>();
         services.AddScoped<Platform.Auth.AuthService>();
         services.AddScoped<Platform.Auth.LinkService>();   // needs an ISecretProtector (AuthService) from the host
+        services.AddScoped<Platform.Roles.RoleService>();
+        services.AddScoped<Platform.Members.MemberService>();   // needs a PublicLinkBase (TEAS_PUBLIC_URL) from the host
+        services.AddScoped<Platform.Companies.CompanyService>();
+        services.AddScoped<Platform.Companies.CompanyFactory>();
         services.AddSingleton(sp => new Platform.Jobs.JobRunner(sp.GetRequiredService<IServiceScopeFactory>(), sp.GetRequiredService<TimeProvider>(), connectionString));
         services.AddDbContext<TeasDbContext>((sp, o) =>
         {

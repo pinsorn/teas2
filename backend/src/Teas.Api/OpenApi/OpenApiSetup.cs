@@ -80,6 +80,8 @@ public static class OpenApiSetup
                     foreach (var p in ctx.JsonTypeInfo.Properties)
                     {
                         if (!props.TryGetValue(p.Name, out var ps)) continue;
+                        if (p.AttributeProvider?.IsDefined(typeof(Teas.App.Platform.Roles.LiteralTrueAttribute), false) == true && ps is OpenApiSchema lit)
+                            lit.Enum = [System.Text.Json.Nodes.JsonValue.Create(true)];   // the contract says `true`, not boolean
                         if (IsOptional(p.PropertyType, out var a)) { if (ps is OpenApiSchema target) await DescribeOptional(target, a, ctx, ct); }
                         else if (OmitsNull(p)) { props[p.Name] = WithoutNull(ps); omitted.GetOrAdd(RefId(ctx.JsonTypeInfo) ?? ctx.JsonTypeInfo.Type.Name, _ => new()).Add(p.Name); }
                     }

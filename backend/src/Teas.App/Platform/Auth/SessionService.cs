@@ -126,7 +126,22 @@ public sealed class SessionService(TeasDbContext db, TenantScope scope, TimeProv
             """, r => new SessionRow(r.GetGuid(0), r.IsDBNull(1) ? "" : r.GetString(1), r.GetString(2), r.GetFieldValue<DateTimeOffset>(3), r.GetFieldValue<DateTimeOffset>(4), r.GetGuid(0) == current.Id),
             ct, TxSql.P("u", current.UserId), TxSql.P("now", now));
     }
+
+    /// <summary>The active, accepted memberships of a user across companies, with the custom role's name (a custom role is a row of ITS company, so the read is cross-company: system scope, reads only). Its own transaction.</summary>
+    public async Task<IReadOnlyList<MembershipRow>> MembershipsAsync(Guid userId, CancellationToken ct = default)
+    {
+        using var _ = scope.EnterSystem("memberships");
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        return await Q.ManyAsync(db, """
+            SELECT m.company_id, c.name, m.role_id, r.name FROM teas.company_members m
+            JOIN teas.companies c ON c.id = m.company_id
+            LEFT JOIN teas.custom_roles r ON r.company_id = m.company_id AND r.id::text = m.role_id
+            WHERE m.user_id = @u AND m.active AND NOT m.invite_pending ORDER BY c.created_at, m.company_id
+            """, r => new MembershipRow(r.GetGuid(0), r.GetString(1), r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3)), ct, TxSql.P("u", userId));
+    }
 }
+
+public sealed record MembershipRow(Guid CompanyId, string CompanyName, string RoleId, string? CustomRoleName);
 
 public sealed record IssuedSession(string Token, Guid SessionId);
 
