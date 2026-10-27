@@ -159,6 +159,8 @@ public static class PlatformTestHost
     {
         b.UseEnvironment("Staging");
         b.UseSetting("ConnectionStrings:Teas", db.AppCs);
+        b.UseSetting("TEAS_FILES_DIR", Path.GetTempPath());   // outside Development the host refuses to start without it
+        b.UseSetting("TEAS_JOBS_DISABLED", "true");
         b.UseSetting("TEAS_BFF_SECRET", Secret);
         b.ConfigureServices(s =>
         {

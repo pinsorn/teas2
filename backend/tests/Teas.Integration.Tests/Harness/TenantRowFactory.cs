@@ -22,6 +22,10 @@ public static class TenantRowFactory
                 "INSERT INTO teas.idempotency_records (company_id, actor_id, key, route, request_hash, status_code) VALUES (@c, gen_random_uuid(), gen_random_uuid(), 'POST /t', 'h', 201)"),
             ["custom_roles"] = (c, t, company) => Exec(c, t, company,
                 "INSERT INTO teas.custom_roles (company_id, name, permissions) VALUES (@c, 'Role ' || @c::text, ARRAY['party.read'])"),
+            ["files"] = (c, t, company) => Exec(c, t, company,
+                "INSERT INTO teas.files (company_id, sha256, mime, size_bytes, name) VALUES (@c, 'ab', 'image/png', 1, 'f.png')"),
+            ["jobs"] = (c, t, company) => Exec(c, t, company,
+                "INSERT INTO teas.jobs (company_id, kind) VALUES (@c, 'test.job')"),
         };
 
     /// <summary>The column the table's policy keys on.</summary>

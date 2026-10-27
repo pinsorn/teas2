@@ -277,12 +277,13 @@ $1, true), set_config('app.user_id', $2, true), set_config('app.system', $3, tru
 - **Clock (§6.3):** `TimeProvider` injected; `BusinessDate.Today(TimeProvider)` in Asia/Bangkok. `BannedSymbols.txt`
   bans `DateTime.Now`, `DateTime.UtcNow`, `DateTime.Today`, `DateTimeOffset.Now`, `DateTimeOffset.UtcNow`,
   `TimeProvider.System` (allowed only in `Program.cs` via a `#pragma` with a comment). Tests use `FakeTimeProvider`.
-- **Files (§10.7):** `IFileStore { Put(companyId, stream, mime, name) → FileRef; Open(companyId, id) }`; local volume
+- **Files (§10.7):** `IFileStore { PutAsync(companyId, stream, name) → FileRef; OpenAsync(companyId, id) }` (no mime parameter: the type is decided by the content's structure, never by a name or a claimed content type); local volume
   `TEAS_FILES_DIR/<company>/<sha256>`; MIME decided from magic bytes (png / jpeg / webp; svg never); company images ≤
   1 MB (mock `MAX_IMAGE_BYTES`). Settings images stay data URLs on the wire (master plan §2.7): the API decodes,
   stores, and returns a data URL built from the stored file.
 - **Jobs (§10.7):** `jobs` table; one leader per cluster by `pg_try_advisory_lock(<const>)` on a dedicated connection;
   poll every 30 s; claim as in §4.3; retry with backoff 3 times, then `failed` with `last_error`; result visible.
+  A `running` job older than the 15-minute lease is claimed again (one runner wins, guarded on `started_at`); one that already used its last attempt becomes `failed` (`lease expired`). **Handlers must be idempotent** (a job may run twice after a lease expiry). Shutdown mid-handler requeues the job without counting the attempt; a non-JSON result is a failed attempt.
   P6 ships the idempotency cleanup job only.
 
 ### 4.8 BFF, OpenAPI → TypeScript, live-route switch
@@ -634,11 +635,11 @@ architecture test). Permission and agent refusals are decided before `Idempotenc
 **Files:** migration `0004_files_jobs`, `src/Teas.App/Platform/Files/**`, `src/Teas.App/Platform/Jobs/**`
 (leader, poller, claim, retry), `IdempotencyCleanupJob`, tests.
 **Rules:** §4.7 Files / Jobs, §4.3 job rows.
-- [ ] **Step 1: Failing tests** — PNG / JPEG / WebP accepted by magic bytes, SVG and a PNG renamed `.svg` with wrong
+- [x] **Step 1: Failing tests** (done 2026-10-27; red = missing types, then green + mutation-checked, see task-P6-report.md) — PNG / JPEG / WebP accepted by magic bytes, SVG and a PNG renamed `.svg` with wrong
   bytes refused, > 1 MB refused; a file of company A cannot be opened under company B; two runner instances → one
   leader; a job claimed twice runs once; a failing job retries 3 times then `failed` with its error; cleanup deletes
   records older than 7 days in two companies and keeps newer ones (`FakeTimeProvider`).
-- [ ] **Steps 2–5**, gates as P4. **Step 6: Controller commits** `feat(platform): file store and job runner`.
+- [x] **Steps 2–5** (worker done 2026-10-27: build -warnaserror 0/0, Integration 131/131 twice, Architecture 25/25, Domain 43/43, OpenAPI identical, freeze + layout ok; see task-P6-report.md), gates as P4. **Step 6: Controller commits** `feat(platform): file store and job runner`.
 
 ### Task P7: Auth, sessions, TOTP, links, bootstrap CLI
 
@@ -700,7 +701,7 @@ characters.
 `frontend/src/mocks/browser.ts` / handler wrapper (passthrough of live routes in `hybrid`), `kit/auth/TotpEnrol.tsx`
 (QR from `uri`; one exact-pinned QR dependency with its reason in the report), `deploy/compose.ci.yml`,
 `.github/workflows/backend.yml` `compose` job, `frontend/e2e/platform-live.spec.ts`.
-**Rules:** §4.8; S7; `mock` stays the default build (the mockup preview is unchanged).
+**Rules:** §4.8; S7; `mock` stays the default build (the mockup preview is unchanged). `TEAS_FILES_DIR` is required outside Development, on a persistent volume (P6).
 - [ ] **Step 1: Failing tests** — proxy (`proxy.test.ts` names `POST /auth/links/{token}` explicitly in the cross-site check, JSON content type + Origin, even though route 14 is `auth: public`): strips `x-teas-actor` and a forged `X-Teas-Bff`, adds the secret, refuses a
   cross-origin POST; hybrid e2e on the composed stack (CI): log in, see memberships, switch company, change password,
   enrol TOTP, invite a user and set their password through the link, create / rotate / revoke a key; the rest of the
