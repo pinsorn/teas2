@@ -28,6 +28,13 @@ public static class RouteDeclaration
         { Agent: true, Permission: not null } when AgentRules.AgentForbidden(spec.Permission) => $"an agent route cannot require '{spec.Permission}': no agent ever holds it",
         _ => null,
     };
+
+    /// <summary>Non-GET routes that write no audit row by design: a session heartbeat (the frozen contract has no audit command for it) and the MCP JSON-RPC transport (its tools are the audited routes).</summary>
+    public static readonly IReadOnlySet<string> NotAudited = new HashSet<string> { "POST /auth/session/extend", "POST /mcp" };
+
+    /// <summary>SP3 4.7 coverage: every route with a method other than GET declares the audit command it writes (checked over the registered routes by a test, not at request time).</summary>
+    public static string? AuditProblem(RouteSpec spec) =>
+        spec.Method != "GET" && spec.Audit is null && !NotAudited.Contains($"{spec.Method} {spec.Path}") ? $"{spec.Method} {spec.Path} declares no Audit command" : null;
 }
 
 public static class RouteGuards
@@ -70,7 +77,7 @@ public sealed class RouteAuthorization(RequestDelegate next)
         if (who.Kind is not ("user" or "agent")) throw new TeasException("auth.unauthenticated");
         var isAgent = who.Kind == "agent";
         if (isAgent && !spec.Agent)
-            await RefuseAsync(spec, scope, audit, spec.Path.StartsWith("/settings", StringComparison.Ordinal) ? "agent.forbidden_setting" : "agent.forbidden_action", null);
+            await RefuseAsync(http, spec, scope, audit, spec.Path.StartsWith("/settings", StringComparison.Ordinal) ? "agent.forbidden_setting" : "agent.forbidden_action", null);
         if (spec.Permission is { } needed)
         {
             var held = None;
@@ -81,15 +88,33 @@ public sealed class RouteAuthorization(RequestDelegate next)
                 else if (Guid.TryParse(who.Id, out var user))
                     held = await rights.ForUserAsync(user, http.RequestAborted);
             }
-            if (!held.Contains(needed)) await RefuseAsync(spec, scope, audit, "auth.forbidden", needed);
+            if (!held.Contains(needed)) await RefuseAsync(http, spec, scope, audit, "auth.forbidden", needed);
         }
         await next(http);
     }
 
-    static async Task RefuseAsync(RouteSpec spec, TenantScope scope, IAudit audit, string code, string? missing)
+    static async Task RefuseAsync(HttpContext http, RouteSpec spec, TenantScope scope, IAudit audit, string code, string? missing)
     {
         // a row needs a company; a request with none (no membership yet) is refused without one
-        if (scope.Current.CompanyId is not null) await audit.RecordRejectedAsync(spec.Audit ?? $"{spec.Method} {spec.Path}", spec.Path);
+        if (scope.Current.CompanyId is not null) await audit.RecordRejectedAsync(AuditCommand(spec, http.Request.RouteValues), RequestTarget(http.Request.Path));
         throw new TeasException(code, missing is null ? null : $"missing permission: {missing}");
+    }
+
+    /// <summary>The path as the contract writes it (without the /internal/v1 group prefix), ids filled in: what the caller asked for, not the route template.</summary>
+    internal static string RequestTarget(PathString path) =>
+        path.Value is { } p && p.StartsWith(Teas.Api.OpenApi.OpenApiSetup.Prefix + "/", StringComparison.Ordinal) ? p[Teas.Api.OpenApi.OpenApiSetup.Prefix.Length..] : path.Value ?? "";
+
+    /// <summary>
+    /// The ONE command a rejected row carries. spec.Audit may hold a template ("company.update.&lt;section&gt;": filled from the route value) or alternatives
+    /// ("a | b", "a + b"): the alternative whose last word is the request's last path segment (".../rotate"), else the first (a refused request's body is not
+    /// read, so "user.activate | user.deactivate" cannot be told apart and records the first). No Audit: "METHOD path".
+    /// </summary>
+    internal static string AuditCommand(RouteSpec spec, RouteValueDictionary values)
+    {
+        if (spec.Audit is not { } audit) return $"{spec.Method} {spec.Path}";
+        var last = spec.Path[(spec.Path.LastIndexOf('/') + 1)..];
+        var alternatives = audit.Split([" | ", " + "], StringSplitOptions.TrimEntries);
+        var one = alternatives.FirstOrDefault(a => a[(a.LastIndexOf('.') + 1)..] == last) ?? alternatives[0];
+        return System.Text.RegularExpressions.Regex.Replace(one, @"<(\w+)>", m => values[m.Groups[1].Value] as string ?? m.Value);
     }
 }

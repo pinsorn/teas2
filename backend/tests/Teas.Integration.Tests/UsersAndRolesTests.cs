@@ -192,7 +192,8 @@ public sealed class UsersAndRolesTests(AuthFixture fx) : IClassFixture<AuthFixtu
         Assert.Equal("auth.link_invalid", (await H.Get($"/auth/links/{resetLink}")).Code);
         Assert.Equal(HttpStatusCode.Forbidden, (await H.Get("/settings/default-notes", userToken)).Status);
         var me = await H.Get("/me", userToken);
-        Assert.Equal(JsonValueKind.Null, me.Json.GetProperty("activeCompanyId").ValueKind);
+        Assert.Equal(company.ToString(), me.Str("activeCompanyId"));   // still the company they are in (not /onboarding), with no rights
+        Assert.Empty(me.Json.GetProperty("permissions").EnumerateArray());
         var on = await SetActive(token, company, userMember, true);
         Assert.Equal((true, 3), (on.Json.GetProperty("active").GetBoolean(), on.Json.GetProperty("version").GetInt32()));
         Assert.Equal(1, await P8.AuditCount(H, company, "user.activate"));
@@ -474,17 +475,17 @@ public sealed class UsersAndRolesTests(AuthFixture fx) : IClassFixture<AuthFixtu
     public async Task CreatingUpdatingAndDeletingARoleValidatesVersionsAndAuditsEachSuccessOnce()
     {
         var (company, _, token, _) = await P8.AdminAsync(H);
-        foreach (var (field, body) in new (string, object)[]
+        foreach (var (field, body) in new (string?, object)[]
         {
             ("name", new { name = " ", permissions = new[] { "party.read" } }),
             ("name", new { name = "นักบัญชี", permissions = new[] { "party.read" } }),   // a system role's name
             ("permissions", new { name = "x", permissions = new[] { "party.read", "not.a.code" } }),
-            ("permissions", new { name = "x" }),
+            (null, new { name = "x" }),   // a missing required member is a binding failure: 422 without field errors
         })
         {
             var bad = await H.Post("/settings/roles", body, token);
             Is(HttpStatusCode.UnprocessableEntity, "record.invalid", bad);
-            Assert.Contains(field, bad.Json.GetProperty("fieldErrors").EnumerateObject().Select(x => x.Name));
+            if (field is not null) Assert.Contains(field, bad.Json.GetProperty("fieldErrors").EnumerateObject().Select(x => x.Name));
         }
         Assert.Equal(0, await P8.AuditAll(H, company));
 

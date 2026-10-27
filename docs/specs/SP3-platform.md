@@ -735,7 +735,7 @@ characters.
 
 **Backlog (SP4, from P9):** a bearer security scheme on the machine routes in the OpenAPI document; `auth_events` rows `key_refused` for failed key authentication (unknown / revoked / expired / kind mismatch); the MCP tool input schema generated from the OpenAPI request schema (with the OmitsNull rule) for the first body-taking tool (P9 uses System.Text.Json's schema).
 
-**Backlog (SP4.6 jobs):** sweep blobs under `TEAS_FILES_DIR` that no `files` row references (a rolled-back image save leaves one); prune `auth_failures` (rows not locked and older than 24 h) and revoked / absolute-expired `sessions` rows.
+**Backlog (SP4.6 jobs):** sweep blobs under `TEAS_FILES_DIR` that no `files` row references (a rolled-back image save leaves one); prune `auth_failures` (rows not locked and older than 24 h), revoked / absolute-expired `sessions` rows and old `auth_events` rows (append-only by trigger like `audit_log`: the retention job needs a sanctioned delete path or time partitions, decide in SP4.6).
 
 ## 13. Attempt log
 

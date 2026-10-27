@@ -32,6 +32,9 @@ public static class OpenApiSetup
         services.ConfigureHttpJsonOptions(o =>
         {
             o.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+            // a request body missing a constructor parameter without a default, or carrying null for a non-nullable member, is a binding failure (422), never a null reaching a handler
+            o.SerializerOptions.RespectRequiredConstructorParameters = true;
+            o.SerializerOptions.RespectNullableAnnotations = true;
             o.SerializerOptions.TypeInfoResolver = (o.SerializerOptions.TypeInfoResolver ?? new DefaultJsonTypeInfoResolver()).WithAddedModifier(OmitWhenNull);
         });
         var ids = new System.Collections.Concurrent.ConcurrentDictionary<string, Type>(); // component name -> the type that owns it
@@ -172,7 +175,6 @@ public static class OpenApiSetup
             {
                 p.ShouldSerialize = (_, v) => v is not null;
                 p.IsGetNullable = false;
-                p.IsSetNullable = false;
             }
         }
     }

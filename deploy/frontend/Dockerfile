@@ -23,8 +23,11 @@ RUN pnpm gen:api && pnpm build
 FROM node:24-alpine AS run
 WORKDIR /app
 ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0
-COPY --from=build /app/.next/standalone ./
-COPY --from=build /app/.next/static ./.next/static
-COPY --from=build /app/public ./public
+# Runs as the image's unprivileged `node` user (uid 1000). The app tree is owned by it, so Next can still write .next/cache (image optimizer / fetch cache).
+COPY --from=build --chown=node:node /app/.next/standalone ./
+COPY --from=build --chown=node:node /app/.next/static ./.next/static
+COPY --from=build --chown=node:node /app/public ./public
+RUN mkdir -p .next/cache && chown node:node .next/cache
+USER node
 EXPOSE 3000
 CMD ["node", "server.js"]

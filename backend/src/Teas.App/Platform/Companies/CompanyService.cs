@@ -94,7 +94,7 @@ public sealed partial class CompanyService(TeasDbContext db, TenantScope scope, 
             await using var tx = await db.Database.BeginTransactionAsync(ct);
             vat = await Q.ScalarAsync<bool>(db, "SELECT vat_registered FROM teas.companies WHERE id = @c", ct, TxSql.P("c", active));
         }
-        return new MeView(s.UserId, s.DisplayName, memberships, s.ActiveCompanyId, vat, permissions, BusinessDate.Today(clock).ToString());
+        return new MeView(s.UserId, s.DisplayName, memberships, s.StoredActiveCompanyId ?? s.ActiveCompanyId, vat, permissions, BusinessDate.Today(clock).ToString());
     }
 
     /// <summary>Switch to a company the user is an active, accepted member of (anything else is the one 404). Audited in the company switched to.</summary>
@@ -111,7 +111,7 @@ public sealed partial class CompanyService(TeasDbContext db, TenantScope scope, 
             await audit.RecordAsync("company.switch", target.ToString(), new { companyId = s.ActiveCompanyId }, new { companyId = target }, ct);
             await tx.CommitAsync(ct);
         }
-        return await MeAsync(s with { ActiveCompanyId = target }, ct);
+        return await MeAsync(s with { ActiveCompanyId = target, StoredActiveCompanyId = target }, ct);
     }
 
     // ---------------------------------------------------------------- settings
@@ -129,6 +129,9 @@ public sealed partial class CompanyService(TeasDbContext db, TenantScope scope, 
     }
 
     /// <summary>The id in the path must be the active company: another company's id is a 404 even for one of its members (the widened SELECT policy would show it).</summary>
+    /// <summary>The 404 for any company but the session's own, asked before a body is read.</summary>
+    public void EnsureOwn(string id) => Own(id);
+
     Guid Own(string id) => Guid.TryParse(id, out var g) && g == Company ? g : throw new TeasException("company.not_found");
 
     async Task<Row> LoadAsync(Guid id, CancellationToken ct) =>
