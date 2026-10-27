@@ -12,4 +12,6 @@
     <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />
     <AdditionalFiles Include="$(MSBuildThisFileDirectory)BannedSymbols.txt" />
   </ItemGroup>
+  <!-- Test hook only: the architecture canary injects a file that reads DateTime.Now into ONE project. -->
+  <ItemGroup Condition="'$(TeasCanaryFile)' != '' And '$(MSBuildProjectName)' == '$(TeasCanaryProject)'"><Compile Include="$(TeasCanaryFile)" /></ItemGroup>
 </Project>

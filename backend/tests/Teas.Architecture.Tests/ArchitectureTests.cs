@@ -27,35 +27,49 @@ public class ArchitectureTests
         Assert.Empty(bad);
     }
 
-    // The ban cannot be switched off locally: no RS0030 pragma outside Program.cs, no suppression, no analyzers off.
+    // CANARY: build every real src project (real Directory.Build.* / .rsp / editorconfig chain) with one injected
+    // file that reads DateTime.Now. If ANY route silences RS0030 for that project, the build succeeds and this fails.
+    public static IEnumerable<object[]> SrcProjects() =>
+        Directory.EnumerateFiles(Path.Combine(Backend, "src"), "Teas.*.csproj", SearchOption.AllDirectories)
+            .Select(p => new object[] { p });
+
+    [Theory]
+    [MemberData(nameof(SrcProjects))]
+    public void CanaryClockCallFailsTheRealProjectBuild(string proj)
+    {
+        var name = Path.GetFileNameWithoutExtension(proj);
+        // Under the project's own obj/ (not compiled by the default glob) so the .editorconfig / .globalconfig chain applies to it.
+        var dir = Path.Combine(Path.GetDirectoryName(proj)!, "obj");
+        Directory.CreateDirectory(dir);
+        var canary = Path.Combine(dir, "TeasCanary.cs");
+        try
+        {
+            File.WriteAllText(canary, $"namespace {name}; static class TeasCanary {{ public static object X = System.DateTime.Now; }}");
+            var (exit, output) = Run("dotnet",
+                $"build \"{proj}\" -nodeReuse:false -p:UseSharedCompilation=false -p:TeasCanaryProject={name} -p:\"TeasCanaryFile={canary}\"", Backend);
+            Assert.NotEqual(0, exit);
+            Assert.Contains(output.Split((char)10), l => l.Contains("TeasCanary.cs") && l.Contains("error RS0030"));
+        }
+        finally { File.Delete(canary); }
+    }
+
+    // File-scoped things the canary cannot see. Any SuppressMessage at all is refused (no usage today; stricter than
+    // matching RS0030, so string tricks cannot hide it).
     [Fact]
-    public void NoOneSilencesTheBannedApiAnalyzer()
+    public void NoFileLocalSilencing()
     {
         var sep = Path.DirectorySeparatorChar;
         var programCs = Path.Combine(Backend, "src", "Teas.Api", "Program.cs");
         var self = Path.Combine(Backend, "tests", "Teas.Architecture.Tests", "ArchitectureTests.cs");
+        const RegexOptions o = RegexOptions.IgnoreCase | RegexOptions.Multiline;
         var bad = new List<string>();
-        foreach (var f in Directory.EnumerateFiles(Backend, "*", SearchOption.AllDirectories))
+        foreach (var f in Directory.EnumerateFiles(Backend, "*.cs", SearchOption.AllDirectories))
         {
             if (f.Contains($"{sep}obj{sep}") || f.Contains($"{sep}bin{sep}") || f == self) continue;
-            var name = Path.GetFileName(f);
-            var ext = Path.GetExtension(f);
             var text = File.ReadAllText(f);
-            if (ext == ".cs")
-            {
-                if (f != programCs && Regex.IsMatch(text, @"#pragma\s+warning[^
-]*RS0030")) bad.Add(f + ": RS0030 pragma");
-                if (Regex.IsMatch(text, @"SuppressMessage\([^)]*RS0030")) bad.Add(f + ": RS0030 SuppressMessage");
-            }
-            else if (ext is ".csproj" or ".props" or ".targets")
-            {
-                if (Regex.IsMatch(text, @"<(NoWarn|WarningsNotAsErrors)>[^<]*RS0030")) bad.Add(f + ": RS0030 in NoWarn/WarningsNotAsErrors");
-                if (Regex.IsMatch(text, @"<RunAnalyzers(DuringBuild)?>\s*false", RegexOptions.IgnoreCase)) bad.Add(f + ": analyzers off");
-            }
-            else if (name is ".editorconfig" or ".globalconfig" || ext is ".editorconfig" or ".globalconfig")
-            {
-                if (text.Contains("RS0030", StringComparison.Ordinal)) bad.Add(f + ": RS0030 severity line");
-            }
+            if (Regex.IsMatch(text, @"^[ \t]*#[ \t]*pragma[ \t]+warning[ \t]+disable[ \t]*(//.*)?\r?$", o)) bad.Add(f + ": bare #pragma warning disable");
+            if (f != programCs && Regex.IsMatch(text, @"#[ \t]*pragma[ \t]+warning[ \t]+disable[^\n]*RS0030", o)) bad.Add(f + ": RS0030 pragma");
+            if (Regex.IsMatch(text, @"SuppressMessage", o)) bad.Add(f + ": SuppressMessage");
         }
         Assert.Empty(bad);
     }
