@@ -12,6 +12,9 @@ describe('link tokens never reach the web log', () => {
     expect(error).toHaveBeenCalledWith('Failed to proxy http://api:8080/internal/v1/auth/links/[redacted]?x=1 Error: connect ECONNREFUSED');
     expect(warn).toHaveBeenCalledWith('Failed to proxy http://api:8080/internal/v1/auth/links/[redacted]');
   });
+  it('matches the path case-insensitively (the API routes /Auth/Links/<token> too)', () => {
+    expect(redactLinkTokens('Failed to proxy http://api:8080/internal/v1/Auth/LINKS/MixedTok9')).toBe('Failed to proxy http://api:8080/internal/v1/Auth/LINKS/[redacted]');
+  });
   it('an Error argument is redacted in message and stack; other values pass untouched', () => {
     const e = new Error('connect failed for /internal/v1/auth/links/secrettoken');
     const c = sink();

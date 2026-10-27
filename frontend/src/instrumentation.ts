@@ -1,6 +1,6 @@
 // SP3 P10a: a link token travels in the path of /auth/links/{token} (routes 13 / 14). When the upstream is down, Next's external rewrite logs
 // `Failed to proxy <full target URL>` with console.error, which would put the token in the web logs. Redact it in the server process's console.
-const TOKEN = /(\/auth\/links\/)[^/?#\s'"`]+/g;
+const TOKEN = /(\/auth\/links\/)[^/?#\s'"`]+/gi; // case-insensitive: ASP.NET routing ignores case, so /Auth/Links/<token> reaches the API
 
 export const redactLinkTokens = (v: unknown): unknown => {
   if (typeof v === 'string') return v.replace(TOKEN, '$1[redacted]');
