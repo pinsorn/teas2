@@ -42,28 +42,48 @@ public sealed class AuthService(TeasDbContext db, TimeProvider clock, SessionSer
 
     // ---------------------------------------------------------------- lockout and events
 
-    async Task EnsureNotLockedAsync(byte[] key, Guid? userId, RequestInfo req, CancellationToken ct)
+    /// <summary>
+    /// RESERVES an attempt before anything is verified: one atomic upsert counts it and returns its number n (an expired lock starts the count again). n above 5
+    /// means the key is locked (the lock is set when n reaches 5 and kept while it lasts): 429 auth.locked, nothing is verified. Attempts 1-5 are checked; the
+    /// 5th that fails answers 429 too. Because the count is taken before the check, a burst cannot buy more than 5 checks. Own transaction, committed.
+    /// </summary>
+    async Task<int> ReserveAsync(byte[] key, Guid? userId, RequestInfo req, CancellationToken ct)
     {
         var now = clock.GetUtcNow();
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        var until = await Q.ScalarAsync<DateTimeOffset?>(db, "SELECT locked_until FROM teas.auth_failures WHERE key_hash = @k", ct, TxSql.P("k", key));
-        if (until is not { } u || u <= now) return;
-        await EventAsync("auth.locked", key, userId, req, ct);
+        const string Next = "CASE WHEN f.locked_until IS NOT NULL AND f.locked_until <= @now THEN 1 ELSE f.failures + 1 END";
+        var n = await Q.ScalarAsync<int>(db, $"""
+            INSERT INTO teas.auth_failures AS f (key_hash, failures, locked_until, updated_at) VALUES (@k, 1, NULL, @now)
+            ON CONFLICT (key_hash) DO UPDATE SET failures = {Next},
+              locked_until = CASE WHEN {Next} >= @limit THEN CASE WHEN f.locked_until > @now THEN f.locked_until ELSE @until END ELSE NULL END, updated_at = @now
+            RETURNING failures
+            """, ct, TxSql.P("k", key), TxSql.P("now", now), TxSql.P("limit", LockAfter), TxSql.P("until", now + LockFor));
+        if (n > LockAfter) await EventAsync("auth.locked", key, userId, req, ct);
         await tx.CommitAsync(ct);
-        throw new TeasException("auth.locked");
+        return n > LockAfter ? throw new TeasException("auth.locked") : n;
     }
 
-    /// <summary>Counts one failure (own transaction, committed), logs it, and returns the exception to throw: auth.locked when this failure locked, else <paramref name="code"/>.</summary>
-    async Task<TeasException> FailAsync(byte[] key, string kind, Guid? userId, RequestInfo req, string code, CancellationToken ct)
+    /// <summary>The reserved attempt did not count: the password was right and the second factor is still to come. (A lock set by this very attempt goes with it.)</summary>
+    async Task RefundAsync(byte[] key, CancellationToken ct)
     {
-        var now = clock.GetUtcNow();
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        const string Next = "CASE WHEN f.locked_until IS NOT NULL AND f.locked_until <= @now THEN 1 ELSE f.failures + 1 END";   // an expired lock starts the count again
-        var locked = await Q.ScalarAsync<bool>(db, $"""
-            INSERT INTO teas.auth_failures AS f (key_hash, failures, locked_until, updated_at) VALUES (@k, 1, NULL, @now)
-            ON CONFLICT (key_hash) DO UPDATE SET failures = {Next}, locked_until = CASE WHEN {Next} >= @limit THEN @until ELSE NULL END, updated_at = @now
-            RETURNING locked_until IS NOT NULL AND locked_until > @now
-            """, ct, TxSql.P("k", key), TxSql.P("now", now), TxSql.P("limit", LockAfter), TxSql.P("until", now + LockFor));
+        await Q.ExecAsync(db, "UPDATE teas.auth_failures SET failures = failures - 1, locked_until = CASE WHEN failures - 1 >= @limit THEN locked_until ELSE NULL END WHERE key_hash = @k AND failures > 0",
+            ct, TxSql.P("k", key), TxSql.P("limit", LockAfter));
+        await tx.CommitAsync(ct);
+    }
+
+    async Task ClearFailuresAsync(byte[] key, CancellationToken ct)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await Q.ExecAsync(db, "DELETE FROM teas.auth_failures WHERE key_hash = @k", ct, TxSql.P("k", key));
+        await tx.CommitAsync(ct);
+    }
+
+    /// <summary>The reserved attempt <paramref name="n"/> failed: logs it and returns the exception to throw (auth.locked when it was the 5th).</summary>
+    async Task<TeasException> FailAsync(byte[] key, string kind, Guid? userId, RequestInfo req, string code, int n, CancellationToken ct)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var locked = n >= LockAfter;
         await EventAsync(locked ? "auth.locked" : kind, key, userId, req, ct);
         await tx.CommitAsync(ct);
         return new TeasException(locked ? "auth.locked" : code);
@@ -82,15 +102,16 @@ public sealed class AuthService(TeasDbContext db, TimeProvider clock, SessionSer
     {
         email = email.Trim();
         var key = Tokens.EmailKey(email);
-        await EnsureNotLockedAsync(key, null, req, ct);
+        var n = await ReserveAsync(key, null, req, ct);
         U? user;
         await using (var tx = await db.Database.BeginTransactionAsync(ct))
             user = await Q.OneAsync(db, $"SELECT {UserCols} FROM teas.users u WHERE u.email = @e::citext", ReadUser, ct, TxSql.P("e", email));
         var ok = passwords.Verify(user?.PasswordHash, password);   // always exactly one verification, whatever the email was
-        if (!ok || user is null) throw await FailAsync(key, "auth.login.failed", user?.Id, req, "auth.invalid_credentials", ct);
+        if (!ok || user is null) throw await FailAsync(key, "auth.login.failed", user?.Id, req, "auth.invalid_credentials", n, ct);
 
         if (user.TotpSecretEnc is not null)
         {
+            await RefundAsync(key, ct);   // the password was right: this attempt is not a failure; the second-factor step reserves its own
             var challenge = Tokens.New();
             var now = clock.GetUtcNow();
             await using var challengeTx = await db.Database.BeginTransactionAsync(ct);
@@ -154,7 +175,7 @@ public sealed class AuthService(TeasDbContext db, TimeProvider clock, SessionSer
                 ReadUser, ct, TxSql.P("h", hash), TxSql.P("now", clock.GetUtcNow()));
         if (user?.TotpSecretEnc is null) throw new TeasException("auth.challenge_invalid");
         var key = Tokens.EmailKey(user.Email);
-        await EnsureNotLockedAsync(key, user.Id, req, ct);
+        var n = await ReserveAsync(key, user.Id, req, ct);
 
         IssuedSession? issued = null;
         var spent = false;
@@ -172,7 +193,7 @@ public sealed class AuthService(TeasDbContext db, TimeProvider clock, SessionSer
             }
         }
         if (spent) throw new TeasException("auth.challenge_invalid");
-        return issued ?? throw await FailAsync(key, "auth.totp.failed", user.Id, req, "auth.totp_invalid", ct);
+        return issued ?? throw await FailAsync(key, "auth.totp.failed", user.Id, req, "auth.totp_invalid", n, ct);
     }
 
     /// <summary>The expired session's own user signs in again: same password check and counter as login, the second factor when enrolled, a new token, the old row ended.</summary>
@@ -181,11 +202,11 @@ public sealed class AuthService(TeasDbContext db, TimeProvider clock, SessionSer
         var old = await sessions.ResolveAsync(token, ct) ?? throw new TeasException("auth.unauthenticated");
         if (old.State != SessionState.Expired) throw new TeasException("auth.not_expired");
         var key = Tokens.EmailKey(old.Email);
-        await EnsureNotLockedAsync(key, old.UserId, req, ct);
+        var n = await ReserveAsync(key, old.UserId, req, ct);
         var user = await UserByIdAsync(old.UserId, ct) ?? throw new TeasException("auth.unauthenticated");
-        if (!passwords.Verify(user.PasswordHash, password)) throw await FailAsync(key, "auth.relogin.failed", user.Id, req, "auth.invalid_credentials", ct);
+        if (!passwords.Verify(user.PasswordHash, password)) throw await FailAsync(key, "auth.relogin.failed", user.Id, req, "auth.invalid_credentials", n, ct);
         var twoStep = user.TotpSecretEnc is not null;
-        if (twoStep && code is null && recoveryCode is null) return new ReloginResult(null, true);
+        if (twoStep && code is null && recoveryCode is null) { await RefundAsync(key, ct); return new ReloginResult(null, true); }
 
         IssuedSession? issued = null;
         await using (var tx = await db.Database.BeginTransactionAsync(ct))
@@ -197,7 +218,7 @@ public sealed class AuthService(TeasDbContext db, TimeProvider clock, SessionSer
                 await tx.CommitAsync(ct);
             }
         }
-        return issued is null ? throw await FailAsync(key, "auth.totp.failed", user.Id, req, "auth.totp_invalid", ct) : new ReloginResult(issued, false);
+        return issued is null ? throw await FailAsync(key, "auth.totp.failed", user.Id, req, "auth.totp_invalid", n, ct) : new ReloginResult(issued, false);
     }
 
     public async Task ExtendAsync(SessionInfo s, CancellationToken ct = default)
@@ -232,9 +253,10 @@ public sealed class AuthService(TeasDbContext db, TimeProvider clock, SessionSer
     public async Task ChangePasswordAsync(SessionInfo s, string current, string next, string confirm, RequestInfo req, CancellationToken ct = default)
     {
         var key = Tokens.EmailKey(s.Email);
-        await EnsureNotLockedAsync(key, s.UserId, req, ct);
+        var n = await ReserveAsync(key, s.UserId, req, ct);
         var user = await UserByIdAsync(s.UserId, ct) ?? throw new TeasException("auth.unauthenticated");
-        if (!passwords.Verify(user.PasswordHash, current)) throw await FailAsync(key, "auth.password.failed", user.Id, req, "auth.current_password_invalid", ct);
+        if (!passwords.Verify(user.PasswordHash, current)) throw await FailAsync(key, "auth.password.failed", user.Id, req, "auth.current_password_invalid", n, ct);
+        await ClearFailuresAsync(key, ct);   // the current password was right, whatever is wrong with the new one
         if (next != confirm) throw new TeasException("auth.password_mismatch");
         if (!PasswordService.IsStrong(next)) throw new TeasException("auth.password_weak");
         if (passwords.Verify(user.PasswordHash, next)) throw new TeasException("auth.password_reuse");
@@ -245,14 +267,26 @@ public sealed class AuthService(TeasDbContext db, TimeProvider clock, SessionSer
             TxSql.P("h", hash), TxSql.P("now", clock.GetUtcNow()), TxSql.P("u", user.Id));
         await Q.ExecAsync(db, "DELETE FROM teas.auth_failures WHERE key_hash = @k", ct, TxSql.P("k", key));
         await sessions.RevokeAllAsync(user.Id, except: s.Id, "password_change", ct);   // a new password ends every other sign-in
+        await Q.ExecAsync(db, "DELETE FROM teas.login_challenges WHERE user_id = @u", ct, TxSql.P("u", user.Id));   // and every half-finished two-step sign-in
         await EventAsync("auth.password.change", key, user.Id, req, ct);
         await AuditAsync(user.Id, user.DisplayName, s.ActiveCompanyId, req, "auth.password.change", user.Id.ToString(), ct);
         await tx.CommitAsync(ct);
     }
 
+    /// <summary>When two-step is already on, (re)enrolling needs a sign-in from the last 10 minutes (a stolen session cannot swap the authenticator). True = it was on.</summary>
+    async Task<bool> RequireFreshSignInIfEnrolledAsync(SessionInfo s, CancellationToken ct)
+    {
+        bool on;
+        await using (var tx = await db.Database.BeginTransactionAsync(ct))
+            on = await Q.ScalarAsync<bool>(db, "SELECT totp_secret_enc IS NOT NULL FROM teas.users WHERE id = @u", ct, TxSql.P("u", s.UserId));
+        if (on && clock.GetUtcNow() - s.CreatedAt > TimeSpan.FromMinutes(10)) throw new TeasException("auth.forbidden", "sign in again to change two-step verification");
+        return on;
+    }
+
     /// <summary>Step 1 of enrolment: a fresh 160-bit secret, kept encrypted as PENDING until a correct code proves the app has it.</summary>
     public async Task<(string Secret, string Uri)> StartEnrolAsync(SessionInfo s, RequestInfo req, CancellationToken ct = default)
     {
+        await RequireFreshSignInIfEnrolledAsync(s, ct);
         var secret = Totp.NewSecret();
         var b32 = Totp.ToBase32(secret);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -266,6 +300,7 @@ public sealed class AuthService(TeasDbContext db, TimeProvider clock, SessionSer
     /// <summary>Step 2: the right code turns two-step on, stores 8 recovery codes (hashed) and returns them. This return is the only time they exist in clear.</summary>
     public async Task<IReadOnlyList<string>> ConfirmEnrolAsync(SessionInfo s, string code, RequestInfo req, CancellationToken ct = default)
     {
+        var replacing = await RequireFreshSignInIfEnrolledAsync(s, ct);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var pending = await Q.ScalarAsync<byte[]>(db, "SELECT totp_pending_enc FROM teas.users WHERE id = @u", ct, TxSql.P("u", s.UserId)) ?? throw new TeasException("auth.enrol_not_started");
         byte[] secret;
@@ -278,6 +313,7 @@ public sealed class AuthService(TeasDbContext db, TimeProvider clock, SessionSer
             """, ct, TxSql.P("s", step), TxSql.P("u", s.UserId), TxSql.P("p", pending));
         if (claimed != 1) throw new TeasException("auth.enrol_not_started");   // a racing verify won
         await Q.ExecAsync(db, "DELETE FROM teas.recovery_codes WHERE user_id = @u", ct, TxSql.P("u", s.UserId));
+        if (replacing) await sessions.RevokeAllAsync(s.UserId, except: s.Id, "totp_reenrol", ct);   // a replaced authenticator ends every other sign-in
         var codes = Enumerable.Range(0, 8).Select(_ => RecoveryCodes.New()).ToList();
         foreach (var c in codes)
             await Q.ExecAsync(db, "INSERT INTO teas.recovery_codes (user_id, code_hash) VALUES (@u, @h)", ct, TxSql.P("u", s.UserId), TxSql.P("h", passwords.Hash(c)));

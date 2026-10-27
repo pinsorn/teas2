@@ -383,14 +383,122 @@ public sealed class AuthLoginTests(AuthFixture fx) : IClassFixture<AuthFixture>
     // ---------------------------------------------------------------- rate limit
 
     [Fact]
-    public async Task TheAuthRoutesAreLimitedTo20PerMinutePerIpAndNothingElseIs()
+    public async Task TheAuthRoutesAreLimitedTo20PerMinutePerIpExceptTheSessionPollAndNothingElseIs()
     {
         await using var limited = await AuthHost.StartAsync(rateLimit: 20);
-        for (var i = 0; i < 20; i++) Assert.Equal(HttpStatusCode.OK, (await limited.Get("/auth/session")).Status);
-        var over = await limited.Get("/auth/session");
+        using var noSecret = limited.Factory.Server.CreateClient();                      // no X-Teas-Bff: refused BEFORE the limiter, so it uses none of the 20
+        for (var i = 0; i < 30; i++) Assert.Equal(HttpStatusCode.Unauthorized, (await noSecret.PostAsync("/internal/v1/auth/logout", null)).StatusCode);
+        for (var i = 0; i < 20; i++) Assert.Equal(HttpStatusCode.OK, (await limited.Post("/auth/logout")).Status);
+        var over = await limited.Post("/auth/logout");
         Assert.Equal((HttpStatusCode)429, over.Status);
         Assert.Equal("http.rate_limited", over.Code);
         Assert.Equal((HttpStatusCode)429, (await limited.Post("/auth/login", new { email = "a@b.test", password = "x" })).Status);
+        for (var i = 0; i < 40; i++) Assert.Equal(HttpStatusCode.OK, (await limited.Get("/auth/session")).Status);   // the expiry dialog's poll is not limited
         Assert.Equal(HttpStatusCode.OK, (await limited.Get("/ping")).Status);
+    }
+
+    // ---------------------------------------------------------------- P7a: the attempt is reserved BEFORE it is checked
+
+    [Fact]
+    public async Task AParallelBurstOfWrongPasswordsBuysAtMostFiveChecks()
+    {
+        var u = await H.CreateUserAsync();
+        var before = Verifications;
+        var rs = await Task.WhenAll(Enumerable.Range(0, 30).Select(i => Login(u.Email, "Wrong#Password" + i)));
+        Assert.Equal(before + 5, Verifications);                                          // attempts 1-5 were checked, 25 were refused unchecked
+        Assert.Equal(4, rs.Count(r => r.Code == "auth.invalid_credentials"));
+        Assert.Equal(26, rs.Count(r => r.Code == "auth.locked"));
+
+        // after 4 failures a burst gets exactly one more check, and the right password is then refused: no session beyond the 5th attempt
+        var v = await H.CreateUserAsync();
+        for (var i = 0; i < 4; i++) await Login(v.Email, "Wrong#Password1");
+        before = Verifications;
+        var burst = await Task.WhenAll(Enumerable.Range(0, 12).Select(i => Login(v.Email, "Wrong#Password" + i)));
+        Assert.Equal(before + 1, Verifications);
+        Assert.All(burst, r => Assert.Equal("auth.locked", r.Code));
+        var right = await Login(v.Email, v.Password);
+        Assert.Equal("auth.locked", right.Code);
+        Assert.Null(right.Token);
+    }
+
+    [Fact]
+    public async Task AParallelBurstOfWrongCodesBuysAtMostFiveCodeChecks()
+    {
+        var u = await H.CreateUserAsync(totp: true);
+        var challenges = new List<string>();
+        for (var i = 0; i < 12; i++) challenges.Add((await Login(u.Email, u.Password)).Str("challenge")!);   // a right password costs no attempt
+        var gate = H.Factory.Services.GetRequiredService<GatedProtector>();
+        var before = gate.Calls;
+        var rs = await Task.WhenAll(challenges.Select(c => H.Post("/auth/totp", new { challenge = c, code = "000000" })));
+        Assert.Equal(before + 5, gate.Calls);
+        Assert.Equal(4, rs.Count(r => r.Code == "auth.totp_invalid"));
+        Assert.Equal(8, rs.Count(r => r.Code == "auth.locked"));
+    }
+
+    [Fact]
+    public async Task AnExpectedFailureWritesNoErrorLog()
+    {
+        var u = await H.CreateUserAsync();
+        await Login(u.Email, "Wrong#Password1");
+        Assert.DoesNotContain(H.Logs.Lines, l => l.Contains("ExceptionHandlerMiddleware"));
+    }
+
+    // ---------------------------------------------------------------- P7a: changing the authenticator needs a fresh sign-in
+
+    async Task<string> TwoStepSignInAsync(TestUser u)
+    {
+        var step = await Login(u.Email, u.Password);
+        var ok = await H.Post("/auth/totp", new { challenge = step.Str("challenge"), code = H.CodeOf(u) });
+        Assert.Equal(HttpStatusCode.OK, ok.Status);
+        H.Clock.Advance(TimeSpan.FromSeconds(30));                                       // the next sign-in needs the next step's code
+        return ok.Token!;
+    }
+
+    [Fact]
+    public async Task ChangingTheAuthenticatorNeedsASignInFromTheLast10MinutesAndEndsTheOtherSessions()
+    {
+        var u = await H.CreateUserAsync(totp: true);
+        var old = await TwoStepSignInAsync(u);
+        var other = await TwoStepSignInAsync(u);
+        H.Clock.Advance(11 * Min);
+        var start = await H.Post("/auth/totp/enrol", token: old);
+        Assert.Equal((HttpStatusCode.Forbidden, "auth.forbidden"), (start.Status, start.Code));
+        var verify = await H.Post("/auth/totp/enrol/verify", new { code = "123456" }, old);
+        Assert.Equal((HttpStatusCode.Forbidden, "auth.forbidden"), (verify.Status, verify.Code));
+
+        var fresh = await TwoStepSignInAsync(u);
+        var begun = await H.Post("/auth/totp/enrol", token: fresh);
+        Assert.Equal(HttpStatusCode.OK, begun.Status);
+        var code = Totp.Code(Totp.FromBase32(begun.Str("secret")!), Totp.StepOf(H.Now));
+        Assert.Equal(HttpStatusCode.OK, (await H.Post("/auth/totp/enrol/verify", new { code }, fresh)).Status);
+        Assert.Equal("auth.unauthenticated", (await H.Get("/auth/profile", old)).Code);     // every other session ended
+        Assert.Equal("auth.unauthenticated", (await H.Get("/auth/profile", other)).Code);
+        Assert.Equal(HttpStatusCode.OK, (await H.Get("/auth/profile", fresh)).Status);
+    }
+
+    [Fact]
+    public async Task ASessionOfADeactivatedMemberHasNoCompany()
+    {
+        var u = await H.CreateUserAsync();
+        var company = await H.CreateCompanyAsync();
+        var member = await H.AddMemberAsync(company, u);
+        var t = await H.LoginAsync(u);
+        await H.Post("/auth/totp/enrol", token: t);
+        Assert.Equal(1, await H.ScalarAsync<long>("SELECT count(*) FROM teas.audit_log WHERE company_id = @c AND command = 'auth.totp.enrol_start'", P("c", company)));
+        await H.ExecAsync("UPDATE teas.company_members SET active = false WHERE company_id = @c AND id = @m", new ScopeState(company, null, false), P("c", company), P("m", member));
+        await H.Post("/auth/totp/enrol", token: t);                                         // still signed in, but the company is no scope and no audit target
+        Assert.Equal(1, await H.ScalarAsync<long>("SELECT count(*) FROM teas.audit_log WHERE company_id = @c AND command = 'auth.totp.enrol_start'", P("c", company)));
+    }
+
+    [Fact]
+    public async Task APasswordChangeEndsHalfFinishedTwoStepSignIns()
+    {
+        var u = await H.CreateUserAsync(totp: true);
+        var pending = (await Login(u.Email, u.Password)).Str("challenge");
+        var session = await TwoStepSignInAsync(u);
+        const string next = "Another#Pass42";
+        Assert.Equal(HttpStatusCode.OK, (await H.Post("/auth/password", new { current = u.Password, next, confirm = next }, session)).Status);
+        var late = await H.Post("/auth/totp", new { challenge = pending, code = H.CodeOf(u) });
+        Assert.Equal("auth.challenge_invalid", late.Code);
     }
 }

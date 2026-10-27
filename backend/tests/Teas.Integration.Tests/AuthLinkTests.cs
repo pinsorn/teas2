@@ -326,6 +326,32 @@ public sealed class AuthLinkTests(AuthFixture fx) : IClassFixture<AuthFixture>
     }
 
     [Fact]
+    public async Task ThePendingInviteUnderTheMemberRowsOwnEmailCountsAtUseLikeAtIssue()
+    {
+        var (companyA, issuer) = await CompanyWithAdminAsync();
+        var (companyB, _) = await CompanyWithAdminAsync();
+        var user = await H.CreateUserAsync();
+        var memberEmail = $"alias-{Guid.NewGuid():N}@example.test";                          // the membership email is not the login email
+        var member = await H.AddMemberAsync(companyA, user, "operator", email: memberEmail);
+        var token = await H.IssueLinkAsync("reset", issuer.Id.ToString(), userId: user.Id, companyId: companyA, memberId: member);
+        Assert.Equal(HttpStatusCode.OK, (await Info(token)).Status);
+        await H.AddMemberAsync(companyB, null, "operator", pending: true, email: memberEmail.ToUpperInvariant());   // another company invited that address
+        var hash = await HashOf(user.Id);
+        Assert.Equal("auth.link_invalid", (await Info(token)).Code);
+        Assert.Equal("auth.link_invalid", (await Accept(token)).Code);
+        Assert.Equal(hash, await HashOf(user.Id));
+    }
+
+    [Fact]
+    public async Task AResetEndsHalfFinishedTwoStepSignIns()
+    {
+        var user = await H.CreateUserAsync(totp: true);
+        var challenge = (await H.Post("/auth/login", new { email = user.Email, password = user.Password })).Str("challenge");
+        Assert.Equal(HttpStatusCode.OK, (await Accept(await H.IssueLinkAsync("reset", "operator", userId: user.Id))).Status);
+        Assert.Equal("auth.challenge_invalid", (await H.Post("/auth/totp", new { challenge, code = H.CodeOf(user) })).Code);
+    }
+
+    [Fact]
     public async Task AnOperatorLinkNeedsNoIssuerCheck()
     {
         var (companyA, _) = await CompanyWithAdminAsync();

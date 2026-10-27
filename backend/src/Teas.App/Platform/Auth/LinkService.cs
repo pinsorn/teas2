@@ -101,14 +101,14 @@ public sealed class LinkService(TeasDbContext db, TenantScope scope, TimeProvide
     /// company where the account has a membership of any state (by user id, or by the login email as a pending invite or as the membership email). The CLI is trusted;
     /// a link whose stored issuer is neither the operator nor a user id cannot be re-checked and is invalid.
     /// </summary>
-    async Task<bool> IssuerStillVouchesAsync(Link l, string? loginEmail, CancellationToken ct)
+    async Task<bool> IssuerStillVouchesAsync(Link l, string? loginEmail, string? memberEmail, CancellationToken ct)
     {
         if (l.CreatedBy == UserLinks.Operator) return true;
         if (!Guid.TryParse(l.CreatedBy, out var issuer)) return false;
         var managed = await ManagedByAsync(issuer, ct);
         if (l.Kind == UserLinks.Invite) return l.CompanyId is { } c && managed.Contains(c);
-        var theirs = await Q.ManyAsync(db, "SELECT DISTINCT company_id FROM teas.company_members WHERE user_id = @u OR email = @e::citext",
-            r => r.GetGuid(0), ct, TxSql.P("u", l.UserId!.Value), TxSql.P("e", loginEmail ?? ""));
+        var theirs = await Q.ManyAsync(db, "SELECT DISTINCT company_id FROM teas.company_members WHERE user_id = @u OR email = @e::citext OR email = @m::citext",
+            r => r.GetGuid(0), ct, TxSql.P("u", l.UserId!.Value), TxSql.P("e", loginEmail ?? ""), TxSql.P("m", memberEmail ?? ""));
         return theirs.All(managed.Contains);
     }
 
@@ -123,19 +123,22 @@ public sealed class LinkService(TeasDbContext db, TenantScope scope, TimeProvide
                 SELECT m.email::text, m.name, c.name, m.active AND m.invite_pending FROM teas.company_members m JOIN teas.companies c ON c.id = m.company_id
                 WHERE m.company_id = @c AND m.id = @m
                 """, r => new { Email = r.GetString(0), Name = r.GetString(1), Company = r.GetString(2), Open = r.GetBoolean(3) }, ct, TxSql.P("c", l.CompanyId.Value), TxSql.P("m", l.MemberId.Value));
-            if (m is not { Open: true } || !await IssuerStillVouchesAsync(l, null, ct)) return null;
+            if (m is not { Open: true } || !await IssuerStillVouchesAsync(l, null, null, ct)) return null;
             var existing = await Q.ScalarAsync<Guid?>(db, "SELECT id FROM teas.users WHERE email = @e::citext", ct, TxSql.P("e", m.Email));
             return new Target(m.Email, m.Name, m.Company, null, existing);
         }
         if (l.UserId is null) return null;
         var u = await Q.OneAsync(db, "SELECT email::text, display_name FROM teas.users WHERE id = @u", r => new { Email = r.GetString(0), Name = r.GetString(1) }, ct, TxSql.P("u", l.UserId.Value));
         if (u is null) return null;
+        string? memberEmail = null;
         if (l.CompanyId is { } company && l.MemberId is { } member)   // a deactivated (or not yet accepted) member's reset link is dead
         {
-            var live = await Q.ScalarAsync<bool>(db, "SELECT active AND NOT invite_pending FROM teas.company_members WHERE company_id = @c AND id = @m", ct, TxSql.P("c", company), TxSql.P("m", member));
-            if (!live) return null;
+            var row = await Q.OneAsync(db, "SELECT active AND NOT invite_pending, email::text FROM teas.company_members WHERE company_id = @c AND id = @m",
+                r => new { Live = r.GetBoolean(0), Email = r.GetString(1) }, ct, TxSql.P("c", company), TxSql.P("m", member));
+            if (row is not { Live: true }) return null;
+            memberEmail = row.Email;   // as at issue: a pending invite under the member row's own email counts too
         }
-        return await IssuerStillVouchesAsync(l, u.Email, ct) ? new Target(u.Email, u.Name, null, l.UserId, null) : null;
+        return await IssuerStillVouchesAsync(l, u.Email, memberEmail, ct) ? new Target(u.Email, u.Name, null, l.UserId, null) : null;
     }
 
     // ---------------------------------------------------------------- route 13
@@ -209,6 +212,7 @@ public sealed class LinkService(TeasDbContext db, TenantScope scope, TimeProvide
         var key = Tokens.EmailKey(t.Email);
         await Q.ExecAsync(db, "DELETE FROM teas.auth_failures WHERE key_hash = @k", ct, TxSql.P("k", key));
         await sessions.RevokeAllAsync(userId, null, "password_reset", ct);   // a reset ends every sign-in of that user
+        await Q.ExecAsync(db, "DELETE FROM teas.login_challenges WHERE user_id = @u", ct, TxSql.P("u", userId));   // and every half-finished two-step sign-in
         await Q.EventAsync(db, now, "auth.password.reset", key, userId, req, ct);
         await authAudit.RecordAsync(userId, t.Name, null, req, "auth.password.reset", userId.ToString(), ct);
     }

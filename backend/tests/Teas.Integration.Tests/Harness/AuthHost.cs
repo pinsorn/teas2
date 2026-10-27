@@ -44,9 +44,13 @@ public sealed class Res(HttpResponseMessage message, string raw)
 public sealed class GatedProtector(ISecretProtector inner) : ISecretProtector
 {
     public AsyncBarrier? Barrier { get; set; }
+    long _calls;
+    /// <summary>How many times a TOTP secret was decrypted = how many TOTP code checks ran.</summary>
+    public long Calls => Interlocked.Read(ref _calls);
     public byte[] Protect(byte[] plain) => inner.Protect(plain);
     public byte[] Unprotect(byte[] cipher)
     {
+        Interlocked.Increment(ref _calls);
         Barrier?.ArriveAsync().GetAwaiter().GetResult();
         return inner.Unprotect(cipher);
     }

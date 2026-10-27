@@ -15,6 +15,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddTeasOpenApi().AddTeasProblems();
 // A link token travels in the request path: the hosting "Request starting" line would write it to the log (SP3 S2).
 builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
+// An expected failure (a TeasException: 401 / 404 / 429 ...) is not an Error log with a stack trace; a real 500 is logged by ProblemHandling.
+builder.Logging.AddFilter("Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware", LogLevel.None);
 
 // SP3 4.4: TOTP secrets are encrypted with Data Protection (purpose teas.totp.v1); the key ring is on the volume TEAS_DP_KEYS_DIR, backed up apart from the database.
 var dataProtection = builder.Services.AddDataProtection().SetApplicationName("teas");
@@ -26,7 +28,7 @@ var authLimit = int.TryParse(builder.Configuration["TEAS_AUTH_RATE_LIMIT"], out 
 builder.Services.AddRateLimiter(o =>
 {
     o.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(http =>
-        http.Request.Path.StartsWithSegments("/internal/v1/auth")
+        http.Request.Path.StartsWithSegments("/internal/v1/auth") && !(HttpMethods.IsGet(http.Request.Method) && http.Request.Path.Value!.TrimEnd('/').Equals("/internal/v1/auth/session", StringComparison.OrdinalIgnoreCase))   // the expiry dialog polls GET /auth/session
             ? RateLimitPartition.GetFixedWindowLimiter(http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = authLimit, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 })
             : RateLimitPartition.GetNoLimiter("none"));
@@ -61,7 +63,6 @@ if (!app.Environment.IsDevelopment() && !generatingDocs)
         throw new StartupGuardException("TEAS_DP_KEYS_DIR must be set (the Data Protection key ring); without it every restart makes the stored TOTP secrets unreadable");
 }
 app.UseTeasProblems();
-app.UseRateLimiter();
 
 if (!string.IsNullOrWhiteSpace(cs)) await StartupGuards.RunAsync(cs);
 // SP3 4.5 / 4.6 / S8: the BFF secret, then every endpoint decided against its RouteSpec before it runs. Unconditional: with no connection string it
