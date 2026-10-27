@@ -191,6 +191,9 @@ $1, true), set_config('app.user_id', $2, true), set_config('app.system', $3, tru
     membership, so the issuer must hold `users.manage` in EVERY company where the account has a membership, of ANY state
     (active, deactivated or pending; matched by `user_id`, by a pending invite of the account's LOGIN email, or by the membership email); otherwise 403 `user.cross_company`. A reset / link resolves the account by `users.id` (the member's
     `user_id`), never by the membership email, and a membership email never creates a login for an existing user.
+    The issuer's user id is stored on the link at issue and the same check is **re-checked when the link is used** (GET info
+    and POST): if it now fails (the account gained a membership the issuer does not manage) the answer is the one 404
+    `auth.link_invalid` and nothing is written.
   - **Known limitation (Ham 2026-10-27):** TEAS sends no email (SP0 section 1.4), so the inviting admin receives the
     link and can pre-claim an email that has no account yet. Accepted until email delivery exists. Exit: the server
     operator runs the CLI `reset-password --email` after verifying the owner's identity out of band; it writes an

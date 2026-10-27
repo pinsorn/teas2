@@ -384,3 +384,20 @@ describe('P0d: every membership of the account counts, whatever its state', () =
     await refused();
   });
 });
+
+describe('P0e: the whole-account check is re-run when a reset link is USED', () => {
+  it.each([['an ADMIN membership', false], ['a PENDING invite', true]])('probe T: the link was issued in co-nonvat only; the account then gains %s in co-vat: the old link is the one 404, nothing written', async (_n, pending) => {
+    setSettings({ companyKey: 'nonvat' });
+    const t = (((await call('POST', '/settings/users/usr-nonvat-2/reset-link', {})).json as { link: string }).link).split('/link/')[1];
+    expect((await call('GET', `/auth/links/${t}`)).status).toBe(200); // fine while the account is in one company
+    const st = loadState();
+    st.staff.find((m) => m.id === 'usr-vat-1')!.roleId = 'operator'; // the issuer u-1 manages nobody in co-vat
+    st.staff.push({ id: 'usr-vat-9', companyId: 'co-vat', name: 'ธนากร', email: 'thanakorn@baantonkhao.example', roleId: 'admin', active: true, version: 1, invitePending: pending });
+    saveState(st);
+    expect((await call('GET', `/auth/links/${t}`)).json).toMatchObject({ code: 'auth.link_invalid' });
+    expect((await call('POST', `/auth/links/${t}`, { password: 'Attacker#Pass2026', confirm: 'Attacker#Pass2026' })).json).toMatchObject({ code: 'auth.link_invalid' });
+    expect(loadState().auth!.creds.some((c) => c.email === 'thanakorn@baantonkhao.example')).toBe(false);
+    expect(loadState().staff.find((m) => m.id === 'usr-nonvat-2')!.linkHash).toBeDefined(); // nothing written: the link was not spent
+    expect(JSON.stringify((await call('GET', '/settings/users')).json)).not.toContain('linkIssuer'); // internal: never on the wire
+  });
+});

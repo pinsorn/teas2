@@ -12,6 +12,8 @@ const notFound = () => new MockError(404, 'record.not_found', 'ไม่พบ�
 /** A one-way fingerprint: all the state keeps of a link. The link itself is shown once and is not recoverable. */
 const hash = (s: string): string => { let h = 0x811c9dc5; for (const c of s) { h ^= c.charCodeAt(0); h = Math.imul(h, 0x01000193); } return (h >>> 0).toString(16); };
 
+/** P0e: who issued a reset link (stored at issue; internal, never on the wire) so the whole-account check can be re-run when the link is USED. */
+type Linked = StaffMember & { linkIssuer?: string };
 const mine = (st: MockState, companyId: string, id: string): StaffMember => {
   const m = st.staff.find((x) => x.id === id && x.companyId === companyId);
   if (!m) throw notFound();
@@ -20,7 +22,7 @@ const mine = (st: MockState, companyId: string, id: string): StaffMember => {
 const roleExists = (st: MockState, companyId: string, id: string) => isSystemRole(id) || st.roles.some((r) => r.id === id && r.companyId === companyId);
 const roleName = (st: MockState, m: StaffMember) => (isSystemRole(m.roleId) ? SYSTEM_ROLE_NAMES[m.roleId] : st.roles.find((r) => r.id === m.roleId)?.name ?? m.roleId);
 const holdsAdmin = (st: MockState, m: StaffMember) => permissionsOf(st, m.companyId, m.roleId).includes('users.manage');
-const toRow = (st: MockState, m: StaffMember): UserRow => { const { linkHash: _h, linkKind: _k, linkExpiresAt: _e, userId: _u, ...rest } = m; void _h; void _k; void _e; void _u; return { ...rest, roleName: roleName(st, m) }; };
+const toRow = (st: MockState, m: StaffMember): UserRow => { const { linkHash: _h, linkKind: _k, linkExpiresAt: _e, linkIssuer: _i, userId: _u, ...rest } = m as Linked; void _h; void _k; void _e; void _i; void _u; return { ...rest, roleName: roleName(st, m) }; };
 /** The trail keeps who and what, never a picture or a link. */
 const shape = (m: StaffMember) => ({ name: m.name, email: m.email, roleId: m.roleId, position: m.position, hasSignature: !!m.signatureDataUrl, active: m.active });
 const bump = (st: MockState, actor: Actor, m: StaffMember, command: string, before: ReturnType<typeof shape>) => { m.version += 1; logAudit(st, actor, m.companyId, command, m.id, before, shape(m)); };
@@ -116,7 +118,7 @@ export function resetLink(st: MockState, actor: Actor, companyId: string, id: st
   if (!m.active) throw new MockError(409, 'user.inactive', 'ผู้ใช้นี้ถูกปิดใช้งานอยู่ เปิดใช้งานก่อนจึงจะออกลิงก์ได้');
   if (m.invitePending) throw new MockError(409, 'user.invite_pending', 'ผู้ใช้นี้ยังไม่ได้รับคำเชิญ ใช้ลิงก์เชิญที่ออกไว้ (ออกคำเชิญใหม่ได้ทางการแก้ไข)');
   const token = crypto.randomUUID();
-  issue(m, 'reset', token);
+  issue(m, 'reset', token, actor.id);
   logAudit(st, actor, companyId, 'user.reset_link', m.id, undefined, { linkIssued: true });
   return `https://app.teas.example/link/${token}`;
 }
@@ -146,12 +148,15 @@ export const FIXTURE_LINKS: Record<string, LinkInfo> = {
 const LINK_TTL = { invite: 7 * 86_400_000, reset: 24 * 3_600_000 };
 const now = () => Date.parse(stamp());
 /** Stores what the member's one live link is for and when it ends (a newer link replaces the older). */
-const issue = (m: StaffMember, kind: 'invite' | 'reset', token: string) => { m.linkHash = hash(token); m.linkKind = kind; m.linkExpiresAt = new Date(now() + LINK_TTL[kind]).toISOString(); };
-const clearLink = (m: StaffMember) => { delete m.linkHash; delete m.linkKind; delete m.linkExpiresAt; };
+const issue = (m: StaffMember, kind: 'invite' | 'reset', token: string, issuer?: string) => { (m as Linked).linkIssuer = issuer; m.linkHash = hash(token); m.linkKind = kind; m.linkExpiresAt = new Date(now() + LINK_TTL[kind]).toISOString(); };
+const clearLink = (m: StaffMember) => { delete (m as Linked).linkIssuer; delete m.linkHash; delete m.linkKind; delete m.linkExpiresAt; };
 /** The member a LIVE link belongs to: active, with an unexpired link of a kind that still makes sense. */
 const holder = (st: MockState, token: string): StaffMember | undefined => {
   const m = st.staff.find((x) => x.linkHash === hash(token));
-  return m && m.active && m.linkKind && m.linkExpiresAt && Date.parse(m.linkExpiresAt) > now() && (m.linkKind === 'invite') === m.invitePending ? m : undefined;
+  if (!(m && m.active && m.linkKind && m.linkExpiresAt && Date.parse(m.linkExpiresAt) > now() && (m.linkKind === 'invite') === m.invitePending)) return undefined;
+  const issuer = (m as Linked).linkIssuer; // P0e: checked at issue AND at use: the account may have gained a membership the issuer does not manage since
+  if (m.linkKind === 'reset' && issuer) { try { crossCompany(st, { kind: 'user', id: issuer, name: '' }, m); } catch { return undefined; } }
+  return m;
 };
 /** P0b: an existing user = a user row for the email, whatever its password state; an INVITE never sets a password for one. */
 const credOfEmail = (st: MockState, email: string) => st.auth?.creds.find((c) => c.email.toLowerCase() === email.toLowerCase());
