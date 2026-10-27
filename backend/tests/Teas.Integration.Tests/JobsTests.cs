@@ -82,6 +82,97 @@ public sealed class JobsTests : IAsyncLifetime
             return (r.GetString(0), r.GetInt32(1), r.IsDBNull(2) ? null : r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3));
         });
 
+    async Task<DateTimeOffset> RunAtAsync(Guid company, Guid id) =>
+        await _db.AsAppAsync(new ScopeState(company, null, false), async (c, t) =>
+        {
+            await using var cmd = new NpgsqlCommand("SELECT run_at FROM teas.jobs WHERE id = @i", c, t);
+            cmd.Parameters.AddWithValue("i", id);
+            await using var r = await cmd.ExecuteReaderAsync();
+            await r.ReadAsync();
+            return r.GetFieldValue<DateTimeOffset>(0);
+        });
+
+    Task SetRunningAsync(Guid company, Guid id, DateTimeOffset startedAt, int attempts) =>
+        _db.AsAppAsync(new ScopeState(company, null, false), async (c, t) =>
+        {
+            await using var cmd = new NpgsqlCommand("UPDATE teas.jobs SET status = 'running', started_at = @s, attempts = @a WHERE id = @i", c, t);
+            cmd.Parameters.AddWithValue("s", startedAt);
+            cmd.Parameters.AddWithValue("a", attempts);
+            cmd.Parameters.AddWithValue("i", id);
+            return await cmd.ExecuteNonQueryAsync();
+        }, commit: true);
+
+    [Fact]
+    public async Task AHandlersOwnTimeoutIsAFailedAttemptAndTheTickReturns()
+    {
+        var company = await PlatformTestHost.NewCompanyAsync(_db);
+        var id = await EnqueueAsync(company);
+        _behaviour = _ => throw new TaskCanceledException("handler timeout");
+        Assert.Equal(1, await NewRunner().TickAsync(default));   // does not throw
+        var job = await JobAsync(company, id);
+        Assert.Equal(("queued", 1, "handler timeout"), (job.Status, job.Attempts, job.Error));
+    }
+
+    [Fact]
+    public async Task AStaleRunningJobPastTheLeaseIsReclaimedOnceAFreshOneIsLeftAlone()
+    {
+        var company = await PlatformTestHost.NewCompanyAsync(_db);
+        var stale = await EnqueueAsync(company);
+        var fresh = await EnqueueAsync(company);
+        await SetRunningAsync(company, stale, T0 - JobRunner.Lease - TimeSpan.FromMinutes(1), 1);
+        await SetRunningAsync(company, fresh, T0 - TimeSpan.FromMinutes(5), 1);
+        var runners = Enumerable.Range(0, 4).Select(_ => NewRunner()).ToArray();
+        var claimed = await Task.WhenAll(runners.Select(r => r.RunJobAsync(company, stale, default)));
+        Assert.Equal(1, claimed.Count(x => x));   // reaped once
+        Assert.False(await runners[0].RunJobAsync(company, fresh, default));
+        Assert.Single(_runs);
+        var job = await JobAsync(company, stale);
+        Assert.Equal(("done", 2), (job.Status, job.Attempts));
+        Assert.Equal(("running", 1), ((await JobAsync(company, fresh)).Status, (await JobAsync(company, fresh)).Attempts));
+    }
+
+    [Fact]
+    public async Task AStaleRunningJobThatUsedItsLastAttemptFailsWithLeaseExpiredAndDoesNotRun()
+    {
+        var company = await PlatformTestHost.NewCompanyAsync(_db);
+        var id = await EnqueueAsync(company);
+        await SetRunningAsync(company, id, T0 - JobRunner.Lease - TimeSpan.FromMinutes(1), JobRunner.MaxRetries + 1);
+        Assert.Equal(0, await NewRunner().TickAsync(default));
+        Assert.Empty(_runs);
+        var job = await JobAsync(company, id);
+        Assert.Equal(("failed", "lease expired"), (job.Status, job.Error));
+    }
+
+    [Fact]
+    public async Task ShutdownMidHandlerRequeuesTheJobWithoutCountingTheAttempt()
+    {
+        var company = await PlatformTestHost.NewCompanyAsync(_db);
+        var id = await EnqueueAsync(company);
+        using var cts = new CancellationTokenSource();
+        _behaviour = async _ => { cts.Cancel(); await Task.Delay(Timeout.Infinite, cts.Token); return null; };
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => NewRunner().RunJobAsync(company, id, cts.Token));
+        var job = await JobAsync(company, id);
+        Assert.Equal(("queued", 0), (job.Status, job.Attempts));
+        _behaviour = _ => Task.FromResult<string?>(null);
+        Assert.Equal(1, await NewRunner().TickAsync(default));   // due again at once
+    }
+
+    [Fact]
+    public async Task ANonJsonResultIsAFailedAttemptAndTheNextDueJobStillRuns()
+    {
+        var company = await PlatformTestHost.NewCompanyAsync(_db);
+        var bad = await EnqueueAsync(company, payload: """{"n":"bad"}""");
+        var good = await EnqueueAsync(company, payload: """{"n":"good"}""", runAt: T0.AddSeconds(1));
+        _clock.Advance(TimeSpan.FromSeconds(1));
+        _behaviour = p => Task.FromResult<string?>(p.Contains("bad") ? "not json" : """{"ok":1}""");
+        Assert.Equal(2, await NewRunner().TickAsync(default));
+        var b = await JobAsync(company, bad);
+        Assert.Equal("queued", b.Status);
+        Assert.Null(b.Result);
+        Assert.NotNull(b.Error);
+        Assert.Equal("done", (await JobAsync(company, good)).Status);
+    }
+
     [Fact]
     public async Task TwoRunnersOneLeaderAndTheOtherTakesOverWhenItStops()
     {
@@ -151,12 +242,14 @@ public sealed class JobsTests : IAsyncLifetime
         Assert.Equal(1, await r.TickAsync(default));
         var first = await JobAsync(company, id);
         Assert.Equal(("queued", 1, "boom"), (first.Status, first.Attempts, first.Error));
+        Assert.Equal(T0.AddSeconds(30), await RunAtAsync(company, id));
         Assert.Equal(0, await r.TickAsync(default));   // backing off: not due yet
-        for (var i = 2; i <= 4; i++)
+        foreach (var (i, wait, next) in new[] { (2, 30, 60), (3, 60, 120), (4, 120, 0) })
         {
-            _clock.Advance(TimeSpan.FromMinutes(10));
+            _clock.Advance(TimeSpan.FromSeconds(wait));
             Assert.Equal(1, await r.TickAsync(default));
             Assert.Equal(i, (await JobAsync(company, id)).Attempts);
+            if (next > 0) Assert.Equal(_clock.GetUtcNow().AddSeconds(next), await RunAtAsync(company, id));   // 30 s, 60 s, 120 s
         }
         var last = await JobAsync(company, id);
         Assert.Equal(("failed", 4, "boom"), (last.Status, last.Attempts, last.Error));   // first run + 3 retries

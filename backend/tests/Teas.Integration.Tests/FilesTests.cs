@@ -33,9 +33,9 @@ public sealed class FilesTests : IAsyncLifetime
         if (Directory.Exists(_dir)) Directory.Delete(_dir, true);
     }
 
-    static readonly byte[] Png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4];
+    static readonly byte[] Png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D, .. "IHDR"u8, 1, 2, 3, 4];
     static readonly byte[] Jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 0, 0x10, 0x4A, 0x46, 0x49, 0x46];
-    static readonly byte[] Webp = [.. "RIFF"u8, 0x1A, 0, 0, 0, .. "WEBPVP8 "u8, 1, 2, 3, 4];
+    static readonly byte[] Webp = [.. "RIFF"u8, 0x0C, 0, 0, 0, .. "WEBPVP8 "u8, 1, 2, 3, 4];
     static readonly byte[] Svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>"u8.ToArray();
 
     // each call = one request: its own DI scope, its own TenantScope
@@ -83,6 +83,9 @@ public sealed class FilesTests : IAsyncLifetime
     [InlineData("logo.png", "notpng")]     // not a PNG, named .png
     [InlineData("empty.png", "empty")]
     [InlineData("riff.webp", "riffnotwebp")]
+    [InlineData("a.jpg", "jpeg3")]         // a bare FF D8 FF is not a JPEG
+    [InlineData("a.png", "pngsvg")]        // PNG signature, then an SVG
+    [InlineData("a.webp", "riffbogus")]    // RIFF/WEBP/VP8 with a size field that does not match
     public async Task SvgAndAnythingWithoutMagicBytesIsRefusedWhateverTheName(string name, string kind)
     {
         var company = await PlatformTestHost.NewCompanyAsync(_db);
@@ -91,6 +94,9 @@ public sealed class FilesTests : IAsyncLifetime
             "svg" => Svg,
             "notpng" => [0x89, 0x50, 0x4E, 0x58, 0x0D, 0x0A, 0x1A, 0x0A, 9],
             "riffnotwebp" => [.. "RIFF"u8, 0, 0, 0, 0, .. "WAVEfmt "u8],
+            "jpeg3" => [0xFF, 0xD8, 0xFF],
+            "pngsvg" => [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, .. "<svg>"u8],
+            "riffbogus" => [.. "RIFF"u8, 0xFF, 0xFF, 0, 0, .. "WEBPVP8 "u8, 1, 2, 3, 4],
             _ => Array.Empty<byte>(),
         };
         var e = await Assert.ThrowsAsync<TeasException>(() => InCompany(company, s => s.PutAsync(company, new MemoryStream(bytes), name)));

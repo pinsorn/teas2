@@ -78,10 +78,13 @@ public sealed class FileStore(TeasDbContext db, TenantScope scope, FileStoreOpti
         return new OpenedFile(file, new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan));
     }
 
-    /// <summary>PNG, JPEG, WebP by signature. SVG is text and never matches.</summary>
+    /// <summary>PNG, JPEG, WebP by structure, not by a bare prefix (SVG is text and never matches): PNG = signature + IHDR as the first chunk;
+    /// JPEG = SOI + a marker byte DB / E0-EF; WebP = RIFF whose size field matches the length + WEBP + a VP8 / VP8L / VP8X chunk.</summary>
     static string? Sniff(ReadOnlySpan<byte> b) =>
-        b.StartsWith(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }) ? "image/png"
-        : b.StartsWith(new byte[] { 0xFF, 0xD8, 0xFF }) ? "image/jpeg"
-        : b.Length >= 12 && b[..4].SequenceEqual("RIFF"u8) && b.Slice(8, 4).SequenceEqual("WEBP"u8) ? "image/webp"
+        b.Length >= 16 && b.StartsWith(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }) && b.Slice(12, 4).SequenceEqual("IHDR"u8) ? "image/png"
+        : b.Length >= 4 && b.StartsWith(new byte[] { 0xFF, 0xD8, 0xFF }) && (b[3] == 0xDB || b[3] is >= 0xE0 and <= 0xEF) ? "image/jpeg"
+        : b.Length >= 16 && b[..4].SequenceEqual("RIFF"u8) && b.Slice(8, 4).SequenceEqual("WEBP"u8)
+          && System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(b.Slice(4, 4)) == (uint)(b.Length - 8)
+          && (b.Slice(12, 4).SequenceEqual("VP8 "u8) || b.Slice(12, 4).SequenceEqual("VP8L"u8) || b.Slice(12, 4).SequenceEqual("VP8X"u8)) ? "image/webp"
         : null;
 }

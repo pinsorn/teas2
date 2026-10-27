@@ -277,12 +277,13 @@ $1, true), set_config('app.user_id', $2, true), set_config('app.system', $3, tru
 - **Clock (§6.3):** `TimeProvider` injected; `BusinessDate.Today(TimeProvider)` in Asia/Bangkok. `BannedSymbols.txt`
   bans `DateTime.Now`, `DateTime.UtcNow`, `DateTime.Today`, `DateTimeOffset.Now`, `DateTimeOffset.UtcNow`,
   `TimeProvider.System` (allowed only in `Program.cs` via a `#pragma` with a comment). Tests use `FakeTimeProvider`.
-- **Files (§10.7):** `IFileStore { Put(companyId, stream, mime, name) → FileRef; Open(companyId, id) }`; local volume
+- **Files (§10.7):** `IFileStore { PutAsync(companyId, stream, name) → FileRef; OpenAsync(companyId, id) }` (no mime parameter: the type is decided by the content's structure, never by a name or a claimed content type); local volume
   `TEAS_FILES_DIR/<company>/<sha256>`; MIME decided from magic bytes (png / jpeg / webp; svg never); company images ≤
   1 MB (mock `MAX_IMAGE_BYTES`). Settings images stay data URLs on the wire (master plan §2.7): the API decodes,
   stores, and returns a data URL built from the stored file.
 - **Jobs (§10.7):** `jobs` table; one leader per cluster by `pg_try_advisory_lock(<const>)` on a dedicated connection;
   poll every 30 s; claim as in §4.3; retry with backoff 3 times, then `failed` with `last_error`; result visible.
+  A `running` job older than the 15-minute lease is claimed again (one runner wins, guarded on `started_at`); one that already used its last attempt becomes `failed` (`lease expired`). **Handlers must be idempotent** (a job may run twice after a lease expiry). Shutdown mid-handler requeues the job without counting the attempt; a non-JSON result is a failed attempt.
   P6 ships the idempotency cleanup job only.
 
 ### 4.8 BFF, OpenAPI → TypeScript, live-route switch

@@ -82,6 +82,8 @@ public sealed class ErrorContractTests
 
     static WebApplicationFactory<Program> Host() => new BffFactory().WithWebHostBuilder(b =>
     {
+        b.UseSetting("TEAS_FILES_DIR", Path.GetTempPath());   // outside Development the host refuses to start without it
+        b.UseSetting("TEAS_JOBS_DISABLED", "true");
         b.UseSetting("TEAS_BFF_SECRET", BffSecret);
         b.ConfigureServices(s => s.AddSingleton<IStartupFilter>(new TestRoutes(Routes)));
     });
@@ -91,6 +93,8 @@ public sealed class ErrorContractTests
     {
         b.UseEnvironment("Staging");
         b.UseSetting("ConnectionStrings:Teas", db.AppCs);
+        b.UseSetting("TEAS_FILES_DIR", Path.GetTempPath());   // outside Development the host refuses to start without it
+        b.UseSetting("TEAS_JOBS_DISABLED", "true");
         b.UseSetting("TEAS_BFF_SECRET", BffSecret);
         b.ConfigureServices(s => s.AddSingleton<IStartupFilter>(new TestRoutes(Routes)));
     });

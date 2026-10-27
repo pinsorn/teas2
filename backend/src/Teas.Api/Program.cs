@@ -18,7 +18,7 @@ if (!string.IsNullOrWhiteSpace(cs))
 {
     builder.Services.AddTeasData(cs);
     builder.Services.AddSingleton(new Teas.App.Platform.Files.FileStoreOptions(builder.Configuration["TEAS_FILES_DIR"] ?? "files"));
-    builder.Services.AddHostedService<JobRunnerService>();
+    if (builder.Configuration["TEAS_JOBS_DISABLED"] != "true") builder.Services.AddHostedService<JobRunnerService>();   // test hosts switch it off
 }
 
 var app = builder.Build();
@@ -30,6 +30,8 @@ if (!app.Environment.IsDevelopment() && !generatingDocs)
     if (string.IsNullOrWhiteSpace(cs)) throw new StartupGuardException("ConnectionStrings:Teas is not set");
     if ((app.Configuration["TEAS_BFF_SECRET"]?.Length ?? 0) < BffSecretMiddleware.MinLength)
         throw new StartupGuardException($"TEAS_BFF_SECRET must be set and at least {BffSecretMiddleware.MinLength} characters");
+    if (string.IsNullOrWhiteSpace(app.Configuration["TEAS_FILES_DIR"]))
+        throw new StartupGuardException("TEAS_FILES_DIR must be set (the file volume); a relative default would lose files on redeploy");
 }
 app.UseTeasProblems();
 

@@ -11,7 +11,7 @@ public sealed class JobRunnerService(JobRunner runner, ILogger<JobRunnerService>
         do
         {
             try { await runner.TickAsync(ct); }
-            catch (Exception e) when (e is not OperationCanceledException) { log.LogError(e, "job runner tick failed"); }
+            catch (Exception e) when (!ct.IsCancellationRequested) { log.LogError(e, "job runner tick failed"); }   // only shutdown ends the loop
         }
         while (await timer.WaitForNextTickAsync(ct));   // shutdown cancels the wait
     }
