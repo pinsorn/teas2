@@ -107,7 +107,16 @@ public sealed class DbClone(string name) : IAsyncDisposable
         NpgsqlConnection.ClearAllPools();
         await using var a = new NpgsqlConnection(TestDb.AdminMaintenanceCs);
         await a.OpenAsync();
-        await using var cmd = new NpgsqlCommand($"DROP DATABASE IF EXISTS {Name} WITH (FORCE)", a);
-        await cmd.ExecuteNonQueryAsync();
+        // a just-closed teas_app backend is still exiting and teas_test_admin cannot signal another role's backend (42501 / 55006): retry
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await using var cmd = new NpgsqlCommand($"DROP DATABASE IF EXISTS {Name} WITH (FORCE)", a);
+                await cmd.ExecuteNonQueryAsync();
+                return;
+            }
+            catch (PostgresException e) when (e.SqlState is "42501" or "55006" && attempt < 20) { await Task.Delay(250); }
+        }
     }
 }

@@ -171,6 +171,41 @@ public class ArchitectureTests
         Assert.Equal(["e.f_g"], UnregisteredCodes("const string Missing = \"e.f_g\"; const string Path = \"/internal/v1\"; const string Ok = \"record.not_found\";", registry));
     }
 
+    // SP3 4.6 / P5: every contract route is registered through RouteBuilder.MapRoute, which carries its RouteSpec (public / session / a permission),
+    // and the route guards are wired into the pipeline. A raw Map* call is an undeclared route unless it is one of the probes outside the contract.
+    // This scan is a LINT (it does not chase every Map overload). The guarantee is the runtime rule in RouteAuthorization: an endpoint without a
+    // RouteSpec and without the Probe marker is refused, wherever it is mapped (integration test EnforcementFollowsTheMetadataNotThePath).
+    static readonly Regex RawMap = new(@"\.Map(Get|Post|Put|Delete|Patch|Methods|Fallback)\s*\(\s*(""[^""]*"")?");
+    static readonly string[] Probes = ["\"/health/live\"", "\"/health/ready\"", "\"/version\""];
+
+    static List<string> UndeclaredRoutes(string source) =>
+        RawMap.Matches(source).Select(m => m.Value).Where(v => !Probes.Any(v.Contains)).ToList();
+
+    [Fact]
+    public void EveryRouteIsDeclaredAndRouteAuthorizationIsWiredIn()
+    {
+        var sep = Path.DirectorySeparatorChar;
+        var api = Path.Combine(Backend, "src", "Teas.Api");
+        var builder = Path.Combine(api, "Routing", "RouteSpec.cs");
+        var bad = Directory.EnumerateFiles(api, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{sep}obj{sep}") && !f.Contains($"{sep}bin{sep}") && f != builder)
+            .SelectMany(f => UndeclaredRoutes(File.ReadAllText(f)).Select(v => f + ": " + v))
+            .ToList();
+        Assert.Empty(bad);
+        Assert.Contains("MapRoute(", File.ReadAllText(Path.Combine(api, "Program.cs")));
+        var program = File.ReadAllText(Path.Combine(api, "Program.cs"));
+        Assert.Matches(@"(?m)^app\.UseTeasRouteGuards\(\);", program);   // unconditional: at column 0, not under an if
+        Assert.True(Regex.Matches(program, @"WithMetadata\(Probe\.Marker\)").Count >= 3, "health live, ready and version carry the Probe marker");
+    }
+
+    [Fact]
+    public void TheRouteScannerFlagsARawMapCallButNotAProbe()
+    {
+        Assert.Equal([".MapGet(\"/internal/v1/x\""], UndeclaredRoutes("g.MapGet(\"/internal/v1/x\", () => 1); app.MapGet(\"/health/live\", () => 2);"));
+        Assert.Equal([".MapPost(\"/api/v1/y\""], UndeclaredRoutes("app.MapPost(\"/api/v1/y\", H); app.MapGet(\"/version\", V); g.MapRoute(spec, H);"));
+        Assert.Equal([".MapMethods("], UndeclaredRoutes("g.MapMethods(path, [m], h);"));
+    }
+
     [Fact]
     public void ControlSnippetBuilds()
     {

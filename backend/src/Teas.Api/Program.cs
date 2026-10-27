@@ -1,6 +1,7 @@
 using Npgsql;
 using Teas.Api.OpenApi;
 using Teas.Api.Problems;
+using Teas.Api.Routing;
 using Teas.Api.Startup;
 using Teas.App;
 
@@ -22,14 +23,17 @@ var generatingDocs = System.Reflection.Assembly.GetEntryAssembly()?.GetName().Na
 if (!app.Environment.IsDevelopment() && !generatingDocs)
 {
     if (string.IsNullOrWhiteSpace(cs)) throw new StartupGuardException("ConnectionStrings:Teas is not set");
-    if ((app.Configuration["TEAS_BFF_SECRET"]?.Length ?? 0) < BffSecretFilter.MinLength)
-        throw new StartupGuardException($"TEAS_BFF_SECRET must be set and at least {BffSecretFilter.MinLength} characters");
+    if ((app.Configuration["TEAS_BFF_SECRET"]?.Length ?? 0) < BffSecretMiddleware.MinLength)
+        throw new StartupGuardException($"TEAS_BFF_SECRET must be set and at least {BffSecretMiddleware.MinLength} characters");
 }
 app.UseTeasProblems();
 
 if (!string.IsNullOrWhiteSpace(cs)) await StartupGuards.RunAsync(cs);
+// SP3 4.5 / 4.6 / S8: the BFF secret, then every endpoint decided against its RouteSpec before it runs. Unconditional: with no connection string it
+// refuses every non-public endpoint. Authentication (P7 / P8) goes between these and this line is the one it is added in front of.
+app.UseTeasRouteGuards();
 
-app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
+app.MapGet("/health/live", () => Results.Ok(new { status = "live" })).WithMetadata(Probe.Marker);
 app.MapGet("/health/ready", async (CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(cs)) return Results.Json(new { db = "unconfigured" }, statusCode: 503);
@@ -39,12 +43,12 @@ app.MapGet("/health/ready", async (CancellationToken ct) =>
     return schema == TeasDbContext.ExpectedSchema
         ? Results.Ok(new { db = "ok", schema })
         : Results.Json(new { db = "schema-mismatch", schema }, statusCode: 503);
-});
-app.MapGet("/version", () => Results.Ok(new { version = app.Configuration["TEAS_VERSION"] ?? "dev" }));
+}).WithMetadata(Probe.Marker);
+app.MapGet("/version", () => Results.Ok(new { version = app.Configuration["TEAS_VERSION"] ?? "dev" })).WithMetadata(Probe.Marker);
 
 // The BFF-only surface. `ping` is the P2 probe route for S8; real routes arrive from P8 on.
-var internalV1 = app.MapGroup("/internal/v1").AddEndpointFilter<BffSecretFilter>();
-internalV1.MapGet("/ping", () => Results.Ok(new { ok = true })).ExcludeFromDescription(); // a probe, not a contract route
+var internalV1 = app.MapGroup("/internal/v1").WithMetadata(BffOnly.Instance);
+internalV1.MapRoute(new RouteSpec("GET", "/ping", "public"), () => Results.Ok(new { ok = true })).ExcludeFromDescription(); // a probe, not a contract route
 
 app.Run();
 

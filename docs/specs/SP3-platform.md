@@ -437,7 +437,7 @@ Mock routes removed: `GET /auth/demo`, `POST /settings/users/{id}/accept`, `/moc
 | S11 | Key scopes: create refuses forbidden (`connect.scope_forbidden`) and > owner rights (`connect.scope_exceeds`); at use rights = scopes ∩ owner's current rights − forbidden: demote / deactivate the owner → the key loses the rights on the next request; rotate is owner-only (the manager gets 404) and revokes the old key in the same transaction; rotate of a revoked / expired key or of an inactive owner's key is refused | `KeyScopeTests` (P9) |
 | S12 | §8.5 widened (ADR-0005): no key can ever hold an `AgentForbidden` code; the catalog flag and `agentForbidden()` in TS agree | `AgentForbiddenTests` (P5, frontend vitest P0) |
 | S13 | Public links (rules frozen here, built in SP4.2): only types QT SO DO IV TI BL RC CN DN PO WT; only a live document (issued / partly settled / settled); token ≥ 160 bits random, stored hashed; unknown, revoked and no-longer-live give one identical 404 `public.link_invalid`; the page is the document's frozen paper as a copy, sessionless, no other company data; create / revoke need `doc.<T>.read` of THAT type; agents refused; rate-limited per IP | SP4.2 spec copies this row |
-| S14 | Audit: append-only (UPDATE / DELETE / TRUNCATE raise, even as `teas_migrator`); written in the command transaction (a rolled-back command leaves no row); refused 403s leave one `rejected` row | `AuditTests` (P4) |
+| S14 | Audit: append-only (UPDATE / DELETE / TRUNCATE raise, even as `teas_migrator`); written in the command transaction (a rolled-back command leaves no row); refused 403s leave one `rejected` row (exception: a refusal with no company scope, e.g. a user with no membership yet, writes no audit row: there is no company to attribute it to) | `AuditTests` (P4) |
 | S15 | Last admin: no sequence of member edit, deactivation, role edit or self-action leaves a company without an active, accepted `users.manage` member; a pending invite never counts | `LastAdminTests` (P8) |
 | S16 | Startup refuses a superuser / BYPASSRLS role, a schema mismatch and a failed RLS self-test | `StartupGuardTests` (P2) |
 | S17 | Lost update: two concurrent PUTs with the same `version` → exactly one 200 and one 409 (barrier-synchronised, real parallel connections) | `ConcurrencyTests` (P4, P8) |
@@ -622,10 +622,10 @@ cache), `src/Teas.Api/Routing/Authorization.cs`, `backend/artifacts/permissions.
 names the permission), `frontend/src/contract/permissions.backend.test.ts` (set-equality with `permissions.json`).
 **Rules:** §4.5; every route declares exactly one of `public` / `session` / a permission (an undeclared route fails the
 architecture test). Permission and agent refusals are decided before `IdempotencyRunner.RunAsync` and inside the company scope: `IAudit.RecordRejectedAsync` refuses to run inside an open transaction and needs a company scope (P4 review #7).
-- [ ] **Step 1: Failing tests** — catalog = frozen codes; templates = frozen `SYSTEM_ROLES`; `AgentForbidden` matches
+- [x] **Step 1: Failing tests** (done 2026-10-27; mutation-checked, see task-P5-report.md) — catalog = frozen codes; templates = frozen `SYSTEM_ROLES`; `AgentForbidden` matches
   the TS rule on every code; migrator sync is idempotent (run twice → same counts) and deletes a code removed from the
   catalog; RBAC matrix.
-- [ ] **Steps 2–5**, gates: build, architecture, integration, frontend focused test. **Step 6: Controller commits**
+- [x] **Steps 2–5** (worker done 2026-10-27, see task-P5-report.md), gates: build, architecture, integration, frontend focused test. **Step 6: Controller commits**
   `feat(platform): permission catalog, role templates and the RBAC matrix`.
 
 ### Task P6: File store and job platform
@@ -660,7 +660,7 @@ company, else the user's first active membership, else only `auth_events`.
 **Depends on:** P7. **Blast cap:** 20 files. **Tier 2:** Opus review.
 **Files:** `src/Teas.App/Platform/Companies/**` (incl. system `CompanyFactory`), `Members/**`, `Roles/**`,
 `src/Teas.Api/Endpoints/{Me,CompanySettings,Users,Roles}Endpoints.cs` (routes 15–29), tests, conformance lines.
-**Rules:** at link use (route 14 and GET info) also re-check that the issuer still holds `users.manage` in the issuing company (a demoted or deactivated issuer's links die with the single 404); §4.5 (last admin, effective rights); ST1 rulings: identity edit needs `confirm: true`; VAT status read-only
+**Rules:** every write to `company_members` (`role_id`, `active`, `invite_pending`) and `custom_roles` (`permissions`) bumps `version`: the rights cache trusts it (P5 review #8); at link use (route 14 and GET info) also re-check that the issuer still holds `users.manage` in the issuing company (a demoted or deactivated issuer's links die with the single 404); §4.5 (last admin, effective rights); ST1 rulings: identity edit needs `confirm: true`; VAT status read-only
 here (`company.vat_readonly`); fiscal start month ≠ 1 → `company.fiscal_year_unsupported` (ADR-0006 interim); images per
 §4.7 Files; company sections share `companies.version` (one save bumps it; a stale section save → 409); a refusal writes
 nothing; invites create a pending member + an invite link (route 14 accepts it); reset-link refused for an inactive

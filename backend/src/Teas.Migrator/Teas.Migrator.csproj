@@ -5,4 +5,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Teas.App\Teas.App.csproj" />
   </ItemGroup>
+  <!-- SP3 4.5: every build exports the catalog to backend/artifacts/permissions.json (git-ignored); the frontend vitest compares it with the frozen contract. -->
+  <Target Name="ExportPermissions" AfterTargets="Build">
+    <Exec Command="dotnet &quot;$(TargetPath)&quot; export-permissions &quot;$(MSBuildThisFileDirectory)..\..\artifacts\permissions.json&quot;" />
+  </Target>
 </Project>

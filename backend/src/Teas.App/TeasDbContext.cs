@@ -8,7 +8,7 @@ namespace Teas.App;
 public sealed class TeasDbContext(DbContextOptions<TeasDbContext> options) : DbContext(options)
 {
     /// <summary>The migration id this build expects (a test asserts it equals the migrator's last migration).</summary>
-    public const string ExpectedSchema = "0002_idempotency_audit";
+    public const string ExpectedSchema = "0003_catalog";
 
     protected override void OnModelCreating(ModelBuilder b) => b.HasDefaultSchema("teas");
 
@@ -25,6 +25,9 @@ public static class TeasDataExtensions
         services.AddScoped<Platform.Audit.AuditContext>();
         services.AddScoped<Platform.Audit.IAudit, Platform.Audit.AuditWriter>();
         services.AddScoped<Platform.Idempotency.IdempotencyRunner>();
+        services.AddSingleton<Platform.Rights.RightsCache>();
+        services.AddScoped<Platform.Rights.ActorScopes>();
+        services.AddScoped<Platform.Rights.EffectiveRights>();
         services.AddDbContext<TeasDbContext>((sp, o) =>
         {
             TeasDbContext.Configure(o, connectionString);
