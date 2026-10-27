@@ -254,3 +254,13 @@ Entry format — terse, greppable by symptom:
 - Symptom: Architecture test lists a new file in Teas.App outside Platform/Auth|Jobs|Keys.
 - Root cause: it greps the whole `src` for the regex `\b(EnterSystem|ScopeState|ApplyAsync|ForEachCompanyAsync|SelfTestAsync|Attach)\s*\(`, so any method with one of those names trips it.
 - Fix: name your method differently (P4 `VersionedUpdate.UpdateAsync`).
+
+## Integration test fails on teardown: `42501: permission denied to terminate process`
+- Symptom: a random integration test (any class, 1 run in 2-3) is red with `Npgsql.PostgresException 42501 permission denied to terminate process` thrown from `DbClone.DisposeAsync`; the next run is green. Reproduced on main without any P5 code (3 of 6 runs).
+- Root cause: `DROP DATABASE ... WITH (FORCE)` runs as `teas_test_admin` right after `ClearAllPools()`; a `teas_app` backend whose socket was just closed has not exited yet, so FORCE tries to terminate a process it may not signal.
+- Fix (done in P5): `DbClone.DisposeAsync` retries the DROP on 42501 / 55006 up to 20 times, 250 ms apart, then rethrows. 5 full integration runs in a row green afterwards.
+
+## Route tests in the test host skip `RouteAuthorization` unless it is added after the host's own `UseRouting`
+- Symptom: a permission-gated test route answers 200 / 422 to a caller without the right.
+- Root cause: `Program.cs` adds `RouteAuthorization` before the test host's `IStartupFilter` routing runs, so at that point the test endpoint is not yet matched (`GetEndpoint()` is null) and the middleware passes through.
+- Fix: `PlatformTestHost` adds `UseMiddleware<RouteAuthorization>()` right after its own `UseRouting()` (and its `TestAuth` before `next(app)` stands in for authentication).

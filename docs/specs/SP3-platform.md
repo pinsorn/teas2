@@ -622,10 +622,10 @@ cache), `src/Teas.Api/Routing/Authorization.cs`, `backend/artifacts/permissions.
 names the permission), `frontend/src/contract/permissions.backend.test.ts` (set-equality with `permissions.json`).
 **Rules:** §4.5; every route declares exactly one of `public` / `session` / a permission (an undeclared route fails the
 architecture test). Permission and agent refusals are decided before `IdempotencyRunner.RunAsync` and inside the company scope: `IAudit.RecordRejectedAsync` refuses to run inside an open transaction and needs a company scope (P4 review #7).
-- [ ] **Step 1: Failing tests** — catalog = frozen codes; templates = frozen `SYSTEM_ROLES`; `AgentForbidden` matches
+- [x] **Step 1: Failing tests** (done 2026-10-27; mutation-checked, see task-P5-report.md) — catalog = frozen codes; templates = frozen `SYSTEM_ROLES`; `AgentForbidden` matches
   the TS rule on every code; migrator sync is idempotent (run twice → same counts) and deletes a code removed from the
   catalog; RBAC matrix.
-- [ ] **Steps 2–5**, gates: build, architecture, integration, frontend focused test. **Step 6: Controller commits**
+- [x] **Steps 2–5** (worker done 2026-10-27, see task-P5-report.md), gates: build, architecture, integration, frontend focused test. **Step 6: Controller commits**
   `feat(platform): permission catalog, role templates and the RBAC matrix`.
 
 ### Task P6: File store and job platform

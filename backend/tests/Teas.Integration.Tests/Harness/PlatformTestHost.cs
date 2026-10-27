@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Teas.Api.Routing;
+using Teas.App.Platform.Rights;
 using Microsoft.Extensions.DependencyInjection;
 using Teas.App;
 using Teas.App.Platform;
@@ -34,19 +36,64 @@ public static class PlatformTestHost
     {
         public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
         {
+            app.Use(TestAuth);   // ahead of the app's own pipeline: stands in for the P7 / P8 authentication that runs before RouteAuthorization
             next(app);
             app.UseRouting();
+            app.UseMiddleware<RouteAuthorization>();   // the app's own copy runs before these endpoints are routed, so the test routes get theirs here
             app.UseEndpoints(Map);
         };
+    }
+
+    /// <summary>
+    /// Headers: x-company (default: the first GUID in the path), x-actor (a user id, default <see cref="User"/>); x-agent-owner makes the
+    /// caller an agent of that owner, with the key scopes in x-agent-scopes (comma separated).
+    /// </summary>
+    static async Task TestAuth(HttpContext http, Func<Task> next)
+    {
+        var path = http.Request.Path.Value ?? "";
+        if (!path.StartsWith("/internal/v1/_t", StringComparison.Ordinal) && !path.StartsWith("/internal/v1/settings/_t", StringComparison.Ordinal)) { await next(); return; }
+        var h = http.Request.Headers;
+        var guid = System.Text.RegularExpressions.Regex.Match(path, "[0-9a-fA-F]{8}-[0-9a-fA-F-]{27}").Value;
+        var company = h.TryGetValue("x-company", out var xc) ? xc.ToString() : guid;
+        var user = h.TryGetValue("x-actor", out var xa) ? Guid.Parse(xa.ToString()) : User;
+        var audit = http.RequestServices.GetRequiredService<AuditContext>();
+        if (h.TryGetValue("x-agent-owner", out var owner))
+        {
+            audit.Actor = new AuditActor("agent", user.ToString(), "Agent", owner.ToString(), "Owner");
+            audit.Client = "api";
+            http.RequestServices.GetRequiredService<ActorScopes>().Values = h["x-agent-scopes"].ToString().Split(',', StringSplitOptions.RemoveEmptyEntries);
+        }
+        else audit.Actor = new AuditActor("user", user.ToString(), "Tester");
+        using var _ = company.Length == 0 ? null : http.RequestServices.GetRequiredService<TenantScope>().Enter(Guid.Parse(company), user);
+        await next();
     }
 
     public sealed record Cmd(bool Fail = false, string? Data = null, int Status = 201, int HoldMs = 0);
     public sealed record Upd(string Name, int Version);
 
-    static void Map(Microsoft.AspNetCore.Routing.IEndpointRouteBuilder e)
+    static void Map(Microsoft.AspNetCore.Routing.IEndpointRouteBuilder app)
     {
+        var e = app.MapGroup("/internal/v1");   // every test route is declared like a real one (RouteSpec), so RouteAuthorization decides it
+        static async Task<IResult> Command(HttpRequest req, IdempotencyRunner idem)
+        {
+            var request = $"{req.Method} {req.Path}";
+            var key = Idempotency.ParseKey(req.Headers["Idempotency-Key"].FirstOrDefault());
+            var res = await idem.RunAsync(key, request, Idempotency.Hash(request, []), _ => Task.FromResult(new StoredResponse(201, "{}")));
+            return Results.Text(res.Body, "application/json", statusCode: res.Status);
+        }
+        // RBAC matrix subjects: one route per permission shape (a read, idempotent writes, agent-forbidden codes) plus the agent routes.
+        e.MapRoute(new RouteSpec("GET", "/_t/rbac/read", "session", "party.read"), () => Results.Ok());
+        e.MapRoute(new RouteSpec("POST", "/_t/rbac/manage", "session", "party.manage", IdempotencyRequired: true), (Cmd body, HttpRequest req, IdempotencyRunner idem) => Command(req, idem));
+        e.MapRoute(new RouteSpec("PUT", "/_t/rbac/users", "session", "users.manage", IdempotencyRequired: true), (Cmd body, HttpRequest req, IdempotencyRunner idem) => Command(req, idem));
+        e.MapRoute(new RouteSpec("POST", "/_t/rbac/iv-issue", "session", "doc.IV.issue", IdempotencyRequired: true), (Cmd body, HttpRequest req, IdempotencyRunner idem) => Command(req, idem));
+        e.MapRoute(new RouteSpec("POST", "/_t/rbac/period-close", "session", "ledger.period.close", IdempotencyRequired: true), (Cmd body, HttpRequest req, IdempotencyRunner idem) => Command(req, idem));
+        e.MapRoute(new RouteSpec("GET", "/_t/rbac/any-member", "session"), () => Results.Ok());
+        e.MapRoute(new RouteSpec("GET", "/settings/_t/probe", "session"), () => Results.Ok());
+        e.MapRoute(new RouteSpec("GET", "/_t/agent/read", "key", "party.read", Agent: true), () => Results.Ok());
+        e.MapRoute(new RouteSpec("GET", "/_t/agent/admin", "key", "users.manage", Agent: true), () => Results.Ok());
+
         // Idempotent command: one audit row 'test.effect' is its observable effect.
-        e.MapPost("/internal/v1/_t/cmd/{company:guid}", async (Guid company, HttpRequest req, TenantScope scope, IdempotencyRunner idem, IAudit audit, AuditContext ctx, AsyncBarrier barrier) =>
+        e.MapRoute(new RouteSpec("POST", "/_t/cmd/{company:guid}", "session", IdempotencyRequired: true), async (Guid company, HttpRequest req, TenantScope scope, IdempotencyRunner idem, IAudit audit, AuditContext ctx, AsyncBarrier barrier) =>
         {
             var user = req.Headers.TryGetValue("x-actor", out var xa) ? Guid.Parse(xa.ToString()) : User;
             using var _ = scope.Enter(company, user);
@@ -70,7 +117,7 @@ public static class PlatformTestHost
         });
 
         // Versioned update of companies.name inside one transaction (+ one audit row).
-        e.MapPut("/internal/v1/_t/company/{company:guid}", async (Guid company, Upd body, HttpRequest req, TeasDbContext db, TenantScope scope, IAudit audit, AuditContext ctx, AsyncBarrier barrier) =>
+        e.MapRoute(new RouteSpec("PUT", "/_t/company/{company:guid}", "session", Concurrency: "version-body"), async (Guid company, Upd body, HttpRequest req, TeasDbContext db, TenantScope scope, IAudit audit, AuditContext ctx, AsyncBarrier barrier) =>
         {
             // x-scope-company: act as another company than the row's (RLS must make the row not exist)
             using var _ = scope.Enter(req.Headers.TryGetValue("x-scope-company", out var sc) ? Guid.Parse(sc.ToString()) : company, User);
@@ -84,7 +131,7 @@ public static class PlatformTestHost
         });
 
         // A refused 403: the 'rejected' row is written in its own short transaction, then the request fails.
-        e.MapPost("/internal/v1/_t/forbidden/{company:guid}", async (Guid company, TenantScope scope, IAudit audit, AuditContext ctx) =>
+        e.MapRoute(new RouteSpec("POST", "/_t/forbidden/{company:guid}", "session"), async (Guid company, TenantScope scope, IAudit audit, AuditContext ctx) =>
         {
             using var _ = scope.Enter(company, User);
             ctx.Actor = new AuditActor("user", User.ToString(), "Tester");

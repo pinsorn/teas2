@@ -1,6 +1,7 @@
 using Npgsql;
 using Teas.Api.OpenApi;
 using Teas.Api.Problems;
+using Teas.Api.Routing;
 using Teas.Api.Startup;
 using Teas.App;
 
@@ -28,6 +29,8 @@ if (!app.Environment.IsDevelopment() && !generatingDocs)
 app.UseTeasProblems();
 
 if (!string.IsNullOrWhiteSpace(cs)) await StartupGuards.RunAsync(cs);
+// SP3 4.5 / 4.6: every contract route is decided against its RouteSpec before it runs (authentication, from P7 / P8, goes in front of this line).
+if (!string.IsNullOrWhiteSpace(cs)) app.UseMiddleware<RouteAuthorization>();
 
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
 app.MapGet("/health/ready", async (CancellationToken ct) =>
@@ -44,7 +47,7 @@ app.MapGet("/version", () => Results.Ok(new { version = app.Configuration["TEAS_
 
 // The BFF-only surface. `ping` is the P2 probe route for S8; real routes arrive from P8 on.
 var internalV1 = app.MapGroup("/internal/v1").AddEndpointFilter<BffSecretFilter>();
-internalV1.MapGet("/ping", () => Results.Ok(new { ok = true })).ExcludeFromDescription(); // a probe, not a contract route
+internalV1.MapRoute(new RouteSpec("GET", "/ping", "public"), () => Results.Ok(new { ok = true })).ExcludeFromDescription(); // a probe, not a contract route
 
 app.Run();
 
