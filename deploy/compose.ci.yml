@@ -2,9 +2,8 @@
 # (frontend/e2e/platform-live.spec.ts). Docker is not available on the dev box, so this file is only ever exercised by GitHub Actions.
 # Not a deployment file: staging / prod are Coolify applications (P11). Every secret below is a throwaway for the CI run.
 #
-# The API and the migrator are NOT built into images here: the job runs `dotnet publish` on the runner into ../publish/ and mounts the output into the
-# stock ASP.NET runtime image (no Dockerfile for the backend exists yet; P11 adds the real one). The web image is deploy/frontend/Dockerfile, built
-# as the hybrid variant (mock worker + the live routes through proxy.ts).
+# The API and the migrator are the images of deploy/backend/Dockerfile (targets api and migrator: the same Dockerfile Coolify builds; non-root, P11a).
+# The web image is deploy/frontend/Dockerfile, built as the hybrid variant (mock worker + the live routes through proxy.ts).
 name: teas-ci
 
 x-secret: &bff_secret ci-bff-secret-0123456789abcdef0123456789abcdef
@@ -23,11 +22,8 @@ services:
 
   # one-shot tool container: `docker compose run --rm migrator migrate` / `bootstrap-admin --email ... --name ...` (the verbs of Teas.Migrator)
   migrator:
-    image: mcr.microsoft.com/dotnet/aspnet:10.0
+    build: { context: .., dockerfile: deploy/backend/Dockerfile, target: migrator }
     profiles: [tools]
-    working_dir: /app
-    entrypoint: ['dotnet', 'Teas.Migrator.dll']
-    volumes: ['../publish/migrator:/app:ro']
     environment:
       TEAS_MIGRATOR_CS: Host=postgres;Database=teas;Username=teas_migrator;Password=ci-role-pw
       TEAS_PUBLIC_URL: http://localhost:3000   # the base of the set-password link the CLI prints
@@ -35,11 +31,8 @@ services:
       postgres: { condition: service_healthy }
 
   api:
-    image: mcr.microsoft.com/dotnet/aspnet:10.0
-    working_dir: /app
-    entrypoint: ['dotnet', 'Teas.Api.dll']
+    build: { context: .., dockerfile: deploy/backend/Dockerfile, target: api }
     volumes:
-      - ../publish/api:/app:ro
       - api-files:/data/files          # TEAS_FILES_DIR: persistent (P6); a redeploy without it loses every stored image
       - api-dp-keys:/data/dp-keys      # TEAS_DP_KEYS_DIR: persistent (P7); without the key ring a restart makes every stored TOTP secret unreadable
     environment:

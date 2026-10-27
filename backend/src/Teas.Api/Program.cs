@@ -67,6 +67,16 @@ if (!string.IsNullOrWhiteSpace(cs))
     if (builder.Configuration["TEAS_JOBS_DISABLED"] != "true") builder.Services.AddHostedService<JobRunnerService>();   // test hosts switch it off
 }
 
+// P11a: ASPNETCORE_FORWARDEDHEADERS_ENABLED=true makes the framework trust X-Forwarded-* from ANY peer. TEAS_FORWARDED_KNOWN_NETWORKS (comma separated CIDRs,
+// e.g. the Docker network of the proxy) narrows that to peers inside those networks; unset = the framework default. It does not switch the middleware on.
+if (builder.Configuration["TEAS_FORWARDED_KNOWN_NETWORKS"] is { } known && !string.IsNullOrWhiteSpace(known))
+    builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(o =>
+    {
+        o.KnownProxies.Clear();
+        o.KnownIPNetworks.Clear();
+        foreach (var cidr in known.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) o.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(cidr));   // a bad value fails the start
+    });
+
 var app = builder.Build();
 // The build-time OpenAPI generator (ApiDescription.Server) runs this program past Build() with no configuration (tried: moving the
 // guards does not help, it stops only at app.Run()), so it is the one caller allowed to skip them.
@@ -95,9 +105,12 @@ app.MapGet("/health/ready", async (CancellationToken ct) =>
     await using var conn = new NpgsqlConnection(cs);
     await conn.OpenAsync(ct);
     var schema = await StartupGuards.SchemaIdAsync(conn, ct);
-    return schema == TeasDbContext.ExpectedSchema
-        ? Results.Ok(new { db = "ok", schema })
-        : Results.Json(new { db = "schema-mismatch", schema }, statusCode: 503);
+    if (schema != TeasDbContext.ExpectedSchema) return Results.Json(new { db = "schema-mismatch", schema }, statusCode: 503);
+    // SP3 8 step 2: the catalog size the migrator printed (step 1), read back through the app login (both tables are readable by teas_app, no RLS)
+    await using var cmd = new NpgsqlCommand("SELECT (SELECT count(*) FROM teas.permissions), (SELECT count(*) FROM teas.role_templates)", conn);
+    await using var r = await cmd.ExecuteReaderAsync(ct);
+    await r.ReadAsync(ct);
+    return Results.Ok(new { db = "ok", schema, catalog = new { permissions = r.GetInt64(0), roleTemplates = r.GetInt64(1) } });
 }).WithMetadata(Probe.Marker);
 app.MapGet("/version", () => Results.Ok(new { version = app.Configuration["TEAS_VERSION"] ?? "dev" })).WithMetadata(Probe.Marker);
 

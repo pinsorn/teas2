@@ -117,7 +117,13 @@ public sealed class StartupGuardTests : IAsyncLifetime
         {
             var res = await f.CreateClient().GetAsync("/health/ready");
             Assert.Equal(HttpStatusCode.OK, res.StatusCode);
-            Assert.Contains(TeasDbContext.ExpectedSchema, await res.Content.ReadAsStringAsync());
+            var body = System.Text.Json.JsonDocument.Parse(await res.Content.ReadAsStringAsync()).RootElement;
+            Assert.Equal("ok", body.GetProperty("db").GetString());
+            Assert.Equal(TeasDbContext.ExpectedSchema, body.GetProperty("schema").GetString());
+            // SP3 8 step 2: the catalog size is what the migrator synced (and printed): the code catalog, row for row
+            var catalog = body.GetProperty("catalog");
+            Assert.Equal(Teas.Domain.Platform.PermissionCatalog.All.Count, catalog.GetProperty("permissions").GetInt32());
+            Assert.Equal(Teas.Domain.Platform.PermissionCatalog.SystemRoles.Sum(r => r.Value.Count), catalog.GetProperty("roleTemplates").GetInt32());
         }
         await AsMigrator("ALTER TABLE teas.audit_log NO FORCE ROW LEVEL SECURITY");
         using var broken = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b.UseSetting("ConnectionStrings:Teas", _db.AppCs));
