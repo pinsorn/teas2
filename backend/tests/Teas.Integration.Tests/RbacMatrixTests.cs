@@ -232,6 +232,11 @@ public sealed class RbacMatrixTests : IAsyncLifetime
             .Select(e => (spec: e.Metadata.GetMetadata<RouteSpec>(), path: Regex.Replace(e.RoutePattern.RawText!, @"\{[^}]+\}", Guid.NewGuid().ToString())))
             .Where(r => r.spec?.Permission is not null && !r.spec.Agent && r.path.Contains("/_t/")).ToList();   // the test routes answer 200 / 201 on success; the real routes are in UsersAndRolesTests (real sessions)
         Assert.True(routes.Count >= 5, "routes found: " + routes.Count);
+        // every REAL permission route must be covered by a matrix of its own: P8's /settings/ routes by UsersAndRolesTests; a new one (P9 /connect/keys) fails here until listed
+        var uncovered = f.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
+            .Where(e => e.Metadata.GetMetadata<RouteSpec>()?.Permission is not null && !e.RoutePattern.RawText!.Contains("/_t/") && e.RoutePattern.RawText != "/outside/perm" && !e.RoutePattern.RawText!.StartsWith("/internal/v1/settings/", StringComparison.Ordinal))
+            .Select(e => e.RoutePattern.RawText).ToList();
+        Assert.Empty(uncovered);
 
         var failures = new List<string>();
         var refused = 0;

@@ -50,6 +50,9 @@ internal static class RoleDirectory
         Q.ManyAsync(db, "SELECT id, name, description, permissions, version FROM teas.custom_roles WHERE company_id = @c ORDER BY name, id",
             r => new CustomRole(r.GetGuid(0), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), r.GetFieldValue<string[]>(3), r.GetInt32(4)), ct, TxSql.P("c", company));
 
+    /// <summary>A role id that is a Guid in any spelling (upper case, braces, no hyphens) becomes the canonical text that role_id holds; others (system ids) are unchanged.</summary>
+    public static string? Canon(string? roleId) => Guid.TryParse(roleId, out var g) ? g.ToString() : roleId;
+
     public static bool Exists(string roleId, IEnumerable<CustomRole> customs) => SystemNames.ContainsKey(roleId) || customs.Any(r => r.Id.ToString() == roleId);
 
     public static string NameOf(string roleId, IEnumerable<CustomRole> customs) =>
@@ -136,6 +139,7 @@ public sealed class RoleService(TeasDbContext db, TenantScope scope, IAudit audi
     public async Task<RoleView> UpdateAsync(string id, int version, string? name, string? description, IReadOnlyList<string>? permissions, Guid actorUser, CancellationToken ct = default)
     {
         var roleId = ParseCustom(id);
+        id = roleId.ToString();   // canonical text: every comparison with role_id below is on text
         Invalid.RequireVersion(version);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         await RoleDirectory.LockAsync(db, Company, ct);
@@ -166,6 +170,7 @@ public sealed class RoleService(TeasDbContext db, TenantScope scope, IAudit audi
     public async Task DeleteAsync(string id, int version, CancellationToken ct = default)
     {
         var roleId = ParseCustom(id);
+        id = roleId.ToString();   // canonical text: every comparison with role_id below is on text
         Invalid.RequireVersion(version);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         await RoleDirectory.LockAsync(db, Company, ct);

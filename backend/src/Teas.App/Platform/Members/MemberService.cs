@@ -86,14 +86,24 @@ public sealed partial class MemberService(TeasDbContext db, TenantScope scope, I
         var n = name?.Trim() ?? "";
         var e = email?.Trim().ToLowerInvariant() ?? "";
         if (n.Length == 0) errors.Add(("name", "ต้องระบุชื่อ"));
+        var existing = EmailRule().IsMatch(e)
+            ? await Q.OneAsync(db, $"SELECT {Cols} FROM teas.company_members WHERE company_id = @c AND email = @e::citext", Read, ct, TxSql.P("c", Company), TxSql.P("e", e)) : null;
         if (!EmailRule().IsMatch(e)) errors.Add(("email", "อีเมลไม่ถูกต้อง"));
-        else if (await Q.ScalarAsync<bool>(db, "SELECT EXISTS (SELECT 1 FROM teas.company_members WHERE company_id = @c AND email = @e::citext)", ct, TxSql.P("c", Company), TxSql.P("e", e)))
-            errors.Add(("email", "อีเมลนี้เป็นสมาชิกของบริษัทอยู่แล้ว"));
+        else if (existing is { Pending: false }) errors.Add(("email", "อีเมลนี้เป็นสมาชิกของบริษัทอยู่แล้ว"));   // an ACCEPTED member's email stays refused
+        roleId = RoleDirectory.Canon(roleId);
         if (roleId is null || !RoleDirectory.Exists(roleId, customs)) errors.Add(("roleId", "ต้องเลือกบทบาทของบริษัทนี้"));
         if (errors.Count > 0) throw Invalid.Fields(errors);
 
         var pos = string.IsNullOrWhiteSpace(position) ? null : position.Trim();
         M m;
+        if (existing is not null)
+        {
+            // a pending member's invite is re-issued (lost link, or a deactivated never-accepted member): reactivate, new link (the old one is superseded), new version
+            var v = await VersionedUpdate.UpdateAsync(db, "company_members", "name = @n, role_id = @r, position = @p, active = true", existing.Id, existing.Version,
+                TxSql.P("n", n), TxSql.P("r", roleId!), Q.N("p", NpgsqlDbType.Text, pos ?? existing.Position));
+            m = existing with { Name = n, RoleId = roleId!, Position = pos ?? existing.Position, Active = true, Version = v };
+        }
+        else
         try
         {
             var id = await Q.ScalarAsync<Guid>(db, "INSERT INTO teas.company_members (company_id, email, name, role_id, position, invite_pending) VALUES (@c, @e, @n, @r, @p, true) RETURNING id", ct,
@@ -103,7 +113,7 @@ public sealed partial class MemberService(TeasDbContext db, TenantScope scope, I
         catch (PostgresException x) when (x.SqlState == PostgresErrorCodes.UniqueViolation) { throw Invalid.Fields(("email", "อีเมลนี้เป็นสมาชิกของบริษัทอยู่แล้ว")); }
         var (conn, npg) = Npg();
         var issued = await UserLinks.IssueAsync(conn, npg, UserLinks.Invite, null, Company, m.Id, actor.ToString(), clock.GetUtcNow(), ct);
-        await audit.RecordAsync("user.invite", m.Id.ToString(), null, Shape(m), ct);   // no link in the trail
+        await audit.RecordAsync("user.invite", m.Id.ToString(), existing is null ? null : Shape(existing), Shape(m), ct);   // no link in the trail
         var view = await ViewAsync(m, customs, ct);
         await tx.CommitAsync(ct);
         return InvitedUserView.Of(view, publicBase.For(issued.Token));
@@ -126,7 +136,7 @@ public sealed partial class MemberService(TeasDbContext db, TenantScope scope, I
 
     public async Task<UserRowView> UpdateAsync(Guid actor, string id, int version, string? name, string? roleId, string? position, ImageChange signature, CancellationToken ct = default)
     {
-        var memberId = IdOf(id);
+        var memberId = IdOf(id); id = memberId.ToString();
         Invalid.RequireVersion(version);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         await RoleDirectory.LockAsync(db, Company, ct);
@@ -136,6 +146,7 @@ public sealed partial class MemberService(TeasDbContext db, TenantScope scope, I
 
         var errors = new List<(string, string)>();
         if (name is not null && name.Trim().Length == 0) errors.Add(("name", "ต้องระบุชื่อ"));
+        roleId = RoleDirectory.Canon(roleId);
         if (roleId is not null && !RoleDirectory.Exists(roleId, customs)) errors.Add(("roleId", "ต้องเลือกบทบาทของบริษัทนี้"));
         if (errors.Count > 0) throw Invalid.Fields(errors);
 
@@ -160,7 +171,7 @@ public sealed partial class MemberService(TeasDbContext db, TenantScope scope, I
 
     public async Task<UserRowView> SetActiveAsync(Guid actor, string id, bool active, int version, CancellationToken ct = default)
     {
-        var memberId = IdOf(id);
+        var memberId = IdOf(id); id = memberId.ToString();
         Invalid.RequireVersion(version);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         await RoleDirectory.LockAsync(db, Company, ct);
@@ -202,7 +213,7 @@ public sealed partial class MemberService(TeasDbContext db, TenantScope scope, I
 
     public Task<string> ResetLinkAsync(Guid actor, string id, CancellationToken ct = default)
     {
-        var memberId = IdOf(id);
+        var memberId = IdOf(id); id = memberId.ToString();
         return RefusingAsync("user.reset_link", id, async () =>
         {
             await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -220,7 +231,7 @@ public sealed partial class MemberService(TeasDbContext db, TenantScope scope, I
 
     public Task<UserRowView> TotpResetAsync(Guid actor, string id, int version, CancellationToken ct = default)
     {
-        var memberId = IdOf(id);
+        var memberId = IdOf(id); id = memberId.ToString();
         Invalid.RequireVersion(version);
         return RefusingAsync("user.totp_reset", id, async () =>
         {

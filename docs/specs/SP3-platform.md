@@ -732,7 +732,7 @@ characters.
 | Q8 | Lockout per email lets anyone lock a known user out for 15 min; keep (as approved in HC3) plus the per-IP limit | Keep |
 | Q9 | Agents never approve, cancel or correct any document type (HC2, stricter than §8.5) — record in ADR-0005 | Approve |
 
-**Backlog (SP4.6 jobs):** prune `auth_failures` (rows not locked and older than 24 h) and revoked / absolute-expired `sessions` rows.
+**Backlog (SP4.6 jobs):** sweep blobs under `TEAS_FILES_DIR` that no `files` row references (a rolled-back image save leaves one); prune `auth_failures` (rows not locked and older than 24 h) and revoked / absolute-expired `sessions` rows.
 
 ## 13. Attempt log
 

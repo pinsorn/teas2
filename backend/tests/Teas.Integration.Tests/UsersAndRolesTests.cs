@@ -1,3 +1,4 @@
+// size-reason: one class holds the whole users / roles / S15 suite on a shared host fixture; splitting it would duplicate the helpers
 using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -102,8 +103,9 @@ public sealed class UsersAndRolesTests(AuthFixture fx) : IClassFixture<AuthFixtu
         var custom = await P8.RoleAsync(H, company, "ผู้ช่วย", "party.read");
         var other = await H.CreateCompanyAsync("Other");
         var foreign = await P8.RoleAsync(H, other, "ของบริษัทอื่น", "party.read");
-        var taken = $"taken-{Guid.NewGuid():N}@example.test";
-        Assert.Equal(HttpStatusCode.Created, (await Invite(token, taken, custom.ToString())).Status);   // a custom role of THIS company is fine
+        var (accepted, _, _) = await P8.MemberAsync(H, company, "operator", login: false);
+        var taken = accepted.Email;   // an ACCEPTED member's email stays refused (a pending one is re-invited)
+        Assert.Equal(HttpStatusCode.Created, (await Invite(token, $"c-{Guid.NewGuid():N}@example.test", custom.ToString())).Status);   // a custom role of THIS company is fine
         var before = await P8.AuditAll(H, company);
 
         foreach (var (field, res) in new[]
@@ -121,7 +123,7 @@ public sealed class UsersAndRolesTests(AuthFixture fx) : IClassFixture<AuthFixtu
             Assert.Contains(field, res.Json.GetProperty("fieldErrors").EnumerateObject().Select(x => x.Name));
         }
         Assert.Equal(before, await P8.AuditAll(H, company));
-        Assert.Equal(2, await H.ScalarAsync<long>("SELECT count(*) FROM teas.company_members WHERE company_id = @c", P("c", company)));
+        Assert.Equal(3, await H.ScalarAsync<long>("SELECT count(*) FROM teas.company_members WHERE company_id = @c", P("c", company)));
     }
 
     // ---------------------------------------------------------------- update, activate
@@ -561,6 +563,59 @@ public sealed class UsersAndRolesTests(AuthFixture fx) : IClassFixture<AuthFixtu
         Assert.Equal(routes.Count * 3, refused);   // admin holds both rights; the other three roles lack both
         Assert.Equal(refused, await H.ScalarAsync<long>("SELECT count(*) FROM teas.audit_log WHERE company_id = @c AND result = 'rejected'", P("c", company)));
         Assert.Equal(1, await H.ScalarAsync<long>("SELECT count(*) FROM teas.company_members WHERE company_id = @c AND role_id = 'admin'", P("c", company)));   // the admin's real requests with empty bodies changed nothing
+    }
+
+    // ---------------------------------------------------------------- P8a
+
+    [Fact]
+    public async Task P8aARoleIdInAnySpellingIsTheSameRoleForTheLastAdminAndInUseChecks()
+    {
+        var (company, _, _, _) = await P8.AdminAsync(H);
+        var boss = await P8.RoleAsync(H, company, "หัวหน้า", "users.manage", "party.read");
+        var (_, bossToken, bossMember) = await P8.MemberAsync(H, company, boss.ToString());
+        await H.ExecAsync("UPDATE teas.company_members SET active = false, version = version + 1 WHERE company_id = @c AND role_id = 'admin'", new ScopeState(company, null, false), P("c", company));
+        foreach (var spelling in new[] { boss.ToString().ToUpperInvariant(), boss.ToString("N"), "{" + boss.ToString().ToUpperInvariant() + "}" })
+        {
+            // the only administrator holds the role: taking users.manage off it leaves 0 admins, however the id is spelled
+            var r = await P8.Put(H, $"/settings/roles/{spelling}", new { version = await RoleVersion(company, boss), permissions = new[] { "party.read" } }, bossToken);
+            Is(HttpStatusCode.Conflict, "user.last_admin", r);
+            Is(HttpStatusCode.Conflict, "role.in_use", await P8.Delete(H, $"/settings/roles/{spelling}?version={await RoleVersion(company, boss)}", bossToken));
+        }
+        Assert.Equal(1, await H.ScalarAsync<long>("SELECT count(*) FROM teas.custom_roles WHERE id = @r AND 'users.manage' = ANY(permissions)", P("r", boss)));
+    }
+
+    [Fact]
+    public async Task P8aInvitingAPendingMembersEmailAgainReissuesTheInviteAndAnAcceptedMembersEmailIsStillRefused()
+    {
+        var (company, _, token, _) = await P8.AdminAsync(H);
+        var email = $"lost-{Guid.NewGuid():N}@example.test";
+        var first = await Invite(token, email, "operator", "สมชาย");
+        var oldSecret = TokenOf(first.Str("link")!);
+        var member = first.Str("id");
+
+        var again = await Invite(token, email, "ACCOUNTANT".ToLowerInvariant(), "สมชาย ใหม่", "หัวหน้า");   // the lost link: invite again
+        Assert.Equal(HttpStatusCode.Created, again.Status);
+        Assert.Equal((member, "สมชาย ใหม่", "accountant", "หัวหน้า", true, 2), (again.Str("id"), again.Str("name"), again.Str("roleId"), again.Str("position"), again.Json.GetProperty("invitePending").GetBoolean(), again.Json.GetProperty("version").GetInt32()));
+        var secret = TokenOf(again.Str("link")!);
+        Assert.NotEqual(oldSecret, secret);
+        Is(HttpStatusCode.NotFound, "auth.link_invalid", await H.Get($"/auth/links/{oldSecret}"));   // the old link is dead
+        Assert.Equal(HttpStatusCode.OK, (await H.Get($"/auth/links/{secret}")).Status);
+        Assert.Equal(1, await H.ScalarAsync<long>("SELECT count(*) FROM teas.company_members WHERE company_id = @c AND email = @e::citext", P("c", company), P("e", email)));
+        Assert.Equal(2, await P8.AuditCount(H, company, "user.invite"));
+        Is(HttpStatusCode.UnprocessableEntity, "record.invalid", await Invite(token, "x@example.test", "nope"));   // the role passes the same check
+
+        // never accepted AND deactivated: the re-invite reactivates
+        await SetActive(token, company, Guid.Parse(member!), false);
+        Assert.Equal("auth.link_invalid", (await H.Get($"/auth/links/{secret}")).Code);
+        var back = await Invite(token, email);
+        Assert.Equal((HttpStatusCode.Created, true), (back.Status, back.Json.GetProperty("active").GetBoolean()));
+        Assert.Equal(HttpStatusCode.OK, (await H.Get($"/auth/links/{TokenOf(back.Str("link")!)}")).Status);
+        Assert.Equal(HttpStatusCode.OK, (await H.Post($"/auth/links/{TokenOf(back.Str("link")!)}", new { password = "Brand#New2026x", confirm = "Brand#New2026x" })).Status);
+
+        // accepted now: the email is a member's, refused as before
+        var r = await Invite(token, email);
+        Is(HttpStatusCode.UnprocessableEntity, "record.invalid", r);
+        Assert.Contains("email", r.Json.GetProperty("fieldErrors").EnumerateObject().Select(x => x.Name));
     }
 
     [Fact]
