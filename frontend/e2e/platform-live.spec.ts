@@ -100,7 +100,7 @@ test('hybrid: the platform routes are live, the rest of the app is still the moc
     expect(await page.getByRole('img', { name: 'QR code' }).locator('path').getAttribute('d')).toMatch(/^M\d+ \d+h1v1h-1z/); // modules, not a placeholder
     await page.getByLabel('รหัส 6 หลัก').fill('000000');
     await page.getByRole('button', { name: 'ยืนยันและเปิดใช้งาน' }).click();
-    await expect(page.getByRole('alert').filter({ hasText: 'รหัสยืนยันไม่ถูกต้อง' })).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: 'รหัสยืนยันสองขั้นตอนไม่ถูกต้อง' })).toBeVisible();
     await page.getByLabel('รหัส 6 หลัก').fill(totp(secret));
     await page.getByRole('button', { name: 'ยืนยันและเปิดใช้งาน' }).click();
     const dlg = page.getByRole('dialog', { name: 'รหัสกู้คืน' });
