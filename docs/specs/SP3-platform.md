@@ -561,11 +561,11 @@ filter, `tests/Teas.Integration.Tests/Harness/**` (template DB, per-class clone,
 non-allow-listed table, so P2 ships `TenantRowFactory` (test project) with one method per tenant table that inserts a
 valid row with its foreign keys for a given company; a tenant table without a factory method fails the generated test
 (every later task that adds a tenant table adds its factory method).
-- [ ] **Step 1: Failing tests** — S8 (secret header), S9 (two companies; read / write / no-GUC per tenant table,
+- [x] **Step 1: Failing tests** (done 2026-10-27; mutation-checked, see task-P2-report.md) — S8 (secret header), S9 (two companies; read / write / no-GUC per tenant table,
   generated from the allow-list complement), S16 (start as a role with BYPASSRLS → refuses; wrong schema → refuses);
   allow-list test fails when a new table lacks RLS (feed it a throwaway table in the test); `ForEachCompany` updates
   rows in two companies and a plain `UPDATE` under the migrator role updates 0 (documents F5).
-- [ ] **Steps 2–5**, gates: build, architecture, integration. **Step 6: Controller commits**
+- [~] **Steps 2–5**, gates: build, architecture, integration. (worker: all green on a scratch PG 18 at port 5433; NOT yet run on the dev box PG at 5432, which needs the postgres password; step 6 is the controller) **Step 6: Controller commits**
   `feat(platform): roles, migrator, row-level security harness and startup guards`.
 
 ### Task P3: Error contract and the OpenAPI → TypeScript pipeline

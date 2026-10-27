@@ -239,3 +239,8 @@ Entry format — terse, greppable by symptom:
 ## Backend architecture tests rebuild real projects (canary)
 - Fact: `CanaryClockCallFailsTheRealProjectBuild` builds each `Teas.*` project in Release with an injected `DateTime.Now` file (hook in `backend/Directory.Build.props`, file under `<project>/obj/teas-canary/`). The suite takes ~40–50 s and rewrites `obj/Release` intermediates while it runs.
 - Consequence: on Windows, an IDE or a second `dotnet build` of the same project at the same moment can contend for files. Run the architecture tests alone (CI builds first, then tests with `--no-build`).
+
+## Local PostgreSQL 18 needs the postgres password; integration tests can run on a scratch cluster
+- Symptom: `psql -h localhost -U postgres -w` says `fe_sendauth: no password supplied`; `pg_hba.conf` is scram-sha-256 for every host, and no `PG*` / `TEAS*_PASSWORD` variable is set on the dev box.
+- Fix: ask Ham for the password (never reset it), then `tools/db/setup-local.ps1`. Without it, a worker can verify on a private cluster: `initdb -D <scratch>/pgdata -U postgres -A trust`, `pg_ctl -D <scratch>/pgdata -o "-p 5433" -w start` (run it detached: from the Bash tool `pg_ctl ... -w start` never returns), then `psql -p 5433 -f deploy/db/bootstrap-roles.sql` with `-v migrator_pw= -v app_pw= -v test_admin_pw=` and point `TEAS_TEST_ADMIN_CS` / `TEAS_TEST_APP_CS` at port 5433.
+- Harness note: a failing `InitializeAsync` in an xUnit fixture skips `DisposeAsync`, so a crashed run can leave `teas_t_*` clone databases behind; drop them by hand.

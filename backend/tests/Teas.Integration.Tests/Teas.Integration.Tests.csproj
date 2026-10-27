@@ -13,5 +13,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Teas.Api\Teas.Api.csproj" />
+    <ProjectReference Include="..\..\src\Teas.Migrator\Teas.Migrator.csproj" />
   </ItemGroup>
 </Project>

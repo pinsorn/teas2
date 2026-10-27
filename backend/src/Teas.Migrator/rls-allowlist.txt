@@ -1,0 +1,5 @@
+# Tables in schema teas WITHOUT row-level security (SP3 4.2). One per line: <table> <reason>.
+# Every other table must have RLS enabled + forced and at least one policy (architecture + startup guard).
+users                 global identity across companies
+sessions              global, resolved before any company is known
+__EFMigrationsHistory EF history, owned by the migrator; teas_app has SELECT only (F7)
