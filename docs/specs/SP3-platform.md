@@ -272,7 +272,7 @@ $1, true), set_config('app.user_id', $2, true), set_config('app.system', $3, tru
 - **Audit (§7.12):** `IAudit.Record(command, target, before, after)` writes in the command's transaction (rule 1).
   `before` / `after` never contain secrets, hashes, images or links (images → `"set"` / `"none"`, mock `audited`).
   A refused 403 (`auth.forbidden`, `agent.*`) is written with `result = 'rejected'` in a separate short transaction
-  (no before / after). Coverage test: every route with a non-GET method declares an `audit` command, and an
+  (no before / after). Coverage test: every route with a non-GET method declares an `audit` command (two exemptions: `POST /auth/session/extend`, no audit command in the frozen contract; `POST /mcp`, a transport whose tools are audited as their own routes), and an
   integration test per route asserts exactly one `ok` row after success and none after a 4xx (except the 403 rows).
 - **Clock (§6.3):** `TimeProvider` injected; `BusinessDate.Today(TimeProvider)` in Asia/Bangkok. `BannedSymbols.txt`
   bans `DateTime.Now`, `DateTime.UtcNow`, `DateTime.Today`, `DateTimeOffset.Now`, `DateTimeOffset.UtcNow`,

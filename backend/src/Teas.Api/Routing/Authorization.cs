@@ -96,25 +96,33 @@ public sealed class RouteAuthorization(RequestDelegate next)
     static async Task RefuseAsync(HttpContext http, RouteSpec spec, TenantScope scope, IAudit audit, string code, string? missing)
     {
         // a row needs a company; a request with none (no membership yet) is refused without one
-        if (scope.Current.CompanyId is not null) await audit.RecordRejectedAsync(AuditCommand(spec, http.Request.RouteValues), RequestTarget(http.Request.Path));
+        if (scope.Current.CompanyId is not null) await audit.RecordRejectedAsync(AuditCommand(spec, http.Request.RouteValues), RequestTarget(spec, http.Request.RouteValues));
         throw new TeasException(code, missing is null ? null : $"missing permission: {missing}");
     }
 
-    /// <summary>The path as the contract writes it (without the /internal/v1 group prefix), ids filled in: what the caller asked for, not the route template.</summary>
-    internal static string RequestTarget(PathString path) =>
-        path.Value is { } p && p.StartsWith(Teas.Api.OpenApi.OpenApiSetup.Prefix + "/", StringComparison.Ordinal) ? p[Teas.Api.OpenApi.OpenApiSetup.Prefix.Length..] : path.Value ?? "";
+    /// <summary>
+    /// The path as the contract writes it (no /internal/v1 prefix), built from the route template: a parameter is filled only when it is safe to store (a canonical GUID,
+    /// or a known company section), otherwise it stays as the template wrote it ("{id}"): what the caller typed is never copied into the log. At most 256 characters.
+    /// </summary>
+    internal static string RequestTarget(RouteSpec spec, RouteValueDictionary values) =>
+        Truncate(System.Text.RegularExpressions.Regex.Replace(spec.Path, @"\{(\w+)\}", m => Safe(values[m.Groups[1].Value] as string) ?? m.Value));
+
+    static string? Safe(string? v) =>
+        v is not null && (Guid.TryParse(v, out var g) && g.ToString() == v || Teas.Api.Endpoints.CompanySettingsEndpoints.Sections.Contains(v)) ? v : null;
+
+    static string Truncate(string s) => s.Length <= 256 ? s : s[..256];
 
     /// <summary>
-    /// The ONE command a rejected row carries. spec.Audit may hold a template ("company.update.&lt;section&gt;": filled from the route value) or alternatives
-    /// ("a | b", "a + b"): the alternative whose last word is the request's last path segment (".../rotate"), else the first (a refused request's body is not
-    /// read, so "user.activate | user.deactivate" cannot be told apart and records the first). No Audit: "METHOD path".
+    /// The command a rejected row carries. spec.Audit may hold a template ("company.update.&lt;section&gt;": filled only with a known section) or alternatives ("a | b", "a + b"):
+    /// the one whose last word is the route's last path segment (".../rotate") when exactly one is, otherwise the declared alternatives verbatim (a refused request body is
+    /// never read, so "user.activate | user.deactivate" cannot be told apart). No Audit: "METHOD path".
     /// </summary>
     internal static string AuditCommand(RouteSpec spec, RouteValueDictionary values)
     {
         if (spec.Audit is not { } audit) return $"{spec.Method} {spec.Path}";
         var last = spec.Path[(spec.Path.LastIndexOf('/') + 1)..];
         var alternatives = audit.Split([" | ", " + "], StringSplitOptions.TrimEntries);
-        var one = alternatives.FirstOrDefault(a => a[(a.LastIndexOf('.') + 1)..] == last) ?? alternatives[0];
-        return System.Text.RegularExpressions.Regex.Replace(one, @"<(\w+)>", m => values[m.Groups[1].Value] as string ?? m.Value);
+        var one = alternatives.Length == 1 ? audit : alternatives.SingleOrDefault(a => a[(a.LastIndexOf('.') + 1)..] == last) ?? audit;
+        return Truncate(System.Text.RegularExpressions.Regex.Replace(one, @"<(\w+)>", m => Safe(values[m.Groups[1].Value] as string) ?? m.Value));
     }
 }

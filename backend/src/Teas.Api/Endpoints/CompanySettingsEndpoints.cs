@@ -22,7 +22,7 @@ public sealed class CompanySectionBody;
 /// <summary>Routes 17-19.</summary>
 public static class CompanySettingsEndpoints
 {
-    static readonly string[] Sections = ["identity", "contact", "payroll", "fiscal", "images", "notes"];
+    internal static readonly string[] Sections = ["identity", "contact", "payroll", "fiscal", "images", "notes"];
 
     static TeasException Bad() => new("record.invalid");
 

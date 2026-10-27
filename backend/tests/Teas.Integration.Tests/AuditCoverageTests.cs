@@ -249,8 +249,15 @@ public sealed class AuditCoverageTests(AuthFixture fx) : IClassFixture<AuthFixtu
         Assert.Equal(HttpStatusCode.Forbidden, (await H.Post($"/settings/users/{target}/active", new { active = false, version = 1 }, op)).Status);
         Assert.Equal(HttpStatusCode.Forbidden, (await P8.Put(H, $"/settings/companies/{company}/contact", new { version = 1 }, op)).Status);
         Assert.Equal(HttpStatusCode.Forbidden, (await P8.Put(H, $"/settings/users/{target}", new { version = 1, name = "x" }, op)).Status);
+        // what the caller typed is never copied into the log: an unknown section and a non-GUID id (with an encoded newline) keep the template's placeholders
+        Assert.Equal(HttpStatusCode.Forbidden, (await P8.Put(H, $"/settings/companies/{company}/bogus%0Asection", new { version = 1 }, op)).Status);
+        Assert.Equal(HttpStatusCode.Forbidden, (await H.Post("/settings/users/abc%0Adef/active", new { active = false, version = 1 }, op)).Status);
         Assert.Equal(
-            [("user.activate", "rejected", $"/settings/users/{target}/active"), ("company.update.contact", "rejected", $"/settings/companies/{company}/contact"), ("user.update", "rejected", $"/settings/users/{target}")],
+            [("user.activate | user.deactivate", "rejected", $"/settings/users/{target}/active"),   // the path cannot tell the two apart and the body is never read: both, verbatim
+             ("company.update.contact", "rejected", $"/settings/companies/{company}/contact"),
+             ("user.update", "rejected", $"/settings/users/{target}"),
+             ("company.update.<section>", "rejected", $"/settings/companies/{company}/{{section}}"),
+             ("user.activate | user.deactivate", "rejected", "/settings/users/{id}/active")],
             await RowsAfterAsync(mark));
     }
 }

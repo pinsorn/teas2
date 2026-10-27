@@ -128,10 +128,10 @@ public sealed partial class CompanyService(TeasDbContext db, TenantScope scope, 
             r.GetBoolean(12), r.GetInt32(13), r.IsDBNull(14) ? null : r.GetGuid(14), r.IsDBNull(15) ? null : r.GetGuid(15), r.GetString(16), r.GetInt32(17));
     }
 
-    /// <summary>The id in the path must be the active company: another company's id is a 404 even for one of its members (the widened SELECT policy would show it).</summary>
     /// <summary>The 404 for any company but the session's own, asked before a body is read.</summary>
     public void EnsureOwn(string id) => Own(id);
 
+    /// <summary>The id in the path must be the active company: another company's id is a 404 even for one of its members (the widened SELECT policy would show it).</summary>
     Guid Own(string id) => Guid.TryParse(id, out var g) && g == Company ? g : throw new TeasException("company.not_found");
 
     async Task<Row> LoadAsync(Guid id, CancellationToken ct) =>
