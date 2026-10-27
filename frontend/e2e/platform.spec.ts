@@ -373,6 +373,7 @@ test.describe('public document link', () => {
   test('the button needs the document read right and a draft has none', async ({ page }) => {
     await page.goto('/'); const draft = await fixtureId(page, 'tiDraft');
     await page.goto(`/sales/tax-invoices/${draft}?${ACC}`);
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible(); // page (and the mock worker) ready: toHaveCount(0) alone passes before load and call() then races the worker
     await expect(page.getByRole('button', { name: 'คัดลอกลิงก์สาธารณะ' })).toHaveCount(0);
     expect((await call(page, 'POST', `/docs/TI/${draft}/public-links`)).json).toMatchObject({ code: 'public.not_issued' });
     await page.goto(`/sales/tax-invoices?role=admin&company=vat&state=normal`); // the administrator holds no doc.TI.read
