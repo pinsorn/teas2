@@ -1,3 +1,5 @@
+using Teas.Api.Machine;
+
 namespace Teas.Api.Routing;
 
 /// <summary>SP3 4.6 route metadata (mirror of the frozen frontend RouteSpec). Enforcement arrives with P5 / P8; P3 carries it.</summary>
@@ -9,4 +11,14 @@ public static class RouteBuilder
     /// <summary>The one way a route is registered under the internal group: path is the contract path, the group adds /internal/v1.</summary>
     public static RouteHandlerBuilder MapRoute(this IEndpointRouteBuilder group, RouteSpec spec, Delegate handler) =>
         group.MapMethods(spec.Path, [spec.Method], handler).WithMetadata(spec);
+
+    public static RouteHandlerBuilder MapMachine(this IEndpointRouteBuilder app, string kind, RouteSpec spec, Delegate handler)
+    {
+        var prefix = kind == "mcp" ? "/mcp" : "/api/v1";
+        if (!spec.Agent || spec.Auth != "key" || spec.Path != prefix && !spec.Path.StartsWith(prefix + "/", StringComparison.Ordinal))
+            throw new InvalidOperationException($"{spec.Method} {spec.Path}: only an agent route declared \"key\" under {prefix} may be mapped on the {kind} channel");
+        if (spec.Path.Contains('{') && handler.Method.GetCustomAttributes(typeof(McpToolAttribute), false).Length > 0)
+            throw new InvalidOperationException($"{spec.Path}: an MCP tool route cannot have path parameters (tool arguments are the body) until they are supported");
+        return app.MapMethods(spec.Path, [spec.Method], handler).WithMetadata(spec, new MachineChannel(kind));
+    }
 }

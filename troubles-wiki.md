@@ -297,3 +297,11 @@ Entry format — terse, greppable by symptom:
 ## Test bodies: an anonymous object camel-cases a key that is data (`new { IV = "x" }` is sent as `iv`)
 - Symptom: a 422 "unknown document type iv" for `defaultNotes = new { IV = ... }`.
 - Fix: send data keys as a `Dictionary<string, string>` (dictionary keys are not renamed); anonymous objects are for property names.
+
+## `pg_ctl start` from the Bash tool never returns / the scratch cluster does not come up
+- Symptom: `pg_ctl -D <pgdata> -o "-p 5433" start` (with or without `-w`) hangs or silently leaves no server; `pg_isready -p 5433` says no response.
+- Fix: start it from PowerShell with `Start-Process pg_ctl.exe -ArgumentList @('-D','"<pgdata>"','-o','"-p 5433"','-l','"<pgdata>\log.txt"','start') -RedirectStandardOutput o.txt -RedirectStandardError e.txt -NoNewWindow`, wait a few seconds, then `pg_isready`. Stop the same way with `stop -m fast -Wait`.
+
+## A long heredoc with backticks, angle brackets and quotes aborts the whole Bash call
+- Symptom: `unexpected EOF while looking for matching` and NOTHING of the command ran (both files of a two-file heredoc were missing).
+- Fix: write source files with the Write tool; use Bash heredocs only for short, quote-free snippets (a node script file is fine for scripted edits).

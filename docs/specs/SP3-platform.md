@@ -77,7 +77,7 @@ P1 pins only what it uses: SDK, BannedApiAnalyzers, xUnit, Mvc.Testing, TimeProv
   `teas_migrator` LOGIN, owns schema `teas`, NOSUPERUSER, NOBYPASSRLS; `teas_app` LOGIN, NOSUPERUSER, NOBYPASSRLS,
   no ownership; `teas_test_admin` LOGIN CREATEDB (local + CI only, never in prod).
 - Grants: `teas_app` gets SELECT / INSERT / UPDATE / DELETE on tenant and global tables, except: `audit_log`,
-  `auth_events` → INSERT, SELECT only; `permissions`, `role_templates` → SELECT only; `__EFMigrationsHistory` → SELECT.
+  `auth_events` → INSERT, SELECT only; `api_keys` → SELECT, INSERT, UPDATE (no DELETE: a key is revoked, never deleted); `permissions`, `role_templates` → SELECT only; `__EFMigrationsHistory` → SELECT.
 - Helper functions (migration `0001_platform_base`):
 
 ```sql
@@ -689,10 +689,10 @@ transaction; a test asserts both rows exist afterwards (a factory that inserts f
 **Rules:** §4.6, HC2 rulings 1–2 and the HC2 review rounds (member-owned keys; `connect.manage` sees and revokes all;
 rotate owner-only; consent / apps / policy are SP4.10). Secret format `teas_<kind>_<48 hex>`, display prefix = first 14
 characters.
-- [ ] **Step 1: Failing tests** — S10, S11, S12; the tool list equals `agent` + `McpTool` routes; an MCP `whoami` call
+- [x] **Step 1: Failing tests** — S10, S11, S12; the tool list equals `agent` + `McpTool` routes; an MCP `whoami` call
   writes no audit row (GETs are not audited) and moves the key's `last_used_at`; a REST key on `/mcp` → 403
-  `connect.key_kind_mismatch`.
-- [ ] **Steps 2–5**, gates as P4 + conformance. **Step 6: Controller commits**
+  `connect.key_kind_mismatch`. (RED observed: 28 of 28 new tests failed on the missing routes before any implementation; KeyScopeTests, KeyLifecycleTests, AgentSurfaceTests, SecretsTests.)
+- [x] **Steps 2–5** (build -warnaserror 0/0; Integration 270/270 twice, Architecture 25/25, Domain 58/58; OpenAPI == docs/api/openapi.v1.json; FE typecheck + 75 contract vitest; mutations a/b/c RED; report .superpowers/sdd/sp3/task-P9-report.md), gates as P4 + conformance. **Step 6: Controller commits**
   `feat(platform): API keys, agent surface and MCP host`.
 
 ### Task P10: BFF proxy, live-route switch, compose smoke
@@ -702,7 +702,7 @@ characters.
 `frontend/src/mocks/browser.ts` / handler wrapper (passthrough of live routes in `hybrid`), `kit/auth/TotpEnrol.tsx`
 (QR from `uri`; one exact-pinned QR dependency with its reason in the report), `deploy/compose.ci.yml`,
 `.github/workflows/backend.yml` `compose` job, `frontend/e2e/platform-live.spec.ts`.
-**Rules:** §4.8; S7; `mock` stays the default build (the mockup preview is unchanged). `TEAS_FILES_DIR` is required outside Development, on a persistent volume (P6); so is `TEAS_DP_KEYS_DIR` (P7: without the key ring every restart makes the stored TOTP secrets unreadable). The API sees the BFF's address for every user: the BFF must forward the client IP and the API must trust it only after the BFF-secret check, or the per-IP `/auth/*` limit (20 / min) is one bucket for everybody (P7 open question 1). The production logger must not include request-path scopes, or must redact `/auth/links/` paths (a link token travels in the path).
+**Rules:** a per-IP rate limit for `/api/v1` and `/mcp` (at the proxy, or on the machine routes: P9 adds none); §4.8; S7; `mock` stays the default build (the mockup preview is unchanged). `TEAS_FILES_DIR` is required outside Development, on a persistent volume (P6); so is `TEAS_DP_KEYS_DIR` (P7: without the key ring every restart makes the stored TOTP secrets unreadable). The API sees the BFF's address for every user: the BFF must forward the client IP and the API must trust it only after the BFF-secret check, or the per-IP `/auth/*` limit (20 / min) is one bucket for everybody (P7 open question 1). The production logger must not include request-path scopes, or must redact `/auth/links/` paths (a link token travels in the path).
 - [ ] **Step 1: Failing tests** — proxy (`proxy.test.ts` names `POST /auth/links/{token}` explicitly in the cross-site check, JSON content type + Origin, even though route 14 is `auth: public`): strips `x-teas-actor` and a forged `X-Teas-Bff`, adds the secret, refuses a
   cross-origin POST; hybrid e2e on the composed stack (CI): log in, see memberships, switch company, change password,
   enrol TOTP, invite a user and set their password through the link, create / rotate / revoke a key; the rest of the
@@ -731,6 +731,8 @@ characters.
 | Q7 | Logo / stamp / signature stay base64 data URLs on the wire (≤ 1 MB, as approved in ST1); the server stores them as files | Approve |
 | Q8 | Lockout per email lets anyone lock a known user out for 15 min; keep (as approved in HC3) plus the per-IP limit | Keep |
 | Q9 | Agents never approve, cancel or correct any document type (HC2, stricter than §8.5) — record in ADR-0005 | Approve |
+
+**Backlog (SP4, from P9):** a bearer security scheme on the machine routes in the OpenAPI document; `auth_events` rows `key_refused` for failed key authentication (unknown / revoked / expired / kind mismatch); the MCP tool input schema generated from the OpenAPI request schema (with the OmitsNull rule) for the first body-taking tool (P9 uses System.Text.Json's schema).
 
 **Backlog (SP4.6 jobs):** sweep blobs under `TEAS_FILES_DIR` that no `files` row references (a rolled-back image save leaves one); prune `auth_failures` (rows not locked and older than 24 h) and revoked / absolute-expired `sessions` rows.
 

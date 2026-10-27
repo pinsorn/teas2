@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.RateLimiting;
 using Npgsql;
 using Teas.Api.Endpoints;
+using Teas.Api.Machine;
 using Teas.Api.OpenApi;
 using Teas.Api.Problems;
 using Teas.Api.Routing;
@@ -91,6 +92,9 @@ internalV1.MapMeRoutes();
 internalV1.MapCompanySettingsRoutes();
 internalV1.MapUsersRoutes();
 internalV1.MapRolesRoutes();
+internalV1.MapKeysRoutes();
+// The machine surface: /api/v1 (REST key) and /mcp (MCP key), agent routes only. Not BFF routes: authenticated by key alone.
+app.MapMachineRoutes();
 
 app.Run();
 
