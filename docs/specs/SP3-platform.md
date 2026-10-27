@@ -577,7 +577,7 @@ enum transformers), `src/Teas.Api/Routing/RouteSpec.cs` (builder + metadata; §4
 first), `frontend/.gitignore` (`src/contract/generated/`), `frontend/src/contract/conformance/platform.ts`,
 `frontend/src/contract/conformance/routes.test.ts`, CI OpenAPI-diff step.
 **Rules:** §4.7 Errors, §4.8 OpenAPI / conformance; a conformance line is added for each route as its task makes it live.
-- [ ] **Step 1: Failing tests** — every registry code has th + en titles; an unregistered code literal in source fails
+- [ ] **Step 1: Failing tests** — every registry code has th + en titles (the registry test lists `money.out_of_range` → 422, thrown by `Money.Of`); an unregistered code literal in source fails
   the architecture test; a thrown `TeasException` renders `ApiProblem` with `traceId`; `Money` appears in OpenAPI as the
   pattern string; a deliberately wrong DTO (`Money` as number) makes `pnpm typecheck` fail through the conformance file
   (prove with a scratch DTO in the test project, then remove).

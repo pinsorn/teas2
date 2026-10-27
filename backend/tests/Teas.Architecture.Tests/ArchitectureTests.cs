@@ -27,6 +27,39 @@ public class ArchitectureTests
         Assert.Empty(bad);
     }
 
+    // The ban cannot be switched off locally: no RS0030 pragma outside Program.cs, no suppression, no analyzers off.
+    [Fact]
+    public void NoOneSilencesTheBannedApiAnalyzer()
+    {
+        var sep = Path.DirectorySeparatorChar;
+        var programCs = Path.Combine(Backend, "src", "Teas.Api", "Program.cs");
+        var self = Path.Combine(Backend, "tests", "Teas.Architecture.Tests", "ArchitectureTests.cs");
+        var bad = new List<string>();
+        foreach (var f in Directory.EnumerateFiles(Backend, "*", SearchOption.AllDirectories))
+        {
+            if (f.Contains($"{sep}obj{sep}") || f.Contains($"{sep}bin{sep}") || f == self) continue;
+            var name = Path.GetFileName(f);
+            var ext = Path.GetExtension(f);
+            var text = File.ReadAllText(f);
+            if (ext == ".cs")
+            {
+                if (f != programCs && Regex.IsMatch(text, @"#pragma\s+warning[^
+]*RS0030")) bad.Add(f + ": RS0030 pragma");
+                if (Regex.IsMatch(text, @"SuppressMessage\([^)]*RS0030")) bad.Add(f + ": RS0030 SuppressMessage");
+            }
+            else if (ext is ".csproj" or ".props" or ".targets")
+            {
+                if (Regex.IsMatch(text, @"<(NoWarn|WarningsNotAsErrors)>[^<]*RS0030")) bad.Add(f + ": RS0030 in NoWarn/WarningsNotAsErrors");
+                if (Regex.IsMatch(text, @"<RunAnalyzers(DuringBuild)?>\s*false", RegexOptions.IgnoreCase)) bad.Add(f + ": analyzers off");
+            }
+            else if (name is ".editorconfig" or ".globalconfig" || ext is ".editorconfig" or ".globalconfig")
+            {
+                if (text.Contains("RS0030", StringComparison.Ordinal)) bad.Add(f + ": RS0030 severity line");
+            }
+        }
+        Assert.Empty(bad);
+    }
+
     [Fact]
     public void ControlSnippetBuilds()
     {
