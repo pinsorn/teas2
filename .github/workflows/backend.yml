@@ -41,3 +41,8 @@ jobs:
       - run: dotnet test tests/Teas.Domain.Tests -c Release --no-build
       - run: dotnet test tests/Teas.Architecture.Tests -c Release --no-build
       - run: dotnet test tests/Teas.Integration.Tests -c Release --no-build
+      # SP3 4.8: the build (Microsoft.Extensions.ApiDescription.Server) emits backend/artifacts/openapi.json; the committed copy is docs/api/openapi.v1.json.
+      # A drift fails here; refresh it with: cp backend/artifacts/openapi.json docs/api/openapi.v1.json
+      - name: OpenAPI document matches docs/api/openapi.v1.json
+        working-directory: .
+        run: diff backend/artifacts/openapi.json docs/api/openapi.v1.json

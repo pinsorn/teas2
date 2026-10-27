@@ -295,13 +295,18 @@ $1, true), set_config('app.user_id', $2, true), set_config('app.system', $3, tru
 - **Live-route switch (D-09):** `frontend/src/contract/live-routes.ts` lists `{ method, path }` served by the real API
   (empty until P10). In `NEXT_PUBLIC_API_MODE=hybrid`, MSW handlers of live routes `passthrough()` and `proxy.ts`
   forwards them; `mock` (default, today's behaviour) keeps everything on MSW; `live` sends everything to the API.
-- **OpenAPI → TS (§10.5):** the build emits `backend/artifacts/openapi.v1.json` (internal group); CI copies it to
-  `docs/api/openapi.v1.json` and fails on a diff. `pnpm gen:api` runs `openapi-typescript` (exact-pinned) into
+- **OpenAPI → TS (§10.5):** the build emits `backend/artifacts/openapi.json` (internal group; the generator forbids a dot in the file name); CI diffs it against
+  the committed `docs/api/openapi.v1.json` and fails on a diff. `pnpm gen:api` runs `openapi-typescript` (exact-pinned) into
   `frontend/src/contract/generated/openapi.ts` (git-ignored; `typecheck` depends on it). `Money` is a C# value type
-  serialised as the 2-dp string with a schema transformer `{ type: string, pattern: '^-?\d+\.\d{2}$' }`; enums
-  serialise as their exact contract strings (System.Text.Json `JsonStringEnumMemberNameAttribute`, or a custom converter
-  if the pinned version lacks it — P3 records which); optional members are C# nullable with
-  `JsonIgnore(WhenWritingNull)` and not `required`.
+  serialised as the 2-dp string with a schema transformer `{ type: string, pattern: '^-?(0|[1-9][0-9]{0,15})\.[0-9]{2}$' }`
+  (= `Money.TryParse`); enums serialise as their exact contract strings (`JsonStringEnumConverter` +
+  `[JsonStringEnumMemberName]`, verified on net10, no custom converter). Serialization follows the contract and the document is not
+  rewritten: a `required` member is always written (null as `null`) and stays required (`T | null` when nullable); any
+  other nullable member is omitted when null (not required, no `null` in its schema, `?: T`); a member whose null means
+  "remove" (absent = unchanged) is `Optional<T>` (not required, `?: T | null`: type `[null, T]` for a primitive, `oneOf [null, T]`
+  for an enum, object or `$ref`). The omitted-when-null rule is one function used by the serializer and the schema, for value types,
+  enums, `Money`, objects and positional-record defaults alike. An explicit `null` in a request for a `?: T` member is accepted as
+  absent. `Optional<T>` on a `required` member is refused (the type info throws at first use).
 - **Conformance:** `frontend/src/contract/conformance/platform.ts`:
 
 ```ts
@@ -310,9 +315,12 @@ type Assert<T extends true> = T;
 // one line per route: frozen response / request vs the generated operation types, e.g.
 type _me = Assert<Same<Me, Gen.paths['/me']['get']['responses'][200]['content']['application/json']>>;
 ```
-  plus a vitest that the OpenAPI path + method set (live routes of the module) equals the module's `ROUTES`. If a
-  generated optional member arrives as `T | null`, P3 adds ONE documented normaliser type for the generated side and a
-  test that it changes nothing else.
+  plus a vitest (routes go live one by one): documented path + method set ⊆ the module's `ROUTES`, `LIVE_ROUTES` ⊆ documented,
+  and every documented route has an uncommented conformance line. No normaliser type exists or is needed.
+  Errors: `ThrowOnBadRequest = true` in every environment; a malformed body, a binding failure and a wrong Content-Type (415)
+  all render 422 `record.invalid` (the frozen table has no 400 / 415 code). `TeasException` may pick the registry row's
+  alternative status (`connect.key_revoked` 409). The first route that can emit `money.out_of_range` adds it to its module
+  contract (ADR + version).
 
 ## 5. Frozen contract — `frontend/src/contract/platform.ts` (CONTRACT_VERSION `1.0`)
 
@@ -581,11 +589,11 @@ enum transformers), `src/Teas.Api/Routing/RouteSpec.cs` (builder + metadata; §4
 first), `frontend/.gitignore` (`src/contract/generated/`), `frontend/src/contract/conformance/platform.ts`,
 `frontend/src/contract/conformance/routes.test.ts`, CI OpenAPI-diff step.
 **Rules:** §4.7 Errors, §4.8 OpenAPI / conformance; a conformance line is added for each route as its task makes it live.
-- [ ] **Step 1: Failing tests** — every registry code has th + en titles (the registry test lists `money.out_of_range` → 422, thrown by `Money.Of`); an unregistered code literal in source fails
+- [x] **Step 1: Failing tests** — every registry code has th + en titles (the registry test lists `money.out_of_range` → 422, thrown by `Money.Of`); an unregistered code literal in source fails
   the architecture test; a thrown `TeasException` renders `ApiProblem` with `traceId`; `Money` appears in OpenAPI as the
   pattern string; a deliberately wrong DTO (`Money` as number) makes `pnpm typecheck` fail through the conformance file
   (prove with a scratch DTO in the test project, then remove).
-- [ ] **Steps 2–5**, gates: build, unit, architecture, OpenAPI diff, `gen:api` + `typecheck`. **Step 6: Controller
+- [x] **Steps 2–5** (worker done 2026-10-27, see task-P3-report.md), gates: build, unit, architecture, OpenAPI diff, `gen:api` + `typecheck`. **Step 6: Controller
   commits** `feat(platform): error contract and OpenAPI to TypeScript conformance`.
 
 ### Task P4: Idempotency, concurrency and audit primitives

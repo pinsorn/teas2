@@ -135,6 +135,42 @@ public class ArchitectureTests
         Assert.Empty(bad);
     }
 
+    // SP3 4.7: every error-code literal in source (thrown TeasException, ErrorCodes lookups, Code properties) is in the registry.
+    // Forms: TeasException("x"), ErrorCodes.All["x"], Code => "x", a named `code: "x"` argument, and any `const string N = "a.b"` that looks like a code.
+    static readonly Regex CodeLiteral = new(@"(?:\bTeasException\s*\(|ErrorCodes\.All\[|\bCode\s*=>|\bcode:)\s*""([^""]+)""");
+    static readonly Regex ConstCodeLike = new(@"\bconst\s+string\s+\w+\s*=\s*""([a-z][a-z0-9_]*\.[a-z0-9_.]+)""");
+
+    static List<string> UnregisteredCodes(string source, ISet<string> registry) =>
+        CodeLiteral.Matches(source).Concat(ConstCodeLike.Matches(source)).Select(m => m.Groups[1].Value).Where(c => !registry.Contains(c)).ToList();
+
+    static HashSet<string> Registry() =>
+        Regex.Matches(File.ReadAllText(Path.Combine(Backend, "src", "Teas.Domain", "ErrorCodes.cs")), @"\[""([a-z0-9_.]+)""\]\s*=\s*new\(")
+            .Select(m => m.Groups[1].Value).ToHashSet();
+
+    [Fact]
+    public void EveryErrorCodeLiteralInSourceIsInTheRegistry()
+    {
+        var registry = Registry();
+        Assert.True(registry.Count > 40, "registry parsed: " + registry.Count);
+        var sep = Path.DirectorySeparatorChar;
+        var bad = Directory.EnumerateFiles(Path.Combine(Backend, "src"), "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{sep}obj{sep}") && !f.Contains($"{sep}bin{sep}"))
+            .SelectMany(f => UnregisteredCodes(File.ReadAllText(f), registry).Select(c => f + ": " + c))
+            .ToList();
+        Assert.Empty(bad);
+    }
+
+    [Fact]
+    public void TheCodeLiteralScannerFlagsAnUnregisteredCode()
+    {
+        var registry = new HashSet<string> { "record.not_found" };
+        Assert.Equal(["made.up_code"], UnregisteredCodes("throw new TeasException(\"made.up_code\"); throw new TeasException(\"record.not_found\");", registry));
+        Assert.Equal(["x.y"], UnregisteredCodes("public string Code => \"x.y\";", registry));
+        Assert.Equal(["a.b"], UnregisteredCodes("var c = ErrorCodes.All[\"a.b\"]; var d = ErrorCodes.All[\"record.not_found\"];", registry));
+        Assert.Equal(["c.d"], UnregisteredCodes("Fail(code: \"c.d\", detail: \"x\");", registry));
+        Assert.Equal(["e.f_g"], UnregisteredCodes("const string Missing = \"e.f_g\"; const string Path = \"/internal/v1\"; const string Ok = \"record.not_found\";", registry));
+    }
+
     [Fact]
     public void ControlSnippetBuilds()
     {

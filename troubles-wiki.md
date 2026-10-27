@@ -244,3 +244,8 @@ Entry format — terse, greppable by symptom:
 - Symptom: `psql -h localhost -U postgres -w` says `fe_sendauth: no password supplied`; `pg_hba.conf` is scram-sha-256 for every host, and no `PG*` / `TEAS*_PASSWORD` variable is set on the dev box.
 - Fix: ask Ham for the password (never reset it), then `tools/db/setup-local.ps1`. Without it, a worker can verify on a private cluster: `initdb -D <scratch>/pgdata -U postgres -A trust`, `pg_ctl -D <scratch>/pgdata -o "-p 5433" -w start` (run it detached: from the Bash tool `pg_ctl ... -w start` never returns), then `psql -p 5433 -f deploy/db/bootstrap-roles.sql` with `-v migrator_pw= -v app_pw= -v test_admin_pw=` and point `TEAS_TEST_ADMIN_CS` / `TEAS_TEST_APP_CS` at port 5433.
 - Harness note: a failing `InitializeAsync` in an xUnit fixture skips `DisposeAsync`, so a crashed run can leave `teas_t_*` clone databases behind; drop them by hand.
+
+## OpenAPI build: NU1903 on Microsoft.OpenApi, file name, and `pnpm` inside scripts
+- Symptom: `dotnet build -warnaserror` fails `NU1903 Microsoft.OpenApi 2.0.0 ... GHSA-v5pm-xwqc-g5wc`; or `FileName format invalid, only Alphanumeric and "_ -" authorized`; or a package.json script that calls `pnpm run x` says `'pnpm' is not recognized`.
+- Root cause: `Microsoft.AspNetCore.OpenApi` 10.0.x pulls the vulnerable 2.0.0 transitively; `Microsoft.Extensions.ApiDescription.Server` refuses a `.` in `--file-name` (so the build emits `backend/artifacts/openapi.json`, CI copies it to `docs/api/openapi.v1.json`); under corepack `pnpm` is a shim that is not on PATH for child processes.
+- Fix: direct `PackageReference` + central pin of `Microsoft.OpenApi` 2.7.5 in the Api project; `--file-name openapi`; chain scripts with `npm run -s <script>`.
