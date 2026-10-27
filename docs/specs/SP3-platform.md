@@ -178,15 +178,19 @@ $1, true), set_config('app.user_id', $2, true), set_config('app.system', $3, tru
 - **Links (new, Q4; amended P0a):** invite (7 days) and reset (24 h): 256-bit token, stored hashed with its kind and
   `expires_at` **stored at issue** (never recomputed on read), single use; a newer link of the SAME kind for the same
   member supersedes the older. `GET /auth/links/{token}` → `LinkInfo` (with `existingAccount`).
-  - **New account** (invite whose email has no user, or a user without a password; and every reset): `POST` sets the
+  - **New account** (an invite whose email has no user row; and every reset: only a link issued FOR a user, i.e. reset or bootstrap, may set the password of an existing user): `POST` sets the
     password. For an invite it finds or creates the `users` row by email, sets `company_members.user_id`, clears
     `invite_pending`, audited `user.accept_invite` in that company. For a reset it clears the lockout counter, **revokes
     every session of that user** and is audited `auth.password.reset`.
-  - **Existing account** (invite whose email already has a user WITH a password; `existingAccount: true`): the page
+  - **Existing account** (an invite whose email already has a user row, WHATEVER its password state, with or without two-step; `existingAccount: true`; an invite never sets a password for an existing user): the page
     shows "sign in to accept" and NO password form. `POST` accepts only from a signed-in session of THAT user (links
     the membership, clears `invite_pending`, `user.accept_invite`; no password is read or changed); from anyone else
     (signed out, or another user) it is the one 404. A link must never set the password of an account that already
     has one: an invite is not proof of owning the email.
+  - **Known limitation (Ham 2026-10-27):** TEAS sends no email (SP0 section 1.4), so the inviting admin receives the
+    link and can pre-claim an email that has no account yet. Accepted until email delivery exists. Exit: the server
+    operator runs the CLI `reset-password --email` after verifying the owner's identity out of band; it writes an
+    `auth_events` row and prints a one-time reset link, which is a link issued FOR that user and so may set the password.
   - Unknown / used / expired / superseded / **of an inactive member** (deactivating a member clears their links; a
     revoked membership likewise) → one answer 404 `auth.link_invalid`. A reset for a member who has not accepted the
     invite is refused (`user.invite_pending` 409): the invite link stays the way in.
@@ -429,6 +433,7 @@ Mock routes removed: `GET /auth/demo`, `POST /settings/users/{id}/accept`, `/moc
 | `auth.not_expired` (relogin) | session still alive | keep working |
 | second factor lost + recovery codes used up | cannot sign in | an admin runs `totp-reset` (route 25); the last admin: operator CLI `reset-mfa` (Q3) |
 | password forgotten | cannot sign in | admin reset link (route 24); the last admin: operator CLI `reset-password` |
+| invite pre-claimed by an admin (email had no account; no email is sent) | the real owner cannot set their own password | KNOWN LIMITATION: operator CLI `reset-password --email` after out-of-band identity check; writes `auth_events`, prints a one-time reset link (§4.4) |
 | Data-protection key ring lost | TOTP secrets undecryptable | recovery codes (hashed, independent of the key ring) sign in, then re-enrol; else admin `totp-reset` |
 | member deactivated in their active company | `Me.permissions = []` | switch company (the switcher lists active memberships only); none left = removed by design |
 | `idempotency.key_reused` | client reused a key with a new body | send a new key |
@@ -674,7 +679,7 @@ characters.
 (QR from `uri`; one exact-pinned QR dependency with its reason in the report), `deploy/compose.ci.yml`,
 `.github/workflows/backend.yml` `compose` job, `frontend/e2e/platform-live.spec.ts`.
 **Rules:** §4.8; S7; `mock` stays the default build (the mockup preview is unchanged).
-- [ ] **Step 1: Failing tests** — proxy: strips `x-teas-actor` and a forged `X-Teas-Bff`, adds the secret, refuses a
+- [ ] **Step 1: Failing tests** — proxy (`proxy.test.ts` names `POST /auth/links/{token}` explicitly in the cross-site check, JSON content type + Origin, even though route 14 is `auth: public`): strips `x-teas-actor` and a forged `X-Teas-Bff`, adds the secret, refuses a
   cross-origin POST; hybrid e2e on the composed stack (CI): log in, see memberships, switch company, change password,
   enrol TOTP, invite a user and set their password through the link, create / rotate / revoke a key; the rest of the
   app still renders on MSW.

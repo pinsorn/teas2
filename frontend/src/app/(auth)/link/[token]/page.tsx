@@ -29,7 +29,9 @@ export default function SetPasswordPage() {
   const me = useQuery({ queryKey: ['auth-link-session'], queryFn: authApi.session, enabled: existing && !done, retry: false, refetchOnWindowFocus: false });
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
-  const save = useMutation({ mutationFn: () => endpoints.setPassword(token, existing ? { password: '', confirm: '' } : { password, confirm }), onSuccess: () => setDone(true) });
+  const save = useMutation({ mutationFn: () => endpoints.setPassword(token, existing ? { password: '', confirm: '' } : { password, confirm }), onSuccess: () => setDone(true), onError: (e) => { if (existing && isGone(e)) void me.refetch(); } }); // the server keeps one 404; for an accept, ask the session whether we are even signed in
+  const signedIn = existing && me.data?.email?.toLowerCase() === info.data?.email.toLowerCase() && (me.data?.state === 'active' || me.data?.state === 'expiring');
+  const notSignedIn = existing && save.isError && isGone(save.error) && !me.isFetching && !signedIn; // a refused accept from a signed-out browser is not a dead link
 
   if (done && info.data) { // the success state wins over anything a later fetch says
     return (
@@ -44,7 +46,7 @@ export default function SetPasswordPage() {
     );
   }
   if (info.isPending) return <Shell><LoadingState rows={3} /></Shell>;
-  if ((info.isError && isGone(info.error)) || (save.isError && isGone(save.error))) {
+  if ((info.isError && isGone(info.error)) || (save.isError && isGone(save.error) && !notSignedIn && !(existing && me.isFetching))) {
     return (
       <Shell>
         <div className="grid gap-2 py-16 text-center" data-screen-state="not-found">
@@ -60,7 +62,6 @@ export default function SetPasswordPage() {
   const d = info.data;
   const title = existing ? t('existingTitle') : d.kind === 'invite' ? t('inviteTitle') : t('resetTitle');
   if (existing) {
-    const signedIn = me.data?.email?.toLowerCase() === d.email.toLowerCase() && (me.data.state === 'active' || me.data.state === 'expiring');
     return (
       <Shell>
         <title>{title}</title>
@@ -69,7 +70,7 @@ export default function SetPasswordPage() {
           <p className="text-body text-muted-foreground">{d.companyName ? t('existingLead', { company: d.companyName, email: d.email }) : t('existingLeadNoCompany', { email: d.email })}</p>
         </div>
         <div className="grid gap-3 rounded-lg border bg-card p-4">
-          {save.isError ? <Alert variant="destructive" role="alert" data-testid="link-error"><AlertTitle>{save.error instanceof ApiError ? save.error.problem.title : t('failed')}</AlertTitle></Alert> : null}
+          {save.isError && !notSignedIn ? <Alert variant="destructive" role="alert" data-testid="link-error"><AlertTitle>{save.error instanceof ApiError ? save.error.problem.title : t('failed')}</AlertTitle></Alert> : null}
           {signedIn
             ? <Button onClick={() => save.mutate()} disabled={save.isPending} data-testid="link-accept">{save.isPending ? t('submitting') : t('accept')}</Button>
             : <Button asChild data-testid="link-signin"><Link href="/login">{t('toLogin')}</Link></Button>}

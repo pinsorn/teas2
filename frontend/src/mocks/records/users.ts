@@ -139,7 +139,8 @@ const holder = (st: MockState, token: string): StaffMember | undefined => {
   const m = st.staff.find((x) => x.linkHash === hash(token));
   return m && m.active && m.linkKind && m.linkExpiresAt && Date.parse(m.linkExpiresAt) > now() && (m.linkKind === 'invite') === m.invitePending ? m : undefined;
 };
-const credOfEmail = (st: MockState, email: string) => st.auth?.creds.find((c) => c.email.toLowerCase() === email.toLowerCase() && c.passwordHash);
+/** P0b: an existing user = a user row for the email, whatever its password state; an INVITE never sets a password for one. */
+const credOfEmail = (st: MockState, email: string) => st.auth?.creds.find((c) => c.email.toLowerCase() === email.toLowerCase());
 export function linkInfo(st: MockState, token: string): LinkInfo {
   if (Object.hasOwn(FIXTURE_LINKS, token)) return FIXTURE_LINKS[token];
   const m = holder(st, token);

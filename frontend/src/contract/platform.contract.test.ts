@@ -297,3 +297,19 @@ describe('links: P0a rulings', () => {
     expect(loadState().auth!.sessions.filter((s) => s.userId === 'u-1').every((s) => s.revokedAt)).toBe(true);
   });
 });
+
+describe('P0b: an invite never sets a password for an existing user, whatever its password state', () => {
+  it.each([['wichai@maliwan.example', 'with two-step'], ['somsri@maliwan.example', 'without two-step']])('%s (%s), passwordless: refused, password unchanged', async (email) => {
+    setSettings({ companyKey: 'nonvat' });
+    const st = loadState();
+    st.auth!.creds.find((c) => c.email === email)!.passwordHash = '';
+    saveState(st);
+    const made = (await call('POST', '/settings/users', { name: 'ผู้รับเชิญ', email, roleId: 'operator' })).json as { link: string; id: string };
+    const t = made.link.split('/link/')[1];
+    expect((await call('GET', `/auth/links/${t}`)).json).toMatchObject({ kind: 'invite', existingAccount: true });
+    setSession('out');
+    expect((await call('POST', `/auth/links/${t}`, { password: 'Attacker#Pass2026', confirm: 'Attacker#Pass2026' })).json).toMatchObject({ code: 'auth.link_invalid' });
+    expect(loadState().auth!.creds.find((c) => c.email === email)!.passwordHash).toBe('');
+    expect(loadState().staff.find((m) => m.id === made.id)!.invitePending).toBe(true);
+  });
+});

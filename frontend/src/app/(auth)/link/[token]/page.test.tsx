@@ -87,4 +87,29 @@ describe('set-password page (Q4)', () => {
     expect(document.querySelector('meta[name="robots"]')).toHaveAttribute('content', 'noindex, nofollow');
     expect(document.querySelector('meta[name="referrer"]')).toHaveAttribute('content', 'no-referrer');
   });
+  it('an accept refused because the session is gone shows the sign-in screen, not the dead link; still signed in = dead link', async () => {
+    setSettings({ companyKey: 'nonvat', role: 'admin' });
+    const post = (path: string, body: unknown) => fetch(new URL(`/bff/v1${path}`, window.location.origin), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
+    const made = await post('/settings/users', { name: 'ผู้รับเชิญ', email: 'somsri@maliwan.example', roleId: 'operator' }) as { link: string };
+    await post('/auth/login', { email: 'somsri@maliwan.example', password: 'Somsri#2026ok' });
+    show(made.link.split('/link/')[1]!);
+    const accept = await screen.findByTestId('link-accept');
+    const { http, HttpResponse } = await import('msw');
+    testServer.use(http.post('*/bff/v1/auth/links/:token', () => HttpResponse.json({ code: 'auth.link_invalid', title: 'x', status: 404 }, { status: 404 })), http.get('*/bff/v1/auth/session', () => HttpResponse.json({ state: 'out' })));
+    await userEvent.click(accept);
+    expect(await screen.findByTestId('link-signin')).toBeInTheDocument();
+    expect(screen.queryByTestId('link-invalid')).toBeNull();
+  });
+  it('a refused accept while still signed in as that user is the dead link', async () => {
+    setSettings({ companyKey: 'nonvat', role: 'admin' });
+    const post = (path: string, body: unknown) => fetch(new URL(`/bff/v1${path}`, window.location.origin), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
+    const made = await post('/settings/users', { name: 'ผู้รับเชิญ', email: 'somsri@maliwan.example', roleId: 'operator' }) as { link: string };
+    await post('/auth/login', { email: 'somsri@maliwan.example', password: 'Somsri#2026ok' });
+    show(made.link.split('/link/')[1]!);
+    const accept = await screen.findByTestId('link-accept');
+    const { http, HttpResponse } = await import('msw');
+    testServer.use(http.post('*/bff/v1/auth/links/:token', () => HttpResponse.json({ code: 'auth.link_invalid', title: 'x', status: 404 }, { status: 404 })));
+    await userEvent.click(accept);
+    expect(await screen.findByTestId('link-invalid')).toBeInTheDocument();
+  });
 });
