@@ -1,0 +1,6 @@
+P:System.DateTime.Now;Use an injected TimeProvider (SP3 4.7 Clock)
+P:System.DateTime.UtcNow;Use an injected TimeProvider (SP3 4.7 Clock)
+P:System.DateTime.Today;Use BusinessDate.Today(TimeProvider) (SP3 4.7 Clock)
+P:System.DateTimeOffset.Now;Use an injected TimeProvider (SP3 4.7 Clock)
+P:System.DateTimeOffset.UtcNow;Use an injected TimeProvider (SP3 4.7 Clock)
+P:System.TimeProvider.System;Inject TimeProvider; only Program.cs may create the system clock (SP3 4.7 Clock)
