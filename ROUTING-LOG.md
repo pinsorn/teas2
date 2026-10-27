@@ -97,3 +97,4 @@
 | 2026-10-26 | SP1c GHC consolidated gate | haiku-gate-runner | Tier 3 run-and-report |
 | 2026-10-27 | SP1c CI axe failures root cause (payroll run new contrast, outstanding PO title) | sonnet-implementer (fresh, systematic-debugging) | recurring CI-only failures block PR #17 merge |
 | 2026-10-27 | Next.js 16.4.0 → 16.4.1 security upgrade (3 advisories) | sonnet-implementer (fresh) | Ham approved 2026-10-26; full gate |
+| 2026-10-27 | SP2 master plan + SP3 platform spec (contract freeze) | opus-designer | Ham: start with SP3 / SP4.1 / SP4.2 (not SP-R blocked); contract + task list depth; footgun design (schema, RLS, auth) |
