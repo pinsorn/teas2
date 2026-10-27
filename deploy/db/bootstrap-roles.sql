@@ -1,7 +1,15 @@
--- Run once per PostgreSQL server as the superuser (idempotent):
---   psql -v ON_ERROR_STOP=1 -v migrator_pw=... -v app_pw=... [-v test_admin_pw=...] -f bootstrap-roles.sql
--- teas_test_admin exists only when test_admin_pw is given (local + CI, never prod).
--- Roles are NOSUPERUSER NOBYPASSRLS (SP3 4.2); the passwords come from psql variables, never from this file.
+-- Run once per PostgreSQL server as the superuser (idempotent). Passwords come from the ENVIRONMENT, never the command line:
+--   TEAS_MIGRATOR_PW, TEAS_APP_PW required; TEAS_TEST_ADMIN_PW optional (creates teas_test_admin: local + CI only, never prod)
+--   psql -v ON_ERROR_STOP=1 -f bootstrap-roles.sql
+-- Roles are NOSUPERUSER NOBYPASSRLS (SP3 4.2).
+-- The ALTER ROLE ... PASSWORD statements below must not reach the server log.
+SET log_statement = 'none';
+SET log_min_error_statement = 'panic';
+
+\getenv migrator_pw TEAS_MIGRATOR_PW
+\getenv app_pw TEAS_APP_PW
+\getenv test_admin_pw TEAS_TEST_ADMIN_PW
+
 SELECT format('CREATE ROLE %I LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE', r)
 FROM (VALUES ('teas_migrator'), ('teas_app')) AS t(r)
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = t.r) \gexec

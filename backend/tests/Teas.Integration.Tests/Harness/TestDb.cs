@@ -53,7 +53,7 @@ public static class TestDb
         var template = await Template.Value;
         var name = "teas_t_" + Guid.NewGuid().ToString("N")[..12];
         await CloneLock.WaitAsync();
-        try { await ExecAsync(AdminMaintenance, $"CREATE DATABASE {name} TEMPLATE {template}"); }
+        try { await ExecAsync(AdminMaintenance, $"CREATE DATABASE {name} TEMPLATE {template} OWNER teas_migrator"); }
         finally { CloneLock.Release(); }
         var clone = new DbClone(name);
         try { await clone.AssertAppRoleAsync(); }
@@ -92,7 +92,7 @@ public sealed class DbClone(string name) : IAsyncDisposable
     }
 
     /// <summary>Runs <paramref name="work"/> in one transaction under <paramref name="scope"/> on a fresh pooled app connection; rolls back.</summary>
-    public async Task<T> AsAppAsync<T>(ScopeState scope, Func<NpgsqlConnection, NpgsqlTransaction, Task<T>> work, bool commit = false)
+    internal async Task<T> AsAppAsync<T>(ScopeState scope, Func<NpgsqlConnection, NpgsqlTransaction, Task<T>> work, bool commit = false)
     {
         await using var c = await OpenAppAsync();
         await using var tx = await c.BeginTransactionAsync();

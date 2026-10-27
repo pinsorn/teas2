@@ -35,16 +35,32 @@ public sealed class StartupGuardTests : IAsyncLifetime
         Assert.Equal(TeasDbContext.ExpectedSchema, last);
     }
 
-    // The harness cannot create a BYPASSRLS login (needs a superuser), so it points the SAME check at the cluster's
-    // superuser role: a role with rolsuper OR rolbypassrls is refused whatever the connection.
-    [Fact]
-    public async Task SuperuserOrBypassRlsRoleIsRefused()
+    // S16 against a REAL BYPASSRLS login (CI creates teas_bypass_probe; locally it is skipped with a reason when absent).
+    [RequiresBypassProbeFact]
+    public async Task BypassRlsLoginIsRefused()
     {
-        await using var c = await _db.OpenAppAsync();
-        await using var cmd = new NpgsqlCommand("SELECT rolname FROM pg_roles WHERE rolsuper OR rolbypassrls LIMIT 1", c);
-        var role = (string)(await cmd.ExecuteScalarAsync())!;
-        var e = await Assert.ThrowsAsync<StartupGuardException>(() => StartupGuards.RunAsync(_db.AppCs, role));
+        var cs = new NpgsqlConnectionStringBuilder(_db.AppCs) { Username = RequiresBypassProbeFactAttribute.Role }.ToString();
+        var e = await Assert.ThrowsAsync<StartupGuardException>(() => StartupGuards.RunAsync(cs));
         Assert.Contains("BYPASSRLS", e.Message);
+    }
+
+    // L2: only teas_app may run the API (the migrator owns the tables and would pass every other check).
+    [Fact]
+    public async Task AnyRoleButTeasAppIsRefused()
+    {
+        var e = await Assert.ThrowsAsync<StartupGuardException>(() => StartupGuards.RunAsync(_db.MigratorCs));
+        Assert.Contains("not teas_app", e.Message);
+    }
+
+    // L3: forced RLS and a policy are present, no-GUC reads 0, but system scope sees nothing although the table holds rows.
+    [Fact]
+    public async Task PolicyThatHidesEverythingFromSystemScopeIsRefused()
+    {
+        var a = Guid.NewGuid();
+        await _db.AsAppAsync(new ScopeState(a, null, false), async (c, tx) => { await TenantRowFactory.Inserts["companies"](c, tx, a); return 0; }, commit: true);
+        await AsMigrator("DROP POLICY tenant_select ON teas.companies; CREATE POLICY tenant_select ON teas.companies FOR SELECT USING (false); ANALYZE teas.companies");
+        var e = await Assert.ThrowsAsync<StartupGuardException>(() => StartupGuards.RunAsync(_db.AppCs));
+        Assert.Contains("hides everything", e.Message);
     }
 
     [Fact]
@@ -73,7 +89,7 @@ public sealed class StartupGuardTests : IAsyncLifetime
             return 0;
         }, commit: true);
         // forced RLS and a policy are both still there, but the policy leaks: only the count itself can catch this
-        await AsMigrator("DROP POLICY tenant ON teas.companies; CREATE POLICY tenant ON teas.companies USING (true)");
+        await AsMigrator("DROP POLICY tenant_select ON teas.companies; CREATE POLICY tenant_select ON teas.companies FOR SELECT USING (true)");
         var e = await Assert.ThrowsAsync<StartupGuardException>(() => StartupGuards.RunAsync(_db.AppCs));
         Assert.Contains("self-test", e.Message);
     }
@@ -90,5 +106,25 @@ public sealed class StartupGuardTests : IAsyncLifetime
         await AsMigrator("ALTER TABLE teas.audit_log NO FORCE ROW LEVEL SECURITY");
         using var broken = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b.UseSetting("ConnectionStrings:Teas", _db.AppCs));
         Assert.ThrowsAny<Exception>(() => broken.CreateClient());
+    }
+}
+
+/// <summary>A fact that is skipped, with the reason shown, when the BYPASSRLS probe login does not exist on this server.</summary>
+public sealed class RequiresBypassProbeFactAttribute : FactAttribute
+{
+    public const string Role = "teas_bypass_probe";
+
+    public RequiresBypassProbeFactAttribute()
+    {
+        try
+        {
+            var cs = new NpgsqlConnectionStringBuilder(Environment.GetEnvironmentVariable("TEAS_TEST_APP_CS")) { Username = Role, Database = "postgres", Pooling = false }.ToString();
+            using var c = new NpgsqlConnection(cs);
+            c.Open();
+        }
+        catch (Exception e) when (e is NpgsqlException or ArgumentException or InvalidOperationException)
+        {
+            Skip = $"login role {Role} (BYPASSRLS) is absent: CI creates it; locally run: CREATE ROLE {Role} LOGIN BYPASSRLS PASSWORD '<same as teas_app>'";
+        }
     }
 }

@@ -19,21 +19,31 @@ public static class RlsSql
           WITH CHECK ({key} = teas.current_company());
         """;
 
-    /// <summary>Exception: the company switcher also lists companies the user is an active, accepted member of.</summary>
+    // The two exception tables widen ONLY the SELECT policy. UPDATE / DELETE keep the narrow predicate: with one FOR ALL
+    // policy the widened USING would also let company A's session update or delete the rows it merely may see (M2).
+
+    /// <summary>Exception: the company switcher also lists companies the user is an active, accepted member of (SELECT only).</summary>
     public static string Companies() => $"""
         {EnableAndForce("companies")}
-        CREATE POLICY tenant ON teas.companies
+        CREATE POLICY tenant_select ON teas.companies FOR SELECT
           USING (id = teas.current_company() OR teas.is_system() OR EXISTS (SELECT 1 FROM teas.company_members m
-                 WHERE m.company_id = companies.id AND m.user_id = teas.current_user_id() AND m.active AND NOT m.invite_pending))
-          WITH CHECK (id = teas.current_company());
+                 WHERE m.company_id = companies.id AND m.user_id = teas.current_user_id() AND m.active AND NOT m.invite_pending));
+        CREATE POLICY tenant_insert ON teas.companies FOR INSERT WITH CHECK (id = teas.current_company());
+        CREATE POLICY tenant_update ON teas.companies FOR UPDATE
+          USING (id = teas.current_company() OR teas.is_system()) WITH CHECK (id = teas.current_company());
+        CREATE POLICY tenant_delete ON teas.companies FOR DELETE USING (id = teas.current_company() OR teas.is_system());
         """;
 
-    /// <summary>Exception: the switcher lists a user's memberships across companies.</summary>
+    /// <summary>Exception: the switcher lists a user's memberships across companies (SELECT only).</summary>
     public static string CompanyMembers() => $"""
         {EnableAndForce("company_members")}
-        CREATE POLICY tenant ON teas.company_members
-          USING (company_id = teas.current_company() OR user_id = teas.current_user_id() OR teas.is_system())
-          WITH CHECK (company_id = teas.current_company());
+        CREATE POLICY tenant_select ON teas.company_members FOR SELECT
+          USING (company_id = teas.current_company() OR user_id = teas.current_user_id() OR teas.is_system());
+        CREATE POLICY tenant_insert ON teas.company_members FOR INSERT WITH CHECK (company_id = teas.current_company());
+        CREATE POLICY tenant_update ON teas.company_members FOR UPDATE
+          USING (company_id = teas.current_company() OR teas.is_system()) WITH CHECK (company_id = teas.current_company());
+        CREATE POLICY tenant_delete ON teas.company_members FOR DELETE
+          USING (company_id = teas.current_company() OR teas.is_system());
         """;
 
     public static string GrantApp(string table, string privileges = "SELECT, INSERT, UPDATE, DELETE") =>

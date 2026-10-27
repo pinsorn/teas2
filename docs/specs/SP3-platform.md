@@ -104,7 +104,11 @@ CREATE POLICY tenant ON teas.<t>
   teas.company_members m WHERE m.company_id = companies.id AND m.user_id = teas.current_user_id() AND m.active AND NOT
   m.invite_pending)) WITH CHECK (id = teas.current_company())`; `company_members`: `USING (company_id =
   teas.current_company() OR user_id = teas.current_user_id() OR teas.is_system()) WITH CHECK (company_id =
-  teas.current_company())` (the company switcher lists a user's memberships across companies).
+  teas.current_company())` (the company switcher lists a user's memberships across companies). **P2a ruling (M2):** the widening
+  is SELECT-only. For these two tables the policy is split: `tenant_select` carries the widened USING; `tenant_insert`
+  (WITH CHECK), `tenant_update` (USING `id`/`company_id = current_company() OR is_system()`, same WITH CHECK) and
+  `tenant_delete` (same USING) use the narrow predicate. Reason: one FOR ALL policy would let company A's session UPDATE or
+  DELETE a row it may merely see (its own membership row in B, company B itself).
 - Global tables (no RLS) are listed in `backend/src/Teas.Migrator/rls-allowlist.txt`, one per line with a reason. An
   architecture test queries `pg_class` / `pg_policy` on the migrated template: every table in schema `teas` is either
   on the allow-list, or has `relrowsecurity AND relforcerowsecurity` and ≥ 1 policy (SP0 §10.3).
@@ -149,7 +153,7 @@ Schema sketch (P2 creates the base, later tasks add their tables; types: ids `uu
 | Integration tests | harness: `teas_test_admin` clones; tests: `teas_app` | as the code under test | — | — | harness asserts the role (F1) |
 
 `TenantScope` API: `Enter(Guid companyId, Guid? userId)`, `EnterSystem(string reason)` (reason logged with the trace;
-an architecture test allows `EnterSystem` only in `Platform/Auth`, `Platform/Jobs`, `Platform/Keys`, `Migrator`),
+an architecture test allows `EnterSystem(`, `ScopeState(`, `ApplyAsync(` and `ForEachCompanyAsync(` only in `Platform/Auth`, `Platform/Jobs`, `Platform/Keys`, `Migrator` and `Teas.Api/Startup/StartupGuards` (the startup RLS self-test needs system scope); `ScopeState`, `ApplyAsync`, `ForEachCompanyAsync` are internal to `Teas.App`; a scope change while a transaction is open is applied to it at once and restored on dispose),
 `ForEachCompany`. Implementation: an EF Core `DbTransactionInterceptor` issues `SELECT set_config('app.company_id',
 $1, true), set_config('app.user_id', $2, true), set_config('app.system', $3, true)` on `TransactionStarted`.
 

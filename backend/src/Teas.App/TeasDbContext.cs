@@ -10,6 +10,8 @@ public sealed class TeasDbContext(DbContextOptions<TeasDbContext> options) : DbC
     /// <summary>The migration id this build expects (a test asserts it equals the migrator's last migration).</summary>
     public const string ExpectedSchema = "0001_platform_base";
 
+    protected override void OnModelCreating(ModelBuilder b) => b.HasDefaultSchema("teas");
+
     public static void Configure(DbContextOptionsBuilder o, string connectionString) =>
         o.UseNpgsql(connectionString, n => n.MigrationsAssembly("Teas.Migrator").MigrationsHistoryTable("__EFMigrationsHistory", "teas"));
 }

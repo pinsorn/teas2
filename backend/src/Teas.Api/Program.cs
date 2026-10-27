@@ -11,7 +11,10 @@ builder.Services.AddSingleton(TimeProvider.System);
 // ConnectionStrings:Teas = the teas_app login. Without it only a non-Production host starts (health / version tests).
 var cs = builder.Configuration.GetConnectionString("Teas");
 if (!string.IsNullOrWhiteSpace(cs)) builder.Services.AddTeasData(cs);
-else if (builder.Environment.IsProduction()) throw new StartupGuardException("ConnectionStrings:Teas is not set");
+else if (!builder.Environment.IsDevelopment()) throw new StartupGuardException("ConnectionStrings:Teas is not set");
+
+if (!builder.Environment.IsDevelopment() && (builder.Configuration["TEAS_BFF_SECRET"]?.Length ?? 0) < BffSecretFilter.MinLength)
+    throw new StartupGuardException($"TEAS_BFF_SECRET must be set and at least {BffSecretFilter.MinLength} characters");
 
 var app = builder.Build();
 

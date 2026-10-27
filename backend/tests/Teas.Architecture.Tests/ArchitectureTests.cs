@@ -122,14 +122,14 @@ public class ArchitectureTests
 
     // SP3 4.3: system scope bypasses the company filter, so it is entered only in Platform/Auth, Platform/Jobs, Platform/Keys and the migrator.
     [Fact]
-    public void EnterSystemIsCalledOnlyFromTheAllowedPlaces()
+    public void SystemScopeMachineryIsUsedOnlyFromTheAllowedPlaces()
     {
         var src = Path.Combine(Backend, "src");
         var definition = Path.Combine(src, "Teas.App", "Platform", "TenantScope.cs");
-        string[] allowed = ["/Platform/Auth/", "/Platform/Jobs/", "/Platform/Keys/", "/Teas.Migrator/"];
+        string[] allowed = ["/Platform/Auth/", "/Platform/Jobs/", "/Platform/Keys/", "/Teas.Migrator/", "/Teas.Api/Startup/StartupGuards.cs"];
         var bad = Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories)
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") && f != definition)
-            .Where(f => Regex.IsMatch(File.ReadAllText(f), @"\bEnterSystem\s*\("))
+            .Where(f => Regex.IsMatch(File.ReadAllText(f), @"\b(EnterSystem|ScopeState|ApplyAsync|ForEachCompanyAsync)\s*\("))
             .Where(f => !allowed.Any(a => f.Replace('\\', '/').Contains(a)))
             .ToList();
         Assert.Empty(bad);
