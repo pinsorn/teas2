@@ -1,4 +1,5 @@
 import { getTranslations } from "next-intl/server";
+import { CompanyGate } from "@/app-shell/CompanyGate";
 import { Sidebar } from "@/app-shell/Sidebar";
 import { Topbar } from "@/app-shell/Topbar";
 
@@ -15,7 +16,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar />
-        <main id="content" className="flex-1 p-4 md:p-6">{children}</main>
+        <main id="content" className="flex-1 p-4 md:p-6"><CompanyGate>{children}</CompanyGate></main>
       </div>
     </div>
   );

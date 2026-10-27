@@ -674,7 +674,7 @@ transaction; a test asserts both rows exist afterwards (a factory that inserts f
   memberships and a custom role (`roleName`), `Me.activeCompanyId = null` without membership, switch to a company you
   are not an active member of → 404, `company.switch` audited, every write audited with `before` / `after` without
   pictures, agent refused with `agent.forbidden_setting` before the body is read.
-- [ ] **Drop the P0 `Me` narrowing:** `domain/types.ts` re-exports `Me` with `activeCompanyId: string` (an exception to
+- [x] **Drop the P0 `Me` narrowing** (done: `Me` is the contract type; `useMe().me` is `CompanyMe` or undefined, `account` is the raw Me; `<CompanyGate>` in the (app) layout redirects null to /onboarding and mounts nothing; 4 files edited + 2 new, no call-site churn; typecheck/lint/vitest 186 files 2879 passed/build/freeze/layout green; CompanyGate.test.tsx): `domain/types.ts` re-exports `Me` with `activeCompanyId: string` (an exception to
   "old files re-export verbatim", master plan §2.2). P8 removes it, makes `useMe` handle `activeCompanyId === null`
   (`router.replace('/onboarding')`, no company screens mounted); drop the narrowed `Me.activeCompanyId` and handle null (to /onboarding), and fixes the ~100 call sites that then need a string.
 - [~] **Steps 2–5** (backend half done: build -warnaserror 0/0, Integration 238/238 twice, Architecture 25/25, Domain 58/58, OpenAPI artifact identical, conformance lines for routes 15-29, typecheck ok, freeze + layout ok; the frontend half "Drop the P0 Me narrowing" remains), gates as P4 + conformance. **Step 6: Controller commits**

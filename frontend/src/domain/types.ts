@@ -1,9 +1,9 @@
 import type { FilingForm } from './filings';
-import type { Actor, ApiProblem, AuditEntry, Company, CompanySettings, Me as ContractMe, Membership, Page, RoleRow, StaffMember, UserRow } from '@/contract/platform';
+import type { Actor, ApiProblem, AuditEntry, Company, CompanySettings, Me, Membership, Page, RoleRow, StaffMember, UserRow } from '@/contract/platform';
 // SP3 P0: the platform types live in the frozen contract; this file re-exports them so no import in the app changes.
-export type { Actor, ApiProblem, AuditEntry, Company, CompanySettings, Membership, Page, RoleRow, StaffMember, UserRow };
-/** The app's view of `Me`: the contract allows `activeCompanyId: null` (no company yet -> /onboarding, SP3 P8 wires it); every screen mounts with a company, so it reads it as a string. */
-export type Me = Omit<ContractMe, 'activeCompanyId'> & { activeCompanyId: string };
+export type { Actor, ApiProblem, AuditEntry, Company, CompanySettings, Me, Membership, Page, RoleRow, StaffMember, UserRow };
+/** `Me` once the user has a company (`useMe().me`): the screens under the shell guard only ever see this. `activeCompanyId: null` (no company yet) goes to /onboarding. */
+export type CompanyMe = Omit<Me, 'activeCompanyId'> & { activeCompanyId: string };
 import type { IsoDate, Money } from '@/contract/scalars';
 export type { IsoDate, Money };
 export type Qty = string;     // decimal string, up to 4 dp
