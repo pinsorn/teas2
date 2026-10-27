@@ -98,3 +98,5 @@
 | 2026-10-27 | SP1c CI axe failures root cause (payroll run new contrast, outstanding PO title) | sonnet-implementer (fresh, systematic-debugging) | recurring CI-only failures block PR #17 merge |
 | 2026-10-27 | Next.js 16.4.0 → 16.4.1 security upgrade (3 advisories) | sonnet-implementer (fresh) | Ham approved 2026-10-26; full gate |
 | 2026-10-27 | SP2 master plan + SP3 platform spec (contract freeze) | opus-designer | Ham: start with SP3 / SP4.1 / SP4.2 (not SP-R blocked); contract + task list depth; footgun design (schema, RLS, auth) |
+| 2026-10-27 | SP3 task P0 (freeze platform contract + set-password mock) | sonnet-implementer (fresh) | worktree T2-sp3; parallel with docs-only designer |
+| 2026-10-27 | SP4.1 ledger + SP4.2 masters/documents specs | opus-designer | footgun design (posting kernel, schema, document engine); docs only |
