@@ -57,7 +57,7 @@ static class McpHost
     static List<Tool> Tools(HttpContext h) =>
         [.. h.RequestServices.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
             .Select(e => (e, spec: e.Metadata.GetMetadata<RouteSpec>(), tool: e.Metadata.GetMetadata<McpToolAttribute>()))
-            .Where(t => t.spec is { Agent: true, Auth: "key" } && t.tool is not null)
+            .Where(t => t.spec is { Agent: true, Auth: "key" } && t.tool is not null && !t.spec.Path.Contains('{'))   // a parameterised route is never a tool (arguments are the body), however its metadata was attached
             .Select(t => new Tool(t.tool!.Name, t.tool.Description, t.e, t.spec!)).OrderBy(t => t.Name, StringComparer.Ordinal)];
 
     static JsonNode InputSchema(RouteEndpoint e) =>

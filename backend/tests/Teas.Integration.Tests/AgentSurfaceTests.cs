@@ -31,6 +31,8 @@ sealed class WrongMachineRoutes : IStartupFilter
                 .WithMetadata(new RouteSpec("POST", "/api/v1/_t/notagent", "key", Agent: false, Audit: "test.notagent"), new MachineChannel("rest"));
             e.MapMethods("/api/v1/_t/echo", ["POST"], (EchoBody b) => Results.Ok(new { b.Name }))
                 .WithMetadata(new RouteSpec("POST", "/api/v1/_t/echo", "key", Agent: true), new MachineChannel("rest"), new McpToolAttribute("echo", "echoes name"));
+            e.MapMethods("/api/v1/_t/p/{id}", ["GET"], (string id) => Results.Ok(new { id }))
+                .WithMetadata(new RouteSpec("GET", "/api/v1/_t/p/{id}", "key", Agent: true), new MachineChannel("rest"), new McpToolAttribute("param_tool", "has a path parameter"));   // metadata, not a handler attribute: MapMachine cannot see it
             e.MapMethods("/api/v1/_t/needs-bank", ["GET"], () => Results.Ok(new { ok = true }))
                 .WithMetadata(new RouteSpec("GET", "/api/v1/_t/needs-bank", "key", "bank.manage", Agent: true), new MachineChannel("rest"), new McpToolAttribute("needs_bank", "needs bank.manage"));
         });
@@ -274,6 +276,23 @@ public sealed class AgentSurfaceTests(AuthFixture fx) : IClassFixture<AuthFixtur
         var note = await Rpc(new { jsonrpc = "2.0", method = "tools/call", @params = new { name = "needs_bank", arguments = new { } } });
         Assert.Equal((HttpStatusCode.Accepted, ""), (note.Status, note.Raw));
         Assert.Equal(0, await H.ScalarAsync<long>("SELECT count(*) FROM teas.audit_log WHERE company_id = @c AND result = 'rejected'", P("c", company)));
+    }
+
+    [Fact]
+    public async Task P9bAParameterisedRouteWithAnMcpToolMetadataIsNotAToolAndCannotBeCalled()
+    {
+        using var f = H.Factory.WithWebHostBuilder(b => b.ConfigureServices(s => s.AddSingleton<IStartupFilter>(new WrongMachineRoutes())));
+        var (_, _, token, _) = await P8.AdminAsync(H);
+        var mcp = await K.CreateAsync(H, token, "mcp");
+        async Task<Res> Rpc(string method, object? p = null)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, "/mcp") { Content = JsonContent(new Dictionary<string, object?> { ["jsonrpc"] = "2.0", ["id"] = 1, ["method"] = method, ["params"] = p }) };
+            req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + mcp.Secret);
+            using var m = await f.CreateClient().SendAsync(req);
+            return new Res(m, await m.Content.ReadAsStringAsync());
+        }
+        Assert.DoesNotContain("param_tool", (await Rpc("tools/list")).Raw);
+        Assert.Equal(-32602, (await Rpc("tools/call", new { name = "param_tool", arguments = new { } })).Json.GetProperty("error").GetProperty("code").GetInt32());
     }
 
     [Fact]
