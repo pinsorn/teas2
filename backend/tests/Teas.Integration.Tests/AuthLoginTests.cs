@@ -346,8 +346,8 @@ public sealed class AuthLoginTests(AuthFixture fx) : IClassFixture<AuthFixture>
 
         await H.Post("/auth/totp/enrol", token: t);
         Assert.Equal(1, await Rows(a, "auth.totp.enrol_start"));
-        var audit = await H.QueryAsync("SELECT actor_kind, actor_id, target, before::text, after::text, result, client FROM teas.audit_log WHERE command = 'auth.totp.enrol_start'",
-            r => (r.GetString(0), r.GetString(1), r.GetString(2), r.IsDBNull(3), r.IsDBNull(4), r.GetString(5), r.GetString(6)));
+        var audit = await H.QueryAsync("SELECT actor_kind, actor_id, target, before::text, after::text, result, client FROM teas.audit_log WHERE command = 'auth.totp.enrol_start' AND actor_id = @u",
+            r => (r.GetString(0), r.GetString(1), r.GetString(2), r.IsDBNull(3), r.IsDBNull(4), r.GetString(5), r.GetString(6)), P("u", u.Id.ToString()));
         Assert.Equal(("user", u.Id.ToString(), u.Id.ToString(), true, true, "ok", "web"), audit);
 
         var loner = await H.CreateUserAsync();                                     // no membership at all: auth_events only
@@ -488,6 +488,26 @@ public sealed class AuthLoginTests(AuthFixture fx) : IClassFixture<AuthFixture>
         Assert.Null(await H.ScalarAsync<byte[]>("SELECT totp_pending_enc FROM teas.users WHERE id = @u", P("u", u.Id)));   // nothing was written
         var fresh = await H.LoginAsync(u);
         Assert.Equal(HttpStatusCode.OK, (await H.Post("/auth/totp/enrol", token: fresh)).Status);
+    }
+
+    [Fact]
+    public async Task AStaleSessionRefusedAtEnrolmentLeavesOneRejectedRowPerRefusalOnlyWhenItHasACompany()
+    {
+        var withCompany = await H.CreateUserAsync();
+        var company = await H.CreateCompanyAsync();
+        await H.AddMemberAsync(company, withCompany);
+        var alone = await H.CreateUserAsync();
+        var t1 = await H.LoginAsync(withCompany);
+        var t2 = await H.LoginAsync(alone);
+        H.Clock.Advance(11 * Min);
+        Assert.Equal("auth.forbidden", (await H.Post("/auth/totp/enrol", token: t1)).Code);
+        Assert.Equal("auth.forbidden", (await H.Post("/auth/totp/enrol/verify", new { code = "123456" }, t1)).Code);
+        Assert.Equal("auth.forbidden", (await H.Post("/auth/totp/enrol", token: t2)).Code);   // no company scope: no row (auth_events is the global log)
+
+        Assert.Equal(1, await P8.AuditCount(H, company, "auth.totp.enrol_start", "rejected"));
+        Assert.Equal(1, await P8.AuditCount(H, company, "auth.totp.enable", "rejected"));
+        Assert.Equal(2, await H.ScalarAsync<long>("SELECT count(*) FROM teas.audit_log WHERE result = 'rejected' AND target = @t AND actor_id = @t AND before IS NULL AND after IS NULL", P("t", withCompany.Id.ToString())));
+        Assert.Equal(2, await H.ScalarAsync<long>("SELECT count(*) FROM teas.audit_log WHERE result = 'rejected' AND actor_id IN (@a, @b)", P("a", withCompany.Id.ToString()), P("b", alone.Id.ToString())));
     }
 
     [Fact]

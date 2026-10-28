@@ -117,6 +117,46 @@ public class BffSecretTests
         Assert.Equal(HttpStatusCode.OK, await Send(f, HttpMethod.Get, "/internal/v1/ping", Secret, null));
     }
 
+    // P11a: TEAS_FORWARDED_KNOWN_NETWORKS. A machine route is limited per peer (1 / min here); behind a trusted proxy X-Forwarded-For names the client.
+    static async Task<int> Forwarded(WebApplicationFactory<Program> f, string peer, string xff)
+    {
+        var ctx = await f.Server.SendAsync(c =>
+        {
+            c.Request.Method = "GET";
+            c.Request.Path = "/api/v1/whoami";
+            c.Connection.RemoteIpAddress = IPAddress.Parse(peer);
+            c.Request.Headers["X-Forwarded-For"] = xff;
+        });
+        return ctx.Response.StatusCode;
+    }
+
+    static WebApplicationFactory<Program> ForwardedHost(string? networks) =>
+        new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+        {
+            b.UseSetting("FORWARDEDHEADERS_ENABLED", "true");   // = ASPNETCORE_FORWARDEDHEADERS_ENABLED
+            b.UseSetting("TEAS_MACHINE_RATE_LIMIT", "1");
+            if (networks != null) b.UseSetting("TEAS_FORWARDED_KNOWN_NETWORKS", networks);
+        });
+
+    [Fact]
+    public async Task ForwardedHeadersAreTrustedFromAnyPeerByDefault_AndOnlyFromTheKnownNetworksWhenSet()
+    {
+        using (var any = ForwardedHost(null))   // the framework default: whoever the peer is, X-Forwarded-For names the client
+        {
+            Assert.Equal(401, await Forwarded(any, "192.168.1.1", "203.0.113.1"));
+            Assert.Equal(401, await Forwarded(any, "192.168.1.1", "203.0.113.2"));
+        }
+        using var known = ForwardedHost("10.0.0.0/8, fd00::/8");
+        Assert.Equal(401, await Forwarded(known, "10.1.2.3", "203.0.113.1"));   // a peer inside: each forwarded client has its own bucket
+        Assert.Equal(401, await Forwarded(known, "10.1.2.3", "203.0.113.2"));
+        Assert.Equal(401, await Forwarded(known, "192.168.1.1", "203.0.113.1"));   // a peer outside: the header is ignored, the peer is the client
+        Assert.Equal(429, await Forwarded(known, "192.168.1.1", "203.0.113.2"));
+    }
+
+    [Fact]
+    public void ABadKnownNetworkFailsTheStart() =>
+        Assert.ThrowsAny<Exception>(() => ForwardedHost("not-a-cidr").CreateClient());
+
     sealed class ScopeCapture : ILoggerProvider
     {
         public System.Collections.Concurrent.ConcurrentQueue<string> Seen { get; } = new();

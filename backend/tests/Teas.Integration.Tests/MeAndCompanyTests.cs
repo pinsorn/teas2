@@ -192,11 +192,12 @@ public sealed class MeAndCompanyTests(AuthFixture fx) : IClassFixture<AuthFixtur
         var token = await H.LoginAsync(u);
         await H.ExecAsync("UPDATE teas.company_members SET active = false, version = version + 1 WHERE company_id = @c AND id = @m", new ScopeState(a, null, false), P("c", a), P("m", ma));
 
-        var me = await H.Get("/me", token);   // no company scope at all for this session
-        Assert.Equal(JsonValueKind.Null, me.Json.GetProperty("activeCompanyId").ValueKind);
+        var me = await H.Get("/me", token);   // no company scope for this session, but Me still names the company it is in (spec 7 exits: the frontend must not route to /onboarding)
+        Assert.Equal(a.ToString(), me.Str("activeCompanyId"));
         Assert.Equal([b.ToString()], me.Json.GetProperty("memberships").EnumerateArray().Select(x => x.GetProperty("companyId").GetString()!).ToArray());
         Assert.Empty(me.Json.GetProperty("permissions").EnumerateArray());
         Assert.Equal(HttpStatusCode.Forbidden, (await H.Get("/settings/default-notes", token)).Status);   // "any member" of NO company
+        Assert.Equal(HttpStatusCode.Forbidden, (await H.Get($"/settings/companies/{a}", token)).Status);   // a tenant read in A: no scope, refused
         var sw = await H.Post("/me/active-company", new { companyId = b }, token);
         Assert.Equal((HttpStatusCode.OK, b.ToString()), (sw.Status, sw.Str("activeCompanyId")));
         Assert.Equal(1, await P8.AuditCount(H, b, "company.switch"));
@@ -255,6 +256,13 @@ public sealed class MeAndCompanyTests(AuthFixture fx) : IClassFixture<AuthFixtur
         Assert.Equal(("company.not_found", HttpStatusCode.NotFound), ((await H.Get($"/settings/companies/{other}", token)).Code, (await H.Get($"/settings/companies/{other}", token)).Status));
         var put = await P8.Put(H, $"/settings/companies/{other}/contact", new { version = 1, phone = "02" }, token);
         Assert.Equal("company.not_found", put.Code);
+        using (var raw = new HttpRequestMessage(HttpMethod.Put, $"/internal/v1/settings/companies/{other}/contact") { Content = new StringContent("not json", System.Text.Encoding.UTF8, "application/json") })
+        {
+            raw.Headers.Add("Cookie", $"{AuthHost.CookieName}={token}");
+            using var bad = await H.Client.SendAsync(raw);   // another company's id with an unusable body: the 404 comes first, the body is never read
+            Assert.Equal(HttpStatusCode.NotFound, bad.StatusCode);
+            Assert.Contains("company.not_found", await bad.Content.ReadAsStringAsync());
+        }
         Assert.Equal("auth.forbidden", (await H.Get($"/settings/companies/{company}", user)).Code);   // an operator
         Assert.Equal("company.not_found", (await H.Get($"/settings/companies/{Guid.NewGuid()}", token)).Code);
         Assert.Equal("company.not_found", (await H.Get("/settings/companies/not-a-guid", token)).Code);

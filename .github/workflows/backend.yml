@@ -59,14 +59,8 @@ jobs:
       TEAS_E2E_ADMIN_EMAIL: admin@ci.example.test
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with: { global-json-file: backend/global.json }
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
-      - name: Publish the API and the migrator (mounted into the stock ASP.NET image by the compose file)
-        run: |
-          dotnet publish backend/src/Teas.Api -c Release -o publish/api
-          dotnet publish backend/src/Teas.Migrator -c Release -o publish/migrator
       - name: Postgres, database roles and the database
         env: { TEAS_MIGRATOR_PW: ci-role-pw, TEAS_APP_PW: ci-role-pw }
         run: |
@@ -75,7 +69,12 @@ jobs:
           psql -h localhost -U postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE teas OWNER teas_migrator"
       - name: Migrate, create the first admin (one-time link on stdout) and give them two companies
         run: |
-          $COMPOSE run --rm -T migrator migrate
+          MIGRATED="$($COMPOSE run --rm -T migrator migrate)"   # builds deploy/backend/Dockerfile (target migrator) on first use
+          echo "$MIGRATED"
+          # SP3 8 step 1: the catalog size the migrator printed; the API must report the same two numbers on /health/ready (step 2)
+          CATALOG="$(echo "$MIGRATED" | sed -n 's/^teas-migrator: catalog permissions=\([0-9]*\) roleTemplates=\([0-9]*\)$/{"permissions":\1,"roleTemplates":\2}/p')"
+          test -n "$CATALOG"
+          echo "TEAS_CATALOG=$CATALOG" >> "$GITHUB_ENV"
           LINK="$($COMPOSE run --rm -T migrator bootstrap-admin --email "$TEAS_E2E_ADMIN_EMAIL" --name 'CI Admin')"
           echo "$LINK" | grep -qEx 'http://localhost:3000/link/[A-Za-z0-9_-]+'   # exactly one line, nothing else on stdout
           echo "TEAS_E2E_ADMIN_LINK=$LINK" >> "$GITHUB_ENV"
@@ -85,6 +84,7 @@ jobs:
           $COMPOSE up -d --build api web
           for i in $(seq 1 60); do curl -fsS http://127.0.0.1:8080/health/ready && break; sleep 2; done
           curl -fsS http://127.0.0.1:8080/health/ready | grep -F '"db":"ok"'
+          curl -fsS http://127.0.0.1:8080/health/ready | grep -F "\"catalog\":$TEAS_CATALOG"   # SP3 8 step 2 = step 1
           for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:3000/login && break; sleep 2; done
       - name: Probe (SP3 section 8, step 4, on the composed topology - the public-domain version runs on staging in P11)
         run: |

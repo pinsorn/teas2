@@ -20,7 +20,8 @@ public enum SessionState
 /// <summary>What the host knows about the caller of a request (the IP of the audit row and the device of the session list).</summary>
 public sealed record RequestInfo(IPAddress? Ip, string? UserAgent);
 
-public sealed record SessionInfo(Guid Id, Guid UserId, string Email, string DisplayName, Guid? ActiveCompanyId, SessionState State, int? ExpiresInSec, DateTimeOffset LastSeenAt, DateTimeOffset CreatedAt);
+public sealed record SessionInfo(Guid Id, Guid UserId, string Email, string DisplayName, Guid? ActiveCompanyId, SessionState State, int? ExpiresInSec, DateTimeOffset LastSeenAt, DateTimeOffset CreatedAt, Guid? StoredActiveCompanyId = null);
+// ActiveCompanyId = the company the caller may act in (validated: null once the member is out); StoredActiveCompanyId = what the session row holds, which Me reports so a deactivated member is not sent to /onboarding.
 
 public sealed record SessionRow(Guid Id, string Device, string Ip, DateTimeOffset CreatedAt, DateTimeOffset LastSeenAt, bool Current);
 
@@ -47,17 +48,17 @@ public sealed class SessionService(TeasDbContext db, TenantScope scope, TimeProv
             SELECT s.id, s.user_id, u.email::text, u.display_name,
                    CASE WHEN EXISTS (SELECT 1 FROM teas.company_members m WHERE m.company_id = s.active_company_id AND m.user_id = s.user_id AND m.active AND NOT m.invite_pending)
                         THEN s.active_company_id END,   -- a company the user no longer works in is not a scope (no silent switch)
-                   s.idle_expires_at, s.absolute_expires_at, s.last_seen_at, s.created_at
+                   s.idle_expires_at, s.absolute_expires_at, s.last_seen_at, s.created_at, s.active_company_id
             FROM teas.sessions s JOIN teas.users u ON u.id = s.user_id
             WHERE s.token_hash = @h AND s.revoked_at IS NULL
             """, r => new
         {
             Id = r.GetGuid(0), User = r.GetGuid(1), Email = r.GetString(2), Name = r.GetString(3), Company = r.IsDBNull(4) ? (Guid?)null : r.GetGuid(4),
-            Idle = r.GetFieldValue<DateTimeOffset>(5), Absolute = r.GetFieldValue<DateTimeOffset>(6), Seen = r.GetFieldValue<DateTimeOffset>(7), Created = r.GetFieldValue<DateTimeOffset>(8),
+            Idle = r.GetFieldValue<DateTimeOffset>(5), Absolute = r.GetFieldValue<DateTimeOffset>(6), Seen = r.GetFieldValue<DateTimeOffset>(7), Created = r.GetFieldValue<DateTimeOffset>(8), Stored = r.IsDBNull(9) ? (Guid?)null : r.GetGuid(9),
         }, ct, TxSql.P("h", Tokens.Hash(token)));
         if (row is null || now >= row.Absolute) return null;
         var (state, left) = StateOf(now, row.Idle, row.Absolute);
-        return new SessionInfo(row.Id, row.User, row.Email, row.Name, row.Company, state, left, row.Seen, row.Created);
+        return new SessionInfo(row.Id, row.User, row.Email, row.Name, row.Company, state, left, row.Seen, row.Created, row.Stored);
     }
 
     static (SessionState, int?) StateOf(DateTimeOffset now, DateTimeOffset idle, DateTimeOffset absolute)
@@ -210,5 +211,16 @@ public sealed class AuthAudit(TeasDbContext db, TenantScope scope, IAudit audit,
         ctx.Ip = req.Ip;
         using var _ = scope.Enter(company.Value, userId);
         await audit.RecordAsync(command, target, null, after, ct);
+    }
+
+    /// <summary>A refused 403 of a signed-in user: one 'rejected' row in the session's company, outside any transaction. A session with no valid company scope leaves none.</summary>
+    public async Task RecordRejectedAsync(Guid userId, string name, Guid? sessionCompany, RequestInfo req, string command, string target, CancellationToken ct)
+    {
+        if (sessionCompany is not { } company) return;
+        ctx.Actor = new AuditActor("user", userId.ToString(), name);
+        ctx.Client = "web";
+        ctx.Ip = req.Ip;
+        using var _ = scope.Enter(company, userId);
+        await audit.RecordRejectedAsync(command, target, ct);
     }
 }

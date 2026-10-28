@@ -1,0 +1,6 @@
+# Used by BuildKit for deploy/backend/Dockerfile (a <Dockerfile>.dockerignore beside it wins over a root .dockerignore, which the repo layout does not allow).
+# A host build's bin/obj would break the in-container restore.
+**/bin
+**/obj
+backend/artifacts
+backend/tests

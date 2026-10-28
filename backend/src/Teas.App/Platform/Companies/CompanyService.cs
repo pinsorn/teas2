@@ -94,7 +94,7 @@ public sealed partial class CompanyService(TeasDbContext db, TenantScope scope, 
             await using var tx = await db.Database.BeginTransactionAsync(ct);
             vat = await Q.ScalarAsync<bool>(db, "SELECT vat_registered FROM teas.companies WHERE id = @c", ct, TxSql.P("c", active));
         }
-        return new MeView(s.UserId, s.DisplayName, memberships, s.ActiveCompanyId, vat, permissions, BusinessDate.Today(clock).ToString());
+        return new MeView(s.UserId, s.DisplayName, memberships, s.StoredActiveCompanyId ?? s.ActiveCompanyId, vat, permissions, BusinessDate.Today(clock).ToString());
     }
 
     /// <summary>Switch to a company the user is an active, accepted member of (anything else is the one 404). Audited in the company switched to.</summary>
@@ -111,7 +111,7 @@ public sealed partial class CompanyService(TeasDbContext db, TenantScope scope, 
             await audit.RecordAsync("company.switch", target.ToString(), new { companyId = s.ActiveCompanyId }, new { companyId = target }, ct);
             await tx.CommitAsync(ct);
         }
-        return await MeAsync(s with { ActiveCompanyId = target }, ct);
+        return await MeAsync(s with { ActiveCompanyId = target, StoredActiveCompanyId = target }, ct);
     }
 
     // ---------------------------------------------------------------- settings
@@ -127,6 +127,9 @@ public sealed partial class CompanyService(TeasDbContext db, TenantScope scope, 
         return new Row(r.GetString(0), S(1), r.GetString(2), r.GetString(3), S(4), r.GetString(5), r.IsDBNull(6) ? null : r.GetDecimal(6), S(7), S(8), S(9), S(10), S(11),
             r.GetBoolean(12), r.GetInt32(13), r.IsDBNull(14) ? null : r.GetGuid(14), r.IsDBNull(15) ? null : r.GetGuid(15), r.GetString(16), r.GetInt32(17));
     }
+
+    /// <summary>The 404 for any company but the session's own, asked before a body is read.</summary>
+    public void EnsureOwn(string id) => Own(id);
 
     /// <summary>The id in the path must be the active company: another company's id is a 404 even for one of its members (the widened SELECT policy would show it).</summary>
     Guid Own(string id) => Guid.TryParse(id, out var g) && g == Company ? g : throw new TeasException("company.not_found");

@@ -272,7 +272,7 @@ $1, true), set_config('app.user_id', $2, true), set_config('app.system', $3, tru
 - **Audit (§7.12):** `IAudit.Record(command, target, before, after)` writes in the command's transaction (rule 1).
   `before` / `after` never contain secrets, hashes, images or links (images → `"set"` / `"none"`, mock `audited`).
   A refused 403 (`auth.forbidden`, `agent.*`) is written with `result = 'rejected'` in a separate short transaction
-  (no before / after). Coverage test: every route with a non-GET method declares an `audit` command, and an
+  (no before / after). Coverage test: every route with a non-GET method declares an `audit` command (two exemptions: `POST /auth/session/extend`, no audit command in the frozen contract; `POST /mcp`, a transport whose tools are audited as their own routes), and an
   integration test per route asserts exactly one `ok` row after success and none after a 4xx (except the 403 rows).
 - **Clock (§6.3):** `TimeProvider` injected; `BusinessDate.Today(TimeProvider)` in Asia/Bangkok. `BannedSymbols.txt`
   bans `DateTime.Now`, `DateTime.UtcNow`, `DateTime.Today`, `DateTimeOffset.Now`, `DateTimeOffset.UtcNow`,
@@ -735,7 +735,7 @@ characters.
 
 **Backlog (SP4, from P9):** a bearer security scheme on the machine routes in the OpenAPI document; `auth_events` rows `key_refused` for failed key authentication (unknown / revoked / expired / kind mismatch); the MCP tool input schema generated from the OpenAPI request schema (with the OmitsNull rule) for the first body-taking tool (P9 uses System.Text.Json's schema).
 
-**Backlog (SP4.6 jobs):** sweep blobs under `TEAS_FILES_DIR` that no `files` row references (a rolled-back image save leaves one); prune `auth_failures` (rows not locked and older than 24 h) and revoked / absolute-expired `sessions` rows.
+**Backlog (SP4.6 jobs):** sweep blobs under `TEAS_FILES_DIR` that no `files` row references (a rolled-back image save leaves one); prune `auth_failures` (rows not locked and older than 24 h), revoked / absolute-expired `sessions` rows and old `auth_events` rows (append-only by trigger like `audit_log`: the retention job needs a sanctioned delete path or time partitions, decide in SP4.6).
 
 ## 13. Attempt log
 

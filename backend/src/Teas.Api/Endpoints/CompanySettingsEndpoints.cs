@@ -22,7 +22,7 @@ public sealed class CompanySectionBody;
 /// <summary>Routes 17-19.</summary>
 public static class CompanySettingsEndpoints
 {
-    static readonly string[] Sections = ["identity", "contact", "payroll", "fiscal", "images", "notes"];
+    internal static readonly string[] Sections = ["identity", "contact", "payroll", "fiscal", "images", "notes"];
 
     static TeasException Bad() => new("record.invalid");
 
@@ -69,6 +69,7 @@ public static class CompanySettingsEndpoints
             async (string id, string section, HttpContext h) =>
             {
                 if (!Sections.Contains(section)) throw new TeasException("company.section_unknown");
+                Ep.Svc<CompanyService>(h).EnsureOwn(id);   // another company is a 404 whatever the body is
                 var (body, vat) = await ReadAsync(h, section);
                 return Results.Ok(await Ep.Svc<CompanyService>(h).UpdateAsync(id, section, body, vat, Ep.Ct(h)));
             }).Accepts<CompanySectionBody>("application/json").Produces<CompanySettingsView>();
